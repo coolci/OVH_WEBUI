@@ -124,31 +124,33 @@ const AccountPage = () => {
           </div>
 
           {/* Balance Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {balance && (
-              <div className="terminal-card p-4 border-primary/30">
-                <div className="flex items-center gap-2 mb-2 text-primary">
-                  <Wallet className="h-4 w-4" />
-                  <span className="text-xs uppercase">账户余额</span>
+          {(balance || creditBalances.length > 0) ? (
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              {balance && (
+                <div className="terminal-card p-4 border-primary/30">
+                  <div className="flex items-center gap-2 mb-2 text-primary">
+                    <Wallet className="h-4 w-4" />
+                    <span className="text-xs uppercase">账户余额</span>
+                  </div>
+                  <p className="text-2xl font-bold font-mono">
+                    {balance.value?.toFixed(2) || '0.00'} {balance.currencyCode || 'EUR'}
+                  </p>
                 </div>
-                <p className="text-2xl font-bold font-mono">
-                  {balance.value?.toFixed(2) || '0.00'} {balance.currencyCode || 'EUR'}
-                </p>
-              </div>
-            )}
-            {creditBalances.map((credit: any, index: number) => (
-              <div key={index} className="terminal-card p-4 border-accent/30">
-                <div className="flex items-center gap-2 mb-2 text-accent">
-                  <Coins className="h-4 w-4" />
-                  <span className="text-xs uppercase">{credit.balanceName || credit.type || '信用余额'}</span>
+              )}
+              {creditBalances.map((credit: any, index: number) => (
+                <div key={index} className="terminal-card p-4 border-accent/30">
+                  <div className="flex items-center gap-2 mb-2 text-accent">
+                    <Coins className="h-4 w-4" />
+                    <span className="text-xs uppercase">{credit.balanceName || credit.type || '信用余额'}</span>
+                  </div>
+                  <p className="text-2xl font-bold font-mono">
+                    {credit.balance?.value?.toFixed(2) || '0.00'} {credit.balance?.currencyCode || 'EUR'}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">{credit.type}</p>
                 </div>
-                <p className="text-2xl font-bold font-mono">
-                  {credit.balance?.value?.toFixed(2) || '0.00'} {credit.balance?.currencyCode || 'EUR'}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">{credit.type}</p>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : null}
 
           <Tabs defaultValue="info" className="space-y-6">
             <TabsList className="bg-muted/50 border border-border flex-wrap h-auto gap-1 p-1">
@@ -184,6 +186,27 @@ const AccountPage = () => {
                 <div className="flex items-center justify-center py-12">
                   <Loader2 className="h-8 w-8 animate-spin text-primary" />
                 </div>
+              ) : !account.nichandle && !account.email ? (
+                <div className="terminal-card p-8">
+                  <div className="text-center py-8">
+                    <User className="h-16 w-16 mx-auto mb-4 text-muted-foreground/30" />
+                    <h3 className="text-lg font-medium text-muted-foreground mb-2">暂无账户信息</h3>
+                    <p className="text-sm text-muted-foreground/70 mb-6 max-w-md mx-auto">
+                      请先在设置页面配置 OVH API 凭证，然后刷新数据获取账户信息
+                    </p>
+                    <div className="flex justify-center gap-3">
+                      <Button variant="outline" asChild>
+                        <a href="/settings">
+                          前往设置
+                        </a>
+                      </Button>
+                      <Button variant="terminal" onClick={handleRefresh} disabled={isRefreshing}>
+                        <RefreshCw className={cn("h-4 w-4 mr-2", isRefreshing && "animate-spin")} />
+                        重试
+                      </Button>
+                    </div>
+                  </div>
+                </div>
               ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <TerminalCard
@@ -196,8 +219,10 @@ const AccountPage = () => {
                           <User className="h-6 w-6 text-primary" />
                         </div>
                         <div>
-                          <p className="font-bold text-lg">{account.firstname} {account.name}</p>
-                          <p className="text-sm text-muted-foreground font-mono">{account.nichandle}</p>
+                          <p className="font-bold text-lg">
+                            {(account.firstname || account.firstName || '') + ' ' + (account.name || '')}
+                          </p>
+                          <p className="text-sm text-muted-foreground font-mono">{account.nichandle || '-'}</p>
                         </div>
                       </div>
 
@@ -206,7 +231,7 @@ const AccountPage = () => {
                           <p className="text-muted-foreground flex items-center gap-1">
                             <Mail className="h-3 w-3" /> 邮箱
                           </p>
-                          <p className="font-mono text-xs break-all">{account.email}</p>
+                          <p className="font-mono text-xs break-all">{account.email || '-'}</p>
                         </div>
                         <div className="space-y-1">
                           <p className="text-muted-foreground flex items-center gap-1">
@@ -218,11 +243,11 @@ const AccountPage = () => {
                           <p className="text-muted-foreground flex items-center gap-1">
                             <DollarSign className="h-3 w-3" /> 货币
                           </p>
-                          <p>{account.currency}</p>
+                          <p>{account.currency || '-'}</p>
                         </div>
                         <div className="space-y-1">
                           <p className="text-muted-foreground">区域</p>
-                          <p>{account.ovhSubsidiary}</p>
+                          <p>{account.ovhSubsidiary || '-'}</p>
                         </div>
                       </div>
                     </div>
@@ -252,14 +277,18 @@ const AccountPage = () => {
                         </div>
                         <div className="space-y-1">
                           <p className="text-muted-foreground">账户状态</p>
-                          <span className={cn(
-                            "px-2 py-0.5 rounded-sm text-xs inline-block",
-                            account.state === "complete" 
-                              ? "bg-primary/20 text-primary" 
-                              : "bg-warning/20 text-warning"
-                          )}>
-                            {account.state === "complete" ? "活跃" : account.state || "未知"}
-                          </span>
+                          {account.state ? (
+                            <span className={cn(
+                              "px-2 py-0.5 rounded-sm text-xs inline-block",
+                              account.state === "complete" 
+                                ? "bg-primary/20 text-primary" 
+                                : "bg-warning/20 text-warning"
+                            )}>
+                              {account.state === "complete" ? "活跃" : account.state}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
                         </div>
                       </div>
                       
