@@ -283,52 +283,55 @@ const SettingsPage = () => {
               )}
             </div>
             
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <Button 
                 variant="outline" 
                 size="sm"
                 onClick={() => setShowSecrets(!showSecrets)}
+                className="text-xs sm:text-sm"
               >
                 {showSecrets ? (
-                  <><EyeOff className="h-4 w-4 mr-2" />隐藏密钥</>
+                  <><EyeOff className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" /><span className="hidden xs:inline">隐藏</span>密钥</>
                 ) : (
-                  <><Eye className="h-4 w-4 mr-2" />显示密钥</>
+                  <><Eye className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" /><span className="hidden xs:inline">显示</span>密钥</>
                 )}
               </Button>
-              <Button size="sm" onClick={handleSave} disabled={isSaving || !isConnected}>
+              <Button size="sm" onClick={handleSave} disabled={isSaving || !isConnected} className="text-xs sm:text-sm">
                 {isSaving ? (
-                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  <RefreshCw className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2 animate-spin" />
                 ) : (
-                  <Save className="h-4 w-4 mr-2" />
+                  <Save className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
                 )}
-                保存设置
+                保存
               </Button>
             </div>
           </div>
 
           <Tabs defaultValue="backend" className="space-y-6">
-            <TabsList className="bg-muted/50 border border-border">
-              <TabsTrigger value="backend" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                <Server className="h-4 w-4 mr-2" />
-                后端连接
-              </TabsTrigger>
-              <TabsTrigger value="ovh" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                <Globe className="h-4 w-4 mr-2" />
-                OVH API
-              </TabsTrigger>
-              <TabsTrigger value="telegram" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                <MessageSquare className="h-4 w-4 mr-2" />
-                Telegram
-              </TabsTrigger>
-              <TabsTrigger value="security" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                <Shield className="h-4 w-4 mr-2" />
-                安全
-              </TabsTrigger>
-              <TabsTrigger value="cache" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                <Database className="h-4 w-4 mr-2" />
-                缓存
-              </TabsTrigger>
-            </TabsList>
+            <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+              <TabsList className="bg-muted/50 border border-border w-max sm:w-auto">
+                <TabsTrigger value="backend" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-xs sm:text-sm px-2 sm:px-3">
+                  <Server className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                  <span className="hidden xs:inline">后端</span>连接
+                </TabsTrigger>
+                <TabsTrigger value="ovh" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-xs sm:text-sm px-2 sm:px-3">
+                  <Globe className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                  OVH
+                </TabsTrigger>
+                <TabsTrigger value="telegram" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-xs sm:text-sm px-2 sm:px-3">
+                  <MessageSquare className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                  TG
+                </TabsTrigger>
+                <TabsTrigger value="security" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-xs sm:text-sm px-2 sm:px-3">
+                  <Shield className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                  安全
+                </TabsTrigger>
+                <TabsTrigger value="cache" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-xs sm:text-sm px-2 sm:px-3">
+                  <Database className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                  缓存
+                </TabsTrigger>
+              </TabsList>
+            </div>
 
             {/* Backend Connection Settings */}
             <TabsContent value="backend">
@@ -363,16 +366,16 @@ const SettingsPage = () => {
                     </div>
                   </div>
                   
-                  <div className="flex gap-2 pt-4 border-t border-border">
-                    <Button variant="terminal" onClick={saveBackendConfig}>
-                      <Save className="h-4 w-4 mr-2" />
-                      保存连接配置
+                  <div className="flex flex-wrap gap-2 pt-4 border-t border-border">
+                    <Button variant="terminal" onClick={saveBackendConfig} size="sm" className="text-xs sm:text-sm">
+                      <Save className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                      保存配置
                     </Button>
-                    <Button variant="outline" onClick={testConnection} disabled={isTesting}>
+                    <Button variant="outline" onClick={testConnection} disabled={isTesting} size="sm" className="text-xs sm:text-sm">
                       {isTesting ? (
-                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                        <RefreshCw className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2 animate-spin" />
                       ) : (
-                        <CheckCircle2 className="h-4 w-4 mr-2" />
+                        <CheckCircle2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
                       )}
                       测试连接
                     </Button>
@@ -567,16 +570,16 @@ const SettingsPage = () => {
                         </div>
                       ) : null}
 
-                      <div className="flex gap-4">
-                        <Button variant="terminal" onClick={setWebhook}>
+                      <div className="flex flex-wrap gap-2 sm:gap-4">
+                        <Button variant="terminal" onClick={setWebhook} size="sm" className="text-xs sm:text-sm">
                           设置 Webhook
                         </Button>
-                        <Button variant="outline" onClick={() => loadWebhookInfo()}>
-                          <RefreshCw className="h-4 w-4 mr-2" />
-                          刷新状态
+                        <Button variant="outline" onClick={() => loadWebhookInfo()} size="sm" className="text-xs sm:text-sm">
+                          <RefreshCw className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                          刷新
                         </Button>
-                        <Button variant="outline" onClick={testTelegram}>
-                          发送测试消息
+                        <Button variant="outline" onClick={testTelegram} size="sm" className="text-xs sm:text-sm">
+                          测试消息
                         </Button>
                       </div>
                     </div>
@@ -686,14 +689,14 @@ const SettingsPage = () => {
                       ))}
                     </div>
 
-                    <div className="flex gap-2 pt-4 border-t border-border">
-                      <Button variant="outline" onClick={() => clearCache('memory')}>
-                        <RefreshCw className="h-4 w-4 mr-2" />
-                        清除内存缓存
+                    <div className="flex flex-wrap gap-2 pt-4 border-t border-border">
+                      <Button variant="outline" onClick={() => clearCache('memory')} size="sm" className="text-xs sm:text-sm">
+                        <RefreshCw className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                        清除内存
                       </Button>
-                      <Button variant="destructive" onClick={() => clearCache('all')}>
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        清空全部缓存
+                      <Button variant="destructive" onClick={() => clearCache('all')} size="sm" className="text-xs sm:text-sm">
+                        <Trash2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                        清空全部
                       </Button>
                     </div>
                   </div>
