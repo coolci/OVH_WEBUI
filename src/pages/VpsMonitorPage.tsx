@@ -60,6 +60,8 @@ const VpsMonitorPage = () => {
   const [isToggling, setIsToggling] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
+  const [isClearing, setIsClearing] = useState(false);
+  const [isBatchAdding, setIsBatchAdding] = useState(false);
   
   // 添加订阅表单状态
   const [newPlanCode, setNewPlanCode] = useState("");
@@ -141,6 +143,36 @@ const VpsMonitorPage = () => {
       toast.error(`删除失败: ${error.message}`);
     } finally {
       setIsDeleting(null);
+    }
+  };
+
+  const handleClearSubscriptions = async () => {
+    setIsClearing(true);
+    try {
+      const result = await api.clearVpsSubscriptions();
+      toast.success(`已清空 ${result.count} 个VPS订阅`);
+      refetch();
+    } catch (error: any) {
+      toast.error(`清空失败: ${error.message}`);
+    } finally {
+      setIsClearing(false);
+    }
+  };
+
+  const handleBatchAddAll = async () => {
+    setIsBatchAdding(true);
+    try {
+      const result = await api.batchAddAllVps({
+        notifyAvailable: true,
+        notifyUnavailable: false,
+        autoOrder: false,
+      });
+      toast.success(`批量添加完成: 添加 ${result.added} 个, 跳过 ${result.skipped} 个`);
+      refetch();
+    } catch (error: any) {
+      toast.error(`批量添加失败: ${error.message}`);
+    } finally {
+      setIsBatchAdding(false);
     }
   };
 
@@ -289,6 +321,37 @@ const VpsMonitorPage = () => {
                 </DialogContent>
               </Dialog>
             </div>
+          </div>
+
+          {/* Batch Actions */}
+          <div className="flex gap-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={handleBatchAddAll}
+              disabled={isBatchAdding}
+            >
+              {isBatchAdding ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Plus className="h-4 w-4 mr-2" />
+              )}
+              批量添加全部VPS
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="text-destructive hover:text-destructive"
+              onClick={handleClearSubscriptions}
+              disabled={isClearing || subscriptionList.length === 0}
+            >
+              {isClearing ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4 mr-2" />
+              )}
+              清空所有订阅
+            </Button>
           </div>
 
           {/* Status Cards */}
