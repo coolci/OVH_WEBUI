@@ -18,10 +18,15 @@ import {
   CheckCircle2,
   XCircle,
   Eye,
-  EyeOff
+  EyeOff,
+  Server,
+  Wifi,
+  WifiOff
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import api from "@/lib/api";
 import {
   Select,
   SelectContent,
@@ -39,27 +44,181 @@ import {
 const SettingsPage = () => {
   const [showSecrets, setShowSecrets] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isConnected, setIsConnected] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
+  
+  // 后端连接配置（存储在localStorage）
+  const [backendConfig, setBackendConfig] = useState({
+    backendUrl: localStorage.getItem('backendUrl') || 'http://localhost:19998',
+    apiSecretKey: localStorage.getItem('apiSecretKey') || '',
+  });
+  
+  // OVH API配置（从后端获取）
   const [config, setConfig] = useState({
-    appKey: "ak-xxxxxxxxxxxx",
-    appSecret: "as-xxxxxxxxxxxxxxxxxxxx",
-    consumerKey: "ck-xxxxxxxxxxxxxxxxxxxx",
+    appKey: "",
+    appSecret: "",
+    consumerKey: "",
     endpoint: "ovh-eu",
     zone: "IE",
     iam: "go-ovh-ie",
-    tgToken: "1234567890:ABCDefghijklmnopqrstuvwxyz",
-    tgChatId: "-1001234567890",
-    apiKey: "sk-xxxxxxxxxxxxxxxxxxxx",
+    tgToken: "",
+    tgChatId: "",
   });
 
-  const [cacheInfo] = useState({
-    serverCache: { valid: true, age: 15, size: "2.4MB" },
-    logCache: { valid: true, age: 5, size: "856KB" },
-    queueCache: { valid: true, age: 1, size: "124KB" },
-  });
+  const [cacheInfo, setCacheInfo] = useState<{
+    backend: {
+      hasCachedData: boolean;
+      timestamp: number | null;
+      cacheAge: number | null;
+      cacheDuration: number;
+      serverCount: number;
+      cacheValid: boolean;
+    };
+    storage: {
+      dataDir: string;
+      cacheDir: string;
+      logsDir: string;
+      files: Record<string, boolean>;
+    };
+  } | null>(null);
 
-  const handleSave = () => {
+  // 检测后端连接
+  const checkConnection = async () => {
+    try {
+      await api.health();
+      setIsConnected(true);
+      return true;
+    } catch {
+      setIsConnected(false);
+      return false;
+    }
+  };
+
+  // 加载配置
+  const loadConfig = async () => {
+    setIsLoading(true);
+    try {
+      const connected = await checkConnection();
+      if (connected) {
+        const remoteConfig = await api.getConfig();
+        setConfig({
+          appKey: remoteConfig.appKey || "",
+          appSecret: remoteConfig.appSecret || "",
+          consumerKey: remoteConfig.consumerKey || "",
+          endpoint: remoteConfig.endpoint || "ovh-eu",
+          zone: remoteConfig.zone || "IE",
+          iam: remoteConfig.iam || "go-ovh-ie",
+          tgToken: remoteConfig.tgToken || "",
+          tgChatId: remoteConfig.tgChatId || "",
+        });
+        
+        // 加载缓存信息
+        try {
+          const cache = await api.getCacheInfo();
+          setCacheInfo(cache);
+        } catch {}
+      }
+    } catch (err) {
+      console.error("Failed to load config:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadConfig();
+  }, []);
+
+  // 保存后端连接配置
+  const saveBackendConfig = () => {
+    localStorage.setItem('backendUrl', backendConfig.backendUrl);
+    localStorage.setItem('apiSecretKey', backendConfig.apiSecretKey);
+    toast.success("后端连接配置已保存");
+    loadConfig();
+  };
+
+  // 测试后端连接
+  const testConnection = async () => {
+    setIsTesting(true);
+    try {
+      const connected = await checkConnection();
+      if (connected) {
+        toast.success("后端连接成功");
+      } else {
+        toast.error("后端连接失败");
+      }
+    } catch {
+      toast.error("后端连接失败");
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
+  // 保存OVH配置到后端
+  const handleSave = async () => {
     setIsSaving(true);
-    setTimeout(() => setIsSaving(false), 1500);
+    try {
+      await api.saveConfig(config);
+      toast.success("配置已保存");
+    } catch (err: any) {
+      toast.error(`保存失败: ${err.message}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // 验证OVH API连接
+  const testOvhApi = async () => {
+    try {
+      const result = await api.getOvhAccountInfo();
+      if (result.success) {
+        toast.success(`OVH API 连接成功: ${result.account?.nichandle}`);
+      } else {
+        toast.error(`OVH API 连接失败: ${result.error}`);
+      }
+    } catch (err: any) {
+      toast.error(`OVH API 连接失败: ${err.message}`);
+    }
+  };
+
+  // 测试Telegram通知
+  const testTelegram = async () => {
+    try {
+      const result = await api.testNotification();
+      toast.success(result.message || "测试消息已发送");
+    } catch (err: any) {
+      toast.error(`发送失败: ${err.message}`);
+    }
+  };
+
+  // 设置Telegram Webhook
+  const setWebhook = async () => {
+    const webhookUrl = prompt("请输入 Webhook URL (包含域名):");
+    if (!webhookUrl) return;
+    
+    try {
+      const result = await api.setTelegramWebhook(webhookUrl);
+      if (result.success) {
+        toast.success("Webhook 设置成功");
+      } else {
+        toast.error(`设置失败: ${result.error}`);
+      }
+    } catch (err: any) {
+      toast.error(`设置失败: ${err.message}`);
+    }
+  };
+
+  // 清空缓存
+  const clearCache = async (type?: 'all' | 'memory' | 'files') => {
+    try {
+      const result = await api.clearCache(type);
+      toast.success(result.message);
+      const cache = await api.getCacheInfo();
+      setCacheInfo(cache);
+    } catch (err: any) {
+      toast.error(`清空失败: ${err.message}`);
+    }
   };
 
   const maskValue = (value: string) => {
@@ -80,15 +239,26 @@ const SettingsPage = () => {
         <div className="space-y-6">
           {/* Header */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-bold text-primary flex items-center gap-2">
-                <span className="text-muted-foreground">&gt;</span>
-                系统设置
-                <span className="cursor-blink">_</span>
-              </h1>
-              <p className="text-sm text-muted-foreground mt-1">
-                配置 API 凭证和系统参数
-              </p>
+            <div className="flex items-center gap-3">
+              <div>
+                <h1 className="text-2xl font-bold text-primary flex items-center gap-2">
+                  <span className="text-muted-foreground">&gt;</span>
+                  系统设置
+                  <span className="cursor-blink">_</span>
+                </h1>
+                <p className="text-sm text-muted-foreground mt-1">
+                  配置 API 凭证和系统参数
+                </p>
+              </div>
+              {isConnected ? (
+                <span className="flex items-center gap-1 text-xs text-primary bg-primary/10 px-2 py-1 rounded">
+                  <Wifi className="h-3 w-3" /> 已连接
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 text-xs text-destructive bg-destructive/10 px-2 py-1 rounded">
+                  <WifiOff className="h-3 w-3" /> 未连接
+                </span>
+              )}
             </div>
             
             <div className="flex gap-2">
@@ -103,7 +273,7 @@ const SettingsPage = () => {
                   <><Eye className="h-4 w-4 mr-2" />显示密钥</>
                 )}
               </Button>
-              <Button size="sm" onClick={handleSave} disabled={isSaving}>
+              <Button size="sm" onClick={handleSave} disabled={isSaving || !isConnected}>
                 {isSaving ? (
                   <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
                 ) : (
@@ -114,8 +284,12 @@ const SettingsPage = () => {
             </div>
           </div>
 
-          <Tabs defaultValue="ovh" className="space-y-6">
+          <Tabs defaultValue="backend" className="space-y-6">
             <TabsList className="bg-muted/50 border border-border">
+              <TabsTrigger value="backend" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                <Server className="h-4 w-4 mr-2" />
+                后端连接
+              </TabsTrigger>
               <TabsTrigger value="ovh" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
                 <Globe className="h-4 w-4 mr-2" />
                 OVH API
@@ -134,86 +308,144 @@ const SettingsPage = () => {
               </TabsTrigger>
             </TabsList>
 
+            {/* Backend Connection Settings */}
+            <TabsContent value="backend">
+              <TerminalCard
+                title="后端连接配置"
+                icon={<Server className="h-4 w-4" />}
+              >
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <Label>后端地址 (Backend URL)</Label>
+                      <Input 
+                        value={backendConfig.backendUrl}
+                        onChange={(e) => setBackendConfig({...backendConfig, backendUrl: e.target.value})}
+                        placeholder="http://localhost:19998"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Flask 后端服务器地址
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>API 密钥 (X-API-Key)</Label>
+                      <Input 
+                        value={showSecrets ? backendConfig.apiSecretKey : maskValue(backendConfig.apiSecretKey)}
+                        onChange={(e) => setBackendConfig({...backendConfig, apiSecretKey: e.target.value})}
+                        placeholder="输入 API 密钥"
+                        type={showSecrets ? "text" : "password"}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        需要与后端 .env 文件中的 API_SECRET_KEY 一致
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex gap-2 pt-4 border-t border-border">
+                    <Button variant="terminal" onClick={saveBackendConfig}>
+                      <Save className="h-4 w-4 mr-2" />
+                      保存连接配置
+                    </Button>
+                    <Button variant="outline" onClick={testConnection} disabled={isTesting}>
+                      {isTesting ? (
+                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="h-4 w-4 mr-2" />
+                      )}
+                      测试连接
+                    </Button>
+                  </div>
+                </div>
+              </TerminalCard>
+            </TabsContent>
+
             {/* OVH API Settings */}
             <TabsContent value="ovh">
               <TerminalCard
                 title="OVH API 配置"
                 icon={<Globe className="h-4 w-4" />}
               >
-                <div className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                      <Label>Application Key</Label>
-                      <Input 
-                        value={maskValue(config.appKey)}
-                        onChange={(e) => setConfig({...config, appKey: e.target.value})}
-                        placeholder="输入 Application Key"
-                      />
+                {!isConnected ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <WifiOff className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p>请先配置后端连接</p>
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <Label>Application Key</Label>
+                        <Input 
+                          value={showSecrets ? config.appKey : maskValue(config.appKey)}
+                          onChange={(e) => setConfig({...config, appKey: e.target.value})}
+                          placeholder="输入 Application Key"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Application Secret</Label>
+                        <Input 
+                          value={showSecrets ? config.appSecret : maskValue(config.appSecret)}
+                          onChange={(e) => setConfig({...config, appSecret: e.target.value})}
+                          placeholder="输入 Application Secret"
+                          type={showSecrets ? "text" : "password"}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Consumer Key</Label>
+                        <Input 
+                          value={showSecrets ? config.consumerKey : maskValue(config.consumerKey)}
+                          onChange={(e) => setConfig({...config, consumerKey: e.target.value})}
+                          placeholder="输入 Consumer Key"
+                          type={showSecrets ? "text" : "password"}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>API Endpoint</Label>
+                        <Select value={config.endpoint} onValueChange={(v) => setConfig({...config, endpoint: v})}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="ovh-eu">OVH Europe (ovh-eu)</SelectItem>
+                            <SelectItem value="ovh-us">OVH US (ovh-us)</SelectItem>
+                            <SelectItem value="ovh-ca">OVH Canada (ovh-ca)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Zone / Subsidiary</Label>
+                        <Select value={config.zone} onValueChange={(v) => setConfig({...config, zone: v})}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="IE">爱尔兰 (IE)</SelectItem>
+                            <SelectItem value="DE">德国 (DE)</SelectItem>
+                            <SelectItem value="FR">法国 (FR)</SelectItem>
+                            <SelectItem value="GB">英国 (GB)</SelectItem>
+                            <SelectItem value="US">美国 (US)</SelectItem>
+                            <SelectItem value="CA">加拿大 (CA)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>IAM 标识</Label>
+                        <Input 
+                          value={config.iam}
+                          onChange={(e) => setConfig({...config, iam: e.target.value})}
+                          placeholder="输入 IAM 标识"
+                        />
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      <Label>Application Secret</Label>
-                      <Input 
-                        value={maskValue(config.appSecret)}
-                        onChange={(e) => setConfig({...config, appSecret: e.target.value})}
-                        placeholder="输入 Application Secret"
-                        type={showSecrets ? "text" : "password"}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Consumer Key</Label>
-                      <Input 
-                        value={maskValue(config.consumerKey)}
-                        onChange={(e) => setConfig({...config, consumerKey: e.target.value})}
-                        placeholder="输入 Consumer Key"
-                        type={showSecrets ? "text" : "password"}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>API Endpoint</Label>
-                      <Select value={config.endpoint} onValueChange={(v) => setConfig({...config, endpoint: v})}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="ovh-eu">OVH Europe (ovh-eu)</SelectItem>
-                          <SelectItem value="ovh-us">OVH US (ovh-us)</SelectItem>
-                          <SelectItem value="ovh-ca">OVH Canada (ovh-ca)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Zone / Subsidiary</Label>
-                      <Select value={config.zone} onValueChange={(v) => setConfig({...config, zone: v})}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="IE">爱尔兰 (IE)</SelectItem>
-                          <SelectItem value="DE">德国 (DE)</SelectItem>
-                          <SelectItem value="FR">法国 (FR)</SelectItem>
-                          <SelectItem value="GB">英国 (GB)</SelectItem>
-                          <SelectItem value="US">美国 (US)</SelectItem>
-                          <SelectItem value="CA">加拿大 (CA)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>IAM 标识</Label>
-                      <Input 
-                        value={config.iam}
-                        onChange={(e) => setConfig({...config, iam: e.target.value})}
-                        placeholder="输入 IAM 标识"
-                      />
+                    
+                    <div className="pt-4 border-t border-border">
+                      <Button variant="terminal" onClick={testOvhApi}>
+                        <CheckCircle2 className="h-4 w-4 mr-2" />
+                        验证 API 连接
+                      </Button>
                     </div>
                   </div>
-                  
-                  <div className="pt-4 border-t border-border">
-                    <Button variant="terminal">
-                      <CheckCircle2 className="h-4 w-4 mr-2" />
-                      验证 API 连接
-                    </Button>
-                  </div>
-                </div>
+                )}
               </TerminalCard>
             </TabsContent>
 
@@ -223,39 +455,46 @@ const SettingsPage = () => {
                 title="Telegram 通知配置"
                 icon={<MessageSquare className="h-4 w-4" />}
               >
-                <div className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                      <Label>Bot Token</Label>
-                      <Input 
-                        value={maskValue(config.tgToken)}
-                        onChange={(e) => setConfig({...config, tgToken: e.target.value})}
-                        placeholder="输入 Telegram Bot Token"
-                        type={showSecrets ? "text" : "password"}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Chat ID</Label>
-                      <Input 
-                        value={config.tgChatId}
-                        onChange={(e) => setConfig({...config, tgChatId: e.target.value})}
-                        placeholder="输入 Chat ID"
-                      />
-                    </div>
+                {!isConnected ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <WifiOff className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p>请先配置后端连接</p>
                   </div>
+                ) : (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <Label>Bot Token</Label>
+                        <Input 
+                          value={showSecrets ? config.tgToken : maskValue(config.tgToken)}
+                          onChange={(e) => setConfig({...config, tgToken: e.target.value})}
+                          placeholder="输入 Telegram Bot Token"
+                          type={showSecrets ? "text" : "password"}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Chat ID</Label>
+                        <Input 
+                          value={config.tgChatId}
+                          onChange={(e) => setConfig({...config, tgChatId: e.target.value})}
+                          placeholder="输入 Chat ID"
+                        />
+                      </div>
+                    </div>
 
-                  <div className="space-y-4 pt-4 border-t border-border">
-                    <h3 className="text-sm font-medium">Webhook 配置</h3>
-                    <div className="flex gap-4">
-                      <Button variant="terminal">
-                        设置 Webhook
-                      </Button>
-                      <Button variant="outline">
-                        发送测试消息
-                      </Button>
+                    <div className="space-y-4 pt-4 border-t border-border">
+                      <h3 className="text-sm font-medium">Webhook 配置</h3>
+                      <div className="flex gap-4">
+                        <Button variant="terminal" onClick={setWebhook}>
+                          设置 Webhook
+                        </Button>
+                        <Button variant="outline" onClick={testTelegram}>
+                          发送测试消息
+                        </Button>
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
               </TerminalCard>
             </TabsContent>
 
@@ -270,16 +509,12 @@ const SettingsPage = () => {
                     <Label>API 访问密钥</Label>
                     <div className="flex gap-2">
                       <Input 
-                        value={maskValue(config.apiKey)}
-                        onChange={(e) => setConfig({...config, apiKey: e.target.value})}
+                        value={showSecrets ? backendConfig.apiSecretKey : maskValue(backendConfig.apiSecretKey)}
+                        onChange={(e) => setBackendConfig({...backendConfig, apiSecretKey: e.target.value})}
                         placeholder="输入 API 访问密钥"
                         type={showSecrets ? "text" : "password"}
                         className="flex-1"
                       />
-                      <Button variant="outline">
-                        <RefreshCw className="h-4 w-4 mr-2" />
-                        重新生成
-                      </Button>
                     </div>
                     <p className="text-xs text-muted-foreground">
                       此密钥用于保护 API 接口，请妥善保管
@@ -316,48 +551,81 @@ const SettingsPage = () => {
                 title="缓存管理"
                 icon={<Database className="h-4 w-4" />}
               >
-                <div className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {Object.entries(cacheInfo).map(([key, info]) => (
+                {!isConnected ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <WifiOff className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p>请先配置后端连接</p>
+                  </div>
+                ) : cacheInfo ? (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div 
-                        key={key}
                         className={cn(
                           "p-4 rounded-sm border",
-                          info.valid ? "border-primary/30" : "border-destructive/30"
+                          cacheInfo.backend.cacheValid ? "border-primary/30" : "border-destructive/30"
                         )}
                       >
                         <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm font-medium capitalize">
-                            {key.replace("Cache", " 缓存")}
-                          </span>
-                          {info.valid ? (
+                          <span className="text-sm font-medium">服务器缓存</span>
+                          {cacheInfo.backend.cacheValid ? (
                             <CheckCircle2 className="h-4 w-4 text-primary" />
                           ) : (
                             <XCircle className="h-4 w-4 text-destructive" />
                           )}
                         </div>
                         <div className="space-y-1 text-xs text-muted-foreground">
-                          <p>大小: <span className="text-foreground">{info.size}</span></p>
-                          <p>年龄: <span className="text-foreground">{info.age} 分钟</span></p>
-                          <p>状态: <span className={info.valid ? "text-primary" : "text-destructive"}>
-                            {info.valid ? "有效" : "已过期"}
+                          <p>服务器数: <span className="text-foreground">{cacheInfo.backend.serverCount}</span></p>
+                          <p>缓存年龄: <span className="text-foreground">
+                            {cacheInfo.backend.cacheAge ? `${Math.round(cacheInfo.backend.cacheAge / 60)} 分钟` : 'N/A'}
+                          </span></p>
+                          <p>状态: <span className={cacheInfo.backend.cacheValid ? "text-primary" : "text-destructive"}>
+                            {cacheInfo.backend.cacheValid ? "有效" : "已过期"}
                           </span></p>
                         </div>
                       </div>
-                    ))}
-                  </div>
+                      
+                      {Object.entries(cacheInfo.storage.files).map(([name, exists]) => (
+                        <div 
+                          key={name}
+                          className={cn(
+                            "p-4 rounded-sm border",
+                            exists ? "border-primary/30" : "border-muted"
+                          )}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-medium capitalize">{name}</span>
+                            {exists ? (
+                              <CheckCircle2 className="h-4 w-4 text-primary" />
+                            ) : (
+                              <XCircle className="h-4 w-4 text-muted-foreground" />
+                            )}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            <p>状态: <span className={exists ? "text-primary" : "text-muted-foreground"}>
+                              {exists ? "存在" : "不存在"}
+                            </span></p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
 
-                  <div className="flex gap-2 pt-4 border-t border-border">
-                    <Button variant="outline">
-                      <RefreshCw className="h-4 w-4 mr-2" />
-                      刷新全部缓存
-                    </Button>
-                    <Button variant="destructive">
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      清空全部缓存
-                    </Button>
+                    <div className="flex gap-2 pt-4 border-t border-border">
+                      <Button variant="outline" onClick={() => clearCache('memory')}>
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                        清除内存缓存
+                      </Button>
+                      <Button variant="destructive" onClick={() => clearCache('all')}>
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        清空全部缓存
+                      </Button>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <RefreshCw className="h-8 w-8 mx-auto mb-2 opacity-50 animate-spin" />
+                    <p>加载中...</p>
+                  </div>
+                )}
               </TerminalCard>
             </TabsContent>
           </Tabs>
