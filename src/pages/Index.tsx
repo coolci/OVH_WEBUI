@@ -4,9 +4,13 @@ import { QueuePreview } from "@/components/dashboard/QueuePreview";
 import { MonitorPreview } from "@/components/dashboard/MonitorPreview";
 import { RecentLogs } from "@/components/dashboard/RecentLogs";
 import { ServerAvailability } from "@/components/dashboard/ServerAvailability";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { Helmet } from "react-helmet-async";
+import { useBackendConnection } from "@/hooks/useApi";
 
 const Index = () => {
+  const { isConnected, isChecking } = useBackendConnection();
+
   return (
     <>
       <Helmet>
@@ -29,9 +33,17 @@ const Index = () => {
               </p>
             </div>
             
-            <div className="hidden md:flex items-center gap-2 text-xs text-muted-foreground">
-              <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
-              系统运行中
+            <div className="hidden md:flex items-center gap-2 text-xs">
+              <span className="text-muted-foreground">后端状态:</span>
+              {isChecking ? (
+                <StatusBadge status="processing" label="检测中" size="sm" showDot />
+              ) : (
+                <StatusBadge 
+                  status={isConnected ? "connected" : "disconnected"} 
+                  size="sm" 
+                  showDot 
+                />
+              )}
             </div>
           </div>
 
