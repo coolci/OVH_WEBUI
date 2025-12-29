@@ -505,19 +505,9 @@ const SettingsPage = () => {
                 icon={<Shield className="h-4 w-4" />}
               >
                 <div className="space-y-6">
-                  <div className="space-y-2">
-                    <Label>API 访问密钥</Label>
-                    <div className="flex gap-2">
-                      <Input 
-                        value={showSecrets ? backendConfig.apiSecretKey : maskValue(backendConfig.apiSecretKey)}
-                        onChange={(e) => setBackendConfig({...backendConfig, apiSecretKey: e.target.value})}
-                        placeholder="输入 API 访问密钥"
-                        type={showSecrets ? "text" : "password"}
-                        className="flex-1"
-                      />
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      此密钥用于保护 API 接口，请妥善保管
+                  <div className="p-4 bg-muted/30 rounded border border-border">
+                    <p className="text-sm text-muted-foreground">
+                      API 密钥已在"后端连接"标签页中配置。该密钥用于前端与后端的安全通信。
                     </p>
                   </div>
 
