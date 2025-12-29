@@ -291,6 +291,18 @@ export const api = {
     method: 'POST',
   }),
   
+  // 手动检查单个planCode
+  manualCheckDedicated: (planCode: string) => apiRequest<{
+    status: string;
+    planCode: string;
+    datacenters: Array<{
+      datacenter: string;
+      availability: string;
+    }>;
+  }>(`/api/monitor/check/${planCode}`, {
+    method: 'POST',
+  }),
+  
   // ==================== VPS监控 ====================
   getVpsSubscriptions: () => apiRequest<Array<{
     id: string;
@@ -558,6 +570,132 @@ export const api = {
   getPlannedInterventions: (serviceName: string) =>
     apiRequest<{ success: boolean; plannedInterventions: Array<any> }>(
       `/api/server-control/${serviceName}/planned-interventions`
+    ),
+  
+  // ==================== 高级服务器控制 ====================
+  // IPMI控制台
+  getIpmiAccess: (serviceName: string) =>
+    apiRequest<{
+      success: boolean;
+      ipmiInfos?: {
+        ip: string;
+        login: string;
+        password: string;
+        expires?: string;
+      };
+      error?: string;
+    }>(`/api/server-control/${serviceName}/ipmi`, {
+      method: 'POST',
+    }),
+  
+  // Burst带宽管理
+  getBurstStatus: (serviceName: string) =>
+    apiRequest<{
+      success: boolean;
+      burst?: {
+        enabled: boolean;
+        capacity: number;
+        used: number;
+      };
+      error?: string;
+    }>(`/api/server-control/${serviceName}/burst`),
+  
+  toggleBurst: (serviceName: string, enable: boolean) =>
+    apiRequest<{ success: boolean; message?: string; error?: string }>(
+      `/api/server-control/${serviceName}/burst`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ enabled: enable }),
+      }
+    ),
+  
+  // 防火墙管理
+  getFirewallStatus: (serviceName: string) =>
+    apiRequest<{
+      success: boolean;
+      firewall?: {
+        enabled: boolean;
+        mode: string;
+        rules?: Array<any>;
+      };
+      error?: string;
+    }>(`/api/server-control/${serviceName}/firewall`),
+  
+  toggleFirewall: (serviceName: string, enable: boolean) =>
+    apiRequest<{ success: boolean; message?: string; error?: string }>(
+      `/api/server-control/${serviceName}/firewall`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ enabled: enable }),
+      }
+    ),
+  
+  // 备份FTP
+  getBackupFtp: (serviceName: string) =>
+    apiRequest<{
+      success: boolean;
+      backupFtp?: {
+        ftpBackupName: string;
+        type: string;
+        quota: number;
+        usage: number;
+        readOnly: boolean;
+      };
+      error?: string;
+    }>(`/api/server-control/${serviceName}/backup-ftp`),
+  
+  activateBackupFtp: (serviceName: string) =>
+    apiRequest<{ success: boolean; message?: string; error?: string }>(
+      `/api/server-control/${serviceName}/backup-ftp`,
+      {
+        method: 'POST',
+      }
+    ),
+  
+  getBackupFtpPassword: (serviceName: string) =>
+    apiRequest<{ success: boolean; password?: string; error?: string }>(
+      `/api/server-control/${serviceName}/backup-ftp/password`,
+      {
+        method: 'POST',
+      }
+    ),
+  
+  // BIOS设置
+  getBiosSettings: (serviceName: string) =>
+    apiRequest<{
+      success: boolean;
+      biosSettings?: {
+        supportBiosSettings: boolean;
+      };
+      error?: string;
+    }>(`/api/server-control/${serviceName}/bios-settings`),
+  
+  // IP迁移
+  moveIp: (serviceName: string, ip: string, targetService: string) =>
+    apiRequest<{ success: boolean; task?: any; error?: string }>(
+      `/api/server-control/${serviceName}/ip/move`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ ip, to: targetService }),
+      }
+    ),
+  
+  // 服务终止
+  terminateServer: (serviceName: string) =>
+    apiRequest<{ success: boolean; message?: string; error?: string }>(
+      `/api/server-control/${serviceName}/terminate`,
+      {
+        method: 'POST',
+      }
+    ),
+  
+  confirmTermination: (serviceName: string, token: string) =>
+    apiRequest<{ success: boolean; message?: string; error?: string }>(
+      `/api/server-control/${serviceName}/terminate/confirm`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ token }),
+      }
     ),
   
   // ==================== Telegram ====================
