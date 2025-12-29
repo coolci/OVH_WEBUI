@@ -1,0 +1,65 @@
+import { cn } from "@/lib/utils";
+import { ReactNode } from "react";
+
+interface TerminalCardProps {
+  title?: string;
+  icon?: ReactNode;
+  children: ReactNode;
+  className?: string;
+  headerAction?: ReactNode;
+  variant?: "default" | "accent" | "warning" | "danger";
+}
+
+const variantStyles = {
+  default: "border-border",
+  accent: "border-accent/30",
+  warning: "border-warning/30",
+  danger: "border-destructive/30",
+};
+
+const headerVariantStyles = {
+  default: "border-border",
+  accent: "border-accent/30",
+  warning: "border-warning/30",
+  danger: "border-destructive/30",
+};
+
+export function TerminalCard({ 
+  title, 
+  icon, 
+  children, 
+  className,
+  headerAction,
+  variant = "default"
+}: TerminalCardProps) {
+  return (
+    <div className={cn(
+      "terminal-card overflow-hidden",
+      variantStyles[variant],
+      className
+    )}>
+      {title && (
+        <div className={cn(
+          "flex items-center justify-between px-4 py-2 border-b bg-muted/30",
+          headerVariantStyles[variant]
+        )}>
+          <div className="flex items-center gap-2">
+            {/* Terminal window dots */}
+            <div className="flex items-center gap-1 mr-2">
+              <span className="h-2 w-2 rounded-full bg-destructive/60" />
+              <span className="h-2 w-2 rounded-full bg-warning/60" />
+              <span className="h-2 w-2 rounded-full bg-primary/60" />
+            </div>
+            
+            {icon && <span className="text-primary">{icon}</span>}
+            <span className="text-sm font-medium text-foreground">{title}</span>
+          </div>
+          {headerAction}
+        </div>
+      )}
+      <div className="p-4">
+        {children}
+      </div>
+    </div>
+  );
+}
