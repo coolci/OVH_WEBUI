@@ -17,6 +17,7 @@ import AccountPage from "./pages/AccountPage";
 import ServerControlPage from "./pages/ServerControlPage";
 import ContactChangePage from "./pages/ContactChangePage";
 import PerformancePage from "./pages/PerformancePage";
+import TelegramOrderPage from "./pages/TelegramOrderPage";
 
 const queryClient = new QueryClient();
 
@@ -40,6 +41,7 @@ const App = () => (
             <Route path="/server-control" element={<ServerControlPage />} />
             <Route path="/contact-change" element={<ContactChangePage />} />
             <Route path="/performance" element={<PerformancePage />} />
+            <Route path="/telegram-order" element={<TelegramOrderPage />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

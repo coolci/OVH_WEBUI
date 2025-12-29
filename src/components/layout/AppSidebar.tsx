@@ -13,7 +13,8 @@ import {
   User,
   Zap,
   UserCog,
-  BarChart3
+  BarChart3,
+  MessageSquare
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -42,6 +43,7 @@ const navGroups = [
     items: [
       { to: "/queue", icon: ListOrdered, label: "抢购队列" },
       { to: "/history", icon: History, label: "购买历史" },
+      { to: "/telegram-order", icon: MessageSquare, label: "Telegram下单" },
     ],
   },
   {
