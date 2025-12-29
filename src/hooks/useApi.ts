@@ -65,6 +65,31 @@ export function useMonitorStatus() {
   return useApiQuery(() => api.getMonitorStatus(), []);
 }
 
+// 手动检查专机可用性Hook（不自动执行）
+export function useManualCheckDedicated() {
+  const [data, setData] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const check = useCallback(async (planCode: string) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const result = await api.manualCheckDedicated(planCode);
+      setData(result);
+      return result;
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      setError(error);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  return { data, isLoading, error, check };
+}
+
 // VPS订阅Hook
 export function useVpsSubscriptions() {
   return useApiQuery(() => api.getVpsSubscriptions(), []);
