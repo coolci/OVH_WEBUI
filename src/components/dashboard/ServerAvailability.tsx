@@ -1,4 +1,5 @@
 import { TerminalCard } from "@/components/ui/terminal-card";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { Server, ArrowRight, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
@@ -7,6 +8,14 @@ import { useServers } from "@/hooks/useApi";
 import { useEffect, useState } from "react";
 import api from "@/lib/api";
 import { toast } from "sonner";
+
+// 根据可用性返回对应的StatusBadge状态
+const getAvailabilityStatus = (availability: string) => {
+  if (availability === "1H" || availability === "available") return "available";
+  if (availability === "24H") return "pending";
+  if (availability === "72H") return "warning";
+  return "unavailable";
+};
 
 export function ServerAvailability() {
   const { data: servers, isLoading, refetch } = useServers();
@@ -38,13 +47,6 @@ export function ServerAvailability() {
   ) || [];
 
   const displayServers = availableServers.slice(0, 5);
-
-  const getAvailabilityColor = (availability: string) => {
-    if (availability === "1H" || availability === "available") return "text-primary bg-primary/20";
-    if (availability === "24H") return "text-accent bg-accent/20";
-    if (availability === "72H") return "text-warning bg-warning/20";
-    return "text-muted-foreground bg-muted";
-  };
 
   return (
     <TerminalCard
@@ -117,15 +119,12 @@ export function ServerAvailability() {
                     <td className="py-3 px-2">
                       <div className="flex flex-wrap gap-1.5">
                         {availableDcs.slice(0, 4).map(dc => (
-                          <span
+                          <StatusBadge
                             key={dc.datacenter}
-                            className={cn(
-                              "px-2 py-0.5 rounded-sm text-xs font-mono uppercase",
-                              getAvailabilityColor(dc.availability)
-                            )}
-                          >
-                            {dc.datacenter} <span className="opacity-70">{dc.availability}</span>
-                          </span>
+                            status={getAvailabilityStatus(dc.availability)}
+                            label={`${dc.datacenter.toUpperCase()} ${dc.availability}`}
+                            size="sm"
+                          />
                         ))}
                         {availableDcs.length > 4 && (
                           <span className="text-xs text-muted-foreground">+{availableDcs.length - 4}</span>
