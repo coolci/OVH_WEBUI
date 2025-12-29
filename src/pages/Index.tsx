@@ -19,22 +19,22 @@ const Index = () => {
       </Helmet>
       
       <AppLayout>
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
           {/* Header */}
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4">
             <div>
-              <h1 className="text-2xl font-bold text-primary flex items-center gap-2">
+              <h1 className="text-xl sm:text-2xl font-bold text-primary flex items-center gap-2">
                 <span className="text-muted-foreground">&gt;</span>
                 系统概览
                 <span className="cursor-blink">_</span>
               </h1>
-              <p className="text-sm text-muted-foreground mt-1">
+              <p className="text-xs sm:text-sm text-muted-foreground mt-1">
                 实时监控服务器可用性和抢购状态
               </p>
             </div>
             
-            <div className="hidden md:flex items-center gap-2 text-xs">
-              <span className="text-muted-foreground">后端状态:</span>
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-muted-foreground">后端:</span>
               {isChecking ? (
                 <StatusBadge status="processing" label="检测中" size="sm" showDot />
               ) : (

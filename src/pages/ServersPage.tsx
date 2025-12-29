@@ -234,59 +234,63 @@ const ServersPage = () => {
       </Helmet>
       
       <AppLayout>
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
           {/* Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-bold text-primary flex items-center gap-2">
-                <span className="text-muted-foreground">&gt;</span>
-                服务器列表
-                <span className="cursor-blink">_</span>
-              </h1>
-              <p className="text-sm text-muted-foreground mt-1">
-                共 {serverList.length} 款服务器，{availableCount} 款有库存
-              </p>
+          <div className="flex flex-col gap-3 sm:gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h1 className="text-xl sm:text-2xl font-bold text-primary flex items-center gap-2">
+                  <span className="text-muted-foreground">&gt;</span>
+                  服务器列表
+                  <span className="cursor-blink">_</span>
+                </h1>
+                <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+                  共 {serverList.length} 款，{availableCount} 款有货
+                </p>
+              </div>
+              
+              <Button 
+                variant="terminal" 
+                onClick={handleRefresh}
+                disabled={isRefreshing}
+                size="sm"
+                className="w-fit text-xs sm:text-sm"
+              >
+                <RefreshCw className={cn("h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2", isRefreshing && "animate-spin")} />
+                {isRefreshing ? "刷新中" : "刷新"}
+              </Button>
             </div>
-            
-            <Button 
-              variant="terminal" 
-              onClick={handleRefresh}
-              disabled={isRefreshing}
-            >
-              <RefreshCw className={cn("h-4 w-4 mr-2", isRefreshing && "animate-spin")} />
-              {isRefreshing ? "刷新中..." : "刷新列表"}
-            </Button>
-          </div>
 
-          {/* Filters */}
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input 
-                placeholder="搜索型号、配置..." 
-                className="pl-9"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
+            {/* Filters */}
+            <div className="flex flex-col sm:flex-row gap-2 sm:gap-4">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input 
+                  placeholder="搜索型号、配置..." 
+                  className="pl-9 h-9 text-sm"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
+              
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="w-full sm:w-auto h-9 text-xs sm:text-sm">
+                    <Filter className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                    {filterAvailability === "all" ? "全部" : "有货"}
+                    <ChevronDown className="h-3 w-3 sm:h-4 sm:w-4 ml-1 sm:ml-2" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  <DropdownMenuItem onClick={() => setFilterAvailability("all")}>
+                    全部服务器
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setFilterAvailability("available")}>
+                    仅显示有货
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
-            
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="w-full sm:w-auto">
-                  <Filter className="h-4 w-4 mr-2" />
-                  {filterAvailability === "all" ? "全部" : "仅有货"}
-                  <ChevronDown className="h-4 w-4 ml-2" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                <DropdownMenuItem onClick={() => setFilterAvailability("all")}>
-                  全部服务器
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setFilterAvailability("available")}>
-                  仅显示有货
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
           </div>
 
           {/* Server List */}
@@ -309,63 +313,61 @@ const ServersPage = () => {
                       hasAvailable && "border-primary/20"
                     )}
                   >
-                    <div className="flex flex-col lg:flex-row lg:items-start gap-4">
-                      {/* Server Info */}
-                      <div className="flex-1 space-y-3">
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <Server className="h-5 w-5 text-primary" />
-                              <h3 className="text-lg font-bold text-foreground">{server.name || server.planCode}</h3>
-                              <span className="text-xs text-muted-foreground font-mono">({server.planCode})</span>
-                            </div>
-                            <p className="text-sm text-muted-foreground mt-1">
-                              €{server.price?.toFixed(2) || 'N/A'} / 月
-                            </p>
+                    <div className="flex flex-col gap-3 sm:gap-4">
+                      {/* Server Info Header */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                            <Server className="h-4 w-4 sm:h-5 sm:w-5 text-primary flex-shrink-0" />
+                            <h3 className="text-sm sm:text-lg font-bold text-foreground truncate">{server.name || server.planCode}</h3>
+                            <span className="text-[10px] sm:text-xs text-muted-foreground font-mono">({server.planCode})</span>
                           </div>
-                          
-                          {hasAvailable && (
-                            <StatusBadge status="available" label="有库存" />
-                          )}
+                          <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 sm:mt-1">
+                            €{server.price?.toFixed(2) || 'N/A'} / 月
+                          </p>
                         </div>
+                        
+                        {hasAvailable && (
+                          <StatusBadge status="available" label="有货" className="flex-shrink-0 text-[10px] sm:text-xs" />
+                        )}
+                      </div>
 
-                        {/* Specs Grid */}
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                          <div className="flex items-center gap-2 p-2 bg-muted/30 rounded-sm">
-                            <Cpu className="h-4 w-4 text-accent" />
-                            <div className="min-w-0">
-                              <p className="text-xs text-muted-foreground">CPU</p>
-                              <p className="text-foreground truncate">{server.cpu || 'N/A'}</p>
-                            </div>
+                      {/* Specs Grid */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs sm:text-sm">
+                        <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 bg-muted/30 rounded-sm">
+                          <Cpu className="h-3 w-3 sm:h-4 sm:w-4 text-accent flex-shrink-0" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[10px] sm:text-xs text-muted-foreground">CPU</p>
+                            <p className="text-foreground truncate text-[11px] sm:text-sm">{server.cpu || 'N/A'}</p>
                           </div>
-                          <div className="flex items-center gap-2 p-2 bg-muted/30 rounded-sm">
-                            <MemoryStick className="h-4 w-4 text-accent" />
-                            <div>
-                              <p className="text-xs text-muted-foreground">内存</p>
-                              <p className="text-foreground">{server.ram || 'N/A'}</p>
-                            </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 bg-muted/30 rounded-sm">
+                          <MemoryStick className="h-3 w-3 sm:h-4 sm:w-4 text-accent flex-shrink-0" />
+                          <div className="min-w-0">
+                            <p className="text-[10px] sm:text-xs text-muted-foreground">内存</p>
+                            <p className="text-foreground text-[11px] sm:text-sm">{server.ram || 'N/A'}</p>
                           </div>
-                          <div className="flex items-center gap-2 p-2 bg-muted/30 rounded-sm">
-                            <HardDrive className="h-4 w-4 text-accent" />
-                            <div>
-                              <p className="text-xs text-muted-foreground">存储</p>
-                              <p className="text-foreground">{server.storage || 'N/A'}</p>
-                            </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 bg-muted/30 rounded-sm">
+                          <HardDrive className="h-3 w-3 sm:h-4 sm:w-4 text-accent flex-shrink-0" />
+                          <div className="min-w-0">
+                            <p className="text-[10px] sm:text-xs text-muted-foreground">存储</p>
+                            <p className="text-foreground truncate text-[11px] sm:text-sm">{server.storage || 'N/A'}</p>
                           </div>
-                          <div className="flex items-center gap-2 p-2 bg-muted/30 rounded-sm">
-                            <Activity className="h-4 w-4 text-accent" />
-                            <div>
-                              <p className="text-xs text-muted-foreground">带宽</p>
-                              <p className="text-foreground">{server.bandwidth || 'N/A'}</p>
-                            </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 bg-muted/30 rounded-sm">
+                          <Activity className="h-3 w-3 sm:h-4 sm:w-4 text-accent flex-shrink-0" />
+                          <div className="min-w-0">
+                            <p className="text-[10px] sm:text-xs text-muted-foreground">带宽</p>
+                            <p className="text-foreground text-[11px] sm:text-sm">{server.bandwidth || 'N/A'}</p>
                           </div>
                         </div>
                       </div>
 
                       {/* Datacenter Availability */}
-                      <div className="lg:w-80 space-y-2">
-                        <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">机房可用性</p>
-                        <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-2">
+                        <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wider">机房可用性</p>
+                        <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-1.5 sm:gap-2">
                           {server.datacenters?.slice(0, 6).map(dc => {
                             const info = getAvailabilityInfo(dc.availability);
                             const isAvailable = dc.availability !== "unavailable" && dc.availability !== "unknown";
@@ -373,40 +375,38 @@ const ServersPage = () => {
                               <div 
                                 key={dc.datacenter}
                                 className={cn(
-                                  "flex items-center justify-between p-2 rounded-sm border border-border/50 cursor-pointer hover:border-primary/50 transition-colors",
+                                  "flex items-center justify-between p-1.5 sm:p-2 rounded-sm border border-border/50 cursor-pointer hover:border-primary/50 transition-colors",
                                   info.color
                                 )}
                                 onClick={() => isAvailable && openDialog(server, 'quick', dc.datacenter)}
                               >
-                                <div>
-                                  <p className="font-mono text-xs uppercase">{dc.datacenter}</p>
-                                </div>
-                                <span className="font-mono text-xs font-bold">{info.label}</span>
+                                <p className="font-mono text-[10px] sm:text-xs uppercase">{dc.datacenter}</p>
+                                <span className="font-mono text-[10px] sm:text-xs font-bold">{info.label}</span>
                               </div>
                             );
                           })}
                         </div>
                         
                         {/* Actions */}
-                        <div className="flex gap-2 mt-3">
+                        <div className="flex gap-2 mt-2 sm:mt-3">
                           <Button 
                             size="sm" 
                             variant="outline"
-                            className="flex-1"
+                            className="flex-1 h-8 text-xs"
                             disabled={!hasAvailable}
                             onClick={() => openDialog(server, 'queue')}
                           >
-                            <ShoppingCart className="h-4 w-4 mr-1" />
-                            加入队列
+                            <ShoppingCart className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
+                            <span className="hidden xs:inline">加入</span>队列
                           </Button>
                           <Button 
                             size="sm" 
-                            className="flex-1"
+                            className="flex-1 h-8 text-xs"
                             disabled={!hasAvailable}
                             onClick={() => openDialog(server, 'quick')}
                           >
-                            <Zap className="h-4 w-4 mr-1" />
-                            快速下单
+                            <Zap className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
+                            <span className="hidden xs:inline">快速</span>下单
                           </Button>
                         </div>
                       </div>

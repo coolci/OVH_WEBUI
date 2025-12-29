@@ -2,6 +2,7 @@ import { ReactNode, useState, forwardRef } from "react";
 import { AppSidebar } from "./AppSidebar";
 import { TopBar } from "./TopBar";
 import { StatusBar } from "./StatusBar";
+import { MobileBottomNav } from "./MobileBottomNav";
 import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -28,11 +29,11 @@ export const AppLayout = forwardRef<HTMLDivElement, AppLayoutProps>(({ children 
         {/* Main content area */}
         <div className="flex-1 flex flex-col min-w-0">
           {/* Top bar */}
-          <header className="h-12 border-b border-border bg-card/50 backdrop-blur-sm flex items-center px-4 gap-4">
+          <header className="h-12 border-b border-border bg-card/50 backdrop-blur-sm flex items-center px-3 sm:px-4 gap-2 sm:gap-4">
             {/* Mobile menu button */}
             <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
               <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" className="lg:hidden">
+                <Button variant="ghost" size="icon" className="lg:hidden h-8 w-8">
                   <Menu className="h-5 w-5" />
                 </Button>
               </SheetTrigger>
@@ -44,19 +45,22 @@ export const AppLayout = forwardRef<HTMLDivElement, AppLayoutProps>(({ children 
             <TopBar />
           </header>
 
-          {/* Page content */}
-          <main className="flex-1 overflow-auto p-4 md:p-6">
+          {/* Page content - add bottom padding for mobile nav */}
+          <main className="flex-1 overflow-auto p-3 sm:p-4 md:p-6 pb-20 lg:pb-6">
             <div className="matrix-fade-in">
               {children}
             </div>
           </main>
 
-          {/* Status bar */}
-          <footer className="h-8 border-t border-border bg-card/50 backdrop-blur-sm">
+          {/* Status bar - hidden on mobile */}
+          <footer className="hidden lg:block h-8 border-t border-border bg-card/50 backdrop-blur-sm">
             <StatusBar />
           </footer>
         </div>
       </div>
+
+      {/* Mobile Bottom Navigation */}
+      <MobileBottomNav />
     </div>
   );
 });
