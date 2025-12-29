@@ -4,6 +4,8 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Helmet } from "react-helmet-async";
+import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
 import { 
   Cpu, 
   Search,
@@ -19,7 +21,12 @@ import {
   Monitor,
   Loader2,
   Calendar,
-  Clock
+  Clock,
+  AlertTriangle,
+  Users,
+  Wrench,
+  CheckCircle2,
+  XCircle
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
@@ -36,6 +43,22 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogClose,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useMyServers } from "@/hooks/useApi";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
@@ -62,8 +85,24 @@ const ServerControlPage = () => {
   const [serverIps, setServerIps] = useState<any[]>([]);
   const [serverTasks, setServerTasks] = useState<any[]>([]);
   const [serviceInfo, setServiceInfo] = useState<any>(null);
+  const [serverTemplates, setServerTemplates] = useState<any[]>([]);
+  const [plannedInterventions, setPlannedInterventions] = useState<any[]>([]);
+  const [installStatus, setInstallStatus] = useState<any>(null);
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
   const [isRebooting, setIsRebooting] = useState(false);
+  
+  // 重装对话框状态
+  const [isReinstallDialogOpen, setIsReinstallDialogOpen] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState("");
+  const [isReinstalling, setIsReinstalling] = useState(false);
+  const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
+  
+  // 联系人变更对话框
+  const [isContactDialogOpen, setIsContactDialogOpen] = useState(false);
+  const [contactAdmin, setContactAdmin] = useState("");
+  const [contactTech, setContactTech] = useState("");
+  const [contactBilling, setContactBilling] = useState("");
+  const [isChangingContact, setIsChangingContact] = useState(false);
 
   const servers = serversData?.servers || [];
 
@@ -79,15 +118,32 @@ const ServerControlPage = () => {
     }
   }, [selectedServer]);
 
+  // 自动刷新安装状态
+  useEffect(() => {
+    if (installStatus && !installStatus.allDone && !installStatus.hasError) {
+      const interval = setInterval(async () => {
+        if (selectedServer) {
+          const status = await api.getInstallStatus(selectedServer.serviceName).catch(() => null);
+          if (status?.status) {
+            setInstallStatus(status.status);
+          }
+        }
+      }, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [installStatus, selectedServer]);
+
   const loadServerDetails = async (serviceName: string) => {
     setIsLoadingDetails(true);
     try {
-      const [details, hardware, ips, tasks, info] = await Promise.all([
+      const [details, hardware, ips, tasks, info, planned, install] = await Promise.all([
         api.getServerDetails(serviceName).catch(() => null),
         api.getServerHardware(serviceName).catch(() => null),
         api.getServerIps(serviceName).catch(() => null),
         api.getServerTasks(serviceName).catch(() => null),
         api.getServiceInfo(serviceName).catch(() => null),
+        api.getPlannedInterventions(serviceName).catch(() => null),
+        api.getInstallStatus(serviceName).catch(() => null),
       ]);
       
       setServerDetails(details?.server);
@@ -95,6 +151,8 @@ const ServerControlPage = () => {
       setServerIps(ips?.ips || []);
       setServerTasks(tasks?.tasks || []);
       setServiceInfo(info?.serviceInfo);
+      setPlannedInterventions(planned?.plannedInterventions || []);
+      setInstallStatus(install?.status || null);
     } catch (error) {
       console.error('加载服务器详情失败:', error);
     } finally {
@@ -108,13 +166,66 @@ const ServerControlPage = () => {
     try {
       await api.rebootServer(selectedServer.serviceName, type);
       toast.success(`服务器${type === 'soft' ? '软' : '硬'}重启已发起`);
-      // 刷新任务列表
       const tasks = await api.getServerTasks(selectedServer.serviceName);
       setServerTasks(tasks?.tasks || []);
     } catch (error: any) {
       toast.error(`重启失败: ${error.message}`);
     } finally {
       setIsRebooting(false);
+    }
+  };
+
+  const handleOpenReinstall = async () => {
+    if (!selectedServer) return;
+    setIsReinstallDialogOpen(true);
+    setIsLoadingTemplates(true);
+    try {
+      const result = await api.getServerTemplates(selectedServer.serviceName);
+      setServerTemplates(result?.templates || []);
+    } catch (error) {
+      toast.error("加载模板列表失败");
+    } finally {
+      setIsLoadingTemplates(false);
+    }
+  };
+
+  const handleReinstall = async () => {
+    if (!selectedServer || !selectedTemplate) return;
+    setIsReinstalling(true);
+    try {
+      await api.reinstallServer(selectedServer.serviceName, selectedTemplate);
+      toast.success("重装系统任务已发起");
+      setIsReinstallDialogOpen(false);
+      setSelectedTemplate("");
+      // 刷新任务和安装状态
+      const [tasks, install] = await Promise.all([
+        api.getServerTasks(selectedServer.serviceName),
+        api.getInstallStatus(selectedServer.serviceName),
+      ]);
+      setServerTasks(tasks?.tasks || []);
+      setInstallStatus(install?.status || null);
+    } catch (error: any) {
+      toast.error(`重装失败: ${error.message}`);
+    } finally {
+      setIsReinstalling(false);
+    }
+  };
+
+  const handleChangeContact = async () => {
+    if (!selectedServer) return;
+    setIsChangingContact(true);
+    try {
+      await api.changeContact(selectedServer.serviceName, {
+        contactAdmin: contactAdmin || undefined,
+        contactTech: contactTech || undefined,
+        contactBilling: contactBilling || undefined,
+      });
+      toast.success("联系人变更请求已发送");
+      setIsContactDialogOpen(false);
+    } catch (error: any) {
+      toast.error(`变更失败: ${error.message}`);
+    } finally {
+      setIsChangingContact(false);
     }
   };
 
@@ -246,6 +357,15 @@ const ServerControlPage = () => {
                           硬重启
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={handleOpenReinstall}>
+                          <HardDrive className="h-4 w-4 mr-2" />
+                          重装系统
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setIsContactDialogOpen(true)}>
+                          <Users className="h-4 w-4 mr-2" />
+                          变更联系人
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
                         <DropdownMenuItem>
                           <Terminal className="h-4 w-4 mr-2" />
                           IPMI 控制台
@@ -265,9 +385,57 @@ const ServerControlPage = () => {
                         <TabsTrigger value="hardware">硬件</TabsTrigger>
                         <TabsTrigger value="network">网络</TabsTrigger>
                         <TabsTrigger value="tasks">任务</TabsTrigger>
+                        <TabsTrigger value="maintenance">维护</TabsTrigger>
                       </TabsList>
 
                       <TabsContent value="overview" className="space-y-4">
+                        {/* Installation Progress */}
+                        {installStatus && !installStatus.noInstallation && (
+                          <div className={cn(
+                            "p-4 border rounded-sm",
+                            installStatus.hasError ? "border-destructive/30 bg-destructive/5" :
+                            installStatus.allDone ? "border-primary/30 bg-primary/5" :
+                            "border-warning/30 bg-warning/5"
+                          )}>
+                            <div className="flex items-center justify-between mb-2">
+                              <h3 className="text-sm font-medium flex items-center gap-2">
+                                <HardDrive className="h-4 w-4" />
+                                系统安装进度
+                              </h3>
+                              {installStatus.allDone ? (
+                                <CheckCircle2 className="h-4 w-4 text-primary" />
+                              ) : installStatus.hasError ? (
+                                <XCircle className="h-4 w-4 text-destructive" />
+                              ) : (
+                                <Loader2 className="h-4 w-4 animate-spin text-warning" />
+                              )}
+                            </div>
+                            <Progress value={installStatus.progressPercentage || 0} className="h-2 mb-2" />
+                            <div className="flex justify-between text-xs text-muted-foreground">
+                              <span>{installStatus.completedSteps}/{installStatus.totalSteps} 步骤</span>
+                              <span>{installStatus.progressPercentage}%</span>
+                            </div>
+                            {installStatus.steps && (
+                              <div className="mt-3 space-y-1 max-h-32 overflow-y-auto">
+                                {installStatus.steps.map((step: any, i: number) => (
+                                  <div key={i} className="flex items-center gap-2 text-xs">
+                                    {step.status === "done" ? (
+                                      <CheckCircle2 className="h-3 w-3 text-primary" />
+                                    ) : step.status === "error" ? (
+                                      <XCircle className="h-3 w-3 text-destructive" />
+                                    ) : (
+                                      <Clock className="h-3 w-3 text-muted-foreground" />
+                                    )}
+                                    <span className={step.status === "error" ? "text-destructive" : ""}>
+                                      {step.comment}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
                         {/* Server Info Grid */}
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                           <div className="p-3 bg-muted/30 rounded-sm">
@@ -334,7 +502,11 @@ const ServerControlPage = () => {
                             <Power className="h-5 w-5 text-warning" />
                             <span className="text-xs">重启</span>
                           </Button>
-                          <Button variant="outline" className="h-auto py-4 flex-col gap-2">
+                          <Button 
+                            variant="outline" 
+                            className="h-auto py-4 flex-col gap-2"
+                            onClick={handleOpenReinstall}
+                          >
                             <HardDrive className="h-5 w-5 text-accent" />
                             <span className="text-xs">重装</span>
                           </Button>
@@ -342,9 +514,13 @@ const ServerControlPage = () => {
                             <Terminal className="h-5 w-5 text-primary" />
                             <span className="text-xs">控制台</span>
                           </Button>
-                          <Button variant="outline" className="h-auto py-4 flex-col gap-2">
-                            <Shield className="h-5 w-5" />
-                            <span className="text-xs">防火墙</span>
+                          <Button 
+                            variant="outline" 
+                            className="h-auto py-4 flex-col gap-2"
+                            onClick={() => setIsContactDialogOpen(true)}
+                          >
+                            <Users className="h-5 w-5" />
+                            <span className="text-xs">联系人</span>
                           </Button>
                         </div>
                       </TabsContent>
@@ -436,6 +612,43 @@ const ServerControlPage = () => {
                           </div>
                         )}
                       </TabsContent>
+
+                      <TabsContent value="maintenance">
+                        <div className="space-y-4">
+                          <h3 className="text-sm font-medium flex items-center gap-2">
+                            <Wrench className="h-4 w-4" />
+                            计划维护
+                          </h3>
+                          {plannedInterventions.length > 0 ? (
+                            <div className="space-y-2">
+                              {plannedInterventions.map((intervention: any, index: number) => (
+                                <div key={index} className="p-4 border border-warning/30 bg-warning/5 rounded-sm">
+                                  <div className="flex items-start gap-3">
+                                    <AlertTriangle className="h-5 w-5 text-warning mt-0.5" />
+                                    <div className="flex-1">
+                                      <p className="font-medium">{intervention.type || '计划维护'}</p>
+                                      <p className="text-sm text-muted-foreground mt-1">
+                                        {intervention.comment || intervention.description}
+                                      </p>
+                                      {intervention.date && (
+                                        <p className="text-xs text-warning mt-2 flex items-center gap-1">
+                                          <Calendar className="h-3 w-3" />
+                                          {new Date(intervention.date).toLocaleString("zh-CN")}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="text-center py-8 text-muted-foreground">
+                              <CheckCircle2 className="h-12 w-12 mx-auto mb-4 opacity-30" />
+                              <p>暂无计划维护</p>
+                            </div>
+                          )}
+                        </div>
+                      </TabsContent>
                     </Tabs>
                   )}
                 </TerminalCard>
@@ -451,6 +664,123 @@ const ServerControlPage = () => {
           </div>
         </div>
       </AppLayout>
+
+      {/* Reinstall Dialog */}
+      <Dialog open={isReinstallDialogOpen} onOpenChange={setIsReinstallDialogOpen}>
+        <DialogContent className="terminal-card border-primary/30">
+          <DialogHeader>
+            <DialogTitle className="text-primary flex items-center gap-2">
+              <HardDrive className="h-5 w-5" />
+              重装系统
+            </DialogTitle>
+            <DialogDescription>
+              选择系统模板进行重装，此操作将清除所有数据
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div className="p-3 bg-destructive/10 border border-destructive/30 rounded-sm">
+              <p className="text-sm text-destructive flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4" />
+                警告：重装系统将删除服务器上的所有数据！
+              </p>
+            </div>
+            
+            <div className="space-y-2">
+              <Label>系统模板</Label>
+              {isLoadingTemplates ? (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                </div>
+              ) : (
+                <Select value={selectedTemplate} onValueChange={setSelectedTemplate}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="选择系统模板" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-64">
+                    {serverTemplates.map((template: any) => (
+                      <SelectItem key={template.name} value={template.name}>
+                        <div className="flex flex-col">
+                          <span>{template.name}</span>
+                          {template.description && (
+                            <span className="text-xs text-muted-foreground">{template.description}</span>
+                          )}
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">取消</Button>
+            </DialogClose>
+            <Button 
+              variant="destructive" 
+              onClick={handleReinstall} 
+              disabled={!selectedTemplate || isReinstalling}
+            >
+              {isReinstalling ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <HardDrive className="h-4 w-4 mr-2" />}
+              确认重装
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Contact Change Dialog */}
+      <Dialog open={isContactDialogOpen} onOpenChange={setIsContactDialogOpen}>
+        <DialogContent className="terminal-card border-primary/30">
+          <DialogHeader>
+            <DialogTitle className="text-primary flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              变更联系人
+            </DialogTitle>
+            <DialogDescription>
+              修改服务器的管理员、技术和账单联系人
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>管理员联系人 (NIC Handle)</Label>
+              <Input 
+                value={contactAdmin}
+                onChange={(e) => setContactAdmin(e.target.value)}
+                placeholder="例如: xx12345-ovh"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>技术联系人 (NIC Handle)</Label>
+              <Input 
+                value={contactTech}
+                onChange={(e) => setContactTech(e.target.value)}
+                placeholder="例如: xx12345-ovh"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>账单联系人 (NIC Handle)</Label>
+              <Input 
+                value={contactBilling}
+                onChange={(e) => setContactBilling(e.target.value)}
+                placeholder="例如: xx12345-ovh"
+              />
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">取消</Button>
+            </DialogClose>
+            <Button onClick={handleChangeContact} disabled={isChangingContact}>
+              {isChangingContact ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Users className="h-4 w-4 mr-2" />}
+              提交变更
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 };
