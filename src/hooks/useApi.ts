@@ -120,6 +120,16 @@ export function useContactChangeRequests() {
   return useApiQuery(() => api.getContactChangeRequests(), []);
 }
 
+// OVH信用余额Hook
+export function useOvhCreditBalance() {
+  return useApiQuery(() => api.getOvhCreditBalance(), []);
+}
+
+// OVH子账户Hook
+export function useOvhSubAccounts() {
+  return useApiQuery(() => api.getOvhSubAccounts(), []);
+}
+
 // 后端连接状态Hook
 export function useBackendConnection() {
   const [isConnected, setIsConnected] = useState(false);
