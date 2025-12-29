@@ -147,72 +147,74 @@ const LogsPage = () => {
       </Helmet>
       
       <AppLayout>
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
           {/* Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-bold text-primary flex items-center gap-2">
-                <span className="text-muted-foreground">&gt;</span>
-                系统日志
-                <span className="cursor-blink">_</span>
-              </h1>
-              <p className="text-sm text-muted-foreground mt-1">
-                共 {logList.length} 条日志
-              </p>
-            </div>
-            
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <Switch 
-                  id="auto-refresh" 
-                  checked={autoRefresh}
-                  onCheckedChange={setAutoRefresh}
-                />
-                <Label htmlFor="auto-refresh" className="text-sm">自动刷新</Label>
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h1 className="text-xl sm:text-2xl font-bold text-primary flex items-center gap-2">
+                  <span className="text-muted-foreground">&gt;</span>
+                  系统日志
+                  <span className="cursor-blink">_</span>
+                </h1>
+                <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+                  共 {logList.length} 条日志
+                </p>
               </div>
               
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isRefreshing}>
-                  <RefreshCw className={cn("h-4 w-4 mr-2", isRefreshing && "animate-spin")} />
-                  刷新
-                </Button>
-                <Button variant="outline" size="sm" onClick={handleFlush}>
-                  <Download className="h-4 w-4 mr-2" />
-                  写入磁盘
-                </Button>
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button variant="destructive" size="sm" disabled={logList.length === 0}>
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      清空
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent className="terminal-card border-destructive/30">
-                    <AlertDialogHeader>
-                      <AlertDialogTitle className="text-destructive">确认清空日志？</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        此操作将删除所有 {logList.length} 条日志记录，且无法撤销。
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>取消</AlertDialogCancel>
-                      <AlertDialogAction 
-                        onClick={handleClear}
-                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                        disabled={isClearing}
-                      >
-                        {isClearing && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                        确认清空
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
+              <div className="flex items-center gap-2 sm:gap-4">
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  <Switch 
+                    id="auto-refresh" 
+                    checked={autoRefresh}
+                    onCheckedChange={setAutoRefresh}
+                  />
+                  <Label htmlFor="auto-refresh" className="text-xs sm:text-sm">自动</Label>
+                </div>
               </div>
+            </div>
+            
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isRefreshing} className="h-8 text-xs">
+                <RefreshCw className={cn("h-3 w-3 sm:h-4 sm:w-4 mr-1", isRefreshing && "animate-spin")} />
+                刷新
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleFlush} className="h-8 text-xs">
+                <Download className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
+                <span className="hidden xs:inline">写入</span>磁盘
+              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="destructive" size="sm" disabled={logList.length === 0} className="h-8 text-xs">
+                    <Trash2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
+                    清空
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent className="terminal-card border-destructive/30 max-w-[90vw] sm:max-w-lg">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle className="text-destructive">确认清空日志？</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      此操作将删除所有 {logList.length} 条日志记录，且无法撤销。
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>取消</AlertDialogCancel>
+                    <AlertDialogAction 
+                      onClick={handleClear}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      disabled={isClearing}
+                    >
+                      {isClearing && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                      确认清空
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
           </div>
 
           {/* Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
             {(Object.keys(levelConfig) as Array<keyof typeof levelConfig>).map(level => {
               const config = levelConfig[level];
               const Icon = config.icon;
@@ -220,16 +222,16 @@ const LogsPage = () => {
                 <div 
                   key={level}
                   className={cn(
-                    "terminal-card p-4 cursor-pointer transition-all",
+                    "terminal-card p-2 sm:p-4 cursor-pointer transition-all",
                     levelFilter === level && config.borderColor
                   )}
                   onClick={() => setLevelFilter(levelFilter === level ? "all" : level)}
                 >
-                  <div className={cn("flex items-center gap-2 mb-1", config.color)}>
-                    <Icon className="h-4 w-4" />
-                    <span className="text-xs uppercase">{level}</span>
+                  <div className={cn("flex items-center gap-1.5 sm:gap-2 mb-0.5 sm:mb-1", config.color)}>
+                    <Icon className="h-3 w-3 sm:h-4 sm:w-4" />
+                    <span className="text-[10px] sm:text-xs uppercase">{level}</span>
                   </div>
-                  <p className={cn("text-2xl font-bold", config.color)}>
+                  <p className={cn("text-lg sm:text-2xl font-bold", config.color)}>
                     {logCounts[level]}
                   </p>
                 </div>
@@ -238,12 +240,12 @@ const LogsPage = () => {
           </div>
 
           {/* Filters */}
-          <div className="flex flex-col sm:flex-row gap-4">
+          <div className="flex flex-col sm:flex-row gap-2 sm:gap-4">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input 
                 placeholder="搜索日志内容..." 
-                className="pl-9"
+                className="pl-9 h-9 text-sm"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
@@ -251,10 +253,10 @@ const LogsPage = () => {
             
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="w-full sm:w-auto">
-                  <Filter className="h-4 w-4 mr-2" />
-                  {levelFilter === "all" ? "全部级别" : levelFilter}
-                  <ChevronDown className="h-4 w-4 ml-2" />
+                <Button variant="outline" className="w-full sm:w-auto h-9 text-xs sm:text-sm">
+                  <Filter className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                  {levelFilter === "all" ? "全部" : levelFilter}
+                  <ChevronDown className="h-3 w-3 sm:h-4 sm:w-4 ml-1 sm:ml-2" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent>

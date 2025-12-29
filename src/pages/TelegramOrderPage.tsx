@@ -290,54 +290,54 @@ const TelegramOrderPage = () => {
       </Helmet>
       
       <AppLayout>
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
           {/* Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div>
-                <h1 className="text-2xl font-bold text-primary flex items-center gap-2">
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+              <div className="flex-1 min-w-0">
+                <h1 className="text-xl sm:text-2xl font-bold text-primary flex items-center gap-2">
                   <span className="text-muted-foreground">&gt;</span>
-                  Telegram 快速下单
+                  <span className="truncate">Telegram 下单</span>
                   <span className="cursor-blink">_</span>
                 </h1>
-                <p className="text-sm text-muted-foreground mt-1">
-                  通过 Telegram 消息快速执行下单操作，支持5种模式
+                <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+                  通过 Telegram 消息快速执行下单
                 </p>
               </div>
               {/* Bot Connection Status */}
               {isLoadingWebhook ? (
-                <span className="flex items-center gap-1 text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
+                <span className="flex items-center gap-1 text-xs text-muted-foreground bg-muted px-2 py-1 rounded w-fit">
                   <Loader2 className="h-3 w-3 animate-spin" /> 检查中
                 </span>
               ) : isWebhookConnected ? (
-                <span className="flex items-center gap-1 text-xs text-primary bg-primary/10 px-2 py-1 rounded">
-                  <Wifi className="h-3 w-3" /> Bot 已连接
+                <span className="flex items-center gap-1 text-xs text-primary bg-primary/10 px-2 py-1 rounded w-fit">
+                  <Wifi className="h-3 w-3" /> 已连接
                 </span>
               ) : (
-                <span className="flex items-center gap-1 text-xs text-destructive bg-destructive/10 px-2 py-1 rounded">
-                  <WifiOff className="h-3 w-3" /> Bot 未连接
+                <span className="flex items-center gap-1 text-xs text-destructive bg-destructive/10 px-2 py-1 rounded w-fit">
+                  <WifiOff className="h-3 w-3" /> 未连接
                 </span>
               )}
             </div>
             
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={loadWebhookInfo} disabled={isLoadingWebhook}>
-                <RefreshCw className={cn("h-4 w-4 mr-2", isLoadingWebhook && "animate-spin")} />
-                刷新状态
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" onClick={loadWebhookInfo} disabled={isLoadingWebhook} className="h-8 text-xs">
+                <RefreshCw className={cn("h-3 w-3 sm:h-4 sm:w-4 mr-1", isLoadingWebhook && "animate-spin")} />
+                刷新
               </Button>
               
               <Dialog>
                 <DialogTrigger asChild>
-                  <Button variant="terminal" size="sm">
-                    <Settings2 className="h-4 w-4 mr-2" />
-                    Webhook 设置
+                  <Button variant="terminal" size="sm" className="h-8 text-xs">
+                    <Settings2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
+                    Webhook
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="terminal-card border-primary/30">
+                <DialogContent className="terminal-card border-primary/30 max-w-[90vw] sm:max-w-lg">
                   <DialogHeader>
                     <DialogTitle className="text-primary">Telegram Webhook 配置</DialogTitle>
                     <DialogDescription>
-                      配置 Telegram Bot 的 Webhook URL 以接收命令
+                      配置 Telegram Bot 的 Webhook URL
                     </DialogDescription>
                   </DialogHeader>
                   
@@ -350,8 +350,8 @@ const TelegramOrderPage = () => {
                         ) : (
                           <WifiOff className="h-4 w-4 text-destructive" />
                         )}
-                        <span className="font-medium">
-                          {isWebhookConnected ? "Webhook 已配置" : "Webhook 未配置"}
+                        <span className="font-medium text-sm">
+                          {isWebhookConnected ? "已配置" : "未配置"}
                         </span>
                       </div>
                       {webhookInfo?.url && (
@@ -359,35 +359,28 @@ const TelegramOrderPage = () => {
                           {webhookInfo.url}
                         </p>
                       )}
-                      {webhookInfo?.pending_update_count !== undefined && (
-                        <p className="text-xs text-muted-foreground mt-1">
-                          待处理更新: {webhookInfo.pending_update_count}
-                        </p>
-                      )}
                     </div>
                     
                     {/* Set New Webhook */}
                     <div className="space-y-2">
-                      <Label>新的 Webhook URL</Label>
+                      <Label className="text-sm">新的 Webhook URL</Label>
                       <Input
                         value={webhookUrl}
                         onChange={(e) => setWebhookUrl(e.target.value)}
                         placeholder="https://your-domain.com/webhook"
+                        className="text-sm"
                       />
-                      <p className="text-xs text-muted-foreground">
-                        输入完整的 Webhook URL，包含 https://
-                      </p>
                     </div>
                   </div>
                   
-                  <DialogFooter>
+                  <DialogFooter className="flex-col sm:flex-row gap-2">
                     <DialogClose asChild>
-                      <Button variant="outline">取消</Button>
+                      <Button variant="outline" size="sm">取消</Button>
                     </DialogClose>
-                    <Button onClick={handleSetWebhook} disabled={isSettingWebhook}>
+                    <Button onClick={handleSetWebhook} disabled={isSettingWebhook} size="sm">
                       {isSettingWebhook && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                       <LinkIcon className="h-4 w-4 mr-2" />
-                      设置 Webhook
+                      设置
                     </Button>
                   </DialogFooter>
                 </DialogContent>
@@ -396,30 +389,30 @@ const TelegramOrderPage = () => {
           </div>
 
           {/* Mode Selection Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3">
             {orderModes.map((mode) => (
               <button
                 key={mode.mode}
                 onClick={() => setSelectedMode(mode.mode)}
                 className={cn(
-                  "terminal-card p-4 text-left transition-all hover:border-primary/50",
+                  "terminal-card p-2 sm:p-4 text-left transition-all hover:border-primary/50",
                   selectedMode === mode.mode 
                     ? "border-primary bg-primary/10 shadow-glow-sm" 
                     : "border-border"
                 )}
               >
-                <div className={cn("mb-2", mode.color)}>
+                <div className={cn("mb-1 sm:mb-2", mode.color)}>
                   {mode.icon}
                 </div>
-                <h3 className="font-medium text-sm">{mode.name}</h3>
-                <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                <h3 className="font-medium text-xs sm:text-sm">{mode.name}</h3>
+                <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 sm:mt-1 line-clamp-2 hidden xs:block">
                   {mode.description}
                 </p>
               </button>
             ))}
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
             {/* Configuration Panel */}
             <TerminalCard
               title={`${currentMode.name} 配置`}

@@ -321,30 +321,32 @@ const VpsMonitorPage = () => {
       </Helmet>
       
       <AppLayout>
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
           {/* Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-bold text-primary flex items-center gap-2">
-                <span className="text-muted-foreground">&gt;</span>
-                VPS 监控
-                <span className="cursor-blink">_</span>
-              </h1>
-              <p className="text-sm text-muted-foreground mt-1">
-                监控 {subscriptionList.length} 款 VPS，检查间隔 {checkInterval} 秒
-              </p>
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4">
+              <div>
+                <h1 className="text-xl sm:text-2xl font-bold text-primary flex items-center gap-2">
+                  <span className="text-muted-foreground">&gt;</span>
+                  VPS 监控
+                  <span className="cursor-blink">_</span>
+                </h1>
+                <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+                  监控 {subscriptionList.length} 款 VPS，间隔 {checkInterval}s
+                </p>
+              </div>
             </div>
             
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               {/* 间隔设置 */}
               <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
                 <DialogTrigger asChild>
-                  <Button variant="outline" size="sm">
-                    <Settings2 className="h-4 w-4 mr-2" />
+                  <Button variant="outline" size="sm" className="h-8 text-xs">
+                    <Settings2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
                     设置
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="terminal-card border-primary/30">
+                <DialogContent className="terminal-card border-primary/30 max-w-[90vw] sm:max-w-md">
                   <DialogHeader>
                     <DialogTitle className="text-primary">监控设置</DialogTitle>
                     <DialogDescription>
@@ -353,7 +355,7 @@ const VpsMonitorPage = () => {
                   </DialogHeader>
                   <div className="space-y-4 py-4">
                     <div className="space-y-2">
-                      <Label>检查间隔 (秒)</Label>
+                      <Label className="text-sm">检查间隔 (秒)</Label>
                       <div className="flex items-center gap-2">
                         <input 
                           type="number" 
@@ -365,29 +367,28 @@ const VpsMonitorPage = () => {
                         />
                         <span className="text-sm text-muted-foreground">秒</span>
                       </div>
-                      <p className="text-xs text-muted-foreground">
-                        建议值: 30-120秒，过低可能触发频率限制
-                      </p>
                     </div>
                   </div>
-                  <DialogFooter>
+                  <DialogFooter className="flex-col sm:flex-row gap-2">
                     <DialogClose asChild>
-                      <Button variant="outline">取消</Button>
+                      <Button variant="outline" size="sm">取消</Button>
                     </DialogClose>
-                    <Button onClick={handleSaveInterval} disabled={isSavingInterval}>
+                    <Button onClick={handleSaveInterval} disabled={isSavingInterval} size="sm">
                       {isSavingInterval && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                      保存设置
+                      保存
                     </Button>
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
+              
               <Button 
                 variant="outline" 
                 size="sm"
                 onClick={() => { refetch(); refetchStatus(); }}
                 disabled={isLoading}
+                className="h-8 text-xs"
               >
-                <RefreshCw className={cn("h-4 w-4 mr-2", isLoading && "animate-spin")} />
+                <RefreshCw className={cn("h-3 w-3 sm:h-4 sm:w-4 mr-1", isLoading && "animate-spin")} />
                 刷新
               </Button>
               
@@ -396,25 +397,26 @@ const VpsMonitorPage = () => {
                 size="sm"
                 onClick={handleToggleMonitor}
                 disabled={isToggling}
+                className="h-8 text-xs"
               >
                 {isToggling ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  <Loader2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1 animate-spin" />
                 ) : isRunning ? (
-                  <Square className="h-4 w-4 mr-2" />
+                  <Square className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
                 ) : (
-                  <Play className="h-4 w-4 mr-2" />
+                  <Play className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
                 )}
-                {isRunning ? "停止监控" : "启动监控"}
+                {isRunning ? "停止" : "启动"}
               </Button>
               
               <Dialog>
                 <DialogTrigger asChild>
-                  <Button size="sm">
-                    <Plus className="h-4 w-4 mr-2" />
-                    添加订阅
+                  <Button size="sm" className="h-8 text-xs">
+                    <Plus className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
+                    添加
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="terminal-card border-primary/30 max-w-lg">
+                <DialogContent className="terminal-card border-primary/30 max-w-[90vw] sm:max-w-lg">
                   <DialogHeader>
                     <DialogTitle className="text-primary">添加 VPS 监控</DialogTitle>
                     <DialogDescription>
@@ -488,74 +490,75 @@ const VpsMonitorPage = () => {
           </div>
 
           {/* Batch Actions */}
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button 
               variant="outline" 
               size="sm" 
               onClick={handleBatchAddAll}
               disabled={isBatchAdding}
+              className="h-8 text-xs"
             >
               {isBatchAdding ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                <Loader2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1 animate-spin" />
               ) : (
-                <Plus className="h-4 w-4 mr-2" />
+                <Plus className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
               )}
-              批量添加全部VPS
+              批量添加
             </Button>
             <Button 
               variant="outline" 
               size="sm" 
-              className="text-destructive hover:text-destructive"
+              className="text-destructive hover:text-destructive h-8 text-xs"
               onClick={handleClearSubscriptions}
               disabled={isClearing || subscriptionList.length === 0}
             >
               {isClearing ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                <Loader2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1 animate-spin" />
               ) : (
-                <Trash2 className="h-4 w-4 mr-2" />
+                <Trash2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
               )}
-              清空所有订阅
+              清空
             </Button>
           </div>
 
           {/* Status Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
             <div className={cn(
-              "terminal-card p-4",
+              "terminal-card p-2 sm:p-4",
               isRunning ? "border-primary/30" : "border-destructive/30"
             )}>
-              <div className="flex items-center gap-2 mb-1">
+              <div className="flex items-center gap-1.5 sm:gap-2 mb-0.5 sm:mb-1">
                 <MonitorDot className={cn(
-                  "h-4 w-4",
+                  "h-3 w-3 sm:h-4 sm:w-4",
                   isRunning ? "text-primary animate-pulse" : "text-destructive"
                 )} />
-                <span className="text-xs uppercase text-muted-foreground">监控状态</span>
+                <span className="text-[10px] sm:text-xs uppercase text-muted-foreground">状态</span>
               </div>
               <p className={cn(
-                "text-lg font-bold",
+                "text-sm sm:text-lg font-bold",
                 isRunning ? "text-primary" : "text-destructive"
               )}>
                 {isRunning ? "运行中" : "已停止"}
               </p>
             </div>
-            <div className="terminal-card p-4">
-              <div className="flex items-center gap-2 mb-1 text-muted-foreground">
-                <span className="text-xs uppercase">订阅数量</span>
+            <div className="terminal-card p-2 sm:p-4">
+              <div className="flex items-center gap-1.5 sm:gap-2 mb-0.5 sm:mb-1 text-muted-foreground">
+                <span className="text-[10px] sm:text-xs uppercase">订阅</span>
               </div>
-              <p className="text-lg font-bold">{subscriptionList.length}</p>
+              <p className="text-sm sm:text-lg font-bold">{subscriptionList.length}</p>
             </div>
-            <div className="terminal-card p-4 border-accent/30">
-              <div className="flex items-center gap-2 mb-1 text-accent">
-                <Bell className="h-4 w-4" />
-                <span className="text-xs uppercase">检查间隔</span>
+            <div className="terminal-card p-2 sm:p-4 border-accent/30">
+              <div className="flex items-center gap-1.5 sm:gap-2 mb-0.5 sm:mb-1 text-accent">
+                <Bell className="h-3 w-3 sm:h-4 sm:w-4" />
+                <span className="text-[10px] sm:text-xs uppercase">间隔</span>
               </div>
-              <p className="text-lg font-bold text-accent">{checkInterval}s</p>
+              <p className="text-sm sm:text-lg font-bold text-accent">{checkInterval}s</p>
             </div>
-            <div className="terminal-card p-4">
-              <div className="flex items-center gap-2 mb-1 text-muted-foreground">
-                <span className="text-xs uppercase">有货 VPS</span>
+            <div className="terminal-card p-2 sm:p-4">
+              <div className="flex items-center gap-1.5 sm:gap-2 mb-0.5 sm:mb-1 text-muted-foreground">
+                <span className="text-[10px] sm:text-xs uppercase">有货</span>
               </div>
-              <p className="text-lg font-bold">
+              <p className="text-sm sm:text-lg font-bold">
                 {subscriptionList.filter((s: VpsSubscription) => {
                   const statuses = Object.values(s.lastStatus || {});
                   return statuses.some(v => {
