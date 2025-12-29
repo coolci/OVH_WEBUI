@@ -12,14 +12,16 @@ import {
   HardDrive,
   Network,
   Terminal,
-  Settings2,
   Activity,
   Shield,
   Server,
   MoreVertical,
-  Monitor
+  Monitor,
+  Loader2,
+  Calendar,
+  Clock
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
@@ -34,70 +36,92 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
+import { useMyServers } from "@/hooks/useApi";
+import { api } from "@/lib/api";
+import { toast } from "sonner";
 
 interface ManagedServer {
   serviceName: string;
   name: string;
+  commercialRange?: string;
   datacenter: string;
-  state: "ok" | "error" | "hacked" | "hackedBlocked";
+  state: string;
   monitoring: boolean;
+  reverse?: string;
   ip: string;
   os: string;
   status: string;
-  renewalType: boolean;
 }
 
-const mockServers: ManagedServer[] = [
-  {
-    serviceName: "ns123456.ip-192-168-1.eu",
-    name: "web-server-01",
-    datacenter: "gra",
-    state: "ok",
-    monitoring: true,
-    ip: "192.168.1.100",
-    os: "Ubuntu 22.04 LTS",
-    status: "active",
-    renewalType: true,
-  },
-  {
-    serviceName: "ns123457.ip-192-168-1.eu",
-    name: "db-server-01",
-    datacenter: "rbx",
-    state: "ok",
-    monitoring: true,
-    ip: "192.168.1.101",
-    os: "Debian 12",
-    status: "active",
-    renewalType: true,
-  },
-  {
-    serviceName: "ns123458.ip-192-168-1.eu",
-    name: "app-server-01",
-    datacenter: "sbg",
-    state: "error",
-    monitoring: false,
-    ip: "192.168.1.102",
-    os: "CentOS 8",
-    status: "suspended",
-    renewalType: false,
-  },
-];
-
 const ServerControlPage = () => {
-  const [servers] = useState(mockServers);
+  const { data: serversData, isLoading, refetch } = useMyServers();
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedServer, setSelectedServer] = useState<ManagedServer | null>(mockServers[0]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [selectedServer, setSelectedServer] = useState<ManagedServer | null>(null);
+  const [serverDetails, setServerDetails] = useState<any>(null);
+  const [serverHardware, setServerHardware] = useState<any>(null);
+  const [serverIps, setServerIps] = useState<any[]>([]);
+  const [serverTasks, setServerTasks] = useState<any[]>([]);
+  const [serviceInfo, setServiceInfo] = useState<any>(null);
+  const [isLoadingDetails, setIsLoadingDetails] = useState(false);
+  const [isRebooting, setIsRebooting] = useState(false);
 
-  const handleRefresh = () => {
-    setIsLoading(true);
-    setTimeout(() => setIsLoading(false), 1500);
+  const servers = serversData?.servers || [];
+
+  useEffect(() => {
+    if (servers.length > 0 && !selectedServer) {
+      setSelectedServer(servers[0]);
+    }
+  }, [servers, selectedServer]);
+
+  useEffect(() => {
+    if (selectedServer) {
+      loadServerDetails(selectedServer.serviceName);
+    }
+  }, [selectedServer]);
+
+  const loadServerDetails = async (serviceName: string) => {
+    setIsLoadingDetails(true);
+    try {
+      const [details, hardware, ips, tasks, info] = await Promise.all([
+        api.getServerDetails(serviceName).catch(() => null),
+        api.getServerHardware(serviceName).catch(() => null),
+        api.getServerIps(serviceName).catch(() => null),
+        api.getServerTasks(serviceName).catch(() => null),
+        api.getServiceInfo(serviceName).catch(() => null),
+      ]);
+      
+      setServerDetails(details?.server);
+      setServerHardware(hardware?.hardware);
+      setServerIps(ips?.ips || []);
+      setServerTasks(tasks?.tasks || []);
+      setServiceInfo(info?.serviceInfo);
+    } catch (error) {
+      console.error('加载服务器详情失败:', error);
+    } finally {
+      setIsLoadingDetails(false);
+    }
   };
 
-  const filteredServers = servers.filter(server => 
+  const handleReboot = async (type: 'soft' | 'hardware' = 'soft') => {
+    if (!selectedServer) return;
+    setIsRebooting(true);
+    try {
+      await api.rebootServer(selectedServer.serviceName, type);
+      toast.success(`服务器${type === 'soft' ? '软' : '硬'}重启已发起`);
+      // 刷新任务列表
+      const tasks = await api.getServerTasks(selectedServer.serviceName);
+      setServerTasks(tasks?.tasks || []);
+    } catch (error: any) {
+      toast.error(`重启失败: ${error.message}`);
+    } finally {
+      setIsRebooting(false);
+    }
+  };
+
+  const filteredServers = servers.filter((server: ManagedServer) => 
     server.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     server.serviceName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    server.ip.includes(searchTerm)
+    server.ip?.includes(searchTerm)
   );
 
   const getStateColor = (state: string) => {
@@ -132,7 +156,7 @@ const ServerControlPage = () => {
               </p>
             </div>
             
-            <Button variant="terminal" onClick={handleRefresh} disabled={isLoading}>
+            <Button variant="terminal" onClick={() => refetch()} disabled={isLoading}>
               <RefreshCw className={cn("h-4 w-4 mr-2", isLoading && "animate-spin")} />
               刷新列表
             </Button>
@@ -152,40 +176,46 @@ const ServerControlPage = () => {
               </div>
 
               <TerminalCard title="服务器列表" icon={<Server className="h-4 w-4" />}>
-                <div className="space-y-2">
-                  {filteredServers.map((server) => (
-                    <div
-                      key={server.serviceName}
-                      className={cn(
-                        "p-3 rounded-sm border cursor-pointer transition-all",
-                        selectedServer?.serviceName === server.serviceName
-                          ? "border-primary bg-primary/5"
-                          : "border-border hover:border-primary/30"
-                      )}
-                      onClick={() => setSelectedServer(server)}
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="font-medium">{server.name}</span>
-                        <span className={cn(
-                          "px-2 py-0.5 rounded-sm text-xs uppercase",
-                          getStateColor(server.state)
-                        )}>
-                          {server.state}
-                        </span>
+                {isLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {filteredServers.map((server: ManagedServer) => (
+                      <div
+                        key={server.serviceName}
+                        className={cn(
+                          "p-3 rounded-sm border cursor-pointer transition-all",
+                          selectedServer?.serviceName === server.serviceName
+                            ? "border-primary bg-primary/5"
+                            : "border-border hover:border-primary/30"
+                        )}
+                        onClick={() => setSelectedServer(server)}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-medium">{server.name || server.serviceName.split('.')[0]}</span>
+                          <span className={cn(
+                            "px-2 py-0.5 rounded-sm text-xs uppercase",
+                            getStateColor(server.state)
+                          )}>
+                            {server.state}
+                          </span>
+                        </div>
+                        <div className="text-xs text-muted-foreground space-y-1">
+                          <p className="font-mono">{server.ip}</p>
+                          <p>{server.datacenter?.toUpperCase()} | {server.os}</p>
+                        </div>
                       </div>
-                      <div className="text-xs text-muted-foreground space-y-1">
-                        <p className="font-mono">{server.ip}</p>
-                        <p>{server.datacenter.toUpperCase()} | {server.os}</p>
-                      </div>
-                    </div>
-                  ))}
+                    ))}
 
-                  {filteredServers.length === 0 && (
-                    <p className="text-center py-8 text-muted-foreground">
-                      未找到服务器
-                    </p>
-                  )}
-                </div>
+                    {filteredServers.length === 0 && !isLoading && (
+                      <p className="text-center py-8 text-muted-foreground">
+                        {servers.length === 0 ? "暂无已购服务器" : "未找到服务器"}
+                      </p>
+                    )}
+                  </div>
+                )}
               </TerminalCard>
             </div>
 
@@ -193,23 +223,27 @@ const ServerControlPage = () => {
             <div className="lg:col-span-2">
               {selectedServer ? (
                 <TerminalCard
-                  title={selectedServer.name}
+                  title={selectedServer.name || selectedServer.serviceName}
                   icon={<Cpu className="h-4 w-4" />}
                   headerAction={
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon">
-                          <MoreVertical className="h-4 w-4" />
+                        <Button variant="ghost" size="icon" disabled={isRebooting}>
+                          {isRebooting ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <MoreVertical className="h-4 w-4" />
+                          )}
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleReboot('soft')}>
                           <Power className="h-4 w-4 mr-2" />
-                          重启服务器
+                          软重启
                         </DropdownMenuItem>
-                        <DropdownMenuItem>
-                          <HardDrive className="h-4 w-4 mr-2" />
-                          重装系统
+                        <DropdownMenuItem onClick={() => handleReboot('hardware')}>
+                          <Power className="h-4 w-4 mr-2 text-warning" />
+                          硬重启
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem>
@@ -220,146 +254,190 @@ const ServerControlPage = () => {
                     </DropdownMenu>
                   }
                 >
-                  <Tabs defaultValue="overview" className="space-y-4">
-                    <TabsList className="bg-muted/50 border border-border">
-                      <TabsTrigger value="overview">概览</TabsTrigger>
-                      <TabsTrigger value="hardware">硬件</TabsTrigger>
-                      <TabsTrigger value="network">网络</TabsTrigger>
-                      <TabsTrigger value="tasks">任务</TabsTrigger>
-                    </TabsList>
+                  {isLoadingDetails ? (
+                    <div className="flex items-center justify-center py-12">
+                      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    </div>
+                  ) : (
+                    <Tabs defaultValue="overview" className="space-y-4">
+                      <TabsList className="bg-muted/50 border border-border">
+                        <TabsTrigger value="overview">概览</TabsTrigger>
+                        <TabsTrigger value="hardware">硬件</TabsTrigger>
+                        <TabsTrigger value="network">网络</TabsTrigger>
+                        <TabsTrigger value="tasks">任务</TabsTrigger>
+                      </TabsList>
 
-                    <TabsContent value="overview" className="space-y-4">
-                      {/* Server Info Grid */}
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <div className="p-3 bg-muted/30 rounded-sm">
-                          <p className="text-xs text-muted-foreground mb-1">状态</p>
-                          <StatusBadge status={selectedServer.state === "ok" ? "online" : "offline"} />
-                        </div>
-                        <div className="p-3 bg-muted/30 rounded-sm">
-                          <p className="text-xs text-muted-foreground mb-1">机房</p>
-                          <p className="font-mono uppercase">{selectedServer.datacenter}</p>
-                        </div>
-                        <div className="p-3 bg-muted/30 rounded-sm">
-                          <p className="text-xs text-muted-foreground mb-1">IP 地址</p>
-                          <p className="font-mono">{selectedServer.ip}</p>
-                        </div>
-                        <div className="p-3 bg-muted/30 rounded-sm">
-                          <p className="text-xs text-muted-foreground mb-1">操作系统</p>
-                          <p className="truncate">{selectedServer.os}</p>
-                        </div>
-                      </div>
-
-                      {/* Service Info */}
-                      <div className="p-4 border border-border rounded-sm">
-                        <h3 className="text-sm font-medium mb-3">服务信息</h3>
-                        <div className="grid grid-cols-2 gap-4 text-sm">
-                          <div>
-                            <p className="text-muted-foreground">服务名称</p>
-                            <p className="font-mono text-xs break-all">{selectedServer.serviceName}</p>
+                      <TabsContent value="overview" className="space-y-4">
+                        {/* Server Info Grid */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          <div className="p-3 bg-muted/30 rounded-sm">
+                            <p className="text-xs text-muted-foreground mb-1">状态</p>
+                            <StatusBadge status={selectedServer.state === "ok" ? "online" : "offline"} />
                           </div>
-                          <div>
-                            <p className="text-muted-foreground">自动续费</p>
-                            <p className={selectedServer.renewalType ? "text-primary" : "text-destructive"}>
-                              {selectedServer.renewalType ? "已开启" : "已关闭"}
-                            </p>
+                          <div className="p-3 bg-muted/30 rounded-sm">
+                            <p className="text-xs text-muted-foreground mb-1">机房</p>
+                            <p className="font-mono uppercase">{selectedServer.datacenter}</p>
                           </div>
-                          <div>
-                            <p className="text-muted-foreground">监控状态</p>
-                            <p className={selectedServer.monitoring ? "text-primary" : "text-muted-foreground"}>
-                              {selectedServer.monitoring ? "启用" : "禁用"}
-                            </p>
+                          <div className="p-3 bg-muted/30 rounded-sm">
+                            <p className="text-xs text-muted-foreground mb-1">IP 地址</p>
+                            <p className="font-mono">{selectedServer.ip}</p>
                           </div>
-                          <div>
-                            <p className="text-muted-foreground">服务状态</p>
-                            <p>{selectedServer.status}</p>
+                          <div className="p-3 bg-muted/30 rounded-sm">
+                            <p className="text-xs text-muted-foreground mb-1">操作系统</p>
+                            <p className="truncate">{selectedServer.os}</p>
                           </div>
                         </div>
-                      </div>
 
-                      {/* Quick Actions */}
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                        <Button variant="outline" className="h-auto py-4 flex-col gap-2">
-                          <Power className="h-5 w-5 text-warning" />
-                          <span className="text-xs">重启</span>
-                        </Button>
-                        <Button variant="outline" className="h-auto py-4 flex-col gap-2">
-                          <HardDrive className="h-5 w-5 text-accent" />
-                          <span className="text-xs">重装</span>
-                        </Button>
-                        <Button variant="outline" className="h-auto py-4 flex-col gap-2">
-                          <Terminal className="h-5 w-5 text-primary" />
-                          <span className="text-xs">控制台</span>
-                        </Button>
-                        <Button variant="outline" className="h-auto py-4 flex-col gap-2">
-                          <Shield className="h-5 w-5" />
-                          <span className="text-xs">防火墙</span>
-                        </Button>
-                      </div>
-                    </TabsContent>
-
-                    <TabsContent value="hardware">
-                      <div className="space-y-4">
+                        {/* Service Info */}
                         <div className="p-4 border border-border rounded-sm">
-                          <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
-                            <Cpu className="h-4 w-4 text-accent" />
-                            处理器
-                          </h3>
-                          <p className="text-muted-foreground">Intel Xeon E3-1245v5 @ 3.5GHz</p>
-                        </div>
-                        <div className="p-4 border border-border rounded-sm">
-                          <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
-                            <Monitor className="h-4 w-4 text-accent" />
-                            内存
-                          </h3>
-                          <p className="text-muted-foreground">32GB DDR4 ECC</p>
-                        </div>
-                        <div className="p-4 border border-border rounded-sm">
-                          <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
-                            <HardDrive className="h-4 w-4 text-accent" />
-                            存储
-                          </h3>
-                          <p className="text-muted-foreground">2x 480GB SSD (RAID 1)</p>
-                        </div>
-                      </div>
-                    </TabsContent>
-
-                    <TabsContent value="network">
-                      <div className="space-y-4">
-                        <div className="p-4 border border-border rounded-sm">
-                          <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
-                            <Network className="h-4 w-4 text-accent" />
-                            网络配置
-                          </h3>
-                          <div className="space-y-2 text-sm">
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">主 IP</span>
-                              <span className="font-mono">{selectedServer.ip}</span>
+                          <h3 className="text-sm font-medium mb-3">服务信息</h3>
+                          <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                              <p className="text-muted-foreground">服务名称</p>
+                              <p className="font-mono text-xs break-all">{selectedServer.serviceName}</p>
                             </div>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">网关</span>
-                              <span className="font-mono">192.168.1.1</span>
+                            <div>
+                              <p className="text-muted-foreground">自动续费</p>
+                              <p className={serviceInfo?.renewalType ? "text-primary" : "text-destructive"}>
+                                {serviceInfo?.renewalType ? "已开启" : "已关闭"}
+                              </p>
                             </div>
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">带宽</span>
-                              <span>500 Mbps</span>
+                            <div>
+                              <p className="text-muted-foreground">监控状态</p>
+                              <p className={selectedServer.monitoring ? "text-primary" : "text-muted-foreground"}>
+                                {selectedServer.monitoring ? "启用" : "禁用"}
+                              </p>
                             </div>
+                            <div>
+                              <p className="text-muted-foreground">服务状态</p>
+                              <p>{serviceInfo?.status || selectedServer.status}</p>
+                            </div>
+                            {serviceInfo?.expiration && (
+                              <div>
+                                <p className="text-muted-foreground flex items-center gap-1">
+                                  <Calendar className="h-3 w-3" /> 到期时间
+                                </p>
+                                <p>{new Date(serviceInfo.expiration).toLocaleDateString("zh-CN")}</p>
+                              </div>
+                            )}
                           </div>
                         </div>
-                        
-                        <Button variant="terminal" size="sm">
-                          <Settings2 className="h-4 w-4 mr-2" />
-                          管理 IP 地址
-                        </Button>
-                      </div>
-                    </TabsContent>
 
-                    <TabsContent value="tasks">
-                      <div className="text-center py-8 text-muted-foreground">
-                        <Activity className="h-12 w-12 mx-auto mb-4 opacity-30" />
-                        <p>暂无进行中的任务</p>
-                      </div>
-                    </TabsContent>
-                  </Tabs>
+                        {/* Quick Actions */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                          <Button 
+                            variant="outline" 
+                            className="h-auto py-4 flex-col gap-2"
+                            onClick={() => handleReboot('soft')}
+                            disabled={isRebooting}
+                          >
+                            <Power className="h-5 w-5 text-warning" />
+                            <span className="text-xs">重启</span>
+                          </Button>
+                          <Button variant="outline" className="h-auto py-4 flex-col gap-2">
+                            <HardDrive className="h-5 w-5 text-accent" />
+                            <span className="text-xs">重装</span>
+                          </Button>
+                          <Button variant="outline" className="h-auto py-4 flex-col gap-2">
+                            <Terminal className="h-5 w-5 text-primary" />
+                            <span className="text-xs">控制台</span>
+                          </Button>
+                          <Button variant="outline" className="h-auto py-4 flex-col gap-2">
+                            <Shield className="h-5 w-5" />
+                            <span className="text-xs">防火墙</span>
+                          </Button>
+                        </div>
+                      </TabsContent>
+
+                      <TabsContent value="hardware">
+                        <div className="space-y-4">
+                          {serverHardware ? (
+                            <>
+                              <div className="p-4 border border-border rounded-sm">
+                                <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+                                  <Cpu className="h-4 w-4 text-accent" />
+                                  处理器
+                                </h3>
+                                <p className="text-muted-foreground">{serverHardware.processorName || serverHardware.processor || '未知'}</p>
+                              </div>
+                              <div className="p-4 border border-border rounded-sm">
+                                <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+                                  <Monitor className="h-4 w-4 text-accent" />
+                                  内存
+                                </h3>
+                                <p className="text-muted-foreground">{serverHardware.memorySize || '未知'}</p>
+                              </div>
+                              <div className="p-4 border border-border rounded-sm">
+                                <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+                                  <HardDrive className="h-4 w-4 text-accent" />
+                                  存储
+                                </h3>
+                                <p className="text-muted-foreground">
+                                  {serverHardware.diskGroups?.map((d: any) => d.description).join(', ') || '未知'}
+                                </p>
+                              </div>
+                            </>
+                          ) : (
+                            <p className="text-center py-8 text-muted-foreground">暂无硬件信息</p>
+                          )}
+                        </div>
+                      </TabsContent>
+
+                      <TabsContent value="network">
+                        <div className="space-y-4">
+                          <div className="p-4 border border-border rounded-sm">
+                            <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+                              <Network className="h-4 w-4 text-accent" />
+                              IP 地址
+                            </h3>
+                            {serverIps.length > 0 ? (
+                              <div className="space-y-2 text-sm">
+                                {serverIps.map((ip: any, index: number) => (
+                                  <div key={index} className="flex justify-between">
+                                    <span className="font-mono">{ip.ip || ip}</span>
+                                    <span className="text-muted-foreground">{ip.type || 'IPv4'}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-muted-foreground font-mono">{selectedServer.ip}</p>
+                            )}
+                          </div>
+                        </div>
+                      </TabsContent>
+
+                      <TabsContent value="tasks">
+                        {serverTasks.length > 0 ? (
+                          <div className="space-y-2">
+                            {serverTasks.map((task: any, index: number) => (
+                              <div key={index} className="p-3 border border-border rounded-sm">
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="font-medium">{task.function || task.comment}</span>
+                                  <span className={cn(
+                                    "px-2 py-0.5 rounded-sm text-xs",
+                                    task.status === "done" ? "bg-primary/20 text-primary" :
+                                    task.status === "error" ? "bg-destructive/20 text-destructive" :
+                                    "bg-warning/20 text-warning"
+                                  )}>
+                                    {task.status}
+                                  </span>
+                                </div>
+                                <div className="text-xs text-muted-foreground flex items-center gap-2">
+                                  <Clock className="h-3 w-3" />
+                                  {new Date(task.startDate || task.todoDate).toLocaleString("zh-CN")}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-center py-8 text-muted-foreground">
+                            <Activity className="h-12 w-12 mx-auto mb-4 opacity-30" />
+                            <p>暂无进行中的任务</p>
+                          </div>
+                        )}
+                      </TabsContent>
+                    </Tabs>
+                  )}
                 </TerminalCard>
               ) : (
                 <div className="flex items-center justify-center h-64 border border-border rounded-sm text-muted-foreground">
