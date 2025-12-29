@@ -367,6 +367,23 @@ export const api = {
     body: JSON.stringify({ interval }),
   }),
   
+  // 手动检查VPS可用性
+  manualCheckVps: (planCode: string, ovhSubsidiary?: string) => apiRequest<{
+    status: string;
+    data?: {
+      planCode: string;
+      datacenters: Array<{
+        datacenter: string;
+        code: string;
+        status: string;
+        daysBeforeDelivery: number;
+      }>;
+    };
+  }>(`/api/vps-monitor/check/${planCode}`, {
+    method: 'POST',
+    body: JSON.stringify({ ovhSubsidiary: ovhSubsidiary || 'IE' }),
+  }),
+  
   // ==================== 配置绑定狙击 ====================
   getConfigSniperTasks: () => apiRequest<Array<{
     id: string;
@@ -600,6 +617,28 @@ export const api = {
     balance?: { value: number; currencyCode: string };
     error?: string;
   }>('/api/ovh/account/balance'),
+  
+  // 获取信用余额
+  getOvhCreditBalance: () => apiRequest<{
+    success: boolean;
+    data?: Array<{
+      balance: { value: number; currencyCode: string };
+      balanceName: string;
+      type: string;
+    }>;
+    error?: string;
+  }>('/api/ovh/account/credit-balance'),
+  
+  // 获取子账户列表
+  getOvhSubAccounts: () => apiRequest<{
+    success: boolean;
+    data?: Array<{
+      id: number;
+      nichandle: string;
+      description: string;
+    }>;
+    error?: string;
+  }>('/api/ovh/account/sub-accounts'),
   
   getOvhOrders: (limit?: number) => apiRequest<{
     success: boolean;
