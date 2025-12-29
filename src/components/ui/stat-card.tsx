@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { ReactNode } from "react";
+import { ReactNode, forwardRef } from "react";
 import { TrendingUp, TrendingDown, Minus } from "lucide-react";
 
 interface StatCardProps {
@@ -40,7 +40,7 @@ const variantStyles = {
   },
 };
 
-export function StatCard({ 
+export const StatCard = forwardRef<HTMLDivElement, StatCardProps>(({ 
   label, 
   value, 
   icon, 
@@ -48,15 +48,18 @@ export function StatCard({
   trendValue,
   variant = "default",
   className 
-}: StatCardProps) {
+}, ref) => {
   const styles = variantStyles[variant];
 
   return (
-    <div className={cn(
-      "terminal-card p-4 hover-glow transition-all",
-      styles.border,
-      className
-    )}>
+    <div 
+      ref={ref}
+      className={cn(
+        "terminal-card p-4 hover-glow transition-all",
+        styles.border,
+        className
+      )}
+    >
       <div className="flex items-start justify-between mb-2">
         <span className="text-xs text-muted-foreground uppercase tracking-wider">{label}</span>
         {icon && <span className={cn("h-5 w-5", styles.icon)}>{icon}</span>}
@@ -83,4 +86,6 @@ export function StatCard({
       </div>
     </div>
   );
-}
+});
+
+StatCard.displayName = "StatCard";
