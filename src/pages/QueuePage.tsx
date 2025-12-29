@@ -64,18 +64,42 @@ const QueuePage = () => {
     return () => clearInterval(interval);
   }, [refetch]);
 
-  // 检查处理器状态 (从stats中获取)
+  // 检查处理器状态
   useEffect(() => {
     const checkProcessorStatus = async () => {
       try {
-        const stats = await api.getStats();
-        setIsProcessorRunning(stats.queueProcessorRunning || false);
-      } catch {}
+        const status = await api.getQueueProcessorStatus();
+        setIsProcessorRunning(status.running);
+      } catch {
+        // fallback to stats
+        try {
+          const stats = await api.getStats();
+          setIsProcessorRunning(stats.queueProcessorRunning || false);
+        } catch {}
+      }
     };
     checkProcessorStatus();
     const interval = setInterval(checkProcessorStatus, 10000);
     return () => clearInterval(interval);
   }, []);
+
+  const handleToggleProcessor = async () => {
+    setIsTogglingProcessor(true);
+    try {
+      if (isProcessorRunning) {
+        await api.stopQueueProcessor();
+        toast.success("队列处理器已停止");
+      } else {
+        await api.startQueueProcessor();
+        toast.success("队列处理器已启动");
+      }
+      setIsProcessorRunning(!isProcessorRunning);
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setIsTogglingProcessor(false);
+    }
+  };
 
   const queueList = queue || [];
 
@@ -185,19 +209,22 @@ const QueuePage = () => {
             </div>
             
             <div className="flex gap-2">
-              {/* 处理器状态指示 */}
-              <div className={cn(
-                "flex items-center gap-2 px-3 py-1.5 rounded-sm border text-sm",
-                isProcessorRunning 
-                  ? "border-primary/30 bg-primary/10 text-primary" 
-                  : "border-muted bg-muted/50 text-muted-foreground"
-              )}>
-                <span className={cn(
-                  "h-2 w-2 rounded-full",
-                  isProcessorRunning ? "bg-primary animate-pulse" : "bg-muted-foreground"
-                )} />
-                处理器: {isProcessorRunning ? "运行中" : "已停止"}
-              </div>
+              {/* 处理器控制按钮 */}
+              <Button 
+                variant={isProcessorRunning ? "destructive" : "default"}
+                size="sm"
+                onClick={handleToggleProcessor}
+                disabled={isTogglingProcessor}
+              >
+                {isTogglingProcessor ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : isProcessorRunning ? (
+                  <Square className="h-4 w-4 mr-2" />
+                ) : (
+                  <Power className="h-4 w-4 mr-2" />
+                )}
+                {isProcessorRunning ? "停止处理器" : "启动处理器"}
+              </Button>
               
               <Button variant="outline" size="sm" onClick={handleClearQueue}>
                 <Trash2 className="h-4 w-4 mr-2" />
