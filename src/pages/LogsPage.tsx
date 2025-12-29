@@ -77,6 +77,16 @@ const LogsPage = () => {
     setIsRefreshing(false);
   };
 
+  const handleFlush = async () => {
+    try {
+      await api.flushLogs();
+      toast.success("日志已刷新到磁盘");
+      refetch();
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
   const handleClear = async () => {
     try {
       await api.clearLogs();
@@ -150,6 +160,10 @@ const LogsPage = () => {
                 <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isRefreshing}>
                   <RefreshCw className={cn("h-4 w-4 mr-2", isRefreshing && "animate-spin")} />
                   刷新
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleFlush}>
+                  <Download className="h-4 w-4 mr-2" />
+                  写入磁盘
                 </Button>
                 <Button variant="destructive" size="sm" onClick={handleClear}>
                   <Trash2 className="h-4 w-4 mr-2" />

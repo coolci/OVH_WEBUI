@@ -185,38 +185,19 @@ const QueuePage = () => {
             </div>
             
             <div className="flex gap-2">
-              {/* 处理器控制按钮 */}
-              <Button 
-                variant={isProcessorRunning ? "destructive" : "default"}
-                size="sm"
-                onClick={async () => {
-                  setIsTogglingProcessor(true);
-                  try {
-                    if (isProcessorRunning) {
-                      // 停止处理器 - 这里假设有对应的API
-                      toast.info("队列处理器控制暂未实现后端API");
-                    } else {
-                      toast.info("队列处理器控制暂未实现后端API");
-                    }
-                    const stats = await api.getStats();
-                    setIsProcessorRunning(stats.queueProcessorRunning || false);
-                  } catch (err: any) {
-                    toast.error(err.message);
-                  } finally {
-                    setIsTogglingProcessor(false);
-                  }
-                }}
-                disabled={isTogglingProcessor}
-              >
-                {isTogglingProcessor ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : isProcessorRunning ? (
-                  <Square className="h-4 w-4 mr-2" />
-                ) : (
-                  <Power className="h-4 w-4 mr-2" />
-                )}
-                {isProcessorRunning ? "停止处理器" : "启动处理器"}
-              </Button>
+              {/* 处理器状态指示 */}
+              <div className={cn(
+                "flex items-center gap-2 px-3 py-1.5 rounded-sm border text-sm",
+                isProcessorRunning 
+                  ? "border-primary/30 bg-primary/10 text-primary" 
+                  : "border-muted bg-muted/50 text-muted-foreground"
+              )}>
+                <span className={cn(
+                  "h-2 w-2 rounded-full",
+                  isProcessorRunning ? "bg-primary animate-pulse" : "bg-muted-foreground"
+                )} />
+                处理器: {isProcessorRunning ? "运行中" : "已停止"}
+              </div>
               
               <Button variant="outline" size="sm" onClick={handleClearQueue}>
                 <Trash2 className="h-4 w-4 mr-2" />
