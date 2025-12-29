@@ -18,7 +18,8 @@ import {
   Settings2,
   Eye,
   RefreshCw,
-  Loader2
+  Loader2,
+  Edit
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
@@ -82,6 +83,15 @@ const MonitorPage = () => {
   const [notifyUnavailable, setNotifyUnavailable] = useState(false);
   const [autoOrder, setAutoOrder] = useState(false);
   const [quantity, setQuantity] = useState(1);
+  
+  // 编辑订阅状态
+  const [editingSubscription, setEditingSubscription] = useState<Subscription | null>(null);
+  const [editNotifyAvailable, setEditNotifyAvailable] = useState(true);
+  const [editNotifyUnavailable, setEditNotifyUnavailable] = useState(false);
+  const [editAutoOrder, setEditAutoOrder] = useState(false);
+  const [editQuantity, setEditQuantity] = useState(1);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [isBatchAdding, setIsBatchAdding] = useState(false);
 
   useEffect(() => {
     if (monitorStatus) {
@@ -163,6 +173,7 @@ const MonitorPage = () => {
   };
 
   const handleBatchAddAll = async () => {
+    setIsBatchAdding(true);
     try {
       const result = await api.batchAddAllServers({
         notifyAvailable: true,
@@ -173,6 +184,8 @@ const MonitorPage = () => {
       refetch();
     } catch (error: any) {
       toast.error(`批量添加失败: ${error.message}`);
+    } finally {
+      setIsBatchAdding(false);
     }
   };
 
@@ -186,6 +199,34 @@ const MonitorPage = () => {
       toast.error(`清空失败: ${error.message}`);
     } finally {
       setIsClearing(false);
+    }
+  };
+
+  const handleEditSubscription = (sub: Subscription) => {
+    setEditingSubscription(sub);
+    setEditNotifyAvailable(sub.notifyAvailable);
+    setEditNotifyUnavailable(sub.notifyUnavailable);
+    setEditAutoOrder(sub.autoOrder);
+    setEditQuantity(sub.quantity || 1);
+  };
+
+  const handleUpdateSubscription = async () => {
+    if (!editingSubscription) return;
+    setIsUpdating(true);
+    try {
+      await api.updateSubscription(editingSubscription.planCode, {
+        notifyAvailable: editNotifyAvailable,
+        notifyUnavailable: editNotifyUnavailable,
+        autoOrder: editAutoOrder,
+        quantity: editQuantity,
+      });
+      toast.success("订阅配置已更新");
+      setEditingSubscription(null);
+      refetch();
+    } catch (error: any) {
+      toast.error(`更新失败: ${error.message}`);
+    } finally {
+      setIsUpdating(false);
     }
   };
 
@@ -486,8 +527,12 @@ const MonitorPage = () => {
 
           {/* Batch Actions */}
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={handleBatchAddAll}>
-              <Plus className="h-4 w-4 mr-2" />
+            <Button variant="outline" size="sm" onClick={handleBatchAddAll} disabled={isBatchAdding}>
+              {isBatchAdding ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Plus className="h-4 w-4 mr-2" />
+              )}
               批量添加全部服务器
             </Button>
             <Button 
@@ -597,10 +642,17 @@ const MonitorPage = () => {
                           <Button 
                             variant="ghost" 
                             size="sm"
+                            onClick={() => handleEditSubscription(sub)}
+                            title="编辑设置"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="sm"
                             onClick={() => handleViewHistory(sub)}
                           >
-                            <HistoryIcon className="h-4 w-4 mr-1" />
-                            历史
+                            <HistoryIcon className="h-4 w-4" />
                           </Button>
                           <Button 
                             variant="ghost" 
@@ -693,6 +745,66 @@ const MonitorPage = () => {
                   ))
                 )}
               </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* Edit Subscription Dialog */}
+          <Dialog open={!!editingSubscription} onOpenChange={(open) => !open && setEditingSubscription(null)}>
+            <DialogContent className="terminal-card border-primary/30">
+              <DialogHeader>
+                <DialogTitle className="text-primary flex items-center gap-2">
+                  <Edit className="h-5 w-5" />
+                  编辑订阅 - {editingSubscription?.serverName || editingSubscription?.planCode}
+                </DialogTitle>
+                <DialogDescription>
+                  修改通知和自动下单设置
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="flex items-center justify-between">
+                  <Label className="flex items-center gap-2">
+                    <Bell className="h-4 w-4 text-primary" />
+                    有货通知
+                  </Label>
+                  <Switch checked={editNotifyAvailable} onCheckedChange={setEditNotifyAvailable} />
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label className="flex items-center gap-2">
+                    <Bell className="h-4 w-4 text-warning" />
+                    无货通知
+                  </Label>
+                  <Switch checked={editNotifyUnavailable} onCheckedChange={setEditNotifyUnavailable} />
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label className="flex items-center gap-2">
+                    <ShoppingCart className="h-4 w-4 text-accent" />
+                    自动下单
+                  </Label>
+                  <Switch checked={editAutoOrder} onCheckedChange={setEditAutoOrder} />
+                </div>
+                {editAutoOrder && (
+                  <div className="space-y-2 pt-2 border-t border-border">
+                    <Label>自动下单数量</Label>
+                    <input 
+                      type="number" 
+                      min="1" 
+                      max="10"
+                      value={editQuantity}
+                      onChange={(e) => setEditQuantity(parseInt(e.target.value) || 1)}
+                      className="w-full px-3 py-2 bg-background border border-border rounded-sm text-sm"
+                    />
+                  </div>
+                )}
+              </div>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button variant="outline">取消</Button>
+                </DialogClose>
+                <Button onClick={handleUpdateSubscription} disabled={isUpdating}>
+                  {isUpdating && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  保存设置
+                </Button>
+              </DialogFooter>
             </DialogContent>
           </Dialog>
         </div>
