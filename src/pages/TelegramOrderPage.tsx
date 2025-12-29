@@ -15,9 +15,17 @@ import {
   Zap,
   Copy,
   CheckCircle2,
-  Info
+  Info,
+  Wifi,
+  WifiOff,
+  RefreshCw,
+  History,
+  Trash2,
+  Play,
+  Settings2,
+  Link as LinkIcon
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
@@ -28,14 +36,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
 import { useServers } from "@/hooks/useApi";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+  DialogClose,
+} from "@/components/ui/dialog";
 
 interface OrderMode {
   mode: 'stock' | 'queue' | 'monitor' | 'price' | 'buy';
@@ -44,6 +56,16 @@ interface OrderMode {
   icon: React.ReactNode;
   example: string;
   color: string;
+}
+
+interface CommandHistory {
+  id: string;
+  command: string;
+  mode: string;
+  planCode: string;
+  datacenter?: string;
+  timestamp: number;
+  success: boolean;
 }
 
 const orderModes: OrderMode[] = [
@@ -89,6 +111,9 @@ const orderModes: OrderMode[] = [
   }
 ];
 
+const HISTORY_STORAGE_KEY = 'telegram_command_history';
+const MAX_HISTORY_ITEMS = 20;
+
 const TelegramOrderPage = () => {
   const { data: servers } = useServers();
   const [selectedMode, setSelectedMode] = useState<OrderMode['mode']>('stock');
@@ -98,10 +123,105 @@ const TelegramOrderPage = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [lastResult, setLastResult] = useState<any>(null);
   const [copied, setCopied] = useState(false);
+  
+  // Webhook status
+  const [webhookInfo, setWebhookInfo] = useState<any>(null);
+  const [isLoadingWebhook, setIsLoadingWebhook] = useState(false);
+  const [webhookUrl, setWebhookUrl] = useState('');
+  const [isSettingWebhook, setIsSettingWebhook] = useState(false);
+  
+  // Command history
+  const [commandHistory, setCommandHistory] = useState<CommandHistory[]>([]);
 
   const datacenterOptions = ["gra", "rbx", "sbg", "bhs", "waw", "lon", "fra", "par"];
 
   const currentMode = orderModes.find(m => m.mode === selectedMode)!;
+
+  // Load command history from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem(HISTORY_STORAGE_KEY);
+    if (saved) {
+      try {
+        setCommandHistory(JSON.parse(saved));
+      } catch (e) {
+        console.error('Failed to parse command history:', e);
+      }
+    }
+  }, []);
+
+  // Load webhook info on mount
+  useEffect(() => {
+    loadWebhookInfo();
+  }, []);
+
+  const loadWebhookInfo = async () => {
+    setIsLoadingWebhook(true);
+    try {
+      const result = await api.getTelegramWebhookInfo();
+      if (result.success) {
+        setWebhookInfo(result.webhook_info);
+      }
+    } catch (error) {
+      console.error('Failed to load webhook info:', error);
+    } finally {
+      setIsLoadingWebhook(false);
+    }
+  };
+
+  const handleSetWebhook = async () => {
+    if (!webhookUrl.trim()) {
+      toast.error("请输入 Webhook URL");
+      return;
+    }
+    
+    setIsSettingWebhook(true);
+    try {
+      const result = await api.setTelegramWebhook(webhookUrl);
+      if (result.success) {
+        toast.success("Webhook 设置成功");
+        loadWebhookInfo();
+        setWebhookUrl('');
+      } else {
+        toast.error(result.error || "设置失败");
+      }
+    } catch (error: any) {
+      toast.error(`设置失败: ${error.message}`);
+    } finally {
+      setIsSettingWebhook(false);
+    }
+  };
+
+  const saveHistory = (history: CommandHistory[]) => {
+    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history));
+    setCommandHistory(history);
+  };
+
+  const addToHistory = (command: string, mode: string, planCode: string, datacenter: string | undefined, success: boolean) => {
+    const newItem: CommandHistory = {
+      id: Date.now().toString(),
+      command,
+      mode,
+      planCode,
+      datacenter,
+      timestamp: Date.now(),
+      success
+    };
+    
+    const newHistory = [newItem, ...commandHistory].slice(0, MAX_HISTORY_ITEMS);
+    saveHistory(newHistory);
+  };
+
+  const clearHistory = () => {
+    saveHistory([]);
+    toast.success("历史记录已清空");
+  };
+
+  const repeatCommand = (item: CommandHistory) => {
+    setSelectedMode(item.mode as OrderMode['mode']);
+    setPlanCode(item.planCode);
+    setDatacenter(item.datacenter || '');
+    toast.success("已加载历史命令配置");
+  };
 
   const handleSubmit = async () => {
     if (!planCode) {
@@ -114,6 +234,7 @@ const TelegramOrderPage = () => {
       return;
     }
 
+    const command = generateCommand();
     setIsSubmitting(true);
     try {
       const result = await api.telegramQuickOrder({
@@ -124,6 +245,7 @@ const TelegramOrderPage = () => {
       });
       
       setLastResult(result);
+      addToHistory(command, selectedMode, planCode, datacenter || undefined, result.success);
       
       if (result.success) {
         toast.success(result.message || "操作成功");
@@ -133,6 +255,7 @@ const TelegramOrderPage = () => {
     } catch (error: any) {
       toast.error(`请求失败: ${error.message}`);
       setLastResult({ success: false, error: error.message });
+      addToHistory(command, selectedMode, planCode, datacenter || undefined, false);
     } finally {
       setIsSubmitting(false);
     }
@@ -157,6 +280,7 @@ const TelegramOrderPage = () => {
   };
 
   const needsDatacenter = selectedMode === 'queue' || selectedMode === 'price' || selectedMode === 'buy';
+  const isWebhookConnected = webhookInfo?.url && webhookInfo?.url.length > 0;
 
   return (
     <>
@@ -169,15 +293,105 @@ const TelegramOrderPage = () => {
         <div className="space-y-6">
           {/* Header */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-bold text-primary flex items-center gap-2">
-                <span className="text-muted-foreground">&gt;</span>
-                Telegram 快速下单
-                <span className="cursor-blink">_</span>
-              </h1>
-              <p className="text-sm text-muted-foreground mt-1">
-                通过 Telegram 消息快速执行下单操作，支持5种模式
-              </p>
+            <div className="flex items-center gap-3">
+              <div>
+                <h1 className="text-2xl font-bold text-primary flex items-center gap-2">
+                  <span className="text-muted-foreground">&gt;</span>
+                  Telegram 快速下单
+                  <span className="cursor-blink">_</span>
+                </h1>
+                <p className="text-sm text-muted-foreground mt-1">
+                  通过 Telegram 消息快速执行下单操作，支持5种模式
+                </p>
+              </div>
+              {/* Bot Connection Status */}
+              {isLoadingWebhook ? (
+                <span className="flex items-center gap-1 text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
+                  <Loader2 className="h-3 w-3 animate-spin" /> 检查中
+                </span>
+              ) : isWebhookConnected ? (
+                <span className="flex items-center gap-1 text-xs text-primary bg-primary/10 px-2 py-1 rounded">
+                  <Wifi className="h-3 w-3" /> Bot 已连接
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 text-xs text-destructive bg-destructive/10 px-2 py-1 rounded">
+                  <WifiOff className="h-3 w-3" /> Bot 未连接
+                </span>
+              )}
+            </div>
+            
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={loadWebhookInfo} disabled={isLoadingWebhook}>
+                <RefreshCw className={cn("h-4 w-4 mr-2", isLoadingWebhook && "animate-spin")} />
+                刷新状态
+              </Button>
+              
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button variant="terminal" size="sm">
+                    <Settings2 className="h-4 w-4 mr-2" />
+                    Webhook 设置
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="terminal-card border-primary/30">
+                  <DialogHeader>
+                    <DialogTitle className="text-primary">Telegram Webhook 配置</DialogTitle>
+                    <DialogDescription>
+                      配置 Telegram Bot 的 Webhook URL 以接收命令
+                    </DialogDescription>
+                  </DialogHeader>
+                  
+                  <div className="space-y-4 py-4">
+                    {/* Current Status */}
+                    <div className="p-3 bg-muted/50 rounded-sm border border-border">
+                      <div className="flex items-center gap-2 mb-2">
+                        {isWebhookConnected ? (
+                          <Wifi className="h-4 w-4 text-primary" />
+                        ) : (
+                          <WifiOff className="h-4 w-4 text-destructive" />
+                        )}
+                        <span className="font-medium">
+                          {isWebhookConnected ? "Webhook 已配置" : "Webhook 未配置"}
+                        </span>
+                      </div>
+                      {webhookInfo?.url && (
+                        <p className="text-xs text-muted-foreground font-mono break-all">
+                          {webhookInfo.url}
+                        </p>
+                      )}
+                      {webhookInfo?.pending_update_count !== undefined && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          待处理更新: {webhookInfo.pending_update_count}
+                        </p>
+                      )}
+                    </div>
+                    
+                    {/* Set New Webhook */}
+                    <div className="space-y-2">
+                      <Label>新的 Webhook URL</Label>
+                      <Input
+                        value={webhookUrl}
+                        onChange={(e) => setWebhookUrl(e.target.value)}
+                        placeholder="https://your-domain.com/webhook"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        输入完整的 Webhook URL，包含 https://
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <DialogFooter>
+                    <DialogClose asChild>
+                      <Button variant="outline">取消</Button>
+                    </DialogClose>
+                    <Button onClick={handleSetWebhook} disabled={isSettingWebhook}>
+                      {isSettingWebhook && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                      <LinkIcon className="h-4 w-4 mr-2" />
+                      设置 Webhook
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </div>
           </div>
 
@@ -205,7 +419,7 @@ const TelegramOrderPage = () => {
             ))}
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Configuration Panel */}
             <TerminalCard
               title={`${currentMode.name} 配置`}
@@ -291,9 +505,6 @@ const TelegramOrderPage = () => {
                         )}
                       </Button>
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      可直接发送此命令到 Telegram Bot
-                    </p>
                   </div>
                 )}
 
@@ -365,6 +576,63 @@ const TelegramOrderPage = () => {
                 <div className="text-center py-12 text-muted-foreground">
                   <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-30" />
                   <p>执行操作后结果将显示在这里</p>
+                </div>
+              )}
+            </TerminalCard>
+
+            {/* Command History Panel */}
+            <TerminalCard
+              title="命令历史"
+              icon={<History className="h-4 w-4" />}
+              headerAction={
+                commandHistory.length > 0 ? (
+                  <Button variant="ghost" size="sm" onClick={clearHistory}>
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                ) : undefined
+              }
+            >
+              {commandHistory.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  <History className="h-12 w-12 mx-auto mb-4 opacity-30" />
+                  <p>暂无历史记录</p>
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-80 overflow-y-auto">
+                  {commandHistory.map((item) => (
+                    <div 
+                      key={item.id}
+                      className={cn(
+                        "p-3 rounded-sm border transition-colors hover:border-primary/30 cursor-pointer group",
+                        item.success ? "border-border" : "border-destructive/30"
+                      )}
+                      onClick={() => repeatCommand(item)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <code className="font-mono text-xs text-primary">
+                          {item.command}
+                        </code>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 p-0"
+                        >
+                          <Play className="h-3 w-3" />
+                        </Button>
+                      </div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Badge variant="outline" className="text-xs">
+                          {orderModes.find(m => m.mode === item.mode)?.name}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(item.timestamp).toLocaleString("zh-CN")}
+                        </span>
+                        {!item.success && (
+                          <span className="text-xs text-destructive">失败</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </TerminalCard>
