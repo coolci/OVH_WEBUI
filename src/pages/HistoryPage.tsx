@@ -12,17 +12,31 @@ import {
   Clock,
   DollarSign,
   AlertTriangle,
-  Loader2
+  Loader2,
+  RefreshCw
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { usePurchaseHistory } from "@/hooks/useApi";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 const HistoryPage = () => {
   const { data: history, isLoading, refetch } = usePurchaseHistory();
   const [now, setNow] = useState(Date.now());
+  const [isClearing, setIsClearing] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
@@ -75,12 +89,25 @@ const HistoryPage = () => {
   };
 
   const handleClearHistory = async () => {
+    setIsClearing(true);
     try {
       await api.clearPurchaseHistory();
       toast.success("购买历史已清空");
       refetch();
     } catch (err: any) {
       toast.error(err.message);
+    } finally {
+      setIsClearing(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await refetch();
+      toast.success("数据已刷新");
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
@@ -106,10 +133,45 @@ const HistoryPage = () => {
               </p>
             </div>
             
-            <Button variant="outline" size="sm" onClick={handleClearHistory}>
-              <Trash2 className="h-4 w-4 mr-2" />
-              清空历史
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isRefreshing}>
+                <RefreshCw className={cn("h-4 w-4 mr-2", isRefreshing && "animate-spin")} />
+                刷新
+              </Button>
+              
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="text-destructive hover:text-destructive"
+                    disabled={historyList.length === 0}
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    清空历史
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent className="terminal-card border-destructive/30">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle className="text-destructive">确认清空历史记录？</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      此操作将删除所有 {historyList.length} 条购买记录，且无法撤销。
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>取消</AlertDialogCancel>
+                    <AlertDialogAction 
+                      onClick={handleClearHistory}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      disabled={isClearing}
+                    >
+                      {isClearing && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                      确认清空
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
           </div>
 
           {/* Stats Cards */}

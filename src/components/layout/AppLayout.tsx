@@ -1,4 +1,4 @@
-import { ReactNode, useState } from "react";
+import { ReactNode, useState, forwardRef } from "react";
 import { AppSidebar } from "./AppSidebar";
 import { TopBar } from "./TopBar";
 import { StatusBar } from "./StatusBar";
@@ -10,11 +10,11 @@ interface AppLayoutProps {
   children: ReactNode;
 }
 
-export function AppLayout({ children }: AppLayoutProps) {
+export const AppLayout = forwardRef<HTMLDivElement, AppLayoutProps>(({ children }, ref) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-background grid-lines relative overflow-hidden">
+    <div ref={ref} className="min-h-screen bg-background grid-lines relative overflow-hidden">
       {/* Scanline overlay */}
       <div className="fixed inset-0 pointer-events-none z-50 scanlines opacity-50" />
       
@@ -59,4 +59,6 @@ export function AppLayout({ children }: AppLayoutProps) {
       </div>
     </div>
   );
-}
+});
+
+AppLayout.displayName = "AppLayout";

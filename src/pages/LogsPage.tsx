@@ -23,6 +23,17 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import { useLogs } from "@/hooks/useApi";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -64,6 +75,7 @@ const LogsPage = () => {
   const [levelFilter, setLevelFilter] = useState<string>("all");
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
 
   useEffect(() => {
     if (!autoRefresh) return;
@@ -88,12 +100,15 @@ const LogsPage = () => {
   };
 
   const handleClear = async () => {
+    setIsClearing(true);
     try {
       await api.clearLogs();
       toast.success("日志已清空");
       refetch();
     } catch (err: any) {
       toast.error(err.message);
+    } finally {
+      setIsClearing(false);
     }
   };
 
@@ -165,10 +180,33 @@ const LogsPage = () => {
                   <Download className="h-4 w-4 mr-2" />
                   写入磁盘
                 </Button>
-                <Button variant="destructive" size="sm" onClick={handleClear}>
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  清空
-                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="destructive" size="sm" disabled={logList.length === 0}>
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      清空
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent className="terminal-card border-destructive/30">
+                    <AlertDialogHeader>
+                      <AlertDialogTitle className="text-destructive">确认清空日志？</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        此操作将删除所有 {logList.length} 条日志记录，且无法撤销。
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>取消</AlertDialogCancel>
+                      <AlertDialogAction 
+                        onClick={handleClear}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        disabled={isClearing}
+                      >
+                        {isClearing && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                        确认清空
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               </div>
             </div>
           </div>

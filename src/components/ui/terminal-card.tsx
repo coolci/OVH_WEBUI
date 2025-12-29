@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { ReactNode } from "react";
+import { ReactNode, forwardRef } from "react";
 
 interface TerminalCardProps {
   title?: string;
@@ -24,20 +24,23 @@ const headerVariantStyles = {
   danger: "border-destructive/30",
 };
 
-export function TerminalCard({ 
+export const TerminalCard = forwardRef<HTMLDivElement, TerminalCardProps>(({ 
   title, 
   icon, 
   children, 
   className,
   headerAction,
   variant = "default"
-}: TerminalCardProps) {
+}, ref) => {
   return (
-    <div className={cn(
-      "terminal-card overflow-hidden",
-      variantStyles[variant],
-      className
-    )}>
+    <div 
+      ref={ref}
+      className={cn(
+        "terminal-card overflow-hidden",
+        variantStyles[variant],
+        className
+      )}
+    >
       {title && (
         <div className={cn(
           "flex items-center justify-between px-4 py-2 border-b bg-muted/30",
@@ -62,4 +65,6 @@ export function TerminalCard({
       </div>
     </div>
   );
-}
+});
+
+TerminalCard.displayName = "TerminalCard";
