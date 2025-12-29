@@ -15,7 +15,8 @@ import {
   RefreshCw,
   Loader2,
   History as HistoryIcon,
-  Clock
+  Clock,
+  Search
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
@@ -64,6 +65,7 @@ const VpsMonitorPage = () => {
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
   const [isClearing, setIsClearing] = useState(false);
   const [isBatchAdding, setIsBatchAdding] = useState(false);
+  const [isManualChecking, setIsManualChecking] = useState<string | null>(null);
   
   // 历史记录状态
   const [selectedSubscription, setSelectedSubscription] = useState<VpsSubscription | null>(null);
@@ -234,6 +236,26 @@ const VpsMonitorPage = () => {
       });
     } catch {
       return "N/A";
+    }
+  };
+
+  const handleManualCheck = async (sub: VpsSubscription) => {
+    setIsManualChecking(sub.id);
+    try {
+      const result = await api.manualCheckVps(sub.planCode, sub.ovhSubsidiary);
+      if (result.status === "success" && result.data) {
+        const availableCount = result.data.datacenters.filter(
+          dc => dc.status !== 'out-of-stock' && dc.status !== 'out-of-stock-preorder-allowed'
+        ).length;
+        toast.success(`检查完成: ${result.data.datacenters.length}个机房，${availableCount}个有货`);
+        refetch();
+      } else {
+        toast.error("检查失败");
+      }
+    } catch (error: any) {
+      toast.error(`检查失败: ${error.message}`);
+    } finally {
+      setIsManualChecking(null);
     }
   };
 
@@ -575,7 +597,21 @@ const VpsMonitorPage = () => {
                         <Button 
                           variant="ghost" 
                           size="sm"
+                          onClick={() => handleManualCheck(sub)}
+                          disabled={isManualChecking === sub.id}
+                          title="手动检查"
+                        >
+                          {isManualChecking === sub.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Search className="h-4 w-4" />
+                          )}
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
                           onClick={() => handleViewHistory(sub)}
+                          title="查看历史"
                         >
                           <HistoryIcon className="h-4 w-4" />
                         </Button>
@@ -585,6 +621,7 @@ const VpsMonitorPage = () => {
                           className="text-destructive hover:text-destructive"
                           onClick={() => handleRemoveSubscription(sub.id)}
                           disabled={isDeleting === sub.id}
+                          title="删除"
                         >
                           {isDeleting === sub.id ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
