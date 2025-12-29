@@ -15,7 +15,10 @@ import {
   HardDrive,
   MemoryStick,
   Activity,
-  Loader2
+  Loader2,
+  Zap,
+  DollarSign,
+  Settings2
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
@@ -45,6 +48,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 
 const getAvailabilityInfo = (availability: string) => {
   if (availability === "unavailable" || availability === "unknown") {
@@ -67,9 +77,16 @@ const ServersPage = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterAvailability, setFilterAvailability] = useState<string>("all");
   const [isRefreshing, setIsRefreshing] = useState(false);
+  
+  // 弹窗状态
   const [selectedServer, setSelectedServer] = useState<any>(null);
   const [selectedDc, setSelectedDc] = useState<string>("");
+  const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
   const [isAddingToQueue, setIsAddingToQueue] = useState(false);
+  const [isQuickOrdering, setIsQuickOrdering] = useState(false);
+  const [priceInfo, setPriceInfo] = useState<any>(null);
+  const [isLoadingPrice, setIsLoadingPrice] = useState(false);
+  const [dialogMode, setDialogMode] = useState<'queue' | 'quick'>('queue');
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -84,6 +101,29 @@ const ServersPage = () => {
     }
   };
 
+  // 加载价格
+  const loadPrice = async (planCode: string, datacenter: string, options: string[]) => {
+    setIsLoadingPrice(true);
+    setPriceInfo(null);
+    try {
+      const result = await api.getServerPrice(planCode, datacenter, options);
+      if (result.success && result.price) {
+        setPriceInfo(result.price);
+      }
+    } catch (err) {
+      console.error('Failed to load price:', err);
+    } finally {
+      setIsLoadingPrice(false);
+    }
+  };
+
+  // 当选择变化时加载价格
+  useEffect(() => {
+    if (selectedServer && selectedDc) {
+      loadPrice(selectedServer.planCode, selectedDc, selectedOptions);
+    }
+  }, [selectedServer, selectedDc, selectedOptions]);
+
   const handleAddToQueue = async () => {
     if (!selectedServer || !selectedDc) return;
     
@@ -92,12 +132,11 @@ const ServersPage = () => {
       await api.addQueueItem({
         planCode: selectedServer.planCode,
         datacenter: selectedDc,
-        options: [],
+        options: selectedOptions,
         retryInterval: 30,
       });
       toast.success(`已添加 ${selectedServer.planCode} @ ${selectedDc.toUpperCase()} 到队列`);
-      setSelectedServer(null);
-      setSelectedDc("");
+      closeDialog();
     } catch (err: any) {
       toast.error(err.message);
     } finally {
@@ -105,17 +144,58 @@ const ServersPage = () => {
     }
   };
 
-  const handleQuickOrder = async (planCode: string, datacenter: string) => {
+  const handleQuickOrder = async () => {
+    if (!selectedServer || !selectedDc) return;
+    
+    setIsQuickOrdering(true);
     try {
-      const result = await api.quickOrder({ planCode, datacenter });
+      const result = await api.quickOrder({ 
+        planCode: selectedServer.planCode, 
+        datacenter: selectedDc,
+        options: selectedOptions,
+      });
       if (result.success) {
         toast.success(result.message);
+        closeDialog();
       } else {
         toast.error(result.message);
       }
     } catch (err: any) {
       toast.error(err.message);
+    } finally {
+      setIsQuickOrdering(false);
     }
+  };
+
+  const openDialog = (server: any, mode: 'queue' | 'quick', datacenter?: string) => {
+    setSelectedServer(server);
+    setDialogMode(mode);
+    setPriceInfo(null);
+    setSelectedOptions([]);
+    
+    if (datacenter) {
+      setSelectedDc(datacenter);
+    } else {
+      const availableDc = server.datacenters?.find((dc: any) => 
+        dc.availability !== "unavailable" && dc.availability !== "unknown"
+      );
+      setSelectedDc(availableDc?.datacenter || "");
+    }
+  };
+
+  const closeDialog = () => {
+    setSelectedServer(null);
+    setSelectedDc("");
+    setSelectedOptions([]);
+    setPriceInfo(null);
+  };
+
+  const toggleOption = (option: string) => {
+    setSelectedOptions(prev => 
+      prev.includes(option) 
+        ? prev.filter(o => o !== option)
+        : [...prev, option]
+    );
   };
 
   const serverList = servers || [];
@@ -289,7 +369,7 @@ const ServersPage = () => {
                                   "flex items-center justify-between p-2 rounded-sm border border-border/50 cursor-pointer hover:border-primary/50 transition-colors",
                                   info.color
                                 )}
-                                onClick={() => isAvailable && handleQuickOrder(server.planCode, dc.datacenter)}
+                                onClick={() => isAvailable && openDialog(server, 'quick', dc.datacenter)}
                               >
                                 <div>
                                   <p className="font-mono text-xs uppercase">{dc.datacenter}</p>
@@ -304,18 +384,22 @@ const ServersPage = () => {
                         <div className="flex gap-2 mt-3">
                           <Button 
                             size="sm" 
+                            variant="outline"
                             className="flex-1"
                             disabled={!hasAvailable}
-                            onClick={() => {
-                              setSelectedServer(server);
-                              const availableDc = server.datacenters?.find(dc => 
-                                dc.availability !== "unavailable" && dc.availability !== "unknown"
-                              );
-                              setSelectedDc(availableDc?.datacenter || "");
-                            }}
+                            onClick={() => openDialog(server, 'queue')}
                           >
                             <ShoppingCart className="h-4 w-4 mr-1" />
                             加入队列
+                          </Button>
+                          <Button 
+                            size="sm" 
+                            className="flex-1"
+                            disabled={!hasAvailable}
+                            onClick={() => openDialog(server, 'quick')}
+                          >
+                            <Zap className="h-4 w-4 mr-1" />
+                            快速下单
                           </Button>
                         </div>
                       </div>
@@ -336,48 +420,141 @@ const ServersPage = () => {
         </div>
       </AppLayout>
 
-      {/* Add to Queue Dialog */}
-      <Dialog open={!!selectedServer} onOpenChange={() => setSelectedServer(null)}>
-        <DialogContent className="terminal-card border-primary/30">
+      {/* Order Dialog */}
+      <Dialog open={!!selectedServer} onOpenChange={() => closeDialog()}>
+        <DialogContent className="terminal-card border-primary/30 max-w-lg">
           <DialogHeader>
-            <DialogTitle className="text-primary">添加到抢购队列</DialogTitle>
+            <DialogTitle className="text-primary flex items-center gap-2">
+              {dialogMode === 'quick' ? <Zap className="h-5 w-5" /> : <ShoppingCart className="h-5 w-5" />}
+              {dialogMode === 'quick' ? '快速下单' : '加入抢购队列'}
+            </DialogTitle>
             <DialogDescription>
-              选择目标机房加入队列
+              {dialogMode === 'quick' ? '立即购买服务器' : '配置抢购任务并加入队列'}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>服务器型号</Label>
-              <div className="p-2 bg-muted rounded text-sm">
-                {selectedServer?.name} ({selectedServer?.planCode})
+          
+          <Tabs defaultValue="config" className="space-y-4">
+            <TabsList className="w-full">
+              <TabsTrigger value="config" className="flex-1">配置选择</TabsTrigger>
+              <TabsTrigger value="options" className="flex-1">附加选项</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="config" className="space-y-4">
+              <div className="space-y-2">
+                <Label>服务器型号</Label>
+                <div className="p-3 bg-muted/50 rounded border border-border">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium">{selectedServer?.name || selectedServer?.planCode}</p>
+                      <p className="text-xs text-muted-foreground font-mono">{selectedServer?.planCode}</p>
+                    </div>
+                    <p className="text-sm text-accent">€{selectedServer?.price?.toFixed(2) || 'N/A'}/月</p>
+                  </div>
+                </div>
               </div>
-            </div>
-            <div className="space-y-2">
-              <Label>目标机房</Label>
-              <Select value={selectedDc} onValueChange={setSelectedDc}>
-                <SelectTrigger>
-                  <SelectValue placeholder="选择机房" />
-                </SelectTrigger>
-                <SelectContent>
-                  {selectedServer?.datacenters?.filter((dc: any) => 
-                    dc.availability !== "unavailable" && dc.availability !== "unknown"
-                  ).map((dc: any) => (
-                    <SelectItem key={dc.datacenter} value={dc.datacenter}>
-                      {dc.datacenter.toUpperCase()} - {dc.availability}
-                    </SelectItem>
+              
+              <div className="space-y-2">
+                <Label>目标机房</Label>
+                <Select value={selectedDc} onValueChange={setSelectedDc}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="选择机房" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {selectedServer?.datacenters?.filter((dc: any) => 
+                      dc.availability !== "unavailable" && dc.availability !== "unknown"
+                    ).map((dc: any) => {
+                      const info = getAvailabilityInfo(dc.availability);
+                      return (
+                        <SelectItem key={dc.datacenter} value={dc.datacenter}>
+                          <span className="flex items-center gap-2">
+                            <span className="uppercase font-mono">{dc.datacenter}</span>
+                            <span className={cn("text-xs px-1.5 py-0.5 rounded", info.color)}>
+                              {info.label}
+                            </span>
+                          </span>
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Price Preview */}
+              <div className="p-4 bg-primary/5 border border-primary/20 rounded-sm">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <DollarSign className="h-4 w-4 text-primary" />
+                    <span className="text-sm font-medium">预估价格</span>
+                  </div>
+                  {isLoadingPrice ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                  ) : priceInfo ? (
+                    <div className="text-right">
+                      <p className="text-lg font-bold text-primary">
+                        €{priceInfo.prices?.withTax?.toFixed(2) || 'N/A'}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        不含税: €{priceInfo.prices?.withoutTax?.toFixed(2) || 'N/A'}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">选择机房后显示</p>
+                  )}
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="options" className="space-y-4">
+              <Label>附加选项</Label>
+              {selectedServer?.availableOptions && selectedServer.availableOptions.length > 0 ? (
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {selectedServer.availableOptions.map((option: any) => (
+                    <div 
+                      key={option.value}
+                      className="flex items-center space-x-2 p-2 border border-border rounded hover:bg-muted/30 cursor-pointer"
+                      onClick={() => toggleOption(option.value)}
+                    >
+                      <Checkbox 
+                        checked={selectedOptions.includes(option.value)}
+                        onCheckedChange={() => toggleOption(option.value)}
+                      />
+                      <div className="flex-1">
+                        <p className="text-sm">{option.label}</p>
+                        <p className="text-xs text-muted-foreground font-mono">{option.value}</p>
+                      </div>
+                    </div>
                   ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
+                </div>
+              ) : (
+                <div className="text-center py-6 text-muted-foreground">
+                  <Settings2 className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                  <p className="text-sm">此服务器暂无可选附加选项</p>
+                </div>
+              )}
+              
+              {selectedOptions.length > 0 && (
+                <div className="p-2 bg-muted/30 rounded text-xs">
+                  已选: {selectedOptions.length} 个选项
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
+
+          <DialogFooter className="gap-2">
             <DialogClose asChild>
               <Button variant="outline">取消</Button>
             </DialogClose>
-            <Button onClick={handleAddToQueue} disabled={!selectedDc || isAddingToQueue}>
-              {isAddingToQueue ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              添加任务
-            </Button>
+            {dialogMode === 'queue' ? (
+              <Button onClick={handleAddToQueue} disabled={!selectedDc || isAddingToQueue}>
+                {isAddingToQueue ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <ShoppingCart className="h-4 w-4 mr-2" />}
+                添加到队列
+              </Button>
+            ) : (
+              <Button onClick={handleQuickOrder} disabled={!selectedDc || isQuickOrdering}>
+                {isQuickOrdering ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Zap className="h-4 w-4 mr-2" />}
+                立即下单
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

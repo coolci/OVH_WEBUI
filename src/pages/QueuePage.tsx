@@ -15,7 +15,9 @@ import {
   CheckCircle2,
   XCircle,
   MoreVertical,
-  Loader2
+  Loader2,
+  Power,
+  Square
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
@@ -54,11 +56,26 @@ const QueuePage = () => {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [newTask, setNewTask] = useState({ planCode: "", datacenter: "", retryInterval: 30 });
   const [isAdding, setIsAdding] = useState(false);
+  const [isProcessorRunning, setIsProcessorRunning] = useState(false);
+  const [isTogglingProcessor, setIsTogglingProcessor] = useState(false);
 
   useEffect(() => {
     const interval = setInterval(refetch, 5000);
     return () => clearInterval(interval);
   }, [refetch]);
+
+  // 检查处理器状态 (从stats中获取)
+  useEffect(() => {
+    const checkProcessorStatus = async () => {
+      try {
+        const stats = await api.getStats();
+        setIsProcessorRunning(stats.queueProcessorRunning || false);
+      } catch {}
+    };
+    checkProcessorStatus();
+    const interval = setInterval(checkProcessorStatus, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
   const queueList = queue || [];
 
@@ -168,6 +185,39 @@ const QueuePage = () => {
             </div>
             
             <div className="flex gap-2">
+              {/* 处理器控制按钮 */}
+              <Button 
+                variant={isProcessorRunning ? "destructive" : "default"}
+                size="sm"
+                onClick={async () => {
+                  setIsTogglingProcessor(true);
+                  try {
+                    if (isProcessorRunning) {
+                      // 停止处理器 - 这里假设有对应的API
+                      toast.info("队列处理器控制暂未实现后端API");
+                    } else {
+                      toast.info("队列处理器控制暂未实现后端API");
+                    }
+                    const stats = await api.getStats();
+                    setIsProcessorRunning(stats.queueProcessorRunning || false);
+                  } catch (err: any) {
+                    toast.error(err.message);
+                  } finally {
+                    setIsTogglingProcessor(false);
+                  }
+                }}
+                disabled={isTogglingProcessor}
+              >
+                {isTogglingProcessor ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : isProcessorRunning ? (
+                  <Square className="h-4 w-4 mr-2" />
+                ) : (
+                  <Power className="h-4 w-4 mr-2" />
+                )}
+                {isProcessorRunning ? "停止处理器" : "启动处理器"}
+              </Button>
+              
               <Button variant="outline" size="sm" onClick={handleClearQueue}>
                 <Trash2 className="h-4 w-4 mr-2" />
                 清空队列
