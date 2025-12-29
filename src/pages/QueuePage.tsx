@@ -49,6 +49,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 const QueuePage = () => {
   const { data: queue, isLoading, refetch } = useQueue();
@@ -58,6 +69,7 @@ const QueuePage = () => {
   const [isAdding, setIsAdding] = useState(false);
   const [isProcessorRunning, setIsProcessorRunning] = useState(false);
   const [isTogglingProcessor, setIsTogglingProcessor] = useState(false);
+  const [isClearingQueue, setIsClearingQueue] = useState(false);
 
   useEffect(() => {
     const interval = setInterval(refetch, 5000);
@@ -175,12 +187,15 @@ const QueuePage = () => {
   };
 
   const handleClearQueue = async () => {
+    setIsClearingQueue(true);
     try {
       const result = await api.clearQueue();
       toast.success(`已清空 ${result.count} 个任务`);
       refetch();
     } catch (err: any) {
       toast.error(err.message);
+    } finally {
+      setIsClearingQueue(false);
     }
   };
 
@@ -226,10 +241,33 @@ const QueuePage = () => {
                 {isProcessorRunning ? "停止处理器" : "启动处理器"}
               </Button>
               
-              <Button variant="outline" size="sm" onClick={handleClearQueue}>
-                <Trash2 className="h-4 w-4 mr-2" />
-                清空队列
-              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" disabled={queueList.length === 0}>
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    清空队列
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent className="terminal-card border-destructive/30">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle className="text-destructive">确认清空队列？</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      此操作将删除所有 {queueList.length} 个任务，且无法撤销。
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>取消</AlertDialogCancel>
+                    <AlertDialogAction 
+                      onClick={handleClearQueue}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      disabled={isClearingQueue}
+                    >
+                      {isClearingQueue && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                      确认清空
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
               <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
                 <DialogTrigger asChild>
                   <Button size="sm">
