@@ -145,7 +145,10 @@ const ServersPage = () => {
   };
 
   const handleQuickOrder = async () => {
-    if (!selectedServer || !selectedDc) return;
+    if (!selectedServer || !selectedDc) {
+      toast.error("请选择机房");
+      return;
+    }
     
     setIsQuickOrdering(true);
     try {
@@ -155,13 +158,17 @@ const ServersPage = () => {
         options: selectedOptions,
       });
       if (result.success) {
-        toast.success(result.message);
+        toast.success(result.message || "下单成功！请前往OVH支付订单");
         closeDialog();
       } else {
-        toast.error(result.message);
+        toast.error(result.message || "下单失败");
       }
     } catch (err: any) {
-      toast.error(err.message);
+      if (err.message?.includes("Failed to fetch") || err.message?.includes("NetworkError")) {
+        toast.error("无法连接到后端服务，请检查后端是否运行");
+      } else {
+        toast.error(err.message || "下单请求失败");
+      }
     } finally {
       setIsQuickOrdering(false);
     }
