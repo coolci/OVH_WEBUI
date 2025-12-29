@@ -260,24 +260,24 @@ const SettingsPage = () => {
       <AppLayout>
         <div className="space-y-6">
           {/* Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div>
-                <h1 className="text-2xl font-bold text-primary flex items-center gap-2">
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+              <div className="flex-1 min-w-0">
+                <h1 className="text-xl sm:text-2xl font-bold text-primary flex items-center gap-2">
                   <span className="text-muted-foreground">&gt;</span>
                   系统设置
                   <span className="cursor-blink">_</span>
                 </h1>
-                <p className="text-sm text-muted-foreground mt-1">
+                <p className="text-xs sm:text-sm text-muted-foreground mt-1">
                   配置 API 凭证和系统参数
                 </p>
               </div>
               {isConnected ? (
-                <span className="flex items-center gap-1 text-xs text-primary bg-primary/10 px-2 py-1 rounded">
+                <span className="flex items-center gap-1 text-xs text-primary bg-primary/10 px-2 py-1 rounded w-fit">
                   <Wifi className="h-3 w-3" /> 已连接
                 </span>
               ) : (
-                <span className="flex items-center gap-1 text-xs text-destructive bg-destructive/10 px-2 py-1 rounded">
+                <span className="flex items-center gap-1 text-xs text-destructive bg-destructive/10 px-2 py-1 rounded w-fit">
                   <WifiOff className="h-3 w-3" /> 未连接
                 </span>
               )}
@@ -436,11 +436,11 @@ const SettingsPage = () => {
                             <SelectItem value="ovh-ca">OVH Canada (ovh-ca)</SelectItem>
                           </SelectContent>
                         </Select>
-                        <div className="flex gap-1 pt-1">
+                        <div className="flex flex-wrap gap-1 pt-1">
                           <Button 
                             variant="outline" 
                             size="sm" 
-                            className="text-xs"
+                            className="text-xs h-7 px-2"
                             onClick={() => setConfig({...config, endpoint: 'ovh-eu', zone: 'IE'})}
                           >
                             🇪🇺 EU
@@ -448,7 +448,7 @@ const SettingsPage = () => {
                           <Button 
                             variant="outline" 
                             size="sm" 
-                            className="text-xs"
+                            className="text-xs h-7 px-2"
                             onClick={() => setConfig({...config, endpoint: 'ovh-us', zone: 'US'})}
                           >
                             🇺🇸 US
@@ -456,7 +456,7 @@ const SettingsPage = () => {
                           <Button 
                             variant="outline" 
                             size="sm" 
-                            className="text-xs"
+                            className="text-xs h-7 px-2"
                             onClick={() => setConfig({...config, endpoint: 'ovh-ca', zone: 'CA'})}
                           >
                             🇨🇦 CA
@@ -490,9 +490,9 @@ const SettingsPage = () => {
                     </div>
                     
                     <div className="pt-4 border-t border-border">
-                      <Button variant="terminal" onClick={testOvhApi}>
-                        <CheckCircle2 className="h-4 w-4 mr-2" />
-                        验证 API 连接
+                      <Button variant="terminal" onClick={testOvhApi} size="sm" className="text-xs sm:text-sm">
+                        <CheckCircle2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                        验证连接
                       </Button>
                     </div>
                   </div>
@@ -595,26 +595,26 @@ const SettingsPage = () => {
                 icon={<Shield className="h-4 w-4" />}
               >
                 <div className="space-y-6">
-                  <div className="p-4 bg-muted/30 rounded border border-border">
-                    <p className="text-sm text-muted-foreground">
+                  <div className="p-3 sm:p-4 bg-muted/30 rounded border border-border">
+                    <p className="text-xs sm:text-sm text-muted-foreground">
                       API 密钥已在"后端连接"标签页中配置。该密钥用于前端与后端的安全通信。
                     </p>
                   </div>
 
                   <div className="space-y-4 pt-4 border-t border-border">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <Label>请求时间戳验证</Label>
-                        <p className="text-xs text-muted-foreground">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <Label className="text-xs sm:text-sm">请求时间戳验证</Label>
+                        <p className="text-[10px] sm:text-xs text-muted-foreground">
                           拒绝时间偏差超过 5 分钟的请求
                         </p>
                       </div>
                       <Switch defaultChecked />
                     </div>
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <Label>IP 白名单</Label>
-                        <p className="text-xs text-muted-foreground">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <Label className="text-xs sm:text-sm">IP 白名单</Label>
+                        <p className="text-[10px] sm:text-xs text-muted-foreground">
                           仅允许指定 IP 访问
                         </p>
                       </div>
@@ -638,22 +638,22 @@ const SettingsPage = () => {
                   </div>
                 ) : cacheInfo ? (
                   <div className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
                       <div 
                         className={cn(
-                          "p-4 rounded-sm border",
+                          "p-3 sm:p-4 rounded-sm border",
                           cacheInfo.backend.cacheValid ? "border-primary/30" : "border-destructive/30"
                         )}
                       >
                         <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm font-medium">服务器缓存</span>
+                          <span className="text-xs sm:text-sm font-medium">服务器缓存</span>
                           {cacheInfo.backend.cacheValid ? (
-                            <CheckCircle2 className="h-4 w-4 text-primary" />
+                            <CheckCircle2 className="h-3 w-3 sm:h-4 sm:w-4 text-primary" />
                           ) : (
-                            <XCircle className="h-4 w-4 text-destructive" />
+                            <XCircle className="h-3 w-3 sm:h-4 sm:w-4 text-destructive" />
                           )}
                         </div>
-                        <div className="space-y-1 text-xs text-muted-foreground">
+                        <div className="space-y-1 text-[10px] sm:text-xs text-muted-foreground">
                           <p>服务器数: <span className="text-foreground">{cacheInfo.backend.serverCount}</span></p>
                           <p>缓存年龄: <span className="text-foreground">
                             {cacheInfo.backend.cacheAge ? `${Math.round(cacheInfo.backend.cacheAge / 60)} 分钟` : 'N/A'}
@@ -668,19 +668,19 @@ const SettingsPage = () => {
                         <div 
                           key={name}
                           className={cn(
-                            "p-4 rounded-sm border",
+                            "p-3 sm:p-4 rounded-sm border",
                             exists ? "border-primary/30" : "border-muted"
                           )}
                         >
                           <div className="flex items-center justify-between mb-2">
-                            <span className="text-sm font-medium capitalize">{name}</span>
+                            <span className="text-xs sm:text-sm font-medium capitalize">{name}</span>
                             {exists ? (
-                              <CheckCircle2 className="h-4 w-4 text-primary" />
+                              <CheckCircle2 className="h-3 w-3 sm:h-4 sm:w-4 text-primary" />
                             ) : (
-                              <XCircle className="h-4 w-4 text-muted-foreground" />
+                              <XCircle className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
                             )}
                           </div>
-                          <div className="text-xs text-muted-foreground">
+                          <div className="text-[10px] sm:text-xs text-muted-foreground">
                             <p>状态: <span className={exists ? "text-primary" : "text-muted-foreground"}>
                               {exists ? "存在" : "不存在"}
                             </span></p>
