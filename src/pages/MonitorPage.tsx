@@ -63,9 +63,12 @@ const MonitorPage = () => {
   const { data: servers } = useServers();
   const [isRunning, setIsRunning] = useState(false);
   const [selectedSubscription, setSelectedSubscription] = useState<Subscription | null>(null);
+  const [subscriptionHistory, setSubscriptionHistory] = useState<any[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [isToggling, setIsToggling] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
+  const [isClearing, setIsClearing] = useState(false);
   
   // 添加订阅表单状态
   const [newPlanCode, setNewPlanCode] = useState("");
@@ -167,12 +170,39 @@ const MonitorPage = () => {
     }
   };
 
+  const handleClearSubscriptions = async () => {
+    setIsClearing(true);
+    try {
+      const result = await api.clearSubscriptions();
+      toast.success(`已清空 ${result.count} 个订阅`);
+      refetch();
+    } catch (error: any) {
+      toast.error(`清空失败: ${error.message}`);
+    } finally {
+      setIsClearing(false);
+    }
+  };
+
   const handleTestNotification = async () => {
     try {
       await api.testNotification();
       toast.success("测试通知已发送");
     } catch (error: any) {
       toast.error(`发送失败: ${error.message}`);
+    }
+  };
+
+  const handleViewHistory = async (sub: Subscription) => {
+    setSelectedSubscription(sub);
+    setIsLoadingHistory(true);
+    try {
+      const result = await api.getSubscriptionHistory(sub.planCode);
+      setSubscriptionHistory(result.history || []);
+    } catch (error: any) {
+      console.error('Failed to load history:', error);
+      setSubscriptionHistory(sub.history || []);
+    } finally {
+      setIsLoadingHistory(false);
     }
   };
 
@@ -374,6 +404,20 @@ const MonitorPage = () => {
               <Plus className="h-4 w-4 mr-2" />
               批量添加全部服务器
             </Button>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="text-destructive hover:text-destructive"
+              onClick={handleClearSubscriptions}
+              disabled={isClearing || subscriptionList.length === 0}
+            >
+              {isClearing ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4 mr-2" />
+              )}
+              清空所有订阅
+            </Button>
           </div>
 
           {/* Subscriptions List */}
@@ -467,7 +511,7 @@ const MonitorPage = () => {
                           <Button 
                             variant="ghost" 
                             size="sm"
-                            onClick={() => setSelectedSubscription(sub)}
+                            onClick={() => handleViewHistory(sub)}
                           >
                             <HistoryIcon className="h-4 w-4 mr-1" />
                             历史
@@ -524,7 +568,7 @@ const MonitorPage = () => {
           </TerminalCard>
 
           {/* History Dialog */}
-          <Dialog open={!!selectedSubscription} onOpenChange={() => setSelectedSubscription(null)}>
+          <Dialog open={!!selectedSubscription} onOpenChange={() => { setSelectedSubscription(null); setSubscriptionHistory([]); }}>
             <DialogContent className="terminal-card border-primary/30">
               <DialogHeader>
                 <DialogTitle className="text-primary">
@@ -532,10 +576,14 @@ const MonitorPage = () => {
                 </DialogTitle>
               </DialogHeader>
               <div className="space-y-2 max-h-96 overflow-y-auto">
-                {(selectedSubscription?.history || []).length === 0 ? (
+                {isLoadingHistory ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                  </div>
+                ) : subscriptionHistory.length === 0 ? (
                   <p className="text-muted-foreground text-center py-8">暂无变更记录</p>
                 ) : (
-                  selectedSubscription?.history.map((h, i) => (
+                  subscriptionHistory.map((h, i) => (
                     <div 
                       key={i}
                       className={cn(

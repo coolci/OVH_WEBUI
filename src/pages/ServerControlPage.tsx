@@ -87,6 +87,7 @@ const ServerControlPage = () => {
   const [serviceInfo, setServiceInfo] = useState<any>(null);
   const [serverTemplates, setServerTemplates] = useState<any[]>([]);
   const [plannedInterventions, setPlannedInterventions] = useState<any[]>([]);
+  const [historicalInterventions, setHistoricalInterventions] = useState<any[]>([]);
   const [installStatus, setInstallStatus] = useState<any>(null);
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
   const [isRebooting, setIsRebooting] = useState(false);
@@ -136,13 +137,14 @@ const ServerControlPage = () => {
   const loadServerDetails = async (serviceName: string) => {
     setIsLoadingDetails(true);
     try {
-      const [details, hardware, ips, tasks, info, planned, install] = await Promise.all([
+      const [details, hardware, ips, tasks, info, planned, historical, install] = await Promise.all([
         api.getServerDetails(serviceName).catch(() => null),
         api.getServerHardware(serviceName).catch(() => null),
         api.getServerIps(serviceName).catch(() => null),
         api.getServerTasks(serviceName).catch(() => null),
         api.getServiceInfo(serviceName).catch(() => null),
         api.getPlannedInterventions(serviceName).catch(() => null),
+        api.getInterventions(serviceName).catch(() => null),
         api.getInstallStatus(serviceName).catch(() => null),
       ]);
       
@@ -152,6 +154,7 @@ const ServerControlPage = () => {
       setServerTasks(tasks?.tasks || []);
       setServiceInfo(info?.serviceInfo);
       setPlannedInterventions(planned?.plannedInterventions || []);
+      setHistoricalInterventions(historical?.interventions || []);
       setInstallStatus(install?.status || null);
     } catch (error) {
       console.error('加载服务器详情失败:', error);
@@ -614,39 +617,92 @@ const ServerControlPage = () => {
                       </TabsContent>
 
                       <TabsContent value="maintenance">
-                        <div className="space-y-4">
-                          <h3 className="text-sm font-medium flex items-center gap-2">
-                            <Wrench className="h-4 w-4" />
-                            计划维护
-                          </h3>
-                          {plannedInterventions.length > 0 ? (
-                            <div className="space-y-2">
-                              {plannedInterventions.map((intervention: any, index: number) => (
-                                <div key={index} className="p-4 border border-warning/30 bg-warning/5 rounded-sm">
-                                  <div className="flex items-start gap-3">
-                                    <AlertTriangle className="h-5 w-5 text-warning mt-0.5" />
-                                    <div className="flex-1">
-                                      <p className="font-medium">{intervention.type || '计划维护'}</p>
-                                      <p className="text-sm text-muted-foreground mt-1">
-                                        {intervention.comment || intervention.description}
-                                      </p>
+                        <div className="space-y-6">
+                          {/* Planned Interventions */}
+                          <div className="space-y-4">
+                            <h3 className="text-sm font-medium flex items-center gap-2">
+                              <AlertTriangle className="h-4 w-4 text-warning" />
+                              计划维护
+                            </h3>
+                            {plannedInterventions.length > 0 ? (
+                              <div className="space-y-2">
+                                {plannedInterventions.map((intervention: any, index: number) => (
+                                  <div key={index} className="p-4 border border-warning/30 bg-warning/5 rounded-sm">
+                                    <div className="flex items-start gap-3">
+                                      <AlertTriangle className="h-5 w-5 text-warning mt-0.5" />
+                                      <div className="flex-1">
+                                        <p className="font-medium">{intervention.type || '计划维护'}</p>
+                                        <p className="text-sm text-muted-foreground mt-1">
+                                          {intervention.comment || intervention.description}
+                                        </p>
+                                        {intervention.date && (
+                                          <p className="text-xs text-warning mt-2 flex items-center gap-1">
+                                            <Calendar className="h-3 w-3" />
+                                            {new Date(intervention.date).toLocaleString("zh-CN")}
+                                          </p>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="text-center py-4 text-muted-foreground border border-border rounded-sm">
+                                <CheckCircle2 className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                                <p className="text-sm">暂无计划维护</p>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Historical Interventions */}
+                          <div className="space-y-4">
+                            <h3 className="text-sm font-medium flex items-center gap-2">
+                              <Wrench className="h-4 w-4" />
+                              历史干预记录
+                            </h3>
+                            {historicalInterventions.length > 0 ? (
+                              <div className="space-y-2 max-h-64 overflow-y-auto">
+                                {historicalInterventions.map((intervention: any, index: number) => (
+                                  <div key={index} className="p-3 border border-border rounded-sm">
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="flex-1">
+                                        <p className="font-medium text-sm">{intervention.type || '干预'}</p>
+                                        {intervention.description && (
+                                          <p className="text-xs text-muted-foreground mt-1">
+                                            {intervention.description}
+                                          </p>
+                                        )}
+                                      </div>
+                                      <span className={cn(
+                                        "px-2 py-0.5 rounded-sm text-xs",
+                                        intervention.status === "done" ? "bg-primary/20 text-primary" :
+                                        intervention.status === "error" ? "bg-destructive/20 text-destructive" :
+                                        "bg-muted text-muted-foreground"
+                                      )}>
+                                        {intervention.status || 'N/A'}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
                                       {intervention.date && (
-                                        <p className="text-xs text-warning mt-2 flex items-center gap-1">
+                                        <span className="flex items-center gap-1">
                                           <Calendar className="h-3 w-3" />
                                           {new Date(intervention.date).toLocaleString("zh-CN")}
-                                        </p>
+                                        </span>
+                                      )}
+                                      {intervention.interventionId && (
+                                        <span className="font-mono">#{intervention.interventionId}</span>
                                       )}
                                     </div>
                                   </div>
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="text-center py-8 text-muted-foreground">
-                              <CheckCircle2 className="h-12 w-12 mx-auto mb-4 opacity-30" />
-                              <p>暂无计划维护</p>
-                            </div>
-                          )}
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="text-center py-4 text-muted-foreground border border-border rounded-sm">
+                                <Wrench className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                                <p className="text-sm">暂无历史干预记录</p>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </TabsContent>
                     </Tabs>

@@ -21,7 +21,8 @@ import {
   EyeOff,
   Server,
   Wifi,
-  WifiOff
+  WifiOff,
+  Loader2
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
@@ -83,6 +84,9 @@ const SettingsPage = () => {
     };
   } | null>(null);
 
+  const [webhookInfo, setWebhookInfo] = useState<any>(null);
+  const [isLoadingWebhook, setIsLoadingWebhook] = useState(false);
+
   // 检测后端连接
   const checkConnection = async () => {
     try {
@@ -118,11 +122,29 @@ const SettingsPage = () => {
           const cache = await api.getCacheInfo();
           setCacheInfo(cache);
         } catch {}
+
+        // 加载Webhook信息
+        loadWebhookInfo();
       }
     } catch (err) {
       console.error("Failed to load config:", err);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // 加载Webhook信息
+  const loadWebhookInfo = async () => {
+    setIsLoadingWebhook(true);
+    try {
+      const result = await api.getTelegramWebhookInfo();
+      if (result.success) {
+        setWebhookInfo(result.webhook_info);
+      }
+    } catch (err) {
+      console.error("Failed to load webhook info:", err);
+    } finally {
+      setIsLoadingWebhook(false);
     }
   };
 
@@ -484,9 +506,48 @@ const SettingsPage = () => {
 
                     <div className="space-y-4 pt-4 border-t border-border">
                       <h3 className="text-sm font-medium">Webhook 配置</h3>
+                      
+                      {/* Webhook Status */}
+                      {isLoadingWebhook ? (
+                        <div className="p-3 bg-muted/30 rounded border border-border">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        </div>
+                      ) : webhookInfo ? (
+                        <div className={cn(
+                          "p-4 rounded border",
+                          webhookInfo.url ? "border-primary/30 bg-primary/5" : "border-muted"
+                        )}>
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-medium">当前 Webhook</span>
+                            {webhookInfo.url ? (
+                              <CheckCircle2 className="h-4 w-4 text-primary" />
+                            ) : (
+                              <XCircle className="h-4 w-4 text-muted-foreground" />
+                            )}
+                          </div>
+                          {webhookInfo.url ? (
+                            <div className="space-y-1 text-xs text-muted-foreground">
+                              <p>URL: <span className="font-mono text-foreground break-all">{webhookInfo.url}</span></p>
+                              {webhookInfo.pending_update_count !== undefined && (
+                                <p>待处理更新: <span className="text-foreground">{webhookInfo.pending_update_count}</span></p>
+                              )}
+                              {webhookInfo.last_error_message && (
+                                <p className="text-destructive">错误: {webhookInfo.last_error_message}</p>
+                              )}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-muted-foreground">未设置 Webhook</p>
+                          )}
+                        </div>
+                      ) : null}
+
                       <div className="flex gap-4">
                         <Button variant="terminal" onClick={setWebhook}>
                           设置 Webhook
+                        </Button>
+                        <Button variant="outline" onClick={() => loadWebhookInfo()}>
+                          <RefreshCw className="h-4 w-4 mr-2" />
+                          刷新状态
                         </Button>
                         <Button variant="outline" onClick={testTelegram}>
                           发送测试消息
