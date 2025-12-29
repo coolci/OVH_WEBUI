@@ -106,7 +106,7 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
                   >
                     <item.icon className={cn(
                       "h-4 w-4 transition-all",
-                      isActive && "text-primary drop-shadow-[0_0_8px_hsl(var(--primary)))]"
+                      isActive && "text-primary drop-shadow-[0_0_8px_hsl(var(--primary))]"
                     )} />
                     <span>{item.label}</span>
                     {isActive && (
