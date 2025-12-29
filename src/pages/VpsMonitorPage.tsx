@@ -11,12 +11,15 @@ import {
   Play,
   Square,
   Bell,
+  BellOff,
   Settings2,
   RefreshCw,
   Loader2,
   History as HistoryIcon,
   Clock,
-  Search
+  Search,
+  Edit,
+  ShoppingCart
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
@@ -83,6 +86,13 @@ const VpsMonitorPage = () => {
   const [notifyAvailable, setNotifyAvailable] = useState(true);
   const [notifyUnavailable, setNotifyUnavailable] = useState(false);
   const [autoOrder, setAutoOrder] = useState(false);
+  
+  // 编辑订阅状态
+  const [editingSubscription, setEditingSubscription] = useState<VpsSubscription | null>(null);
+  const [editNotifyAvailable, setEditNotifyAvailable] = useState(true);
+  const [editNotifyUnavailable, setEditNotifyUnavailable] = useState(false);
+  const [editAutoOrder, setEditAutoOrder] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
 
   useEffect(() => {
     if (monitorStatus) {
@@ -256,6 +266,32 @@ const VpsMonitorPage = () => {
       toast.error(`检查失败: ${error.message}`);
     } finally {
       setIsManualChecking(null);
+    }
+  };
+
+  const handleEditSubscription = (sub: VpsSubscription) => {
+    setEditingSubscription(sub);
+    setEditNotifyAvailable(sub.notifyAvailable);
+    setEditNotifyUnavailable(sub.notifyUnavailable);
+    setEditAutoOrder(sub.autoOrder || false);
+  };
+
+  const handleUpdateSubscription = async () => {
+    if (!editingSubscription) return;
+    setIsUpdating(true);
+    try {
+      await api.updateVpsSubscription(editingSubscription.id, {
+        notifyAvailable: editNotifyAvailable,
+        notifyUnavailable: editNotifyUnavailable,
+        autoOrder: editAutoOrder,
+      });
+      toast.success("订阅配置已更新");
+      setEditingSubscription(null);
+      refetch();
+    } catch (error: any) {
+      toast.error(`更新失败: ${error.message}`);
+    } finally {
+      setIsUpdating(false);
     }
   };
 
@@ -556,6 +592,32 @@ const VpsMonitorPage = () => {
                           {sub.ovhSubsidiary && (
                             <span className="text-xs px-2 py-0.5 bg-muted rounded-sm">{sub.ovhSubsidiary}</span>
                           )}
+                          {sub.autoOrder && (
+                            <span className="text-xs px-2 py-0.5 bg-accent/20 text-accent rounded-sm flex items-center gap-1">
+                              <ShoppingCart className="h-3 w-3" />
+                              自动下单
+                            </span>
+                          )}
+                        </div>
+                        
+                        {/* Notification Settings */}
+                        <div className="flex items-center gap-4 text-xs text-muted-foreground mb-3">
+                          <span className="flex items-center gap-1">
+                            {sub.notifyAvailable ? (
+                              <Bell className="h-3 w-3 text-primary" />
+                            ) : (
+                              <BellOff className="h-3 w-3" />
+                            )}
+                            有货通知: {sub.notifyAvailable ? "开" : "关"}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            {sub.notifyUnavailable ? (
+                              <Bell className="h-3 w-3 text-warning" />
+                            ) : (
+                              <BellOff className="h-3 w-3" />
+                            )}
+                            无货通知: {sub.notifyUnavailable ? "开" : "关"}
+                          </span>
                         </div>
                         
                         {/* Datacenter Status Grid */}
@@ -606,6 +668,14 @@ const VpsMonitorPage = () => {
                           ) : (
                             <Search className="h-4 w-4" />
                           )}
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={() => handleEditSubscription(sub)}
+                          title="编辑设置"
+                        >
+                          <Edit className="h-4 w-4" />
                         </Button>
                         <Button 
                           variant="ghost" 
@@ -706,6 +776,53 @@ const VpsMonitorPage = () => {
                 <DialogClose asChild>
                   <Button variant="outline">关闭</Button>
                 </DialogClose>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Edit Subscription Dialog */}
+          <Dialog open={!!editingSubscription} onOpenChange={(open) => !open && setEditingSubscription(null)}>
+            <DialogContent className="terminal-card border-primary/30">
+              <DialogHeader>
+                <DialogTitle className="text-primary flex items-center gap-2">
+                  <Edit className="h-5 w-5" />
+                  编辑订阅 - {editingSubscription?.displayName || editingSubscription?.planCode}
+                </DialogTitle>
+                <DialogDescription>
+                  修改通知和自动下单设置
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="flex items-center justify-between">
+                  <Label className="flex items-center gap-2">
+                    <Bell className="h-4 w-4 text-primary" />
+                    有货通知
+                  </Label>
+                  <Switch checked={editNotifyAvailable} onCheckedChange={setEditNotifyAvailable} />
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label className="flex items-center gap-2">
+                    <Bell className="h-4 w-4 text-warning" />
+                    无货通知
+                  </Label>
+                  <Switch checked={editNotifyUnavailable} onCheckedChange={setEditNotifyUnavailable} />
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label className="flex items-center gap-2">
+                    <ShoppingCart className="h-4 w-4 text-accent" />
+                    自动下单
+                  </Label>
+                  <Switch checked={editAutoOrder} onCheckedChange={setEditAutoOrder} />
+                </div>
+              </div>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button variant="outline">取消</Button>
+                </DialogClose>
+                <Button onClick={handleUpdateSubscription} disabled={isUpdating}>
+                  {isUpdating && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  保存设置
+                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
