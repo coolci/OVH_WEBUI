@@ -11,7 +11,9 @@ import {
   Terminal,
   Cpu,
   User,
-  Zap
+  Zap,
+  UserCog,
+  BarChart3
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -32,6 +34,7 @@ const navGroups = [
     items: [
       { to: "/servers", icon: Server, label: "服务器列表" },
       { to: "/server-control", icon: Cpu, label: "服务器控制" },
+      { to: "/performance", icon: BarChart3, label: "性能监控" },
     ],
   },
   {
@@ -52,6 +55,7 @@ const navGroups = [
     title: "配置",
     items: [
       { to: "/account", icon: User, label: "账户管理" },
+      { to: "/contact-change", icon: UserCog, label: "联系人变更" },
       { to: "/settings", icon: Settings, label: "系统设置" },
     ],
   },

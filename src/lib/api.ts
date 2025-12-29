@@ -573,6 +573,129 @@ export const api = {
     bills?: Array<any>;
     error?: string;
   }>(`/api/ovh/account/bills${limit ? `?limit=${limit}` : ''}`),
+  
+  // ==================== 邮件历史 ====================
+  getOvhEmails: (limit?: number) => apiRequest<{
+    success: boolean;
+    emails?: Array<{
+      id: string;
+      subject: string;
+      date: string;
+      body: string;
+      recipients: string[];
+    }>;
+    error?: string;
+  }>(`/api/ovh/account/emails${limit ? `?limit=${limit}` : ''}`),
+  
+  // ==================== 退款记录 ====================
+  getOvhRefunds: (limit?: number) => apiRequest<{
+    success: boolean;
+    refunds?: Array<{
+      refundId: string;
+      date: string;
+      orderId: string;
+      priceWithTax: { value: number; currencyCode: string };
+      status: string;
+    }>;
+    error?: string;
+  }>(`/api/ovh/account/refunds${limit ? `?limit=${limit}` : ''}`),
+  
+  // ==================== 联系人变更请求 ====================
+  getContactChangeRequests: () => apiRequest<{
+    success: boolean;
+    requests?: Array<{
+      id: number;
+      serviceDomain: string;
+      askingAccount: string;
+      contactType: string;
+      fromAccount: string;
+      toAccount: string;
+      state: string;
+      dateDone: string | null;
+      dateRequest: string;
+    }>;
+    error?: string;
+  }>('/api/ovh/contact-change/requests'),
+  
+  acceptContactChange: (id: number) => apiRequest<{
+    success: boolean;
+    message?: string;
+    error?: string;
+  }>(`/api/ovh/contact-change/${id}/accept`, {
+    method: 'POST',
+  }),
+  
+  refuseContactChange: (id: number) => apiRequest<{
+    success: boolean;
+    message?: string;
+    error?: string;
+  }>(`/api/ovh/contact-change/${id}/refuse`, {
+    method: 'POST',
+  }),
+  
+  resendContactChangeEmail: (id: number) => apiRequest<{
+    success: boolean;
+    message?: string;
+    error?: string;
+  }>(`/api/ovh/contact-change/${id}/resend`, {
+    method: 'POST',
+  }),
+  
+  // ==================== 性能监控 ====================
+  getServerStatistics: (serviceName: string, period?: 'daily' | 'hourly' | 'weekly' | 'monthly' | 'yearly') => 
+    apiRequest<{
+      success: boolean;
+      statistics?: {
+        cpu?: Array<{ timestamp: number; value: number }>;
+        mem?: Array<{ timestamp: number; value: number }>;
+        net_tx?: Array<{ timestamp: number; value: number }>;
+        net_rx?: Array<{ timestamp: number; value: number }>;
+      };
+      error?: string;
+    }>(`/api/server-control/${serviceName}/statistics${period ? `?period=${period}` : ''}`),
+  
+  // ==================== Telegram WEBHOOK下单 ====================
+  telegramQuickOrder: (order: {
+    mode: 'stock' | 'queue' | 'monitor' | 'price' | 'buy';
+    planCode?: string;
+    datacenter?: string;
+    options?: string[];
+    quantity?: number;
+  }) => apiRequest<{
+    success: boolean;
+    message?: string;
+    orderId?: string;
+    price?: any;
+    error?: string;
+  }>('/api/telegram/quick-order', {
+    method: 'POST',
+    body: JSON.stringify(order),
+  }),
+  
+  getTelegramOrderModes: () => apiRequest<{
+    success: boolean;
+    modes: Array<{
+      mode: string;
+      description: string;
+      example: string;
+    }>;
+  }>('/api/telegram/order-modes'),
+  
+  // ==================== 更新订阅（含数量） ====================
+  updateSubscription: (planCode: string, options: {
+    notifyAvailable?: boolean;
+    notifyUnavailable?: boolean;
+    autoOrder?: boolean;
+    quantity?: number;
+    datacenters?: string[];
+  }) => apiRequest<{
+    success: boolean;
+    message?: string;
+    error?: string;
+  }>(`/api/monitor/subscriptions/${planCode}`, {
+    method: 'PUT',
+    body: JSON.stringify(options),
+  }),
 };
 
 export default api;
