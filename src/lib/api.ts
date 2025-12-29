@@ -294,6 +294,26 @@ export const api = {
       method: 'DELETE',
     }),
   
+  clearVpsSubscriptions: () =>
+    apiRequest<{ status: string; count: number }>('/api/vps-monitor/subscriptions/clear', {
+      method: 'DELETE',
+    }),
+  
+  batchAddAllVps: (options?: {
+    notifyAvailable?: boolean;
+    notifyUnavailable?: boolean;
+    autoOrder?: boolean;
+  }) => apiRequest<{
+    status: string;
+    added: number;
+    skipped: number;
+    errors: string[];
+    message: string;
+  }>('/api/vps-monitor/subscriptions/batch-add-all', {
+    method: 'POST',
+    body: JSON.stringify(options || {}),
+  }),
+  
   startVpsMonitor: () => apiRequest<{ status: string }>('/api/vps-monitor/start', {
     method: 'POST',
   }),
