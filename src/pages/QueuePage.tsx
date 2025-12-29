@@ -12,13 +12,16 @@ import {
   Pause,
   RefreshCw,
   Clock,
-  AlertCircle,
   CheckCircle2,
   XCircle,
-  MoreVertical
+  MoreVertical,
+  Loader2
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import api from "@/lib/api";
+import { useQueue, useServers } from "@/hooks/useApi";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -45,122 +48,102 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-interface QueueItem {
-  id: string;
-  planCode: string;
-  serverName: string;
-  datacenter: string;
-  options: string[];
-  status: "pending" | "running" | "paused" | "completed" | "failed";
-  createdAt: string;
-  retryInterval: number;
-  retryCount: number;
-  lastCheckTime: number;
-  errorMessage?: string;
-}
-
-const mockQueue: QueueItem[] = [
-  {
-    id: "q-001",
-    planCode: "24ska01",
-    serverName: "KS-A",
-    datacenter: "gra",
-    options: ["ram-32g-ecc-2400", "softraid-2"],
-    status: "running",
-    createdAt: "2024-12-29T08:00:00",
-    retryInterval: 30,
-    retryCount: 156,
-    lastCheckTime: Date.now() - 15000,
-  },
-  {
-    id: "q-002",
-    planCode: "24sk30",
-    serverName: "KS-30",
-    datacenter: "rbx",
-    options: ["ram-64g-ecc-2400"],
-    status: "running",
-    createdAt: "2024-12-29T09:30:00",
-    retryInterval: 30,
-    retryCount: 89,
-    lastCheckTime: Date.now() - 5000,
-  },
-  {
-    id: "q-003",
-    planCode: "24rise01",
-    serverName: "RISE-1",
-    datacenter: "sbg",
-    options: [],
-    status: "pending",
-    createdAt: "2024-12-29T10:00:00",
-    retryInterval: 60,
-    retryCount: 0,
-    lastCheckTime: 0,
-  },
-  {
-    id: "q-004",
-    planCode: "24adv01",
-    serverName: "ADV-1",
-    datacenter: "gra",
-    options: ["ram-128g-ecc-2933"],
-    status: "paused",
-    createdAt: "2024-12-28T15:00:00",
-    retryInterval: 30,
-    retryCount: 450,
-    lastCheckTime: Date.now() - 3600000,
-  },
-  {
-    id: "q-005",
-    planCode: "24ska01",
-    serverName: "KS-A",
-    datacenter: "rbx",
-    options: [],
-    status: "completed",
-    createdAt: "2024-12-27T12:00:00",
-    retryInterval: 30,
-    retryCount: 234,
-    lastCheckTime: Date.now() - 86400000,
-  },
-  {
-    id: "q-006",
-    planCode: "24rise02",
-    serverName: "RISE-2",
-    datacenter: "gra",
-    options: [],
-    status: "failed",
-    createdAt: "2024-12-26T18:00:00",
-    retryInterval: 30,
-    retryCount: 999,
-    lastCheckTime: Date.now() - 172800000,
-    errorMessage: "达到最大重试次数",
-  },
-];
-
 const QueuePage = () => {
-  const [queue, setQueue] = useState(mockQueue);
+  const { data: queue, isLoading, refetch } = useQueue();
+  const { data: servers } = useServers();
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [newTask, setNewTask] = useState({ planCode: "", datacenter: "", retryInterval: 30 });
+  const [isAdding, setIsAdding] = useState(false);
 
-  const activeCount = queue.filter(q => q.status === "running" || q.status === "pending").length;
-  const completedCount = queue.filter(q => q.status === "completed").length;
-  const failedCount = queue.filter(q => q.status === "failed").length;
+  useEffect(() => {
+    const interval = setInterval(refetch, 5000);
+    return () => clearInterval(interval);
+  }, [refetch]);
+
+  const queueList = queue || [];
+
+  const activeCount = queueList.filter(q => q.status === "running" || q.status === "pending").length;
+  const completedCount = queueList.filter(q => q.status === "completed").length;
+  const failedCount = queueList.filter(q => q.status === "failed").length;
 
   const formatTime = (timestamp: string) => {
-    const date = new Date(timestamp);
-    return date.toLocaleString("zh-CN", { 
-      month: "2-digit", 
-      day: "2-digit",
-      hour: "2-digit", 
-      minute: "2-digit" 
-    });
+    try {
+      const date = new Date(timestamp);
+      return date.toLocaleString("zh-CN", { 
+        month: "2-digit", 
+        day: "2-digit",
+        hour: "2-digit", 
+        minute: "2-digit" 
+      });
+    } catch {
+      return "N/A";
+    }
   };
 
   const getLastCheckDisplay = (lastCheckTime: number) => {
-    if (lastCheckTime === 0) return "从未";
-    const diff = Date.now() - lastCheckTime;
+    if (!lastCheckTime || lastCheckTime === 0) return "从未";
+    const diff = Date.now() - lastCheckTime * 1000;
     if (diff < 60000) return `${Math.floor(diff / 1000)}秒前`;
     if (diff < 3600000) return `${Math.floor(diff / 60000)}分钟前`;
     if (diff < 86400000) return `${Math.floor(diff / 3600000)}小时前`;
     return `${Math.floor(diff / 86400000)}天前`;
   };
+
+  const handleAddTask = async () => {
+    if (!newTask.planCode || !newTask.datacenter) {
+      toast.error("请选择服务器型号和机房");
+      return;
+    }
+    
+    setIsAdding(true);
+    try {
+      await api.addQueueItem({
+        planCode: newTask.planCode,
+        datacenter: newTask.datacenter,
+        retryInterval: newTask.retryInterval,
+      });
+      toast.success("任务已添加");
+      setIsAddDialogOpen(false);
+      setNewTask({ planCode: "", datacenter: "", retryInterval: 30 });
+      refetch();
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setIsAdding(false);
+    }
+  };
+
+  const handleDeleteTask = async (id: string) => {
+    try {
+      await api.removeQueueItem(id);
+      toast.success("任务已删除");
+      refetch();
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
+  const handleUpdateStatus = async (id: string, status: string) => {
+    try {
+      await api.updateQueueStatus(id, status);
+      toast.success(`任务状态已更新为 ${status}`);
+      refetch();
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
+  const handleClearQueue = async () => {
+    try {
+      const result = await api.clearQueue();
+      toast.success(`已清空 ${result.count} 个任务`);
+      refetch();
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
+  const selectedServer = servers?.find(s => s.planCode === newTask.planCode);
 
   return (
     <>
@@ -185,9 +168,9 @@ const QueuePage = () => {
             </div>
             
             <div className="flex gap-2">
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" onClick={handleClearQueue}>
                 <Trash2 className="h-4 w-4 mr-2" />
-                清空已完成
+                清空队列
               </Button>
               <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
                 <DialogTrigger asChild>
@@ -206,41 +189,66 @@ const QueuePage = () => {
                   <div className="space-y-4 py-4">
                     <div className="space-y-2">
                       <Label>服务器型号</Label>
-                      <Select>
+                      <Select 
+                        value={newTask.planCode} 
+                        onValueChange={(v) => setNewTask({...newTask, planCode: v, datacenter: ""})}
+                      >
                         <SelectTrigger>
                           <SelectValue placeholder="选择型号" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="24ska01">KS-A (24ska01)</SelectItem>
-                          <SelectItem value="24sk30">KS-30 (24sk30)</SelectItem>
-                          <SelectItem value="24rise01">RISE-1 (24rise01)</SelectItem>
+                          {servers?.slice(0, 50).map(server => (
+                            <SelectItem key={server.planCode} value={server.planCode}>
+                              {server.name || server.planCode} ({server.planCode})
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     </div>
                     <div className="space-y-2">
                       <Label>目标机房</Label>
-                      <Select>
+                      <Select 
+                        value={newTask.datacenter} 
+                        onValueChange={(v) => setNewTask({...newTask, datacenter: v})}
+                      >
                         <SelectTrigger>
                           <SelectValue placeholder="选择机房" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="gra">GRA (Gravelines)</SelectItem>
-                          <SelectItem value="rbx">RBX (Roubaix)</SelectItem>
-                          <SelectItem value="sbg">SBG (Strasbourg)</SelectItem>
-                          <SelectItem value="bhs">BHS (Beauharnois)</SelectItem>
+                          {selectedServer?.datacenters?.map(dc => (
+                            <SelectItem key={dc.datacenter} value={dc.datacenter}>
+                              {dc.datacenter.toUpperCase()} - {dc.availability}
+                            </SelectItem>
+                          )) || (
+                            <>
+                              <SelectItem value="gra">GRA (Gravelines)</SelectItem>
+                              <SelectItem value="rbx">RBX (Roubaix)</SelectItem>
+                              <SelectItem value="sbg">SBG (Strasbourg)</SelectItem>
+                              <SelectItem value="bhs">BHS (Beauharnois)</SelectItem>
+                            </>
+                          )}
                         </SelectContent>
                       </Select>
                     </div>
                     <div className="space-y-2">
                       <Label>重试间隔 (秒)</Label>
-                      <Input type="number" defaultValue={30} min={5} max={300} />
+                      <Input 
+                        type="number" 
+                        value={newTask.retryInterval}
+                        onChange={(e) => setNewTask({...newTask, retryInterval: parseInt(e.target.value) || 30})}
+                        min={5} 
+                        max={300} 
+                      />
                     </div>
                   </div>
                   <DialogFooter>
                     <DialogClose asChild>
                       <Button variant="outline">取消</Button>
                     </DialogClose>
-                    <Button>添加任务</Button>
+                    <Button onClick={handleAddTask} disabled={isAdding}>
+                      {isAdding ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                      添加任务
+                    </Button>
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
@@ -255,7 +263,7 @@ const QueuePage = () => {
                 <span className="text-xs uppercase">运行中</span>
               </div>
               <p className="text-2xl font-bold text-accent">
-                {queue.filter(q => q.status === "running").length}
+                {queueList.filter(q => q.status === "running").length}
               </p>
             </div>
             <div className="terminal-card p-4">
@@ -264,7 +272,7 @@ const QueuePage = () => {
                 <span className="text-xs uppercase">等待中</span>
               </div>
               <p className="text-2xl font-bold">
-                {queue.filter(q => q.status === "pending").length}
+                {queueList.filter(q => q.status === "pending").length}
               </p>
             </div>
             <div className="terminal-card p-4 border-primary/30">
@@ -288,107 +296,112 @@ const QueuePage = () => {
             title="任务列表"
             icon={<ListOrdered className="h-4 w-4" />}
           >
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-xs text-muted-foreground uppercase border-b border-border">
-                    <th className="text-left py-3 px-2">任务ID</th>
-                    <th className="text-left py-3 px-2">服务器</th>
-                    <th className="text-left py-3 px-2">机房</th>
-                    <th className="text-left py-3 px-2 hidden md:table-cell">创建时间</th>
-                    <th className="text-center py-3 px-2">重试</th>
-                    <th className="text-left py-3 px-2 hidden lg:table-cell">最后检查</th>
-                    <th className="text-center py-3 px-2">状态</th>
-                    <th className="text-right py-3 px-2">操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {queue.map((item, index) => (
-                    <tr 
-                      key={item.id}
-                      className={cn(
-                        "border-b border-border/50 transition-colors",
-                        item.status === "running" && "bg-accent/5",
-                        item.status === "failed" && "bg-destructive/5"
-                      )}
-                      style={{ animationDelay: `${index * 50}ms` }}
-                    >
-                      <td className="py-3 px-2">
-                        <span className="font-mono text-primary">{item.id}</span>
-                      </td>
-                      <td className="py-3 px-2">
-                        <div>
-                          <p className="font-medium">{item.serverName}</p>
-                          <p className="text-xs text-muted-foreground">{item.planCode}</p>
-                        </div>
-                      </td>
-                      <td className="py-3 px-2">
-                        <span className="uppercase font-mono text-xs bg-muted px-2 py-1 rounded-sm">
-                          {item.datacenter}
-                        </span>
-                      </td>
-                      <td className="py-3 px-2 hidden md:table-cell text-muted-foreground">
-                        {formatTime(item.createdAt)}
-                      </td>
-                      <td className="py-3 px-2 text-center">
-                        <span className={cn(
-                          "font-mono",
-                          item.retryCount > 500 && "text-warning",
-                          item.retryCount > 900 && "text-destructive"
-                        )}>
-                          {item.retryCount}
-                        </span>
-                      </td>
-                      <td className="py-3 px-2 hidden lg:table-cell text-muted-foreground text-xs">
-                        {getLastCheckDisplay(item.lastCheckTime)}
-                      </td>
-                      <td className="py-3 px-2 text-center">
-                        <StatusBadge status={item.status} size="sm" />
-                      </td>
-                      <td className="py-3 px-2 text-right">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            {item.status === "running" && (
-                              <DropdownMenuItem>
-                                <Pause className="h-4 w-4 mr-2" />
-                                暂停
-                              </DropdownMenuItem>
-                            )}
-                            {(item.status === "paused" || item.status === "pending") && (
-                              <DropdownMenuItem>
-                                <Play className="h-4 w-4 mr-2" />
-                                启动
-                              </DropdownMenuItem>
-                            )}
-                            {item.status === "failed" && (
-                              <DropdownMenuItem>
-                                <RefreshCw className="h-4 w-4 mr-2" />
-                                重试
-                              </DropdownMenuItem>
-                            )}
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem className="text-destructive">
-                              <Trash2 className="h-4 w-4 mr-2" />
-                              删除
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {queue.length === 0 && (
+            {isLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : queueList.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">
                 <ListOrdered className="h-12 w-12 mx-auto mb-4 opacity-30" />
                 <p>暂无队列任务</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-xs text-muted-foreground uppercase border-b border-border">
+                      <th className="text-left py-3 px-2">任务ID</th>
+                      <th className="text-left py-3 px-2">服务器</th>
+                      <th className="text-left py-3 px-2">机房</th>
+                      <th className="text-left py-3 px-2 hidden md:table-cell">创建时间</th>
+                      <th className="text-center py-3 px-2">重试</th>
+                      <th className="text-left py-3 px-2 hidden lg:table-cell">最后检查</th>
+                      <th className="text-center py-3 px-2">状态</th>
+                      <th className="text-right py-3 px-2">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {queueList.map((item, index) => (
+                      <tr 
+                        key={item.id}
+                        className={cn(
+                          "border-b border-border/50 transition-colors",
+                          item.status === "running" && "bg-accent/5",
+                          item.status === "failed" && "bg-destructive/5"
+                        )}
+                      >
+                        <td className="py-3 px-2">
+                          <span className="font-mono text-primary text-xs">{item.id.slice(0, 8)}</span>
+                        </td>
+                        <td className="py-3 px-2">
+                          <div>
+                            <p className="font-medium">{item.planCode}</p>
+                          </div>
+                        </td>
+                        <td className="py-3 px-2">
+                          <span className="uppercase font-mono text-xs bg-muted px-2 py-1 rounded-sm">
+                            {item.datacenter}
+                          </span>
+                        </td>
+                        <td className="py-3 px-2 hidden md:table-cell text-muted-foreground">
+                          {formatTime(item.createdAt)}
+                        </td>
+                        <td className="py-3 px-2 text-center">
+                          <span className={cn(
+                            "font-mono",
+                            item.retryCount > 500 && "text-warning",
+                            item.retryCount > 900 && "text-destructive"
+                          )}>
+                            {item.retryCount}
+                          </span>
+                        </td>
+                        <td className="py-3 px-2 hidden lg:table-cell text-muted-foreground text-xs">
+                          {getLastCheckDisplay(item.lastCheckTime)}
+                        </td>
+                        <td className="py-3 px-2 text-center">
+                          <StatusBadge status={item.status as any} size="sm" />
+                        </td>
+                        <td className="py-3 px-2 text-right">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8">
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              {item.status === "running" && (
+                                <DropdownMenuItem onClick={() => handleUpdateStatus(item.id, "paused")}>
+                                  <Pause className="h-4 w-4 mr-2" />
+                                  暂停
+                                </DropdownMenuItem>
+                              )}
+                              {(item.status === "paused" || item.status === "pending") && (
+                                <DropdownMenuItem onClick={() => handleUpdateStatus(item.id, "running")}>
+                                  <Play className="h-4 w-4 mr-2" />
+                                  启动
+                                </DropdownMenuItem>
+                              )}
+                              {item.status === "failed" && (
+                                <DropdownMenuItem onClick={() => handleUpdateStatus(item.id, "running")}>
+                                  <RefreshCw className="h-4 w-4 mr-2" />
+                                  重试
+                                </DropdownMenuItem>
+                              )}
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem 
+                                className="text-destructive"
+                                onClick={() => handleDeleteTask(item.id)}
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                删除
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </TerminalCard>

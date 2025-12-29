@@ -14,10 +14,14 @@ import {
   AlertCircle,
   AlertTriangle,
   Info,
-  Bug
+  Bug,
+  Loader2
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import api from "@/lib/api";
+import { useLogs } from "@/hooks/useApi";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,32 +30,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-
-interface LogEntry {
-  id: string;
-  timestamp: string;
-  level: "INFO" | "WARNING" | "ERROR" | "DEBUG";
-  message: string;
-  source: string;
-}
-
-const mockLogs: LogEntry[] = [
-  { id: "1", timestamp: "2024-12-29T10:30:45", level: "INFO", message: "服务器可用性检查完成，发现 3 台可用", source: "monitor" },
-  { id: "2", timestamp: "2024-12-29T10:30:30", level: "WARNING", message: "队列任务 #q-001 重试次数达到 150 次", source: "queue" },
-  { id: "3", timestamp: "2024-12-29T10:30:15", level: "INFO", message: "24ska01 库存变化: sbg 从 unavailable 变为 available", source: "monitor" },
-  { id: "4", timestamp: "2024-12-29T10:30:00", level: "ERROR", message: "OVH API 请求失败: 429 Too Many Requests", source: "api" },
-  { id: "5", timestamp: "2024-12-29T10:29:45", level: "DEBUG", message: "开始检查订阅 24ska01 的可用性", source: "monitor" },
-  { id: "6", timestamp: "2024-12-29T10:29:30", level: "INFO", message: "队列处理器已启动", source: "system" },
-  { id: "7", timestamp: "2024-12-29T10:29:15", level: "INFO", message: "成功获取服务器列表，共 156 款", source: "api" },
-  { id: "8", timestamp: "2024-12-29T10:29:00", level: "WARNING", message: "Telegram 通知发送超时，将重试", source: "telegram" },
-  { id: "9", timestamp: "2024-12-29T10:28:45", level: "ERROR", message: "订单创建失败: 库存不足", source: "order" },
-  { id: "10", timestamp: "2024-12-29T10:28:30", level: "INFO", message: "用户登录成功", source: "auth" },
-  { id: "11", timestamp: "2024-12-29T10:28:15", level: "DEBUG", message: "缓存已刷新，有效期 30 分钟", source: "cache" },
-  { id: "12", timestamp: "2024-12-29T10:28:00", level: "INFO", message: "VPS 监控已启动，监控 3 款 VPS", source: "vps-monitor" },
-  { id: "13", timestamp: "2024-12-29T10:27:45", level: "WARNING", message: "API 请求频率接近限制 (80/100)", source: "api" },
-  { id: "14", timestamp: "2024-12-29T10:27:30", level: "INFO", message: "Telegram webhook 设置成功", source: "telegram" },
-  { id: "15", timestamp: "2024-12-29T10:27:15", level: "ERROR", message: "无法连接到 OVH API: 网络超时", source: "api" },
-];
 
 const levelConfig = {
   INFO: {
@@ -81,63 +59,59 @@ const levelConfig = {
 };
 
 const LogsPage = () => {
-  const [logs, setLogs] = useState(mockLogs);
+  const { data: logs, isLoading, refetch } = useLogs();
   const [searchTerm, setSearchTerm] = useState("");
   const [levelFilter, setLevelFilter] = useState<string>("all");
-  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   useEffect(() => {
     if (!autoRefresh) return;
-    
-    const interval = setInterval(() => {
-      // Simulate new log
-      const newLog: LogEntry = {
-        id: `new-${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        level: ["INFO", "WARNING", "ERROR", "DEBUG"][Math.floor(Math.random() * 4)] as LogEntry["level"],
-        message: `自动刷新测试日志 ${Date.now()}`,
-        source: "system",
-      };
-      setLogs(prev => [newLog, ...prev].slice(0, 100));
-    }, 5000);
-
+    const interval = setInterval(refetch, 5000);
     return () => clearInterval(interval);
-  }, [autoRefresh]);
+  }, [autoRefresh, refetch]);
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setIsRefreshing(true);
-    setTimeout(() => setIsRefreshing(false), 1000);
+    await refetch();
+    setIsRefreshing(false);
   };
 
-  const handleClear = () => {
-    setLogs([]);
+  const handleClear = async () => {
+    try {
+      await api.clearLogs();
+      toast.success("日志已清空");
+      refetch();
+    } catch (err: any) {
+      toast.error(err.message);
+    }
   };
 
-  const filteredLogs = logs.filter(log => {
+  const logList = logs || [];
+
+  const filteredLogs = logList.filter(log => {
     const matchesSearch = 
       log.message.toLowerCase().includes(searchTerm.toLowerCase()) ||
       log.source.toLowerCase().includes(searchTerm.toLowerCase());
     
     if (levelFilter === "all") return matchesSearch;
-    return matchesSearch && log.level === levelFilter;
-  });
+    return matchesSearch && log.level.toUpperCase() === levelFilter;
+  }).reverse();
 
   const formatTime = (timestamp: string) => {
-    const date = new Date(timestamp);
-    return date.toLocaleTimeString("zh-CN", { hour12: false });
-  };
-
-  const formatDate = (timestamp: string) => {
-    const date = new Date(timestamp);
-    return date.toLocaleDateString("zh-CN");
+    try {
+      const date = new Date(timestamp);
+      return date.toLocaleTimeString("zh-CN", { hour12: false });
+    } catch {
+      return "--:--:--";
+    }
   };
 
   const logCounts = {
-    INFO: logs.filter(l => l.level === "INFO").length,
-    WARNING: logs.filter(l => l.level === "WARNING").length,
-    ERROR: logs.filter(l => l.level === "ERROR").length,
-    DEBUG: logs.filter(l => l.level === "DEBUG").length,
+    INFO: logList.filter(l => l.level.toUpperCase() === "INFO").length,
+    WARNING: logList.filter(l => l.level.toUpperCase() === "WARNING").length,
+    ERROR: logList.filter(l => l.level.toUpperCase() === "ERROR").length,
+    DEBUG: logList.filter(l => l.level.toUpperCase() === "DEBUG").length,
   };
 
   return (
@@ -158,7 +132,7 @@ const LogsPage = () => {
                 <span className="cursor-blink">_</span>
               </h1>
               <p className="text-sm text-muted-foreground mt-1">
-                共 {logs.length} 条日志
+                共 {logList.length} 条日志
               </p>
             </div>
             
@@ -176,10 +150,6 @@ const LogsPage = () => {
                 <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isRefreshing}>
                   <RefreshCw className={cn("h-4 w-4 mr-2", isRefreshing && "animate-spin")} />
                   刷新
-                </Button>
-                <Button variant="outline" size="sm">
-                  <Download className="h-4 w-4 mr-2" />
-                  导出
                 </Button>
                 <Button variant="destructive" size="sm" onClick={handleClear}>
                   <Trash2 className="h-4 w-4 mr-2" />
@@ -253,15 +223,19 @@ const LogsPage = () => {
             title="日志输出"
             icon={<ScrollText className="h-4 w-4" />}
           >
-            <div className="space-y-1 font-mono text-xs max-h-[600px] overflow-y-auto">
-              {filteredLogs.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  <ScrollText className="h-12 w-12 mx-auto mb-4 opacity-30" />
-                  <p>暂无日志记录</p>
-                </div>
-              ) : (
-                filteredLogs.map((log, index) => {
-                  const config = levelConfig[log.level];
+            {isLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : filteredLogs.length === 0 ? (
+              <div className="text-center py-12 text-muted-foreground">
+                <ScrollText className="h-12 w-12 mx-auto mb-4 opacity-30" />
+                <p>暂无日志记录</p>
+              </div>
+            ) : (
+              <div className="space-y-1 font-mono text-xs max-h-[600px] overflow-y-auto">
+                {filteredLogs.map((log, index) => {
+                  const config = levelConfig[log.level.toUpperCase() as keyof typeof levelConfig] || levelConfig.DEBUG;
                   const Icon = config.icon;
                   
                   return (
@@ -272,7 +246,6 @@ const LogsPage = () => {
                         config.borderColor,
                         config.bg
                       )}
-                      style={{ animationDelay: `${index * 20}ms` }}
                     >
                       <Icon className={cn("h-3.5 w-3.5 mt-0.5 flex-shrink-0", config.color)} />
                       <div className="flex-1 min-w-0">
@@ -285,9 +258,9 @@ const LogsPage = () => {
                       </div>
                     </div>
                   );
-                })
-              )}
-            </div>
+                })}
+              </div>
+            )}
           </TerminalCard>
         </div>
       </AppLayout>
