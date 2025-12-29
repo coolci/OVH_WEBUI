@@ -1,6 +1,5 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { TerminalCard } from "@/components/ui/terminal-card";
-import { StatusBadge } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Helmet } from "react-helmet-async";
 import { Switch } from "@/components/ui/switch";
@@ -12,9 +11,11 @@ import {
   Play,
   Square,
   Bell,
-  Settings2
+  Settings2,
+  RefreshCw,
+  Loader2
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import {
   Dialog,
@@ -34,84 +35,132 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useVpsSubscriptions, useVpsMonitorStatus } from "@/hooks/useApi";
+import { api } from "@/lib/api";
+import { toast } from "sonner";
 
 interface VpsSubscription {
   id: string;
   planCode: string;
-  displayName: string;
-  ovhSubsidiary: string;
+  displayName?: string;
+  ovhSubsidiary?: string;
   datacenters: string[];
-  monitorLinux: boolean;
-  monitorWindows: boolean;
+  monitorLinux?: boolean;
+  monitorWindows?: boolean;
   notifyAvailable: boolean;
   notifyUnavailable: boolean;
-  lastStatus: Record<string, { linux: string; windows: string }>;
-  createdAt: string;
+  lastStatus: Record<string, { linux?: string; windows?: string } | string>;
+  autoOrder?: boolean;
 }
 
-const mockVpsSubscriptions: VpsSubscription[] = [
-  {
-    id: "vps-001",
-    planCode: "vps-starter-1-2-20",
-    displayName: "VPS Starter",
-    ovhSubsidiary: "IE",
-    datacenters: ["gra", "sbg", "bhs"],
-    monitorLinux: true,
-    monitorWindows: true,
-    notifyAvailable: true,
-    notifyUnavailable: false,
-    lastStatus: {
-      gra: { linux: "available", windows: "unavailable" },
-      sbg: { linux: "available", windows: "available" },
-      bhs: { linux: "unavailable", windows: "unavailable" },
-    },
-    createdAt: "2024-12-20T10:00:00",
-  },
-  {
-    id: "vps-002",
-    planCode: "vps-value-1-4-40",
-    displayName: "VPS Value",
-    ovhSubsidiary: "IE",
-    datacenters: ["gra", "rbx"],
-    monitorLinux: true,
-    monitorWindows: false,
-    notifyAvailable: true,
-    notifyUnavailable: true,
-    lastStatus: {
-      gra: { linux: "available", windows: "unknown" },
-      rbx: { linux: "unavailable", windows: "unknown" },
-    },
-    createdAt: "2024-12-22T14:30:00",
-  },
-  {
-    id: "vps-003",
-    planCode: "vps-essential-2-4-80",
-    displayName: "VPS Essential",
-    ovhSubsidiary: "IE",
-    datacenters: ["gra", "sbg", "waw"],
-    monitorLinux: true,
-    monitorWindows: true,
-    notifyAvailable: true,
-    notifyUnavailable: false,
-    lastStatus: {
-      gra: { linux: "unavailable", windows: "unavailable" },
-      sbg: { linux: "unavailable", windows: "unavailable" },
-      waw: { linux: "available", windows: "unavailable" },
-    },
-    createdAt: "2024-12-25T09:00:00",
-  },
-];
-
 const VpsMonitorPage = () => {
-  const [subscriptions] = useState(mockVpsSubscriptions);
-  const [isRunning, setIsRunning] = useState(true);
-  const [checkInterval] = useState(60);
+  const { data: subscriptions, isLoading, refetch } = useVpsSubscriptions();
+  const { data: monitorStatus, refetch: refetchStatus } = useVpsMonitorStatus();
+  const [isRunning, setIsRunning] = useState(false);
+  const [isToggling, setIsToggling] = useState(false);
+  const [isAdding, setIsAdding] = useState(false);
+  const [isDeleting, setIsDeleting] = useState<string | null>(null);
+  
+  // 添加订阅表单状态
+  const [newPlanCode, setNewPlanCode] = useState("");
+  const [selectedDatacenters, setSelectedDatacenters] = useState<string[]>([]);
+  const [notifyAvailable, setNotifyAvailable] = useState(true);
+  const [notifyUnavailable, setNotifyUnavailable] = useState(false);
+  const [autoOrder, setAutoOrder] = useState(false);
+
+  useEffect(() => {
+    if (monitorStatus) {
+      setIsRunning(monitorStatus.running);
+    }
+  }, [monitorStatus]);
+
+  // 自动刷新
+  useEffect(() => {
+    const interval = setInterval(() => {
+      refetch();
+      refetchStatus();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [refetch, refetchStatus]);
+
+  const handleToggleMonitor = async () => {
+    setIsToggling(true);
+    try {
+      if (isRunning) {
+        await api.stopVpsMonitor();
+        toast.success("VPS监控已停止");
+      } else {
+        await api.startVpsMonitor();
+        toast.success("VPS监控已启动");
+      }
+      setIsRunning(!isRunning);
+      refetchStatus();
+    } catch (error: any) {
+      toast.error(`操作失败: ${error.message}`);
+    } finally {
+      setIsToggling(false);
+    }
+  };
+
+  const handleAddSubscription = async () => {
+    if (!newPlanCode) {
+      toast.error("请选择VPS型号");
+      return;
+    }
+    setIsAdding(true);
+    try {
+      await api.addVpsSubscription({
+        planCode: newPlanCode,
+        datacenters: selectedDatacenters.length > 0 ? selectedDatacenters : undefined,
+        notifyAvailable,
+        notifyUnavailable,
+        autoOrder,
+      });
+      toast.success("VPS订阅添加成功");
+      refetch();
+      // 重置表单
+      setNewPlanCode("");
+      setSelectedDatacenters([]);
+      setNotifyAvailable(true);
+      setNotifyUnavailable(false);
+      setAutoOrder(false);
+    } catch (error: any) {
+      toast.error(`添加失败: ${error.message}`);
+    } finally {
+      setIsAdding(false);
+    }
+  };
+
+  const handleRemoveSubscription = async (id: string) => {
+    setIsDeleting(id);
+    try {
+      await api.removeVpsSubscription(id);
+      toast.success("VPS订阅已删除");
+      refetch();
+    } catch (error: any) {
+      toast.error(`删除失败: ${error.message}`);
+    } finally {
+      setIsDeleting(null);
+    }
+  };
+
+  const subscriptionList = subscriptions || [];
+  const checkInterval = monitorStatus?.checkInterval || 60;
 
   const getStatusColor = (status: string) => {
     if (status === "available") return "text-primary bg-primary/10";
     if (status === "unavailable") return "text-destructive bg-destructive/10";
     return "text-muted-foreground bg-muted";
   };
+
+  const datacenterOptions = ["gra", "rbx", "sbg", "bhs", "waw", "lon"];
+  const vpsPlans = [
+    { value: "vps-starter", label: "VPS Starter" },
+    { value: "vps-value", label: "VPS Value" },
+    { value: "vps-essential", label: "VPS Essential" },
+    { value: "vps-comfort", label: "VPS Comfort" },
+    { value: "vps-elite", label: "VPS Elite" },
+  ];
 
   return (
     <>
@@ -131,27 +180,35 @@ const VpsMonitorPage = () => {
                 <span className="cursor-blink">_</span>
               </h1>
               <p className="text-sm text-muted-foreground mt-1">
-                监控 {subscriptions.length} 款 VPS，检查间隔 {checkInterval} 秒
+                监控 {subscriptionList.length} 款 VPS，检查间隔 {checkInterval} 秒
               </p>
             </div>
             
             <div className="flex gap-2">
               <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => { refetch(); refetchStatus(); }}
+                disabled={isLoading}
+              >
+                <RefreshCw className={cn("h-4 w-4 mr-2", isLoading && "animate-spin")} />
+                刷新
+              </Button>
+              
+              <Button 
                 variant={isRunning ? "destructive" : "default"}
                 size="sm"
-                onClick={() => setIsRunning(!isRunning)}
+                onClick={handleToggleMonitor}
+                disabled={isToggling}
               >
-                {isRunning ? (
-                  <>
-                    <Square className="h-4 w-4 mr-2" />
-                    停止监控
-                  </>
+                {isToggling ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : isRunning ? (
+                  <Square className="h-4 w-4 mr-2" />
                 ) : (
-                  <>
-                    <Play className="h-4 w-4 mr-2" />
-                    启动监控
-                  </>
+                  <Play className="h-4 w-4 mr-2" />
                 )}
+                {isRunning ? "停止监控" : "启动监控"}
               </Button>
               
               <Dialog>
@@ -171,38 +228,35 @@ const VpsMonitorPage = () => {
                   <div className="space-y-4 py-4">
                     <div className="space-y-2">
                       <Label>VPS 型号</Label>
-                      <Select>
+                      <Select value={newPlanCode} onValueChange={setNewPlanCode}>
                         <SelectTrigger>
                           <SelectValue placeholder="选择型号" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="vps-starter">VPS Starter</SelectItem>
-                          <SelectItem value="vps-value">VPS Value</SelectItem>
-                          <SelectItem value="vps-essential">VPS Essential</SelectItem>
-                          <SelectItem value="vps-comfort">VPS Comfort</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>区域</Label>
-                      <Select>
-                        <SelectTrigger>
-                          <SelectValue placeholder="选择区域" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="IE">爱尔兰 (IE)</SelectItem>
-                          <SelectItem value="DE">德国 (DE)</SelectItem>
-                          <SelectItem value="FR">法国 (FR)</SelectItem>
-                          <SelectItem value="US">美国 (US)</SelectItem>
+                          {vpsPlans.map(plan => (
+                            <SelectItem key={plan.value} value={plan.value}>
+                              {plan.label}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     </div>
                     <div className="space-y-2">
                       <Label>监控机房</Label>
                       <div className="grid grid-cols-3 gap-2">
-                        {["gra", "rbx", "sbg", "bhs", "waw", "lon"].map(dc => (
+                        {datacenterOptions.map(dc => (
                           <div key={dc} className="flex items-center space-x-2">
-                            <Checkbox id={`vps-${dc}`} />
+                            <Checkbox 
+                              id={`vps-${dc}`}
+                              checked={selectedDatacenters.includes(dc)}
+                              onCheckedChange={(checked) => {
+                                if (checked) {
+                                  setSelectedDatacenters([...selectedDatacenters, dc]);
+                                } else {
+                                  setSelectedDatacenters(selectedDatacenters.filter(d => d !== dc));
+                                }
+                              }}
+                            />
                             <label htmlFor={`vps-${dc}`} className="text-sm uppercase">{dc}</label>
                           </div>
                         ))}
@@ -210,16 +264,16 @@ const VpsMonitorPage = () => {
                     </div>
                     <div className="space-y-3 pt-2">
                       <div className="flex items-center justify-between">
-                        <Label>监控 Linux</Label>
-                        <Switch defaultChecked />
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <Label>监控 Windows</Label>
-                        <Switch defaultChecked />
-                      </div>
-                      <div className="flex items-center justify-between">
                         <Label>有货通知</Label>
-                        <Switch defaultChecked />
+                        <Switch checked={notifyAvailable} onCheckedChange={setNotifyAvailable} />
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <Label>无货通知</Label>
+                        <Switch checked={notifyUnavailable} onCheckedChange={setNotifyUnavailable} />
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <Label>自动下单</Label>
+                        <Switch checked={autoOrder} onCheckedChange={setAutoOrder} />
                       </div>
                     </div>
                   </div>
@@ -227,7 +281,10 @@ const VpsMonitorPage = () => {
                     <DialogClose asChild>
                       <Button variant="outline">取消</Button>
                     </DialogClose>
-                    <Button>添加订阅</Button>
+                    <Button onClick={handleAddSubscription} disabled={isAdding}>
+                      {isAdding && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                      添加订阅
+                    </Button>
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
@@ -258,7 +315,7 @@ const VpsMonitorPage = () => {
               <div className="flex items-center gap-2 mb-1 text-muted-foreground">
                 <span className="text-xs uppercase">订阅数量</span>
               </div>
-              <p className="text-lg font-bold">{subscriptions.length}</p>
+              <p className="text-lg font-bold">{subscriptionList.length}</p>
             </div>
             <div className="terminal-card p-4 border-accent/30">
               <div className="flex items-center gap-2 mb-1 text-accent">
@@ -272,9 +329,13 @@ const VpsMonitorPage = () => {
                 <span className="text-xs uppercase">有货 VPS</span>
               </div>
               <p className="text-lg font-bold">
-                {subscriptions.filter(s => 
-                  Object.values(s.lastStatus).some(v => v.linux === "available" || v.windows === "available")
-                ).length}
+                {subscriptionList.filter((s: VpsSubscription) => {
+                  const statuses = Object.values(s.lastStatus || {});
+                  return statuses.some(v => {
+                    if (typeof v === 'string') return v === 'available';
+                    return v?.linux === 'available' || v?.windows === 'available';
+                  });
+                }).length}
               </p>
             </div>
           </div>
@@ -284,98 +345,85 @@ const VpsMonitorPage = () => {
             title="VPS 订阅列表"
             icon={<MonitorDot className="h-4 w-4" />}
           >
-            <div className="space-y-4">
-              {subscriptions.map((sub, index) => (
-                <div 
-                  key={sub.id}
-                  className="p-4 rounded-sm border border-border hover:border-primary/30 transition-all"
-                  style={{ animationDelay: `${index * 50}ms` }}
-                >
-                  <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
-                    {/* Subscription Info */}
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-3">
-                        <span className="font-bold text-lg text-foreground">{sub.displayName}</span>
-                        <span className="text-xs text-muted-foreground font-mono">({sub.planCode})</span>
-                        <span className="text-xs px-2 py-0.5 bg-muted rounded-sm">{sub.ovhSubsidiary}</span>
-                      </div>
-                      
-                      {/* OS Monitoring */}
-                      <div className="flex gap-3 mb-3 text-xs">
-                        <span className={cn(
-                          "px-2 py-1 rounded-sm",
-                          sub.monitorLinux ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
-                        )}>
-                          Linux: {sub.monitorLinux ? "监控中" : "未监控"}
-                        </span>
-                        <span className={cn(
-                          "px-2 py-1 rounded-sm",
-                          sub.monitorWindows ? "bg-accent/10 text-accent" : "bg-muted text-muted-foreground"
-                        )}>
-                          Windows: {sub.monitorWindows ? "监控中" : "未监控"}
-                        </span>
-                      </div>
-
-                      {/* Datacenter Status Grid */}
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-xs">
-                          <thead>
-                            <tr className="text-muted-foreground uppercase">
-                              <th className="text-left py-1 pr-4">机房</th>
-                              {sub.monitorLinux && <th className="text-center py-1 px-2">Linux</th>}
-                              {sub.monitorWindows && <th className="text-center py-1 px-2">Windows</th>}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {sub.datacenters.map(dc => {
-                              const status = sub.lastStatus[dc];
-                              return (
-                                <tr key={dc} className="border-t border-border/50">
-                                  <td className="py-2 pr-4 uppercase font-mono">{dc}</td>
-                                  {sub.monitorLinux && (
+            {isLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {subscriptionList.map((sub: VpsSubscription, index: number) => (
+                  <div 
+                    key={sub.id}
+                    className="p-4 rounded-sm border border-border hover:border-primary/30 transition-all"
+                  >
+                    <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+                      {/* Subscription Info */}
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-3">
+                          <span className="font-bold text-lg text-foreground">{sub.displayName || sub.planCode}</span>
+                          <span className="text-xs text-muted-foreground font-mono">({sub.planCode})</span>
+                          {sub.ovhSubsidiary && (
+                            <span className="text-xs px-2 py-0.5 bg-muted rounded-sm">{sub.ovhSubsidiary}</span>
+                          )}
+                        </div>
+                        
+                        {/* Datacenter Status Grid */}
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="text-muted-foreground uppercase">
+                                <th className="text-left py-1 pr-4">机房</th>
+                                <th className="text-center py-1 px-2">状态</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(sub.datacenters || []).map(dc => {
+                                const status = sub.lastStatus?.[dc];
+                                const statusStr = typeof status === 'string' 
+                                  ? status 
+                                  : (status?.linux || status?.windows || 'unknown');
+                                return (
+                                  <tr key={dc} className="border-t border-border/50">
+                                    <td className="py-2 pr-4 uppercase font-mono">{dc}</td>
                                     <td className="py-2 px-2 text-center">
                                       <span className={cn(
                                         "px-2 py-0.5 rounded-sm",
-                                        getStatusColor(status?.linux || "unknown")
+                                        getStatusColor(statusStr)
                                       )}>
-                                        {status?.linux === "available" ? "有货" : "无货"}
+                                        {statusStr === "available" ? "有货" : "无货"}
                                       </span>
                                     </td>
-                                  )}
-                                  {sub.monitorWindows && (
-                                    <td className="py-2 px-2 text-center">
-                                      <span className={cn(
-                                        "px-2 py-0.5 rounded-sm",
-                                        getStatusColor(status?.windows || "unknown")
-                                      )}>
-                                        {status?.windows === "available" ? "有货" : status?.windows === "unavailable" ? "无货" : "-"}
-                                      </span>
-                                    </td>
-                                  )}
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
                       </div>
-                    </div>
 
-                    {/* Actions */}
-                    <div className="flex gap-2">
-                      <Button variant="ghost" size="sm">
-                        <Settings2 className="h-4 w-4 mr-1" />
-                        设置
-                      </Button>
-                      <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      {/* Actions */}
+                      <div className="flex gap-2">
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => handleRemoveSubscription(sub.id)}
+                          disabled={isDeleting === sub.id}
+                        >
+                          {isDeleting === sub.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
 
-            {subscriptions.length === 0 && (
+            {!isLoading && subscriptionList.length === 0 && (
               <div className="text-center py-12 text-muted-foreground">
                 <MonitorDot className="h-12 w-12 mx-auto mb-4 opacity-30" />
                 <p>暂无 VPS 监控订阅</p>

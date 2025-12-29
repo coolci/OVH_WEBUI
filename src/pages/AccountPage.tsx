@@ -12,9 +12,12 @@ import {
   MapPin,
   Calendar,
   DollarSign,
-  FileText
+  FileText,
+  Loader2,
+  Receipt,
+  Wallet
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import {
   Tabs,
@@ -22,74 +25,53 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
+import { useOvhAccount, useOvhBalance, useOvhOrders, useOvhBills } from "@/hooks/useApi";
+import { toast } from "sonner";
 
 interface AccountInfo {
-  email: string;
-  firstname: string;
-  name: string;
-  nichandle: string;
-  organisation: string;
-  country: string;
-  city: string;
-  zip: string;
-  address: string;
-  currency: string;
-  ovhSubsidiary: string;
-  state: string;
+  nichandle?: string;
+  email?: string;
+  firstname?: string;
+  firstName?: string;
+  name?: string;
+  country?: string;
+  city?: string;
+  zip?: string;
+  address?: string;
+  organisation?: string;
+  currency?: string;
+  ovhSubsidiary?: string;
+  state?: string;
 }
-
-interface Refund {
-  id: string;
-  date: string;
-  amount: number;
-  currency: string;
-  status: string;
-}
-
-interface EmailHistory {
-  id: string;
-  date: string;
-  subject: string;
-  body: string;
-}
-
-const mockAccountInfo: AccountInfo = {
-  email: "user@example.com",
-  firstname: "John",
-  name: "Doe",
-  nichandle: "xx12345-ovh",
-  organisation: "Example Corp",
-  country: "IE",
-  city: "Dublin",
-  zip: "D01 AB12",
-  address: "123 Example Street",
-  currency: "EUR",
-  ovhSubsidiary: "IE",
-  state: "active",
-};
-
-const mockRefunds: Refund[] = [
-  { id: "RF-001", date: "2024-12-15", amount: 29.99, currency: "EUR", status: "completed" },
-  { id: "RF-002", date: "2024-11-20", amount: 49.99, currency: "EUR", status: "completed" },
-  { id: "RF-003", date: "2024-10-05", amount: 89.99, currency: "EUR", status: "pending" },
-];
-
-const mockEmails: EmailHistory[] = [
-  { id: "EM-001", date: "2024-12-28", subject: "订单确认 #123456789", body: "您的订单已确认..." },
-  { id: "EM-002", date: "2024-12-25", subject: "付款成功通知", body: "您的付款已处理成功..." },
-  { id: "EM-003", date: "2024-12-20", subject: "服务开通通知", body: "您的服务器已开通..." },
-];
 
 const AccountPage = () => {
-  const [accountInfo] = useState(mockAccountInfo);
-  const [refunds] = useState(mockRefunds);
-  const [emails] = useState(mockEmails);
-  const [isLoading, setIsLoading] = useState(false);
+  const { data: accountInfo, isLoading: isLoadingAccount, refetch: refetchAccount } = useOvhAccount();
+  const { data: balanceData, refetch: refetchBalance } = useOvhBalance();
+  const { data: ordersData, isLoading: isLoadingOrders, refetch: refetchOrders } = useOvhOrders(20);
+  const { data: billsData, isLoading: isLoadingBills, refetch: refetchBills } = useOvhBills(20);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const handleRefresh = () => {
-    setIsLoading(true);
-    setTimeout(() => setIsLoading(false), 1500);
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await Promise.all([
+        refetchAccount(),
+        refetchBalance(),
+        refetchOrders(),
+        refetchBills(),
+      ]);
+      toast.success("数据刷新成功");
+    } catch (error: any) {
+      toast.error(`刷新失败: ${error.message}`);
+    } finally {
+      setIsRefreshing(false);
+    }
   };
+
+  const account: AccountInfo = (accountInfo?.account || {}) as AccountInfo;
+  const balance = balanceData?.balance;
+  const orders = ordersData?.orders || [];
+  const bills = billsData?.bills || [];
 
   return (
     <>
@@ -113,11 +95,26 @@ const AccountPage = () => {
               </p>
             </div>
             
-            <Button variant="terminal" onClick={handleRefresh} disabled={isLoading}>
-              <RefreshCw className={cn("h-4 w-4 mr-2", isLoading && "animate-spin")} />
+            <Button variant="terminal" onClick={handleRefresh} disabled={isRefreshing}>
+              <RefreshCw className={cn("h-4 w-4 mr-2", isRefreshing && "animate-spin")} />
               刷新数据
             </Button>
           </div>
+
+          {/* Balance Card */}
+          {balance && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="terminal-card p-4 border-primary/30">
+                <div className="flex items-center gap-2 mb-2 text-primary">
+                  <Wallet className="h-4 w-4" />
+                  <span className="text-xs uppercase">账户余额</span>
+                </div>
+                <p className="text-2xl font-bold font-mono">
+                  {balance.value?.toFixed(2) || '0.00'} {balance.currencyCode || 'EUR'}
+                </p>
+              </div>
+            </div>
+          )}
 
           <Tabs defaultValue="info" className="space-y-6">
             <TabsList className="bg-muted/50 border border-border">
@@ -125,194 +122,235 @@ const AccountPage = () => {
                 <User className="h-4 w-4 mr-2" />
                 账户信息
               </TabsTrigger>
-              <TabsTrigger value="refunds" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                <CreditCard className="h-4 w-4 mr-2" />
-                退款记录
+              <TabsTrigger value="orders" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                <Receipt className="h-4 w-4 mr-2" />
+                订单记录
               </TabsTrigger>
-              <TabsTrigger value="emails" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                <Mail className="h-4 w-4 mr-2" />
-                邮件历史
+              <TabsTrigger value="bills" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                <CreditCard className="h-4 w-4 mr-2" />
+                账单记录
               </TabsTrigger>
             </TabsList>
 
             {/* Account Info */}
             <TabsContent value="info">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <TerminalCard
-                  title="基本信息"
-                  icon={<User className="h-4 w-4" />}
-                >
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-4 p-3 bg-primary/5 rounded-sm border border-primary/20">
-                      <div className="h-12 w-12 rounded-sm bg-primary/20 flex items-center justify-center">
-                        <User className="h-6 w-6 text-primary" />
+              {isLoadingAccount ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <TerminalCard
+                    title="基本信息"
+                    icon={<User className="h-4 w-4" />}
+                  >
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-4 p-3 bg-primary/5 rounded-sm border border-primary/20">
+                        <div className="h-12 w-12 rounded-sm bg-primary/20 flex items-center justify-center">
+                          <User className="h-6 w-6 text-primary" />
+                        </div>
+                        <div>
+                          <p className="font-bold text-lg">{account.firstname} {account.name}</p>
+                          <p className="text-sm text-muted-foreground font-mono">{account.nichandle}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="font-bold text-lg">{accountInfo.firstname} {accountInfo.name}</p>
-                        <p className="text-sm text-muted-foreground font-mono">{accountInfo.nichandle}</p>
-                      </div>
-                    </div>
 
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div className="space-y-1">
-                        <p className="text-muted-foreground flex items-center gap-1">
-                          <Mail className="h-3 w-3" /> 邮箱
-                        </p>
-                        <p className="font-mono">{accountInfo.email}</p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-muted-foreground flex items-center gap-1">
-                          <Building className="h-3 w-3" /> 组织
-                        </p>
-                        <p>{accountInfo.organisation || "-"}</p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-muted-foreground flex items-center gap-1">
-                          <DollarSign className="h-3 w-3" /> 货币
-                        </p>
-                        <p>{accountInfo.currency}</p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-muted-foreground">区域</p>
-                        <p>{accountInfo.ovhSubsidiary}</p>
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div className="space-y-1">
+                          <p className="text-muted-foreground flex items-center gap-1">
+                            <Mail className="h-3 w-3" /> 邮箱
+                          </p>
+                          <p className="font-mono text-xs break-all">{account.email}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-muted-foreground flex items-center gap-1">
+                            <Building className="h-3 w-3" /> 组织
+                          </p>
+                          <p>{account.organisation || "-"}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-muted-foreground flex items-center gap-1">
+                            <DollarSign className="h-3 w-3" /> 货币
+                          </p>
+                          <p>{account.currency}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-muted-foreground">区域</p>
+                          <p>{account.ovhSubsidiary}</p>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </TerminalCard>
+                  </TerminalCard>
 
-                <TerminalCard
-                  title="地址信息"
-                  icon={<MapPin className="h-4 w-4" />}
-                >
-                  <div className="space-y-4 text-sm">
-                    <div className="space-y-1">
-                      <p className="text-muted-foreground">街道地址</p>
-                      <p>{accountInfo.address}</p>
+                  <TerminalCard
+                    title="地址信息"
+                    icon={<MapPin className="h-4 w-4" />}
+                  >
+                    <div className="space-y-4 text-sm">
+                      <div className="space-y-1">
+                        <p className="text-muted-foreground">街道地址</p>
+                        <p>{account.address || '-'}</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                          <p className="text-muted-foreground">城市</p>
+                          <p>{account.city || '-'}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-muted-foreground">邮编</p>
+                          <p>{account.zip || '-'}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-muted-foreground">国家</p>
+                          <p>{account.country || '-'}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-muted-foreground">账户状态</p>
+                          <span className={cn(
+                            "px-2 py-0.5 rounded-sm text-xs inline-block",
+                            account.state === "complete" 
+                              ? "bg-primary/20 text-primary" 
+                              : "bg-warning/20 text-warning"
+                          )}>
+                            {account.state === "complete" ? "活跃" : account.state || "未知"}
+                          </span>
+                        </div>
+                      </div>
+                      
+                      <Button variant="outline" size="sm" className="mt-4" asChild>
+                        <a href="https://www.ovh.com/manager" target="_blank" rel="noopener noreferrer">
+                          <ExternalLink className="h-4 w-4 mr-2" />
+                          在 OVH 控制台编辑
+                        </a>
+                      </Button>
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-1">
-                        <p className="text-muted-foreground">城市</p>
-                        <p>{accountInfo.city}</p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-muted-foreground">邮编</p>
-                        <p>{accountInfo.zip}</p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-muted-foreground">国家</p>
-                        <p>{accountInfo.country}</p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-muted-foreground">账户状态</p>
-                        <span className={cn(
-                          "px-2 py-0.5 rounded-sm text-xs",
-                          accountInfo.state === "active" 
-                            ? "bg-primary/20 text-primary" 
-                            : "bg-destructive/20 text-destructive"
-                        )}>
-                          {accountInfo.state === "active" ? "活跃" : "非活跃"}
-                        </span>
-                      </div>
-                    </div>
-                    
-                    <Button variant="outline" size="sm" className="mt-4">
-                      <ExternalLink className="h-4 w-4 mr-2" />
-                      在 OVH 控制台编辑
-                    </Button>
-                  </div>
-                </TerminalCard>
-              </div>
+                  </TerminalCard>
+                </div>
+              )}
             </TabsContent>
 
-            {/* Refunds */}
-            <TabsContent value="refunds">
+            {/* Orders */}
+            <TabsContent value="orders">
               <TerminalCard
-                title="退款记录"
-                icon={<CreditCard className="h-4 w-4" />}
+                title="订单记录"
+                icon={<Receipt className="h-4 w-4" />}
               >
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-xs text-muted-foreground uppercase border-b border-border">
-                        <th className="text-left py-3 px-2">退款ID</th>
-                        <th className="text-left py-3 px-2">日期</th>
-                        <th className="text-right py-3 px-2">金额</th>
-                        <th className="text-center py-3 px-2">状态</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {refunds.map((refund, index) => (
-                        <tr 
-                          key={refund.id}
-                          className="border-b border-border/50 hover:bg-muted/30 transition-colors"
-                          style={{ animationDelay: `${index * 50}ms` }}
-                        >
-                          <td className="py-3 px-2 font-mono text-primary">{refund.id}</td>
-                          <td className="py-3 px-2 text-muted-foreground">
-                            {new Date(refund.date).toLocaleDateString("zh-CN")}
-                          </td>
-                          <td className="py-3 px-2 text-right font-mono text-accent">
-                            €{refund.amount.toFixed(2)}
-                          </td>
-                          <td className="py-3 px-2 text-center">
-                            <span className={cn(
-                              "px-2 py-0.5 rounded-sm text-xs",
-                              refund.status === "completed" 
-                                ? "bg-primary/20 text-primary" 
-                                : "bg-warning/20 text-warning"
-                            )}>
-                              {refund.status === "completed" ? "已完成" : "处理中"}
-                            </span>
-                          </td>
+                {isLoadingOrders ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-xs text-muted-foreground uppercase border-b border-border">
+                          <th className="text-left py-3 px-2">订单ID</th>
+                          <th className="text-left py-3 px-2">日期</th>
+                          <th className="text-right py-3 px-2">金额</th>
+                          <th className="text-center py-3 px-2">状态</th>
+                          <th className="text-center py-3 px-2">操作</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {orders.map((order: any, index: number) => (
+                          <tr 
+                            key={order.orderId}
+                            className="border-b border-border/50 hover:bg-muted/30 transition-colors"
+                          >
+                            <td className="py-3 px-2 font-mono text-primary">{order.orderId}</td>
+                            <td className="py-3 px-2 text-muted-foreground">
+                              {order.date ? new Date(order.date).toLocaleDateString("zh-CN") : '-'}
+                            </td>
+                            <td className="py-3 px-2 text-right font-mono text-accent">
+                              {order.priceWithTax?.value?.toFixed(2) || order.priceWithTax || '-'} €
+                            </td>
+                            <td className="py-3 px-2 text-center">
+                              <span className={cn(
+                                "px-2 py-0.5 rounded-sm text-xs",
+                                order.retractionDate ? "bg-primary/20 text-primary" : "bg-warning/20 text-warning"
+                              )}>
+                                {order.retractionDate ? "已完成" : "待付款"}
+                              </span>
+                            </td>
+                            <td className="py-3 px-2 text-center">
+                              {order.url && (
+                                <Button variant="ghost" size="sm" asChild>
+                                  <a href={order.url} target="_blank" rel="noopener noreferrer">
+                                    <ExternalLink className="h-3 w-3" />
+                                  </a>
+                                </Button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
 
-                {refunds.length === 0 && (
+                {!isLoadingOrders && orders.length === 0 && (
                   <div className="text-center py-12 text-muted-foreground">
-                    <CreditCard className="h-12 w-12 mx-auto mb-4 opacity-30" />
-                    <p>暂无退款记录</p>
+                    <Receipt className="h-12 w-12 mx-auto mb-4 opacity-30" />
+                    <p>暂无订单记录</p>
                   </div>
                 )}
               </TerminalCard>
             </TabsContent>
 
-            {/* Email History */}
-            <TabsContent value="emails">
+            {/* Bills */}
+            <TabsContent value="bills">
               <TerminalCard
-                title="邮件历史"
-                icon={<Mail className="h-4 w-4" />}
+                title="账单记录"
+                icon={<CreditCard className="h-4 w-4" />}
               >
-                <div className="space-y-3">
-                  {emails.map((email, index) => (
-                    <div 
-                      key={email.id}
-                      className="p-4 rounded-sm border border-border hover:border-primary/30 transition-colors cursor-pointer"
-                      style={{ animationDelay: `${index * 50}ms` }}
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <FileText className="h-4 w-4 text-primary flex-shrink-0" />
-                            <p className="font-medium truncate">{email.subject}</p>
-                          </div>
-                          <p className="text-sm text-muted-foreground line-clamp-2">{email.body}</p>
-                        </div>
-                        <div className="text-xs text-muted-foreground flex items-center gap-1">
-                          <Calendar className="h-3 w-3" />
-                          {new Date(email.date).toLocaleDateString("zh-CN")}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                {isLoadingBills ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-xs text-muted-foreground uppercase border-b border-border">
+                          <th className="text-left py-3 px-2">账单ID</th>
+                          <th className="text-left py-3 px-2">日期</th>
+                          <th className="text-right py-3 px-2">金额</th>
+                          <th className="text-center py-3 px-2">操作</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {bills.map((bill: any, index: number) => (
+                          <tr 
+                            key={bill.billId}
+                            className="border-b border-border/50 hover:bg-muted/30 transition-colors"
+                          >
+                            <td className="py-3 px-2 font-mono text-primary">{bill.billId}</td>
+                            <td className="py-3 px-2 text-muted-foreground">
+                              {bill.date ? new Date(bill.date).toLocaleDateString("zh-CN") : '-'}
+                            </td>
+                            <td className="py-3 px-2 text-right font-mono text-accent">
+                              {bill.priceWithTax?.value?.toFixed(2) || bill.priceWithTax || '-'} €
+                            </td>
+                            <td className="py-3 px-2 text-center">
+                              {bill.pdfUrl && (
+                                <Button variant="ghost" size="sm" asChild>
+                                  <a href={bill.pdfUrl} target="_blank" rel="noopener noreferrer">
+                                    <FileText className="h-3 w-3" />
+                                  </a>
+                                </Button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
 
-                {emails.length === 0 && (
+                {!isLoadingBills && bills.length === 0 && (
                   <div className="text-center py-12 text-muted-foreground">
-                    <Mail className="h-12 w-12 mx-auto mb-4 opacity-30" />
-                    <p>暂无邮件记录</p>
+                    <CreditCard className="h-12 w-12 mx-auto mb-4 opacity-30" />
+                    <p>暂无账单记录</p>
                   </div>
                 )}
               </TerminalCard>
