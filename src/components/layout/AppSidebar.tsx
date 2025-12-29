@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { 
   LayoutDashboard, 
@@ -17,6 +18,7 @@ import {
   MessageSquare
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { QuickOrderDialog } from "@/components/orders/QuickOrderDialog";
 
 interface AppSidebarProps {
   onNavigate?: () => void;
@@ -65,6 +67,7 @@ const navGroups = [
 
 export function AppSidebar({ onNavigate }: AppSidebarProps) {
   const location = useLocation();
+  const [quickOrderOpen, setQuickOrderOpen] = useState(false);
 
   return (
     <div className="h-full flex flex-col">
@@ -103,7 +106,7 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
                   >
                     <item.icon className={cn(
                       "h-4 w-4 transition-all",
-                      isActive && "text-primary drop-shadow-[0_0_8px_hsl(var(--primary))]"
+                      isActive && "text-primary drop-shadow-[0_0_8px_hsl(var(--primary)))]"
                     )} />
                     <span>{item.label}</span>
                     {isActive && (
@@ -119,11 +122,18 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
 
       {/* Quick actions */}
       <div className="p-2 border-t border-sidebar-border">
-        <button className="w-full flex items-center gap-2 px-3 py-2 rounded-sm text-sm text-accent hover:bg-accent/10 transition-colors">
+        <button
+          type="button"
+          onClick={() => setQuickOrderOpen(true)}
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-sm text-sm text-accent hover:bg-accent/10 transition-colors"
+        >
           <Zap className="h-4 w-4" />
           <span>快速下单</span>
         </button>
       </div>
+
+      <QuickOrderDialog open={quickOrderOpen} onOpenChange={setQuickOrderOpen} />
     </div>
   );
 }
+
