@@ -105,6 +105,21 @@ export function useOvhBills(limit?: number) {
   return useApiQuery(() => api.getOvhBills(limit), [limit]);
 }
 
+// OVH邮件历史Hook
+export function useOvhEmails(limit?: number) {
+  return useApiQuery(() => api.getOvhEmails(limit), [limit]);
+}
+
+// OVH退款记录Hook
+export function useOvhRefunds(limit?: number) {
+  return useApiQuery(() => api.getOvhRefunds(limit), [limit]);
+}
+
+// 联系人变更请求Hook
+export function useContactChangeRequests() {
+  return useApiQuery(() => api.getContactChangeRequests(), []);
+}
+
 // 后端连接状态Hook
 export function useBackendConnection() {
   const [isConnected, setIsConnected] = useState(false);

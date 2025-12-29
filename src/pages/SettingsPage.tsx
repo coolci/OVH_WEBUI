@@ -433,6 +433,32 @@ const SettingsPage = () => {
                             <SelectItem value="ovh-ca">OVH Canada (ovh-ca)</SelectItem>
                           </SelectContent>
                         </Select>
+                        <div className="flex gap-1 pt-1">
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            className="text-xs"
+                            onClick={() => setConfig({...config, endpoint: 'ovh-eu', zone: 'IE'})}
+                          >
+                            🇪🇺 EU
+                          </Button>
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            className="text-xs"
+                            onClick={() => setConfig({...config, endpoint: 'ovh-us', zone: 'US'})}
+                          >
+                            🇺🇸 US
+                          </Button>
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            className="text-xs"
+                            onClick={() => setConfig({...config, endpoint: 'ovh-ca', zone: 'CA'})}
+                          >
+                            🇨🇦 CA
+                          </Button>
+                        </div>
                       </div>
                       <div className="space-y-2">
                         <Label>Zone / Subsidiary</Label>

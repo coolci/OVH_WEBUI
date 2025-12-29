@@ -15,6 +15,8 @@ import LogsPage from "./pages/LogsPage";
 import SettingsPage from "./pages/SettingsPage";
 import AccountPage from "./pages/AccountPage";
 import ServerControlPage from "./pages/ServerControlPage";
+import ContactChangePage from "./pages/ContactChangePage";
+import PerformancePage from "./pages/PerformancePage";
 
 const queryClient = new QueryClient();
 
@@ -36,6 +38,8 @@ const App = () => (
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/account" element={<AccountPage />} />
             <Route path="/server-control" element={<ServerControlPage />} />
+            <Route path="/contact-change" element={<ContactChangePage />} />
+            <Route path="/performance" element={<PerformancePage />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

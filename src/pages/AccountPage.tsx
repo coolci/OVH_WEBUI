@@ -15,9 +15,11 @@ import {
   FileText,
   Loader2,
   Receipt,
-  Wallet
+  Wallet,
+  Link as LinkIcon,
+  Undo2
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 import {
   Tabs,
@@ -25,7 +27,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import { useOvhAccount, useOvhBalance, useOvhOrders, useOvhBills } from "@/hooks/useApi";
+import { useOvhAccount, useOvhBalance, useOvhOrders, useOvhBills, useOvhEmails, useOvhRefunds } from "@/hooks/useApi";
 import { toast } from "sonner";
 
 interface AccountInfo {
@@ -49,6 +51,8 @@ const AccountPage = () => {
   const { data: balanceData, refetch: refetchBalance } = useOvhBalance();
   const { data: ordersData, isLoading: isLoadingOrders, refetch: refetchOrders } = useOvhOrders(20);
   const { data: billsData, isLoading: isLoadingBills, refetch: refetchBills } = useOvhBills(20);
+  const { data: emailsData, isLoading: isLoadingEmails, refetch: refetchEmails } = useOvhEmails(50);
+  const { data: refundsData, isLoading: isLoadingRefunds, refetch: refetchRefunds } = useOvhRefunds(20);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const handleRefresh = async () => {
@@ -59,6 +63,8 @@ const AccountPage = () => {
         refetchBalance(),
         refetchOrders(),
         refetchBills(),
+        refetchEmails(),
+        refetchRefunds(),
       ]);
       toast.success("数据刷新成功");
     } catch (error: any) {
@@ -68,10 +74,18 @@ const AccountPage = () => {
     }
   };
 
+  // Helper to extract links from email body
+  const extractLinks = (body: string): string[] => {
+    const urlRegex = /(https?:\/\/[^\s<>"]+)/g;
+    return body?.match(urlRegex) || [];
+  };
+
   const account: AccountInfo = (accountInfo?.account || {}) as AccountInfo;
   const balance = balanceData?.balance;
   const orders = ordersData?.orders || [];
   const bills = billsData?.bills || [];
+  const emails = emailsData?.emails || [];
+  const refunds = refundsData?.refunds || [];
 
   return (
     <>
@@ -117,10 +131,18 @@ const AccountPage = () => {
           )}
 
           <Tabs defaultValue="info" className="space-y-6">
-            <TabsList className="bg-muted/50 border border-border">
+            <TabsList className="bg-muted/50 border border-border flex-wrap h-auto gap-1 p-1">
               <TabsTrigger value="info" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
                 <User className="h-4 w-4 mr-2" />
                 账户信息
+              </TabsTrigger>
+              <TabsTrigger value="emails" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                <Mail className="h-4 w-4 mr-2" />
+                邮件历史
+              </TabsTrigger>
+              <TabsTrigger value="refunds" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                <Undo2 className="h-4 w-4 mr-2" />
+                退款记录
               </TabsTrigger>
               <TabsTrigger value="orders" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
                 <Receipt className="h-4 w-4 mr-2" />
@@ -227,6 +249,119 @@ const AccountPage = () => {
                   </TerminalCard>
                 </div>
               )}
+            </TabsContent>
+
+            {/* Emails */}
+            <TabsContent value="emails">
+              <TerminalCard
+                title="邮件历史 (最近50封)"
+                icon={<Mail className="h-4 w-4" />}
+              >
+                {isLoadingEmails ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  </div>
+                ) : emails.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <Mail className="h-12 w-12 mx-auto mb-4 opacity-30" />
+                    <p>暂无邮件记录</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {emails.map((email: any) => {
+                      const links = extractLinks(email.body || '');
+                      return (
+                        <div 
+                          key={email.id}
+                          className="p-4 rounded-sm border border-border hover:border-primary/30 transition-colors"
+                        >
+                          <div className="flex flex-col gap-2">
+                            <div className="flex items-start justify-between gap-4">
+                              <h4 className="font-medium text-foreground">{email.subject}</h4>
+                              <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                {email.date ? new Date(email.date).toLocaleString("zh-CN") : '-'}
+                              </span>
+                            </div>
+                            <p className="text-sm text-muted-foreground line-clamp-2">
+                              {email.body?.replace(/<[^>]*>/g, '').substring(0, 200)}...
+                            </p>
+                            {links.length > 0 && (
+                              <div className="flex flex-wrap gap-2 mt-2">
+                                {links.slice(0, 3).map((link, idx) => (
+                                  <Button key={idx} variant="outline" size="sm" asChild>
+                                    <a href={link} target="_blank" rel="noopener noreferrer">
+                                      <LinkIcon className="h-3 w-3 mr-1" />
+                                      链接 {idx + 1}
+                                    </a>
+                                  </Button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </TerminalCard>
+            </TabsContent>
+
+            {/* Refunds */}
+            <TabsContent value="refunds">
+              <TerminalCard
+                title="退款记录 (最近20条)"
+                icon={<Undo2 className="h-4 w-4" />}
+              >
+                {isLoadingRefunds ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  </div>
+                ) : refunds.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <Undo2 className="h-12 w-12 mx-auto mb-4 opacity-30" />
+                    <p>暂无退款记录</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-xs text-muted-foreground uppercase border-b border-border">
+                          <th className="text-left py-3 px-2">退款ID</th>
+                          <th className="text-left py-3 px-2">关联订单</th>
+                          <th className="text-left py-3 px-2">日期</th>
+                          <th className="text-right py-3 px-2">金额</th>
+                          <th className="text-center py-3 px-2">状态</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {refunds.map((refund: any) => (
+                          <tr 
+                            key={refund.refundId}
+                            className="border-b border-border/50 hover:bg-muted/30 transition-colors"
+                          >
+                            <td className="py-3 px-2 font-mono text-primary">{refund.refundId}</td>
+                            <td className="py-3 px-2 font-mono text-muted-foreground">{refund.orderId || '-'}</td>
+                            <td className="py-3 px-2 text-muted-foreground">
+                              {refund.date ? new Date(refund.date).toLocaleDateString("zh-CN") : '-'}
+                            </td>
+                            <td className="py-3 px-2 text-right font-mono text-accent">
+                              {refund.priceWithTax?.value?.toFixed(2) || '-'} {refund.priceWithTax?.currencyCode || '€'}
+                            </td>
+                            <td className="py-3 px-2 text-center">
+                              <span className={cn(
+                                "px-2 py-0.5 rounded-sm text-xs",
+                                refund.status === 'done' ? "bg-primary/20 text-primary" : "bg-warning/20 text-warning"
+                              )}>
+                                {refund.status === 'done' ? "已完成" : refund.status || "处理中"}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </TerminalCard>
             </TabsContent>
 
             {/* Orders */}

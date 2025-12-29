@@ -333,6 +333,22 @@ const MonitorPage = () => {
                         <Label>自动下单</Label>
                         <Switch checked={autoOrder} onCheckedChange={setAutoOrder} />
                       </div>
+                      {autoOrder && (
+                        <div className="space-y-2 pt-2 border-t border-border">
+                          <Label>自动下单数量</Label>
+                          <input 
+                            type="number" 
+                            min="1" 
+                            max="10"
+                            value={quantity}
+                            onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
+                            className="w-full px-3 py-2 bg-background border border-border rounded-sm text-sm"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            💡 智能触发: 仅在"无货→有货"状态变化时自动下单
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
                   <DialogFooter>
