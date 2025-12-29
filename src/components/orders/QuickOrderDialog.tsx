@@ -133,8 +133,9 @@ export function QuickOrderDialog({ open, onOpenChange }: QuickOrderDialogProps) 
 
     setIsSubmitting(true);
     try {
-      const payload: { planCode: string; datacenter: string; options?: string[] } = parsed.data;
+      const payload = { planCode, datacenter, options: selectedOptions };
       const res = await api.quickOrder(payload);
+      if (res?.success) {
         // eslint-disable-next-line no-alert
         alert(res.message || "下单成功（如需支付请前往订单链接）");
         onOpenChange(false);
