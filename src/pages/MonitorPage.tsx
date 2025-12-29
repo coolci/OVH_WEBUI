@@ -70,6 +70,11 @@ const MonitorPage = () => {
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
   const [isClearing, setIsClearing] = useState(false);
   
+  // 间隔设置状态
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [newInterval, setNewInterval] = useState(5);
+  const [isSavingInterval, setIsSavingInterval] = useState(false);
+  
   // 添加订阅表单状态
   const [newPlanCode, setNewPlanCode] = useState("");
   const [selectedDatacenters, setSelectedDatacenters] = useState<string[]>([]);
@@ -81,6 +86,7 @@ const MonitorPage = () => {
   useEffect(() => {
     if (monitorStatus) {
       setIsRunning(monitorStatus.running);
+      setNewInterval(monitorStatus.checkInterval || 5);
     }
   }, [monitorStatus]);
 
@@ -206,6 +212,24 @@ const MonitorPage = () => {
     }
   };
 
+  const handleSaveInterval = async () => {
+    if (newInterval < 1 || newInterval > 300) {
+      toast.error("间隔必须在 1-300 秒之间");
+      return;
+    }
+    setIsSavingInterval(true);
+    try {
+      await api.updateMonitorInterval(newInterval);
+      toast.success(`检查间隔已更新为 ${newInterval} 秒`);
+      setIsSettingsOpen(false);
+      refetchStatus();
+    } catch (error: any) {
+      toast.error(`更新失败: ${error.message}`);
+    } finally {
+      setIsSavingInterval(false);
+    }
+  };
+
   const subscriptionList = subscriptions || [];
   const checkInterval = monitorStatus?.checkInterval || 5;
 
@@ -234,6 +258,52 @@ const MonitorPage = () => {
             </div>
             
             <div className="flex gap-2 flex-wrap">
+              {/* 间隔设置 */}
+              <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm">
+                    <Settings2 className="h-4 w-4 mr-2" />
+                    设置
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="terminal-card border-primary/30">
+                  <DialogHeader>
+                    <DialogTitle className="text-primary">监控设置</DialogTitle>
+                    <DialogDescription>
+                      配置独服监控参数
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <Label>检查间隔 (秒)</Label>
+                      <div className="flex items-center gap-2">
+                        <input 
+                          type="number" 
+                          min="1" 
+                          max="300"
+                          value={newInterval}
+                          onChange={(e) => setNewInterval(parseInt(e.target.value) || 5)}
+                          className="w-full px-3 py-2 bg-background border border-border rounded-sm text-sm"
+                        />
+                        <span className="text-sm text-muted-foreground">秒</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        建议值: 3-10秒，过低可能触发频率限制
+                      </p>
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <DialogClose asChild>
+                      <Button variant="outline">取消</Button>
+                    </DialogClose>
+                    <Button onClick={handleSaveInterval} disabled={isSavingInterval}>
+                      {isSavingInterval && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                      保存设置
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+              
               <Button 
                 variant="outline" 
                 size="sm"

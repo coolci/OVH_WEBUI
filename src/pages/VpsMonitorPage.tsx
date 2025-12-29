@@ -13,7 +13,9 @@ import {
   Bell,
   Settings2,
   RefreshCw,
-  Loader2
+  Loader2,
+  History as HistoryIcon,
+  Clock
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
@@ -63,6 +65,16 @@ const VpsMonitorPage = () => {
   const [isClearing, setIsClearing] = useState(false);
   const [isBatchAdding, setIsBatchAdding] = useState(false);
   
+  // 历史记录状态
+  const [selectedSubscription, setSelectedSubscription] = useState<VpsSubscription | null>(null);
+  const [subscriptionHistory, setSubscriptionHistory] = useState<any[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  
+  // 间隔设置状态
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [newInterval, setNewInterval] = useState(60);
+  const [isSavingInterval, setIsSavingInterval] = useState(false);
+  
   // 添加订阅表单状态
   const [newPlanCode, setNewPlanCode] = useState("");
   const [selectedDatacenters, setSelectedDatacenters] = useState<string[]>([]);
@@ -73,6 +85,7 @@ const VpsMonitorPage = () => {
   useEffect(() => {
     if (monitorStatus) {
       setIsRunning(monitorStatus.running);
+      setNewInterval(monitorStatus.checkInterval || 60);
     }
   }, [monitorStatus]);
 
@@ -176,6 +189,54 @@ const VpsMonitorPage = () => {
     }
   };
 
+  const handleViewHistory = async (sub: VpsSubscription) => {
+    setSelectedSubscription(sub);
+    setIsLoadingHistory(true);
+    try {
+      const result = await api.getVpsSubscriptionHistory(sub.id);
+      setSubscriptionHistory(result.history || []);
+    } catch (error: any) {
+      console.error('Failed to load history:', error);
+      setSubscriptionHistory([]);
+      toast.error("加载历史记录失败");
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+
+  const handleSaveInterval = async () => {
+    if (newInterval < 5 || newInterval > 3600) {
+      toast.error("间隔必须在 5-3600 秒之间");
+      return;
+    }
+    setIsSavingInterval(true);
+    try {
+      await api.updateVpsMonitorInterval(newInterval);
+      toast.success(`检查间隔已更新为 ${newInterval} 秒`);
+      setIsSettingsOpen(false);
+      refetchStatus();
+    } catch (error: any) {
+      toast.error(`更新失败: ${error.message}`);
+    } finally {
+      setIsSavingInterval(false);
+    }
+  };
+
+  const formatHistoryTime = (timestamp: string) => {
+    try {
+      const date = new Date(timestamp);
+      return date.toLocaleString("zh-CN", { 
+        month: "2-digit", 
+        day: "2-digit",
+        hour: "2-digit", 
+        minute: "2-digit",
+        second: "2-digit"
+      });
+    } catch {
+      return "N/A";
+    }
+  };
+
   const subscriptionList = subscriptions || [];
   const checkInterval = monitorStatus?.checkInterval || 60;
 
@@ -217,6 +278,51 @@ const VpsMonitorPage = () => {
             </div>
             
             <div className="flex gap-2">
+              {/* 间隔设置 */}
+              <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm">
+                    <Settings2 className="h-4 w-4 mr-2" />
+                    设置
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="terminal-card border-primary/30">
+                  <DialogHeader>
+                    <DialogTitle className="text-primary">监控设置</DialogTitle>
+                    <DialogDescription>
+                      配置 VPS 监控参数
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <Label>检查间隔 (秒)</Label>
+                      <div className="flex items-center gap-2">
+                        <input 
+                          type="number" 
+                          min="5" 
+                          max="3600"
+                          value={newInterval}
+                          onChange={(e) => setNewInterval(parseInt(e.target.value) || 60)}
+                          className="w-full px-3 py-2 bg-background border border-border rounded-sm text-sm"
+                        />
+                        <span className="text-sm text-muted-foreground">秒</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        建议值: 30-120秒，过低可能触发频率限制
+                      </p>
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <DialogClose asChild>
+                      <Button variant="outline">取消</Button>
+                    </DialogClose>
+                    <Button onClick={handleSaveInterval} disabled={isSavingInterval}>
+                      {isSavingInterval && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                      保存设置
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
               <Button 
                 variant="outline" 
                 size="sm"
@@ -468,6 +574,13 @@ const VpsMonitorPage = () => {
                       <div className="flex gap-2">
                         <Button 
                           variant="ghost" 
+                          size="sm"
+                          onClick={() => handleViewHistory(sub)}
+                        >
+                          <HistoryIcon className="h-4 w-4" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
                           size="sm" 
                           className="text-destructive hover:text-destructive"
                           onClick={() => handleRemoveSubscription(sub.id)}
@@ -493,6 +606,72 @@ const VpsMonitorPage = () => {
               </div>
             )}
           </TerminalCard>
+
+          {/* History Dialog */}
+          <Dialog open={!!selectedSubscription} onOpenChange={(open) => !open && setSelectedSubscription(null)}>
+            <DialogContent className="terminal-card border-primary/30 max-w-2xl max-h-[80vh] overflow-hidden">
+              <DialogHeader>
+                <DialogTitle className="text-primary flex items-center gap-2">
+                  <HistoryIcon className="h-5 w-5" />
+                  历史记录 - {selectedSubscription?.displayName || selectedSubscription?.planCode}
+                </DialogTitle>
+                <DialogDescription>
+                  库存状态变化历史
+                </DialogDescription>
+              </DialogHeader>
+              <div className="py-4 max-h-[50vh] overflow-y-auto">
+                {isLoadingHistory ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                  </div>
+                ) : subscriptionHistory.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <HistoryIcon className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p>暂无历史记录</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {subscriptionHistory.map((item, index) => (
+                      <div 
+                        key={index}
+                        className={cn(
+                          "flex items-center justify-between p-3 rounded-sm border",
+                          item.changeType === "available" || item.status === "available"
+                            ? "border-primary/30 bg-primary/5"
+                            : "border-border bg-muted/30"
+                        )}
+                      >
+                        <div className="flex items-center gap-3">
+                          <Clock className="h-4 w-4 text-muted-foreground" />
+                          <span className="text-sm text-muted-foreground">
+                            {formatHistoryTime(item.timestamp)}
+                          </span>
+                          <span className="text-xs uppercase font-mono bg-muted px-2 py-0.5 rounded-sm">
+                            {item.datacenter}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={cn(
+                            "text-xs px-2 py-1 rounded-sm",
+                            item.status === "available" || item.changeType === "available"
+                              ? "bg-primary/10 text-primary"
+                              : "bg-destructive/10 text-destructive"
+                          )}>
+                            {item.changeType === "available" || item.status === "available" ? "有货" : "无货"}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button variant="outline">关闭</Button>
+                </DialogClose>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       </AppLayout>
     </>

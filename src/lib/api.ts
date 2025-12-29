@@ -157,6 +157,21 @@ export const api = {
       body: JSON.stringify({ status }),
     }),
   
+  // 队列处理器控制
+  startQueueProcessor: () => apiRequest<{ status: string; message: string }>('/api/queue/processor/start', {
+    method: 'POST',
+  }),
+  
+  stopQueueProcessor: () => apiRequest<{ status: string; message: string }>('/api/queue/processor/stop', {
+    method: 'POST',
+  }),
+  
+  getQueueProcessorStatus: () => apiRequest<{
+    running: boolean;
+    processedCount: number;
+    lastProcessTime: number | null;
+  }>('/api/queue/processor/status'),
+  
   // ==================== 购买历史 ====================
   getPurchaseHistory: () => apiRequest<Array<{
     id: string;
@@ -263,6 +278,15 @@ export const api = {
     checkInterval: number;
   }>('/api/monitor/status'),
   
+  // 更新监控间隔
+  updateMonitorInterval: (interval: number) => apiRequest<{
+    status: string;
+    checkInterval: number;
+  }>('/api/monitor/interval', {
+    method: 'PUT',
+    body: JSON.stringify({ interval }),
+  }),
+  
   testNotification: () => apiRequest<{ status: string; message: string }>('/api/monitor/test-notification', {
     method: 'POST',
   }),
@@ -327,6 +351,21 @@ export const api = {
     subscriptionCount: number;
     checkInterval: number;
   }>('/api/vps-monitor/status'),
+  
+  // VPS监控历史
+  getVpsSubscriptionHistory: (id: string) =>
+    apiRequest<{ status: string; id: string; history: Array<any> }>(
+      `/api/vps-monitor/subscriptions/${id}/history`
+    ),
+  
+  // 更新VPS监控间隔
+  updateVpsMonitorInterval: (interval: number) => apiRequest<{
+    status: string;
+    checkInterval: number;
+  }>('/api/vps-monitor/interval', {
+    method: 'PUT',
+    body: JSON.stringify({ interval }),
+  }),
   
   // ==================== 配置绑定狙击 ====================
   getConfigSniperTasks: () => apiRequest<Array<{
