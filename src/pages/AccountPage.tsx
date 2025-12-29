@@ -17,7 +17,9 @@ import {
   Receipt,
   Wallet,
   Link as LinkIcon,
-  Undo2
+  Undo2,
+  Coins,
+  Users
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -27,7 +29,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import { useOvhAccount, useOvhBalance, useOvhOrders, useOvhBills, useOvhEmails, useOvhRefunds } from "@/hooks/useApi";
+import { useOvhAccount, useOvhBalance, useOvhOrders, useOvhBills, useOvhEmails, useOvhRefunds, useOvhCreditBalance, useOvhSubAccounts } from "@/hooks/useApi";
 import { toast } from "sonner";
 
 interface AccountInfo {
@@ -49,6 +51,8 @@ interface AccountInfo {
 const AccountPage = () => {
   const { data: accountInfo, isLoading: isLoadingAccount, refetch: refetchAccount } = useOvhAccount();
   const { data: balanceData, refetch: refetchBalance } = useOvhBalance();
+  const { data: creditBalanceData, isLoading: isLoadingCreditBalance, refetch: refetchCreditBalance } = useOvhCreditBalance();
+  const { data: subAccountsData, isLoading: isLoadingSubAccounts, refetch: refetchSubAccounts } = useOvhSubAccounts();
   const { data: ordersData, isLoading: isLoadingOrders, refetch: refetchOrders } = useOvhOrders(20);
   const { data: billsData, isLoading: isLoadingBills, refetch: refetchBills } = useOvhBills(20);
   const { data: emailsData, isLoading: isLoadingEmails, refetch: refetchEmails } = useOvhEmails(50);
@@ -61,6 +65,8 @@ const AccountPage = () => {
       await Promise.all([
         refetchAccount(),
         refetchBalance(),
+        refetchCreditBalance(),
+        refetchSubAccounts(),
         refetchOrders(),
         refetchBills(),
         refetchEmails(),
@@ -82,6 +88,8 @@ const AccountPage = () => {
 
   const account: AccountInfo = (accountInfo?.account || {}) as AccountInfo;
   const balance = balanceData?.balance;
+  const creditBalances = creditBalanceData?.data || [];
+  const subAccounts = subAccountsData?.data || [];
   const orders = ordersData?.orders || [];
   const bills = billsData?.bills || [];
   const emails = emailsData?.emails || [];
@@ -115,9 +123,9 @@ const AccountPage = () => {
             </Button>
           </div>
 
-          {/* Balance Card */}
-          {balance && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Balance Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {balance && (
               <div className="terminal-card p-4 border-primary/30">
                 <div className="flex items-center gap-2 mb-2 text-primary">
                   <Wallet className="h-4 w-4" />
@@ -127,8 +135,20 @@ const AccountPage = () => {
                   {balance.value?.toFixed(2) || '0.00'} {balance.currencyCode || 'EUR'}
                 </p>
               </div>
-            </div>
-          )}
+            )}
+            {creditBalances.map((credit: any, index: number) => (
+              <div key={index} className="terminal-card p-4 border-accent/30">
+                <div className="flex items-center gap-2 mb-2 text-accent">
+                  <Coins className="h-4 w-4" />
+                  <span className="text-xs uppercase">{credit.balanceName || credit.type || '信用余额'}</span>
+                </div>
+                <p className="text-2xl font-bold font-mono">
+                  {credit.balance?.value?.toFixed(2) || '0.00'} {credit.balance?.currencyCode || 'EUR'}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">{credit.type}</p>
+              </div>
+            ))}
+          </div>
 
           <Tabs defaultValue="info" className="space-y-6">
             <TabsList className="bg-muted/50 border border-border flex-wrap h-auto gap-1 p-1">
@@ -151,6 +171,10 @@ const AccountPage = () => {
               <TabsTrigger value="bills" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
                 <CreditCard className="h-4 w-4 mr-2" />
                 账单记录
+              </TabsTrigger>
+              <TabsTrigger value="subaccounts" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                <Users className="h-4 w-4 mr-2" />
+                子账户
               </TabsTrigger>
             </TabsList>
 
@@ -486,6 +510,50 @@ const AccountPage = () => {
                   <div className="text-center py-12 text-muted-foreground">
                     <CreditCard className="h-12 w-12 mx-auto mb-4 opacity-30" />
                     <p>暂无账单记录</p>
+                  </div>
+                )}
+              </TerminalCard>
+            </TabsContent>
+
+            {/* Sub Accounts */}
+            <TabsContent value="subaccounts">
+              <TerminalCard
+                title="子账户管理"
+                icon={<Users className="h-4 w-4" />}
+              >
+                {isLoadingSubAccounts ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  </div>
+                ) : subAccounts.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <Users className="h-12 w-12 mx-auto mb-4 opacity-30" />
+                    <p>暂无子账户</p>
+                    <p className="text-xs mt-2">子账户功能允许您创建和管理关联账户</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-xs text-muted-foreground uppercase border-b border-border">
+                          <th className="text-left py-3 px-2">ID</th>
+                          <th className="text-left py-3 px-2">NIC Handle</th>
+                          <th className="text-left py-3 px-2">描述</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {subAccounts.map((sub: any) => (
+                          <tr 
+                            key={sub.id}
+                            className="border-b border-border/50 hover:bg-muted/30 transition-colors"
+                          >
+                            <td className="py-3 px-2 font-mono text-primary">{sub.id}</td>
+                            <td className="py-3 px-2 font-mono">{sub.nichandle}</td>
+                            <td className="py-3 px-2 text-muted-foreground">{sub.description || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </TerminalCard>

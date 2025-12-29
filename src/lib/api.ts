@@ -295,20 +295,28 @@ export const api = {
   getVpsSubscriptions: () => apiRequest<Array<{
     id: string;
     planCode: string;
+    displayName?: string;
+    ovhSubsidiary?: string;
     datacenters: string[];
+    monitorLinux?: boolean;
+    monitorWindows?: boolean;
     notifyAvailable: boolean;
     notifyUnavailable: boolean;
-    lastStatus: Record<string, string>;
+    lastStatus: Record<string, { linux?: string; windows?: string } | string>;
     autoOrder: boolean;
+    createdAt?: string;
   }>>('/api/vps-monitor/subscriptions'),
   
   addVpsSubscription: (sub: {
     planCode: string;
+    ovhSubsidiary?: string;
     datacenters?: string[];
+    monitorLinux?: boolean;
+    monitorWindows?: boolean;
     notifyAvailable?: boolean;
     notifyUnavailable?: boolean;
     autoOrder?: boolean;
-  }) => apiRequest<{ status: string; message: string }>('/api/vps-monitor/subscriptions', {
+  }) => apiRequest<{ status: string; message: string; id?: string }>('/api/vps-monitor/subscriptions', {
     method: 'POST',
     body: JSON.stringify(sub),
   }),
@@ -771,6 +779,23 @@ export const api = {
     message?: string;
     error?: string;
   }>(`/api/monitor/subscriptions/${planCode}`, {
+    method: 'PUT',
+    body: JSON.stringify(options),
+  }),
+  
+  // ==================== 更新VPS订阅 ====================
+  updateVpsSubscription: (id: string, options: {
+    notifyAvailable?: boolean;
+    notifyUnavailable?: boolean;
+    autoOrder?: boolean;
+    datacenters?: string[];
+    monitorLinux?: boolean;
+    monitorWindows?: boolean;
+  }) => apiRequest<{
+    success: boolean;
+    message?: string;
+    error?: string;
+  }>(`/api/vps-monitor/subscriptions/${id}`, {
     method: 'PUT',
     body: JSON.stringify(options),
   }),
