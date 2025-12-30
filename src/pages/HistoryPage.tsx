@@ -65,6 +65,18 @@ const HistoryPage = () => {
     }
   };
 
+
+  const splitErrorMessage = (message: string) => {
+    const marker = "OVH-Query-ID:";
+    const idx = message.indexOf(marker);
+    if (idx === -1) {
+      return { main: message.trim(), queryId: "" };
+    }
+    const main = message.slice(0, idx).trim();
+    const queryId = message.slice(idx + marker.length).trim();
+    return { main, queryId };
+  };
+
   const getTimeRemaining = (expirationTime: string) => {
     try {
       const expiry = new Date(expirationTime).getTime();
@@ -235,90 +247,101 @@ const HistoryPage = () => {
                           : "border-destructive/20 bg-destructive/5"
                       )}
                     >
-                      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                      <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-start">
                         {/* Order Info */}
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <StatusBadge status={item.status === "success" ? "completed" : "failed"} />
                             <span className="font-bold text-foreground">{item.planCode}</span>
                             <span className="text-xs text-muted-foreground uppercase bg-muted px-2 py-0.5 rounded-sm">
                               {item.datacenter}
                             </span>
                           </div>
-                          
-                          <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-                            <span>下单时间: {formatTime(item.purchaseTime)}</span>
+
+                          <div className="grid gap-1 text-sm text-muted-foreground">
+                            <div>下单时间: {formatTime(item.purchaseTime)}</div>
                             {item.orderId && (
-                              <span>订单号: <span className="text-accent font-mono">#{item.orderId}</span></span>
-                            )}
-                            {item.errorMessage && (
-                              <span className="text-destructive">错误: {item.errorMessage}</span>
+                              <div>订单号: <span className="text-accent font-mono">#{item.orderId}</span></div>
                             )}
                           </div>
 
+                          {item.errorMessage && (
+                            <div className="text-sm">
+                              {(() => {
+                                const { main, queryId } = splitErrorMessage(item.errorMessage);
+                                return (
+                                  <div className="rounded-sm border border-destructive/30 bg-destructive/10 p-2 text-destructive">
+                                    <div>错误: {main}</div>
+                                    {queryId && (
+                                      <div className="text-xs text-muted-foreground mt-1">
+                                        OVH-Query-ID: <span className="font-mono">{queryId}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          )}
+
                           {item.options && item.options.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-2">
-                              {item.options.map(opt => (
-                                <span 
-                                  key={opt}
-                                  className="text-xs bg-muted px-2 py-0.5 rounded-sm text-muted-foreground"
-                                >
-                                  {opt}
-                                </span>
-                              ))}
+                            <div className="text-xs text-muted-foreground">
+                              <div className="mb-1">配置:</div>
+                              <div className="space-y-1 font-mono text-xs text-foreground">
+                                {item.options.map(opt => (
+                                  <div key={opt}>{opt}</div>
+                                ))}
+                              </div>
                             </div>
                           )}
                         </div>
 
-                        {/* Price & Expiry */}
-                        {item.status === "success" && (
-                          <div className="flex items-center gap-6">
-                            {item.price && (
-                              <div className="text-right">
-                                <p className="text-lg font-bold text-primary">
-                                  €{(item.price as any).withTax?.toFixed(2) || 'N/A'}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  {item.price.currency || 'EUR'}
-                                </p>
+                        {/* Price & Actions */}
+                        <div className="flex flex-col items-start gap-2 lg:items-end">
+                          {item.status === "success" && item.price && (
+                            <div className="text-left lg:text-right">
+                              <p className="text-lg font-bold text-primary">
+                                €{(item.price as any).withTax?.toFixed(2) || 'N/A'}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {item.price.currency || 'EUR'}
+                              </p>
+                            </div>
+                          )}
+                          
+                          {item.status === "success" && timeRemaining && (
+                            <div className={cn(
+                              "flex items-center justify-between gap-2 px-3 py-2 rounded-sm border min-w-[140px]",
+                              timeRemaining.isExpired 
+                                ? "border-destructive/30 bg-destructive/10" 
+                                : timeRemaining.isUrgent 
+                                  ? "border-warning/30 bg-warning/10"
+                                  : "border-border"
+                            )}>
+                              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                {timeRemaining.isUrgent && !timeRemaining.isExpired && (
+                                  <AlertTriangle className="h-3 w-3 text-warning" />
+                                )}
+                                <span>剩余时间</span>
                               </div>
-                            )}
-                            
-                            {timeRemaining && (
-                              <div className={cn(
-                                "text-right px-3 py-2 rounded-sm border",
-                                timeRemaining.isExpired 
-                                  ? "border-destructive/30 bg-destructive/10" 
-                                  : timeRemaining.isUrgent 
-                                    ? "border-warning/30 bg-warning/10"
-                                    : "border-border"
+                              <span className={cn(
+                                "font-mono text-sm font-bold",
+                                timeRemaining.isExpired && "text-destructive",
+                                timeRemaining.isUrgent && !timeRemaining.isExpired && "text-warning"
                               )}>
-                                <div className="flex items-center gap-1 mb-1">
-                                  {timeRemaining.isUrgent && !timeRemaining.isExpired && (
-                                    <AlertTriangle className="h-3 w-3 text-warning" />
-                                  )}
-                                  <p className="text-xs text-muted-foreground">剩余时间</p>
-                                </div>
-                                <p className={cn(
-                                  "font-mono font-bold",
-                                  timeRemaining.isExpired && "text-destructive",
-                                  timeRemaining.isUrgent && !timeRemaining.isExpired && "text-warning"
-                                )}>
-                                  {timeRemaining.text}
-                                </p>
-                              </div>
-                            )}
-                            
-                            {item.orderUrl && (
-                              <Button variant="terminal" size="sm" asChild>
-                                <a href={item.orderUrl} target="_blank" rel="noopener noreferrer">
-                                  <ExternalLink className="h-4 w-4 mr-1" />
-                                  支付订单
-                                </a>
-                              </Button>
-                            )}
-                          </div>
-                        )}
+                                {timeRemaining.text}
+                              </span>
+                            </div>
+                          )}
+                          
+                          {item.status === "success" && item.orderUrl && (
+                            <Button variant="terminal" size="sm" asChild>
+                              <a href={item.orderUrl} target="_blank" rel="noopener noreferrer">
+                                <ExternalLink className="h-4 w-4 mr-1" />
+                                支付订单
+                              </a>
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );

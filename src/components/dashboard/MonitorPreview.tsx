@@ -1,12 +1,39 @@
 import { TerminalCard } from "@/components/ui/terminal-card";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { Activity, ArrowRight, Bell, BellOff, Loader2, Play, Square } from "lucide-react";
+import { Activity, ArrowRight, Bell, BellOff, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { useSubscriptions, useMonitorStatus } from "@/hooks/useApi";
 import { useEffect } from "react";
-import api from "@/lib/api";
-import { toast } from "sonner";
+
+const statusPriority: Record<string, number> = {
+  available: 3,
+  price_check_failed: 2,
+  unavailable: 1,
+  unknown: 0,
+};
+
+const normalizeStatus = (status: string) => {
+  if (status === "price_check_failed") return "warning";
+  if (status === "available") return "available";
+  if (status === "unavailable" || status === "unknown") return "unavailable";
+  return "unknown";
+};
+
+const collectDatacenterStatuses = (lastStatus?: Record<string, string>) => {
+  const dcStatus: Record<string, string> = {};
+  if (!lastStatus) return dcStatus;
+
+  Object.entries(lastStatus).forEach(([key, status]) => {
+    const dc = key.split("|")[0];
+    const current = dcStatus[dc];
+    if (!current || (statusPriority[status] ?? 0) > (statusPriority[current] ?? 0)) {
+      dcStatus[dc] = status;
+    }
+  });
+
+  return dcStatus;
+};
 
 export function MonitorPreview() {
   const { data: subscriptions, isLoading, refetch } = useSubscriptions();
@@ -22,39 +49,12 @@ export function MonitorPreview() {
 
   const displaySubs = subscriptions?.slice(0, 3) || [];
 
-  const toggleMonitor = async () => {
-    try {
-      if (status?.running) {
-        await api.stopMonitor();
-        toast.success("监控已停止");
-      } else {
-        await api.startMonitor();
-        toast.success("监控已启动");
-      }
-      refetchStatus();
-    } catch (err: any) {
-      toast.error(err.message);
-    }
-  };
-
   return (
     <TerminalCard
       title="独服监控"
       icon={<Activity className="h-4 w-4" />}
       headerAction={
         <div className="flex items-center gap-2">
-          <Button
-            variant={status?.running ? "destructive" : "terminal"}
-            size="sm"
-            className="text-xs"
-            onClick={toggleMonitor}
-          >
-            {status?.running ? (
-              <><Square className="h-3 w-3 mr-1" /> 停止</>
-            ) : (
-              <><Play className="h-3 w-3 mr-1" /> 启动</>
-            )}
-          </Button>
           <Link to="/monitor">
             <Button variant="ghost" size="sm" className="text-xs text-accent hover:text-accent">
               管理订阅 <ArrowRight className="ml-1 h-3 w-3" />
@@ -101,23 +101,28 @@ export function MonitorPreview() {
                 </div>
                 
                 <div className="flex flex-wrap gap-2">
-                  {(sub.datacenters?.length > 0 ? sub.datacenters : Object.keys(sub.lastStatus || {})).slice(0, 5).map(dc => {
-                    const dcName = typeof dc === 'string' ? dc : dc;
-                    const status = sub.lastStatus?.[dcName] || "unknown";
-                    return (
-                      <div 
-                        key={dcName}
-                        className="flex items-center gap-1.5 text-xs"
-                      >
-                        <span className="text-muted-foreground uppercase">{dcName}:</span>
-                        <StatusBadge 
-                          status={status === "unavailable" || status === "unknown" ? "unavailable" : "available"} 
-                          size="sm" 
-                          showDot={true}
-                        />
-                      </div>
-                    );
-                  })}
+                  {(() => {
+                    const dcStatus = collectDatacenterStatuses(sub.lastStatus);
+                    const dcs = sub.datacenters?.length
+                      ? sub.datacenters
+                      : Object.keys(dcStatus);
+                    return Array.from(new Set(dcs)).slice(0, 5).map((dcName) => {
+                      const status = dcStatus[dcName] || "unknown";
+                      return (
+                        <div 
+                          key={dcName}
+                          className="flex items-center gap-1.5 text-xs"
+                        >
+                          <span className="text-muted-foreground uppercase">{dcName}:</span>
+                          <StatusBadge 
+                            status={normalizeStatus(status)} 
+                            size="sm" 
+                            showDot={true}
+                          />
+                        </div>
+                      );
+                    });
+                  })()}
                 </div>
               </div>
             ))}

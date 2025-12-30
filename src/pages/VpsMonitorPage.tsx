@@ -217,14 +217,18 @@ const VpsMonitorPage = () => {
   };
 
   const handleSaveInterval = async () => {
-    if (newInterval < 5 || newInterval > 3600) {
-      toast.error("间隔必须在 5-3600 秒之间");
+    if (newInterval < 60 || newInterval > 3600) {
+      toast.error("间隔必须在 60-3600 秒之间");
       return;
     }
     setIsSavingInterval(true);
     try {
-      await api.updateVpsMonitorInterval(newInterval);
-      toast.success(`检查间隔已更新为 ${newInterval} 秒`);
+      const result = await api.updateVpsMonitorInterval(newInterval);
+      if (result.status !== "success") {
+        toast.error(result.message || "更新失败");
+        return;
+      }
+      toast.success(result.message || `检查间隔已更新为 ${newInterval} 秒`);
       setIsSettingsOpen(false);
       refetchStatus();
     } catch (error: any) {

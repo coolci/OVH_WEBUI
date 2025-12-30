@@ -75,7 +75,7 @@ export const api = {
     tgChatId: string;
     iam: string;
     zone: string;
-  }>('/api/config'),
+  }>('/api/settings'),
   
   saveConfig: (config: {
     appKey: string;
@@ -86,39 +86,61 @@ export const api = {
     tgChatId: string;
     iam: string;
     zone: string;
-  }) => apiRequest<{ status: string }>('/api/config', {
+  }) => apiRequest<{ status: string }>('/api/settings', {
     method: 'POST',
     body: JSON.stringify(config),
   }),
   
   // ==================== 服务器列表 ====================
-  getServers: () => apiRequest<Array<{
-    planCode: string;
-    name: string;
-    cpu: string;
-    ram: string;
-    storage: string;
-    bandwidth: string;
-    price: number;
-    currency: string;
-    datacenters: Array<{
-      datacenter: string;
-      availability: string;
-    }>;
-    availableOptions: Array<{
-      label: string;
-      value: string;
-    }>;
-  }>>('/api/servers'),
+    getServers: async () => {
+      const result = await apiRequest<any>('/api/servers?showApiServers=true');
+      const servers = Array.isArray(result)
+        ? result
+        : Array.isArray(result?.servers)
+          ? result.servers
+          : [];
+      return servers.map((server: any) => ({
+        ...server,
+        ram: server.ram ?? server.memory ?? "N/A",
+        memory: server.memory ?? server.ram ?? "N/A",
+      })) as Array<{
+        planCode: string;
+        name: string;
+        cpu: string;
+        ram: string;
+        memory: string;
+        storage: string;
+        bandwidth: string;
+        price: number;
+        currency: string;
+        datacenters: Array<{
+          datacenter: string;
+          availability: string;
+        }>;
+        availableOptions: Array<{
+          label: string;
+          value: string;
+        }>;
+      }>;
+    },
   
-  refreshServers: (force?: boolean) => apiRequest<{
-    status: string;
-    count: number;
-    servers: Array<any>;
-  }>(`/api/servers/refresh${force ? '?force=true' : ''}`, {
-    method: 'POST',
-  }),
-  
+    refreshServers: async (force?: boolean) => {
+      const result = await apiRequest<any>(
+        `/api/servers?forceRefresh=${force ? 'true' : 'false'}&showApiServers=true`
+      );
+      const servers = Array.isArray(result?.servers)
+        ? result.servers
+        : Array.isArray(result)
+          ? result
+          : [];
+      const normalizedServers = servers.map((server: any) => ({
+        ...server,
+        ram: server.ram ?? server.memory ?? "N/A",
+        memory: server.memory ?? server.ram ?? "N/A",
+      }));
+      return { status: "success", count: normalizedServers.length, servers: normalizedServers };
+    },
+
   // ==================== 队列管理 ====================
   getQueue: () => apiRequest<Array<{
     id: string;
@@ -281,7 +303,8 @@ export const api = {
   // 更新监控间隔
   updateMonitorInterval: (interval: number) => apiRequest<{
     status: string;
-    checkInterval: number;
+    checkInterval?: number;
+    message?: string;
   }>('/api/monitor/interval', {
     method: 'PUT',
     body: JSON.stringify({ interval }),
@@ -292,16 +315,16 @@ export const api = {
   }),
   
   // 手动检查单个planCode
-  manualCheckDedicated: (planCode: string) => apiRequest<{
-    status: string;
-    planCode: string;
-    datacenters: Array<{
-      datacenter: string;
-      availability: string;
-    }>;
-  }>(`/api/monitor/check/${planCode}`, {
-    method: 'POST',
-  }),
+  manualCheckDedicated: (planCode: string) =>
+    apiRequest<any>(`/api/availability/${planCode}`, {
+      method: 'POST',
+    }),
+
+  getAvailability: (planCode: string, options?: string[]) =>
+    apiRequest<Record<string, string>>(`/api/availability/${planCode}`, {
+      method: 'POST',
+      body: JSON.stringify({ options: options || [] }),
+    }),
   
   // ==================== VPS监控 ====================
   getVpsSubscriptions: () => apiRequest<Array<{
@@ -381,7 +404,8 @@ export const api = {
   // 更新VPS监控间隔
   updateVpsMonitorInterval: (interval: number) => apiRequest<{
     status: string;
-    checkInterval: number;
+    checkInterval?: number;
+    message?: string;
   }>('/api/vps-monitor/interval', {
     method: 'PUT',
     body: JSON.stringify({ interval }),
@@ -484,11 +508,13 @@ export const api = {
     total: number;
   }>('/api/server-control/list'),
   
-  getServerDetails: (serviceName: string) =>
-    apiRequest<{
-      success: boolean;
-      server: any;
-    }>(`/api/server-control/${serviceName}`),
+  getServerDetails: async (serviceName: string) => {
+    const result = await apiRequest<any>(`/api/server-control/${serviceName}/serviceinfo`);
+    if (result?.success && result?.serviceInfo) {
+      return { success: true, server: result.serviceInfo };
+    }
+    return result;
+  },
   
   rebootServer: (serviceName: string, type?: 'hardware' | 'soft') =>
     apiRequest<{ success: boolean; task: any }>(`/api/server-control/${serviceName}/reboot`, {
@@ -574,19 +600,22 @@ export const api = {
   
   // ==================== 高级服务器控制 ====================
   // IPMI控制台
-  getIpmiAccess: (serviceName: string) =>
-    apiRequest<{
-      success: boolean;
-      ipmiInfos?: {
-        ip: string;
-        login: string;
-        password: string;
-        expires?: string;
+  getIpmiAccess: async (serviceName: string) => {
+    const result = await apiRequest<any>(`/api/server-control/${serviceName}/console`);
+    if (result?.success && result?.console) {
+      const consoleUrl =
+        result.console.url ||
+        result.console.kvmUrl ||
+        result.console.value ||
+        (typeof result.console === "string" ? result.console : undefined);
+      const expires = result.console.expires || result.console.expiration;
+      return {
+        ...result,
+        ipmiInfos: consoleUrl ? { url: consoleUrl, expires } : undefined,
       };
-      error?: string;
-    }>(`/api/server-control/${serviceName}/ipmi`, {
-      method: 'POST',
-    }),
+    }
+    return result;
+  },
   
   // Burst带宽管理
   getBurstStatus: (serviceName: string) =>
@@ -691,7 +720,7 @@ export const api = {
   
   confirmTermination: (serviceName: string, token: string) =>
     apiRequest<{ success: boolean; message?: string; error?: string }>(
-      `/api/server-control/${serviceName}/terminate/confirm`,
+      `/api/server-control/${serviceName}/confirm-termination`,
       {
         method: 'POST',
         body: JSON.stringify({ token }),
@@ -746,137 +775,119 @@ export const api = {
     }),
   
   // ==================== OVH账户 ====================
-  getOvhAccountInfo: () => apiRequest<{
-    success: boolean;
-    account?: {
-      nichandle: string;
-      email: string;
-      firstName: string;
-      name: string;
-      country: string;
-    };
-    error?: string;
-  }>('/api/ovh/account/info'),
+  getOvhAccountInfo: async () => {
+    const result = await apiRequest<any>('/api/ovh/account/info');
+    if (result?.status !== "success") {
+      throw new Error(result?.message || result?.error || "Failed to load account info");
+    }
+    return { success: true, account: result.data };
+  },
   
-  getOvhBalance: () => apiRequest<{
-    success: boolean;
-    balance?: { value: number; currencyCode: string };
-    error?: string;
-  }>('/api/ovh/account/balance'),
+  getOvhBalance: async () => {
+    const result = await apiRequest<any>('/api/ovh/account/balance');
+    if (result?.status !== "success") {
+      throw new Error(result?.message || result?.error || "Failed to load balance");
+    }
+    return { success: true, balance: result.data };
+  },
   
   // 获取信用余额
-  getOvhCreditBalance: () => apiRequest<{
-    success: boolean;
-    data?: Array<{
-      balance: { value: number; currencyCode: string };
-      balanceName: string;
-      type: string;
-    }>;
-    error?: string;
-  }>('/api/ovh/account/credit-balance'),
+  getOvhCreditBalance: async () => {
+    const result = await apiRequest<any>('/api/ovh/account/credit-balance');
+    if (result?.status !== "success") {
+      throw new Error(result?.message || result?.error || "Failed to load credit balance");
+    }
+    return { success: true, data: result.data || [] };
+  },
   
   // 获取子账户列表
-  getOvhSubAccounts: () => apiRequest<{
-    success: boolean;
-    data?: Array<{
-      id: number;
-      nichandle: string;
-      description: string;
-    }>;
-    error?: string;
-  }>('/api/ovh/account/sub-accounts'),
+  getOvhSubAccounts: async () => {
+    const result = await apiRequest<any>('/api/ovh/account/sub-accounts');
+    if (result?.status !== "success") {
+      throw new Error(result?.message || result?.error || "Failed to load sub accounts");
+    }
+    return { success: true, data: result.data || [] };
+  },
   
-  getOvhOrders: (limit?: number) => apiRequest<{
-    success: boolean;
-    orders?: Array<any>;
-    error?: string;
-  }>(`/api/ovh/account/orders${limit ? `?limit=${limit}` : ''}`),
+  getOvhOrders: async (limit?: number) => {
+    const result = await apiRequest<any>(`/api/ovh/account/orders${limit ? `?limit=${limit}` : ''}`);
+    if (result?.status !== "success") {
+      throw new Error(result?.message || result?.error || "Failed to load orders");
+    }
+    return { success: true, orders: result.data || [] };
+  },
   
-  getOvhBills: (limit?: number) => apiRequest<{
-    success: boolean;
-    bills?: Array<any>;
-    error?: string;
-  }>(`/api/ovh/account/bills${limit ? `?limit=${limit}` : ''}`),
+  getOvhBills: async (limit?: number) => {
+    const result = await apiRequest<any>(`/api/ovh/account/bills${limit ? `?limit=${limit}` : ''}`);
+    if (result?.status !== "success") {
+      throw new Error(result?.message || result?.error || "Failed to load bills");
+    }
+    return { success: true, bills: result.data || [] };
+  },
   
   // ==================== 邮件历史 ====================
-  getOvhEmails: (limit?: number) => apiRequest<{
-    success: boolean;
-    emails?: Array<{
-      id: string;
-      subject: string;
-      date: string;
-      body: string;
-      recipients: string[];
-    }>;
-    error?: string;
-  }>(`/api/ovh/account/emails${limit ? `?limit=${limit}` : ''}`),
+  getOvhEmails: async (limit?: number) => {
+    const result = await apiRequest<any>(
+      `/api/ovh/account/email-history${limit ? `?limit=${limit}` : ''}`
+    );
+    if (result?.status !== "success") {
+      throw new Error(result?.message || result?.error || "Failed to load emails");
+    }
+    return { success: true, emails: result.data || [] };
+  },
   
   // ==================== 退款记录 ====================
-  getOvhRefunds: (limit?: number) => apiRequest<{
-    success: boolean;
-    refunds?: Array<{
-      refundId: string;
-      date: string;
-      orderId: string;
-      priceWithTax: { value: number; currencyCode: string };
-      status: string;
-    }>;
-    error?: string;
-  }>(`/api/ovh/account/refunds${limit ? `?limit=${limit}` : ''}`),
+  getOvhRefunds: async (limit?: number) => {
+    const result = await apiRequest<any>(`/api/ovh/account/refunds${limit ? `?limit=${limit}` : ''}`);
+    if (result?.status !== "success") {
+      throw new Error(result?.message || result?.error || "Failed to load refunds");
+    }
+    return { success: true, refunds: result.data || [] };
+  },
   
   // ==================== 联系人变更请求 ====================
-  getContactChangeRequests: () => apiRequest<{
-    success: boolean;
-    requests?: Array<{
-      id: number;
-      serviceDomain: string;
-      askingAccount: string;
-      contactType: string;
-      fromAccount: string;
-      toAccount: string;
-      state: string;
-      dateDone: string | null;
-      dateRequest: string;
-    }>;
-    error?: string;
-  }>('/api/ovh/contact-change/requests'),
+  getContactChangeRequests: async () => {
+    const result = await apiRequest<any>('/api/ovh/contact-change-requests');
+    if (result?.status !== "success") {
+      throw new Error(result?.message || result?.error || "Failed to load contact change requests");
+    }
+    return { success: true, requests: result.data || [] };
+  },
   
-  acceptContactChange: (id: number) => apiRequest<{
-    success: boolean;
-    message?: string;
-    error?: string;
-  }>(`/api/ovh/contact-change/${id}/accept`, {
-    method: 'POST',
-  }),
+  acceptContactChange: (id: number) =>
+    apiRequest<{ success: boolean; message?: string; error?: string }>(
+      `/api/ovh/contact-change-requests/${id}/accept`,
+      { method: 'POST' }
+    ),
   
-  refuseContactChange: (id: number) => apiRequest<{
-    success: boolean;
-    message?: string;
-    error?: string;
-  }>(`/api/ovh/contact-change/${id}/refuse`, {
-    method: 'POST',
-  }),
+  refuseContactChange: (id: number) =>
+    apiRequest<{ success: boolean; message?: string; error?: string }>(
+      `/api/ovh/contact-change-requests/${id}/refuse`,
+      { method: 'POST' }
+    ),
   
-  resendContactChangeEmail: (id: number) => apiRequest<{
-    success: boolean;
-    message?: string;
-    error?: string;
-  }>(`/api/ovh/contact-change/${id}/resend`, {
-    method: 'POST',
-  }),
+  resendContactChangeEmail: (id: number) =>
+    apiRequest<{ success: boolean; message?: string; error?: string }>(
+      `/api/ovh/contact-change-requests/${id}/resend-email`,
+      { method: 'POST' }
+    ),
   
   // ==================== 性能监控 ====================
-  getServerStatistics: (serviceName: string, period?: 'daily' | 'hourly' | 'weekly' | 'monthly' | 'yearly') => 
-    apiRequest<{
+  getServerStatistics: (
+    serviceName: string,
+    period?: 'lastday' | 'lastweek' | 'lastmonth' | 'lastyear',
+    type?: 'traffic:download' | 'traffic:upload'
+  ) => {
+    const params = new URLSearchParams();
+    if (period) params.set('period', period);
+    if (type) params.set('type', type);
+    const query = params.toString();
+    return apiRequest<{
       success: boolean;
-      statistics?: {
-        cpu?: Array<{ timestamp: number; value: number }>;
-        mem?: Array<{ timestamp: number; value: number }>;
-        net_tx?: Array<{ timestamp: number; value: number }>;
-        net_rx?: Array<{ timestamp: number; value: number }>;
-      };
+      statistics?: Array<{ timestamp: number; value: number }>;
       error?: string;
-    }>(`/api/server-control/${serviceName}/statistics${period ? `?period=${period}` : ''}`),
+    }>(`/api/server-control/${serviceName}/statistics${query ? `?${query}` : ''}`);
+  },
   
   // ==================== Telegram WEBHOOK下单 ====================
   telegramQuickOrder: (order: {
@@ -913,12 +924,11 @@ export const api = {
     quantity?: number;
     datacenters?: string[];
   }) => apiRequest<{
-    success: boolean;
+    status: string;
     message?: string;
-    error?: string;
-  }>(`/api/monitor/subscriptions/${planCode}`, {
-    method: 'PUT',
-    body: JSON.stringify(options),
+  }>(`/api/monitor/subscriptions`, {
+    method: 'POST',
+    body: JSON.stringify({ planCode, ...options }),
   }),
   
   // ==================== 更新VPS订阅 ====================

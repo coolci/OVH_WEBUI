@@ -5,7 +5,6 @@ import { Helmet } from "react-helmet-async";
 import { 
   Activity, 
   Cpu, 
-  MemoryStick, 
   Network, 
   RefreshCw,
   Loader2,
@@ -40,16 +39,14 @@ interface StatPoint {
 }
 
 interface Statistics {
-  cpu?: StatPoint[];
-  mem?: StatPoint[];
-  net_tx?: StatPoint[];
-  net_rx?: StatPoint[];
+  download?: StatPoint[];
+  upload?: StatPoint[];
 }
 
 const PerformancePage = () => {
   const { data: serversData, isLoading: isLoadingServers } = useMyServers();
   const [selectedServer, setSelectedServer] = useState<string>("");
-  const [period, setPeriod] = useState<'hourly' | 'daily' | 'weekly' | 'monthly'>('hourly');
+  const [period, setPeriod] = useState<'lastday' | 'lastweek' | 'lastmonth' | 'lastyear'>('lastday');
   const [statistics, setStatistics] = useState<Statistics | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
@@ -61,12 +58,25 @@ const PerformancePage = () => {
     
     setIsLoading(true);
     try {
-      const result = await api.getServerStatistics(selectedServer, period);
-      if (result.success) {
-        setStatistics(result.statistics || null);
-      } else {
-        toast.error(result.error || "加载统计数据失败");
+      const [downloadRes, uploadRes] = await Promise.all([
+        api.getServerStatistics(selectedServer, period, "traffic:download").catch((error: any) => ({
+          success: false,
+          error: error?.message || String(error),
+        })),
+        api.getServerStatistics(selectedServer, period, "traffic:upload").catch((error: any) => ({
+          success: false,
+          error: error?.message || String(error),
+        })),
+      ]);
+
+      if (!downloadRes.success || !uploadRes.success) {
+        toast.error(downloadRes.error || uploadRes.error || "加载统计数据失败");
       }
+
+      setStatistics({
+        download: downloadRes.statistics || [],
+        upload: uploadRes.statistics || [],
+      });
     } catch (error: any) {
       toast.error(`加载失败: ${error.message}`);
     } finally {
@@ -94,22 +104,11 @@ const PerformancePage = () => {
     }
   }, [servers, selectedServer]);
 
-  const formatChartData = (data: StatPoint[] | undefined) => {
-    if (!data) return [];
-    return data.map(point => ({
-      time: new Date(point.timestamp * 1000).toLocaleTimeString("zh-CN", { 
-        hour: '2-digit', 
-        minute: '2-digit' 
-      }),
-      value: point.value
-    }));
-  };
-
   const formatNetworkData = () => {
-    if (!statistics?.net_tx && !statistics?.net_rx) return [];
+    if (!statistics?.download && !statistics?.upload) return [];
     
-    const txData = statistics.net_tx || [];
-    const rxData = statistics.net_rx || [];
+    const txData = statistics.upload || [];
+    const rxData = statistics.download || [];
     
     const combined: { time: string; tx: number; rx: number }[] = [];
     const maxLen = Math.max(txData.length, rxData.length);
@@ -130,8 +129,6 @@ const PerformancePage = () => {
     return combined;
   };
 
-  const cpuData = formatChartData(statistics?.cpu);
-  const memData = formatChartData(statistics?.mem);
   const networkData = formatNetworkData();
 
   return (
@@ -175,10 +172,10 @@ const PerformancePage = () => {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="hourly">最近1小时</SelectItem>
-                  <SelectItem value="daily">最近24小时</SelectItem>
-                  <SelectItem value="weekly">最近7天</SelectItem>
-                  <SelectItem value="monthly">最近30天</SelectItem>
+                  <SelectItem value="lastday">最近1天</SelectItem>
+                  <SelectItem value="lastweek">最近7天</SelectItem>
+                  <SelectItem value="lastmonth">最近30天</SelectItem>
+                  <SelectItem value="lastyear">最近1年</SelectItem>
                 </SelectContent>
               </Select>
 
@@ -204,115 +201,21 @@ const PerformancePage = () => {
             </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* CPU Chart */}
               <TerminalCard
-                title="CPU 使用率"
+                title="CPU / 内存"
                 icon={<Cpu className="h-4 w-4" />}
               >
-                {isLoading ? (
-                  <div className="flex items-center justify-center py-12">
-                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                  </div>
-                ) : cpuData.length === 0 ? (
-                  <div className="text-center py-12 text-muted-foreground">
-                    <Activity className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                    <p className="text-sm">暂无数据</p>
-                  </div>
-                ) : (
-                  <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={cpuData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                        <XAxis 
-                          dataKey="time" 
-                          stroke="hsl(var(--muted-foreground))" 
-                          fontSize={12}
-                        />
-                        <YAxis 
-                          stroke="hsl(var(--muted-foreground))" 
-                          fontSize={12}
-                          domain={[0, 100]}
-                          tickFormatter={(v) => `${v}%`}
-                        />
-                        <Tooltip 
-                          contentStyle={{
-                            backgroundColor: 'hsl(var(--card))',
-                            border: '1px solid hsl(var(--border))',
-                            borderRadius: '4px'
-                          }}
-                          labelStyle={{ color: 'hsl(var(--foreground))' }}
-                          formatter={(value: number) => [`${value.toFixed(1)}%`, 'CPU']}
-                        />
-                        <Line 
-                          type="monotone" 
-                          dataKey="value" 
-                          stroke="hsl(var(--primary))" 
-                          strokeWidth={2}
-                          dot={false}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
-              </TerminalCard>
-
-              {/* Memory Chart */}
-              <TerminalCard
-                title="内存使用率"
-                icon={<MemoryStick className="h-4 w-4" />}
-              >
-                {isLoading ? (
-                  <div className="flex items-center justify-center py-12">
-                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                  </div>
-                ) : memData.length === 0 ? (
-                  <div className="text-center py-12 text-muted-foreground">
-                    <Activity className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                    <p className="text-sm">暂无数据</p>
-                  </div>
-                ) : (
-                  <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={memData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                        <XAxis 
-                          dataKey="time" 
-                          stroke="hsl(var(--muted-foreground))" 
-                          fontSize={12}
-                        />
-                        <YAxis 
-                          stroke="hsl(var(--muted-foreground))" 
-                          fontSize={12}
-                          domain={[0, 100]}
-                          tickFormatter={(v) => `${v}%`}
-                        />
-                        <Tooltip 
-                          contentStyle={{
-                            backgroundColor: 'hsl(var(--card))',
-                            border: '1px solid hsl(var(--border))',
-                            borderRadius: '4px'
-                          }}
-                          labelStyle={{ color: 'hsl(var(--foreground))' }}
-                          formatter={(value: number) => [`${value.toFixed(1)}%`, '内存']}
-                        />
-                        <Line 
-                          type="monotone" 
-                          dataKey="value" 
-                          stroke="hsl(var(--accent))" 
-                          strokeWidth={2}
-                          dot={false}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
+                <div className="text-center py-12 text-muted-foreground">
+                  <Activity className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                  <p className="text-sm">后端当前仅支持流量统计</p>
+                </div>
               </TerminalCard>
 
               {/* Network Chart */}
               <TerminalCard
                 title="网络流量"
                 icon={<Network className="h-4 w-4" />}
-                className="lg:col-span-2"
+                className="lg:col-span-1"
               >
                 {isLoading ? (
                   <div className="flex items-center justify-center py-12">

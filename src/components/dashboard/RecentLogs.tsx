@@ -29,6 +29,13 @@ const levelConfig = {
   },
 };
 
+const levelLabels: Record<string, string> = {
+  INFO: "信息",
+  WARNING: "警告",
+  ERROR: "错误",
+  DEBUG: "调试",
+};
+
 export function RecentLogs() {
   const { data: logs, isLoading, refetch } = useLogs(10);
 
@@ -88,7 +95,9 @@ export function RecentLogs() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5">
                     <span className="text-muted-foreground">{formatTime(log.timestamp)}</span>
-                    <span className={cn("uppercase font-medium", config.color)}>[{log.level}]</span>
+                    <span className={cn("font-medium", config.color)}>
+                      [{levelLabels[log.level as keyof typeof levelLabels] || log.level}]
+                    </span>
                     <span className="text-accent">[{log.source}]</span>
                   </div>
                   <p className="text-foreground/90 break-words">{log.message}</p>

@@ -72,7 +72,136 @@ const getAvailabilityInfo = (availability: string) => {
   return { color: "text-muted-foreground bg-muted", label: availability || "未知", priority: 5 };
 };
 
+const getUniqueDatacenters = (datacenters: Array<{ datacenter: string; availability: string }>) => {
+  const map = new Map<string, { datacenter: string; availability: string }>();
+  datacenters.forEach((dc) => {
+    const existing = map.get(dc.datacenter);
+    if (!existing) {
+      map.set(dc.datacenter, dc);
+      return;
+    }
+    const currentInfo = getAvailabilityInfo(dc.availability);
+    const existingInfo = getAvailabilityInfo(existing.availability);
+    if (currentInfo.priority < existingInfo.priority) {
+      map.set(dc.datacenter, dc);
+    }
+  });
+  return Array.from(map.values());
+};
+
+const getDefaultDatacenter = (datacenters: Array<{ datacenter: string; availability: string }>) => {
+  const unique = getUniqueDatacenters(datacenters);
+  return unique[0]?.datacenter || "";
+};
+
+const formatPrice = (price?: number, currencyCode?: string) => {
+  if (typeof price === "number" && Number.isFinite(price)) {
+    if (currencyCode && currencyCode !== "EUR") {
+      return `${price.toFixed(2)} ${currencyCode}`;
+    }
+    return `€${price.toFixed(2)}`;
+  }
+  return "--";
+};
+
 const ServersPage = () => {
+  const getOptionCategory = (option: string) => {
+    const lower = option.toLowerCase();
+    if (lower.includes("ram-") || lower.includes("memory")) {
+      return "memory";
+    }
+    if (
+      lower.includes("softraid-") ||
+      lower.includes("hybrid") ||
+      lower.includes("disk") ||
+      lower.includes("nvme") ||
+      lower.includes("raid")
+    ) {
+      return "storage";
+    }
+    return "other";
+  };
+
+  const getPlanOptions = (server: any) => {
+    const baseOptions = Array.isArray(server?.availableOptions) ? server.availableOptions : [];
+    const extraOptions = configOptionsByPlan[server?.planCode] || [];
+    const merged = new Map<string, { label: string; value: string }>();
+    baseOptions.forEach((opt: any) => {
+      if (opt?.value) merged.set(opt.value, opt);
+    });
+    extraOptions.forEach((opt) => {
+      if (opt?.value && !merged.has(opt.value)) merged.set(opt.value, opt);
+    });
+    return Array.from(merged.values());
+  };
+
+  const getDefaultOptionsFromServer = (server: any) => {
+    const defaults = Array.isArray(server?.defaultOptions) ? server.defaultOptions : [];
+    return defaults
+      .map((opt: any) => (typeof opt === "string" ? opt : opt?.value))
+      .filter(Boolean);
+  };
+
+  const getEffectiveOptionsForServer = (server: any, selected: string[]) => {
+    const selectedOptions = selected.filter(Boolean);
+    const defaults = getDefaultOptionsFromServer(server);
+    const hasMemory = selectedOptions.some((opt) => getOptionCategory(opt) === "memory");
+    const hasStorage = selectedOptions.some((opt) => getOptionCategory(opt) === "storage");
+    let memoryDefault = "";
+    let storageDefault = "";
+    defaults.forEach((opt) => {
+      const category = getOptionCategory(opt);
+      if (category === "memory" && !memoryDefault) memoryDefault = opt;
+      if (category === "storage" && !storageDefault) storageDefault = opt;
+    });
+    const effective = [...selectedOptions];
+    if (!hasMemory && memoryDefault) effective.push(memoryDefault);
+    if (!hasStorage && storageDefault) effective.push(storageDefault);
+    const seen = new Set<string>();
+    return effective.filter((opt) => {
+      if (seen.has(opt)) return false;
+      seen.add(opt);
+      return true;
+    });
+  };
+
+  const updateAvailabilityForPlan = async (planCode: string, options: string[], server?: any) => {
+    setLoadingAvailabilityByPlan((prev) => ({ ...prev, [planCode]: true }));
+    try {
+      const effectiveOptions = getEffectiveOptionsForServer(server, options);
+      const availability = await api.getAvailability(planCode, effectiveOptions);
+      setAvailabilityByPlan((prev) => ({ ...prev, [planCode]: availability || {} }));
+    } catch {
+      setAvailabilityByPlan((prev) => ({ ...prev, [planCode]: {} }));
+    } finally {
+      setLoadingAvailabilityByPlan((prev) => ({ ...prev, [planCode]: false }));
+    }
+  };
+
+  const loadConfigOptionsForPlan = async (planCode: string) => {
+    if (configOptionsByPlan[planCode]) {
+      return;
+    }
+    setIsLoadingOptions(true);
+    try {
+      const availability = await api.manualCheckDedicated(planCode);
+      const optionSet = new Set<string>();
+      const configs = availability && typeof availability === "object"
+        ? Object.values(availability)
+        : [];
+      configs.forEach((cfg: any) => {
+        if (Array.isArray(cfg?.options)) {
+          cfg.options.forEach((opt: string) => optionSet.add(opt));
+        }
+      });
+      const optionsList = Array.from(optionSet)
+        .sort()
+        .map((opt) => ({ label: opt, value: opt }));
+      setConfigOptionsByPlan((prev) => ({ ...prev, [planCode]: optionsList }));
+    } finally {
+      setIsLoadingOptions(false);
+    }
+  };
   const { data: servers, isLoading, refetch } = useServers();
   const [searchTerm, setSearchTerm] = useState("");
   const [filterAvailability, setFilterAvailability] = useState<string>("all");
@@ -87,6 +216,12 @@ const ServersPage = () => {
   const [priceInfo, setPriceInfo] = useState<any>(null);
   const [isLoadingPrice, setIsLoadingPrice] = useState(false);
   const [dialogMode, setDialogMode] = useState<'queue' | 'quick'>('queue');
+  const [isLoadingOptions, setIsLoadingOptions] = useState(false);
+  const [optionsByPlan, setOptionsByPlan] = useState<Record<string, string[]>>({});
+  const [configOptionsByPlan, setConfigOptionsByPlan] = useState<Record<string, Array<{ label: string; value: string }>>>({});
+  const [availabilityByPlan, setAvailabilityByPlan] = useState<Record<string, Record<string, string>>>({});
+  const [loadingAvailabilityByPlan, setLoadingAvailabilityByPlan] = useState<Record<string, boolean>>({});
+  const [optionFilter, setOptionFilter] = useState("");
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -102,11 +237,12 @@ const ServersPage = () => {
   };
 
   // 加载价格
-  const loadPrice = async (planCode: string, datacenter: string, options: string[]) => {
+  const loadPrice = async (server: any, datacenter: string, options: string[]) => {
     setIsLoadingPrice(true);
     setPriceInfo(null);
     try {
-      const result = await api.getServerPrice(planCode, datacenter, options);
+      const effectiveOptions = getEffectiveOptionsForServer(server, options);
+      const result = await api.getServerPrice(server.planCode, datacenter, effectiveOptions);
       if (result.success && result.price) {
         setPriceInfo(result.price);
       }
@@ -118,24 +254,47 @@ const ServersPage = () => {
   };
 
   // 当选择变化时加载价格
+  // ??????????
   useEffect(() => {
     if (selectedServer && selectedDc) {
-      loadPrice(selectedServer.planCode, selectedDc, selectedOptions);
+      loadPrice(selectedServer, selectedDc, selectedOptions);
     }
   }, [selectedServer, selectedDc, selectedOptions]);
 
+  // ????????????????
+  useEffect(() => {
+    if (!selectedServer?.planCode) {
+      return;
+    }
+    loadConfigOptionsForPlan(selectedServer.planCode);
+  }, [selectedServer?.planCode]);
+
+  // ?????????????????
+  useEffect(() => {
+    if (!selectedServer?.planCode) {
+      return;
+    }
+    updateAvailabilityForPlan(selectedServer.planCode, selectedOptions, selectedServer);
+  }, [selectedServer?.planCode, selectedOptions]);
+
   const handleAddToQueue = async () => {
-    if (!selectedServer || !selectedDc) return;
+    if (!selectedServer) return;
+    const datacenter = selectedDc || getDefaultDatacenter(selectedServer.datacenters || []);
+    if (!datacenter) {
+      toast.error("请选择机房");
+      return;
+    }
+    const effectiveOptions = getEffectiveOptionsForServer(selectedServer, selectedOptions);
     
     setIsAddingToQueue(true);
     try {
       await api.addQueueItem({
         planCode: selectedServer.planCode,
-        datacenter: selectedDc,
-        options: selectedOptions,
+        datacenter,
+        options: effectiveOptions,
         retryInterval: 30,
       });
-      toast.success(`已添加 ${selectedServer.planCode} @ ${selectedDc.toUpperCase()} 到队列`);
+      toast.success(`已添加 ${selectedServer.planCode} @ ${datacenter.toUpperCase()} 到队列`);
       closeDialog();
     } catch (err: any) {
       toast.error(err.message);
@@ -145,8 +304,50 @@ const ServersPage = () => {
   };
 
   const handleQuickOrder = async () => {
-    if (!selectedServer || !selectedDc) {
+    if (!selectedServer) {
+      return;
+    }
+    const datacenter = selectedDc || getDefaultDatacenter(selectedServer.datacenters || []);
+    if (!datacenter) {
       toast.error("请选择机房");
+      return;
+    }
+
+    let quickOrderPrice = priceInfo?.prices?.withTax;
+    if (!quickOrderPrice) {
+      try {
+        const effectiveOptions = getEffectiveOptionsForServer(selectedServer, selectedOptions);
+        const priceResult = await api.getServerPrice(
+          selectedServer.planCode,
+          datacenter,
+          effectiveOptions
+        );
+        if (priceResult?.success && priceResult.price) {
+          setPriceInfo(priceResult.price);
+          quickOrderPrice = priceResult.price.prices?.withTax;
+        }
+      } catch {
+        // ignore price errors, fallback to queue
+      }
+    }
+
+    if (!quickOrderPrice) {
+      setIsAddingToQueue(true);
+      try {
+        const effectiveOptions = getEffectiveOptionsForServer(selectedServer, selectedOptions);
+        await api.addQueueItem({
+          planCode: selectedServer.planCode,
+          datacenter,
+          options: effectiveOptions,
+          retryInterval: 30,
+        });
+        toast.success(`该机房无可定价配置，已加入队列：${selectedServer.planCode} @ ${datacenter.toUpperCase()}`);
+        closeDialog();
+      } catch (err: any) {
+        toast.error(err.message);
+      } finally {
+        setIsAddingToQueue(false);
+      }
       return;
     }
     
@@ -154,8 +355,8 @@ const ServersPage = () => {
     try {
       const result = await api.quickOrder({ 
         planCode: selectedServer.planCode, 
-        datacenter: selectedDc,
-        options: selectedOptions,
+        datacenter,
+        options: getEffectiveOptionsForServer(selectedServer, selectedOptions),
       });
       if (result.success) {
         toast.success(result.message || "下单成功！请前往OVH支付订单");
@@ -178,15 +379,15 @@ const ServersPage = () => {
     setSelectedServer(server);
     setDialogMode(mode);
     setPriceInfo(null);
-    setSelectedOptions([]);
+    const planOptions = optionsByPlan[server.planCode] || [];
+    setSelectedOptions(planOptions);
+    loadConfigOptionsForPlan(server.planCode);
+    updateAvailabilityForPlan(server.planCode, planOptions, server);
     
     if (datacenter) {
       setSelectedDc(datacenter);
     } else {
-      const availableDc = server.datacenters?.find((dc: any) => 
-        dc.availability !== "unavailable" && dc.availability !== "unknown"
-      );
-      setSelectedDc(availableDc?.datacenter || "");
+      setSelectedDc(getDefaultDatacenter(server.datacenters || []));
     }
   };
 
@@ -198,14 +399,60 @@ const ServersPage = () => {
   };
 
   const toggleOption = (option: string) => {
-    setSelectedOptions(prev => 
-      prev.includes(option) 
-        ? prev.filter(o => o !== option)
-        : [...prev, option]
-    );
+    if (!selectedServer?.planCode) {
+      return;
+    }
+    setSelectedOptions((prev) => {
+      const category = getOptionCategory(option);
+      let next = prev.includes(option)
+        ? prev.filter((o) => o !== option)
+        : [...prev, option];
+      if (category !== "other") {
+        next = next.filter((o) => o === option || getOptionCategory(o) !== category);
+      }
+      setOptionsByPlan((byPlan) => ({ ...byPlan, [selectedServer.planCode]: next }));
+      updateAvailabilityForPlan(selectedServer.planCode, next, selectedServer);
+      return next;
+    });
+  };
+
+  const updatePlanOptions = (planCode: string, nextOptions: string[], server?: any) => {
+    setOptionsByPlan((byPlan) => ({ ...byPlan, [planCode]: nextOptions }));
+    updateAvailabilityForPlan(planCode, nextOptions, server);
+  };
+
+  const addOptionForPlan = (server: any, option: string) => {
+    const planCode = server.planCode;
+    const current = optionsByPlan[planCode] || [];
+    if (current.includes(option)) {
+      return;
+    }
+    const category = getOptionCategory(option);
+    const next = category === "other"
+      ? [...current, option]
+      : [...current.filter((opt) => getOptionCategory(opt) !== category), option];
+    updatePlanOptions(planCode, next, server);
+  };
+
+  const removeOptionForPlan = (server: any, option: string) => {
+    const planCode = server.planCode;
+    const current = optionsByPlan[planCode] || [];
+    updatePlanOptions(planCode, current.filter((opt) => opt !== option), server);
   };
 
   const serverList = servers || [];
+
+  const hasAvailableForPlan = (server: any) => {
+    const planAvailability = availabilityByPlan[server.planCode];
+    if (planAvailability && Object.keys(planAvailability).length > 0) {
+      return Object.values(planAvailability).some(
+        (status) => status !== "unavailable" && status !== "unknown"
+      );
+    }
+    return server.datacenters?.some((dc: any) =>
+      dc.availability !== "unavailable" && dc.availability !== "unknown"
+    );
+  };
   
   const filteredServers = serverList.filter(server => {
     const matchesSearch = 
@@ -215,16 +462,12 @@ const ServersPage = () => {
     
     if (filterAvailability === "all") return matchesSearch;
     if (filterAvailability === "available") {
-      return matchesSearch && server.datacenters?.some(dc => 
-        dc.availability !== "unavailable" && dc.availability !== "unknown"
-      );
+      return matchesSearch && hasAvailableForPlan(server);
     }
     return matchesSearch;
   });
 
-  const availableCount = serverList.filter(s => 
-    s.datacenters?.some(d => d.availability !== "unavailable" && d.availability !== "unknown")
-  ).length;
+  const availableCount = serverList.filter(hasAvailableForPlan).length;
 
   return (
     <>
@@ -301,9 +544,7 @@ const ServersPage = () => {
           ) : (
             <div className="space-y-4">
               {filteredServers.map((server) => {
-                const hasAvailable = server.datacenters?.some(dc => 
-                  dc.availability !== "unavailable" && dc.availability !== "unknown"
-                );
+                const hasAvailable = hasAvailableForPlan(server);
                 
                 return (
                   <TerminalCard 
@@ -322,9 +563,7 @@ const ServersPage = () => {
                             <h3 className="text-sm sm:text-lg font-bold text-foreground truncate">{server.name || server.planCode}</h3>
                             <span className="text-[10px] sm:text-xs text-muted-foreground font-mono">({server.planCode})</span>
                           </div>
-                          <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 sm:mt-1">
-                            €{server.price?.toFixed(2) || 'N/A'} / 月
-                          </p>
+                          <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 sm:mt-1" />
                         </div>
                         
                         {hasAvailable && (
@@ -364,28 +603,72 @@ const ServersPage = () => {
                         </div>
                       </div>
 
-                      {/* Datacenter Availability */}
-                      <div className="space-y-2">
-                        <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wider">机房可用性</p>
-                        <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-1.5 sm:gap-2">
-                          {server.datacenters?.slice(0, 6).map(dc => {
-                            const info = getAvailabilityInfo(dc.availability);
-                            const isAvailable = dc.availability !== "unavailable" && dc.availability !== "unknown";
-                            return (
-                              <div 
-                                key={dc.datacenter}
-                                className={cn(
-                                  "flex items-center justify-between p-1.5 sm:p-2 rounded-sm border border-border/50 cursor-pointer hover:border-primary/50 transition-colors",
-                                  info.color
+                        {/* Config Options */}
+                        <div className="space-y-2">
+                          <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wider">配置选项</p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Select
+                              onOpenChange={(open) => open && loadConfigOptionsForPlan(server.planCode)}
+                              onValueChange={(value) => addOptionForPlan(server, value)}
+                            >
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue placeholder="选择配置" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {getPlanOptions(server).length === 0 && isLoadingOptions ? (
+                                  <div className="flex items-center justify-center py-3">
+                                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                                  </div>
+                                ) : (
+                                  getPlanOptions(server).map((option: any) => (
+                                    <SelectItem key={option.value} value={option.value}>
+                                      {option.label || option.value}
+                                    </SelectItem>
+                                  ))
                                 )}
-                                onClick={() => isAvailable && openDialog(server, 'quick', dc.datacenter)}
+                              </SelectContent>
+                            </Select>
+                            {(optionsByPlan[server.planCode] || []).map((opt) => (
+                              <button
+                                key={opt}
+                                type="button"
+                                className="px-2 py-1 text-[10px] sm:text-xs rounded border border-border bg-muted/40 hover:bg-muted/60"
+                                onClick={() => removeOptionForPlan(server, opt)}
                               >
-                                <p className="font-mono text-[10px] sm:text-xs uppercase">{dc.datacenter}</p>
-                                <span className="font-mono text-[10px] sm:text-xs font-bold">{info.label}</span>
-                              </div>
-                            );
-                          })}
+                                {opt} ×
+                              </button>
+                            ))}
+                          </div>
                         </div>
+
+                        {/* Datacenter Availability */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wider">机房可用性</p>
+                            {loadingAvailabilityByPlan[server.planCode] && (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                            )}
+                          </div>
+                          <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-1.5 sm:gap-2">
+                            {getUniqueDatacenters(server.datacenters || []).slice(0, 6).map(dc => {
+                              const planAvailability = availabilityByPlan[server.planCode] || {};
+                              const availability = planAvailability[dc.datacenter] ?? dc.availability;
+                              const info = getAvailabilityInfo(availability);
+                              return (
+                                <div 
+                                  key={dc.datacenter}
+                                  className={cn(
+                                    "flex items-center justify-between p-1.5 sm:p-2 rounded-sm border border-border/50 cursor-pointer hover:border-primary/50 transition-colors",
+                                    info.color
+                                  )}
+                                  onClick={() => openDialog(server, 'quick', dc.datacenter)}
+                                >
+                                  <p className="font-mono text-[10px] sm:text-xs uppercase">{dc.datacenter}</p>
+                                  <span className="font-mono text-[10px] sm:text-xs font-bold">{info.label}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
                         
                         {/* Actions */}
                         <div className="flex gap-2 mt-2 sm:mt-3">
@@ -393,7 +676,6 @@ const ServersPage = () => {
                             size="sm" 
                             variant="outline"
                             className="flex-1 h-8 text-xs"
-                            disabled={!hasAvailable}
                             onClick={() => openDialog(server, 'queue')}
                           >
                             <ShoppingCart className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
@@ -402,7 +684,6 @@ const ServersPage = () => {
                           <Button 
                             size="sm" 
                             className="flex-1 h-8 text-xs"
-                            disabled={!hasAvailable}
                             onClick={() => openDialog(server, 'quick')}
                           >
                             <Zap className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
@@ -455,7 +736,11 @@ const ServersPage = () => {
                       <p className="font-medium">{selectedServer?.name || selectedServer?.planCode}</p>
                       <p className="text-xs text-muted-foreground font-mono">{selectedServer?.planCode}</p>
                     </div>
-                    <p className="text-sm text-accent">€{selectedServer?.price?.toFixed(2) || 'N/A'}/月</p>
+                    {priceInfo?.prices?.withTax && (
+                      <p className="text-sm text-accent">
+                        {formatPrice(priceInfo.prices?.withTax, priceInfo.prices?.currencyCode)}/月
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -467,10 +752,10 @@ const ServersPage = () => {
                     <SelectValue placeholder="选择机房" />
                   </SelectTrigger>
                   <SelectContent>
-                    {selectedServer?.datacenters?.filter((dc: any) => 
-                      dc.availability !== "unavailable" && dc.availability !== "unknown"
-                    ).map((dc: any) => {
-                      const info = getAvailabilityInfo(dc.availability);
+                    {getUniqueDatacenters(selectedServer?.datacenters || []).map((dc: any) => {
+                      const planAvailability = availabilityByPlan[selectedServer?.planCode || ""] || {};
+                      const availability = planAvailability[dc.datacenter] ?? dc.availability;
+                      const info = getAvailabilityInfo(availability);
                       return (
                         <SelectItem key={dc.datacenter} value={dc.datacenter}>
                           <span className="flex items-center gap-2">
@@ -486,58 +771,80 @@ const ServersPage = () => {
                 </Select>
               </div>
 
-              {/* Price Preview */}
-              <div className="p-4 bg-primary/5 border border-primary/20 rounded-sm">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <DollarSign className="h-4 w-4 text-primary" />
-                    <span className="text-sm font-medium">预估价格</span>
-                  </div>
-                  {isLoadingPrice ? (
-                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                  ) : priceInfo ? (
-                    <div className="text-right">
-                      <p className="text-lg font-bold text-primary">
-                        €{priceInfo.prices?.withTax?.toFixed(2) || 'N/A'}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        不含税: €{priceInfo.prices?.withoutTax?.toFixed(2) || 'N/A'}
-                      </p>
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">选择机房后显示</p>
-                  )}
-                </div>
-              </div>
             </TabsContent>
 
             <TabsContent value="options" className="space-y-4">
               <Label>附加选项</Label>
-              {selectedServer?.availableOptions && selectedServer.availableOptions.length > 0 ? (
-                <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {selectedServer.availableOptions.map((option: any) => (
-                    <div 
-                      key={option.value}
-                      className="flex items-center space-x-2 p-2 border border-border rounded hover:bg-muted/30 cursor-pointer"
-                      onClick={() => toggleOption(option.value)}
+              {selectedOptions.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {selectedOptions.map((opt) => (
+                    <button
+                      key={opt}
+                      type="button"
+                      className="px-2 py-1 text-xs rounded border border-border bg-muted/40 hover:bg-muted/60"
+                      onClick={() => toggleOption(opt)}
                     >
-                      <Checkbox 
-                        checked={selectedOptions.includes(option.value)}
-                        onCheckedChange={() => toggleOption(option.value)}
-                      />
-                      <div className="flex-1">
-                        <p className="text-sm">{option.label}</p>
-                        <p className="text-xs text-muted-foreground font-mono">{option.value}</p>
-                      </div>
-                    </div>
+                      {opt} ×
+                    </button>
                   ))}
                 </div>
-              ) : (
-                <div className="text-center py-6 text-muted-foreground">
-                  <Settings2 className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                  <p className="text-sm">此服务器暂无可选附加选项</p>
-                </div>
               )}
+              <div className="flex items-center gap-2">
+                <Input
+                  placeholder="搜索选项"
+                  className="h-8 text-xs"
+                  value={optionFilter}
+                  onChange={(e) => setOptionFilter(e.target.value)}
+                />
+                <span className="text-xs text-muted-foreground">
+                  已选 {selectedOptions.length}
+                </span>
+              </div>
+                {(() => {
+                  const displayOptions = getPlanOptions(selectedServer).filter((opt) => {
+                    if (!optionFilter.trim()) return true;
+                    const keyword = optionFilter.toLowerCase();
+                    return (opt.label || opt.value || "").toLowerCase().includes(keyword);
+                  });
+                if (displayOptions.length === 0 && !isLoadingOptions) {
+                  return (
+                    <div className="text-center py-6 text-muted-foreground">
+                      <Settings2 className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                      <p className="text-sm">此服务器暂无可选附加选项</p>
+                    </div>
+                  );
+                }
+
+                if (displayOptions.length === 0 && isLoadingOptions) {
+                  return (
+                    <div className="flex items-center justify-center py-6">
+                      <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {displayOptions.map((option: any) => (
+                      <div 
+                        key={option.value}
+                        className="flex items-center space-x-2 p-2 border border-border rounded hover:bg-muted/30 cursor-pointer"
+                        onClick={() => toggleOption(option.value)}
+                      >
+                        <Checkbox 
+                          checked={selectedOptions.includes(option.value)}
+                          onClick={(e) => e.stopPropagation()}
+                          onCheckedChange={() => toggleOption(option.value)}
+                        />
+                        <div className="flex-1">
+                          <p className="text-sm">{option.label || option.value}</p>
+                          <p className="text-xs text-muted-foreground font-mono">{option.value}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
               
               {selectedOptions.length > 0 && (
                 <div className="p-2 bg-muted/30 rounded text-xs">

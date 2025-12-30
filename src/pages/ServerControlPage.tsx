@@ -97,6 +97,7 @@ const ServerControlPage = () => {
   const [historicalInterventions, setHistoricalInterventions] = useState<any[]>([]);
   const [installStatus, setInstallStatus] = useState<any>(null);
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
+  const [detailsWarning, setDetailsWarning] = useState<string | null>(null);
   const [isRebooting, setIsRebooting] = useState(false);
   
   // 重装对话框状态
@@ -149,6 +150,19 @@ const ServerControlPage = () => {
 
   const servers = serversData?.servers || [];
 
+  const formatUnitValue = (value: any) => {
+    if (value === null || value === undefined) return "未知";
+    if (typeof value === "object") {
+      if (Array.isArray(value)) return value.join(", ");
+      if ("value" in value || "unit" in value) {
+        const unitValue = value as { value?: string | number; unit?: string };
+        return `${unitValue.value ?? ""} ${unitValue.unit ?? ""}`.trim() || "未知";
+      }
+      return JSON.stringify(value);
+    }
+    return String(value);
+  };
+
   useEffect(() => {
     if (servers.length > 0 && !selectedServer) {
       setSelectedServer(servers[0]);
@@ -178,23 +192,43 @@ const ServerControlPage = () => {
 
   const loadServerDetails = async (serviceName: string) => {
     setIsLoadingDetails(true);
+    setDetailsWarning(null);
     try {
-      const [details, hardware, ips, tasks, info, planned, historical, install] = await Promise.all([
-        api.getServerDetails(serviceName).catch(() => null),
+      const info = await api.getServiceInfo(serviceName).catch((error: any) => {
+        setDetailsWarning(`服务信息获取失败: ${error?.message || error}`);
+        return null;
+      });
+
+      const statusValue = info?.serviceInfo?.status || "";
+      const isExpired =
+        typeof statusValue === "string" && statusValue.toLowerCase().includes("expired");
+
+      setServiceInfo(info?.serviceInfo);
+      setServerDetails(info?.serviceInfo);
+
+      if (isExpired) {
+        setDetailsWarning("该服务已过期，部分接口不可用");
+        setServerHardware(null);
+        setServerIps([]);
+        setServerTasks([]);
+        setPlannedInterventions([]);
+        setHistoricalInterventions([]);
+        setInstallStatus(null);
+        return;
+      }
+
+      const [hardware, ips, tasks, planned, historical, install] = await Promise.all([
         api.getServerHardware(serviceName).catch(() => null),
         api.getServerIps(serviceName).catch(() => null),
         api.getServerTasks(serviceName).catch(() => null),
-        api.getServiceInfo(serviceName).catch(() => null),
         api.getPlannedInterventions(serviceName).catch(() => null),
         api.getInterventions(serviceName).catch(() => null),
         api.getInstallStatus(serviceName).catch(() => null),
       ]);
       
-      setServerDetails(details?.server);
       setServerHardware(hardware?.hardware);
       setServerIps(ips?.ips || []);
       setServerTasks(tasks?.tasks || []);
-      setServiceInfo(info?.serviceInfo);
       setPlannedInterventions(planned?.plannedInterventions || []);
       setHistoricalInterventions(historical?.interventions || []);
       setInstallStatus(install?.status || null);
@@ -243,7 +277,8 @@ const ServerControlPage = () => {
     try {
       const result = await api.getIpmiAccess(selectedServer.serviceName);
       if (result.success) {
-        setIpmiInfo(result.ipmiInfos);
+        const ipmiData = result.ipmiInfos || result.console || result.ipmi || null;
+        setIpmiInfo(ipmiData);
       } else {
         toast.error(result.error || "获取IPMI信息失败");
       }
@@ -645,6 +680,11 @@ const ServerControlPage = () => {
                     </div>
                   ) : (
                     <Tabs defaultValue="overview" className="space-y-4">
+                      {detailsWarning && (
+                        <div className="p-3 rounded-sm border border-warning/30 bg-warning/5 text-warning text-xs">
+                          {detailsWarning}
+                        </div>
+                      )}
                       <TabsList className="bg-muted/50 border border-border">
                         <TabsTrigger value="overview">概览</TabsTrigger>
                         <TabsTrigger value="hardware">硬件</TabsTrigger>
@@ -844,14 +884,18 @@ const ServerControlPage = () => {
                                   <Cpu className="h-4 w-4 text-accent" />
                                   处理器
                                 </h3>
-                                <p className="text-muted-foreground">{serverHardware.processorName || serverHardware.processor || '未知'}</p>
+                                <p className="text-muted-foreground">
+                                  {serverHardware.processorName || serverHardware.processor || '未知'}
+                                </p>
                               </div>
                               <div className="p-4 border border-border rounded-sm">
                                 <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
                                   <Monitor className="h-4 w-4 text-accent" />
                                   内存
                                 </h3>
-                                <p className="text-muted-foreground">{serverHardware.memorySize || '未知'}</p>
+                                <p className="text-muted-foreground">
+                                  {formatUnitValue(serverHardware.memorySize)}
+                                </p>
                               </div>
                               <div className="p-4 border border-border rounded-sm">
                                 <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
@@ -859,7 +903,7 @@ const ServerControlPage = () => {
                                   存储
                                 </h3>
                                 <p className="text-muted-foreground">
-                                  {serverHardware.diskGroups?.map((d: any) => d.description).join(', ') || '未知'}
+                                  {serverHardware.diskGroups?.map((d: any) => d.description || formatUnitValue(d.size)).join(', ') || '未知'}
                                 </p>
                               </div>
                             </>
@@ -1166,45 +1210,75 @@ const ServerControlPage = () => {
             ) : ipmiInfo ? (
               <>
                 <div className="space-y-3">
-                  <div className="p-3 bg-muted/30 rounded-sm">
-                    <p className="text-xs text-muted-foreground mb-1">IP 地址</p>
-                    <p className="font-mono flex items-center justify-between">
-                      {ipmiInfo.ip}
-                      <Button variant="ghost" size="sm" onClick={() => {
-                        navigator.clipboard.writeText(ipmiInfo.ip);
-                        toast.success("已复制");
-                      }}>
-                        <Copy className="h-3 w-3" />
+                  {ipmiInfo.url && (
+                    <div className="p-3 bg-muted/30 rounded-sm">
+                      <p className="text-xs text-muted-foreground mb-1">控制台 URL</p>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="font-mono text-xs break-all">{ipmiInfo.url}</p>
+                        <Button variant="ghost" size="sm" onClick={() => {
+                          navigator.clipboard.writeText(ipmiInfo.url);
+                          toast.success("已复制");
+                        }}>
+                          <Copy className="h-3 w-3" />
+                        </Button>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-2 w-full"
+                        asChild
+                      >
+                        <a href={ipmiInfo.url} target="_blank" rel="noopener noreferrer">
+                          打开控制台
+                        </a>
                       </Button>
-                    </p>
-                  </div>
-                  <div className="p-3 bg-muted/30 rounded-sm">
-                    <p className="text-xs text-muted-foreground mb-1">用户名</p>
-                    <p className="font-mono flex items-center justify-between">
-                      {ipmiInfo.login}
-                      <Button variant="ghost" size="sm" onClick={() => {
-                        navigator.clipboard.writeText(ipmiInfo.login);
-                        toast.success("已复制");
-                      }}>
-                        <Copy className="h-3 w-3" />
-                      </Button>
-                    </p>
-                  </div>
-                  <div className="p-3 bg-muted/30 rounded-sm">
-                    <p className="text-xs text-muted-foreground mb-1">密码</p>
-                    <p className="font-mono flex items-center justify-between">
-                      {ipmiInfo.password}
-                      <Button variant="ghost" size="sm" onClick={() => {
-                        navigator.clipboard.writeText(ipmiInfo.password);
-                        toast.success("已复制");
-                      }}>
-                        <Copy className="h-3 w-3" />
-                      </Button>
-                    </p>
-                  </div>
-                  {ipmiInfo.expires && (
+                    </div>
+                  )}
+                  {ipmiInfo.ip && (
+                    <div className="p-3 bg-muted/30 rounded-sm">
+                      <p className="text-xs text-muted-foreground mb-1">IP 地址</p>
+                      <p className="font-mono flex items-center justify-between">
+                        {ipmiInfo.ip}
+                        <Button variant="ghost" size="sm" onClick={() => {
+                          navigator.clipboard.writeText(ipmiInfo.ip);
+                          toast.success("已复制");
+                        }}>
+                          <Copy className="h-3 w-3" />
+                        </Button>
+                      </p>
+                    </div>
+                  )}
+                  {ipmiInfo.login && (
+                    <div className="p-3 bg-muted/30 rounded-sm">
+                      <p className="text-xs text-muted-foreground mb-1">用户名</p>
+                      <p className="font-mono flex items-center justify-between">
+                        {ipmiInfo.login}
+                        <Button variant="ghost" size="sm" onClick={() => {
+                          navigator.clipboard.writeText(ipmiInfo.login);
+                          toast.success("已复制");
+                        }}>
+                          <Copy className="h-3 w-3" />
+                        </Button>
+                      </p>
+                    </div>
+                  )}
+                  {ipmiInfo.password && (
+                    <div className="p-3 bg-muted/30 rounded-sm">
+                      <p className="text-xs text-muted-foreground mb-1">密码</p>
+                      <p className="font-mono flex items-center justify-between">
+                        {ipmiInfo.password}
+                        <Button variant="ghost" size="sm" onClick={() => {
+                          navigator.clipboard.writeText(ipmiInfo.password);
+                          toast.success("已复制");
+                        }}>
+                          <Copy className="h-3 w-3" />
+                        </Button>
+                      </p>
+                    </div>
+                  )}
+                  {(ipmiInfo.expires || ipmiInfo.expiration) && (
                     <p className="text-xs text-muted-foreground text-center">
-                      有效期至: {new Date(ipmiInfo.expires).toLocaleString("zh-CN")}
+                      有效期至: {new Date(ipmiInfo.expires || ipmiInfo.expiration).toLocaleString("zh-CN")}
                     </p>
                   )}
                 </div>

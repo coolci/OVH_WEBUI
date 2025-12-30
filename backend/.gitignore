@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# Data and cache directories
+data/  # 保护敏感数据不被提交到git
+cache/
+logs/
+
+# Legacy files (if still in root)
+*.json  # 保护配置文件（除了package.json等项目文件）
+*.log
+api_data/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db

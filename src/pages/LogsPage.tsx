@@ -69,6 +69,13 @@ const levelConfig = {
   },
 };
 
+const levelLabels: Record<string, string> = {
+  INFO: "信息",
+  WARNING: "警告",
+  ERROR: "错误",
+  DEBUG: "调试",
+};
+
 const LogsPage = () => {
   const { data: logs, isLoading, refetch } = useLogs();
   const [searchTerm, setSearchTerm] = useState("");
@@ -229,7 +236,7 @@ const LogsPage = () => {
                 >
                   <div className={cn("flex items-center gap-1.5 sm:gap-2 mb-0.5 sm:mb-1", config.color)}>
                     <Icon className="h-3 w-3 sm:h-4 sm:w-4" />
-                    <span className="text-[10px] sm:text-xs uppercase">{level}</span>
+                    <span className="text-[10px] sm:text-xs">{levelLabels[level] || level}</span>
                   </div>
                   <p className={cn("text-lg sm:text-2xl font-bold", config.color)}>
                     {logCounts[level]}
@@ -255,7 +262,7 @@ const LogsPage = () => {
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" className="w-full sm:w-auto h-9 text-xs sm:text-sm">
                   <Filter className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                  {levelFilter === "all" ? "全部" : levelFilter}
+                  {levelFilter === "all" ? "全部" : (levelLabels[levelFilter] || levelFilter)}
                   <ChevronDown className="h-3 w-3 sm:h-4 sm:w-4 ml-1 sm:ml-2" />
                 </Button>
               </DropdownMenuTrigger>
@@ -265,7 +272,7 @@ const LogsPage = () => {
                 </DropdownMenuItem>
                 {Object.keys(levelConfig).map(level => (
                   <DropdownMenuItem key={level} onClick={() => setLevelFilter(level)}>
-                    {level}
+                    {levelLabels[level] || level}
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuContent>
@@ -305,7 +312,9 @@ const LogsPage = () => {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-muted-foreground">{formatTime(log.timestamp)}</span>
-                          <span className={cn("uppercase font-bold", config.color)}>[{log.level}]</span>
+                          <span className={cn("font-bold", config.color)}>
+                            [{levelLabels[log.level.toUpperCase()] || log.level}]
+                          </span>
                           <span className="text-accent">[{log.source}]</span>
                         </div>
                         <p className="text-foreground/90 break-words mt-0.5">{log.message}</p>

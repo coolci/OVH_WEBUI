@@ -113,7 +113,7 @@ export function ServerAvailability() {
                     <td className="py-3 px-2 hidden md:table-cell">
                       <div className="text-xs text-muted-foreground">
                         <p>{server.cpu || 'N/A'}</p>
-                        <p>{server.ram || 'N/A'}</p>
+                        <p>{server.ram || server.memory || 'N/A'}</p>
                       </div>
                     </td>
                     <td className="py-3 px-2">
@@ -122,7 +122,7 @@ export function ServerAvailability() {
                           <StatusBadge
                             key={dc.datacenter}
                             status={getAvailabilityStatus(dc.availability)}
-                            label={`${dc.datacenter.toUpperCase()} ${dc.availability}`}
+                            label={`${dc.datacenter.toUpperCase()} ${dc.availability || "unknown"}`}
                             size="sm"
                           />
                         ))}

@@ -5,22 +5,20 @@ import { Button } from "@/components/ui/button";
 import { Helmet } from "react-helmet-async";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { 
-  Activity, 
-  Plus, 
-  Trash2,
-  Play,
-  Square,
-  Bell,
-  BellOff,
-  ShoppingCart,
-  History as HistoryIcon,
-  Settings2,
-  Eye,
-  RefreshCw,
-  Loader2,
-  Edit
-} from "lucide-react";
+  import { 
+    Activity, 
+    Plus, 
+    Trash2,
+    Bell,
+    BellOff,
+    ShoppingCart,
+    History as HistoryIcon,
+    Settings2,
+    Eye,
+    RefreshCw,
+    Loader2,
+    Edit
+  } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import {
@@ -42,7 +40,6 @@ import {
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useSubscriptions, useMonitorStatus, useServers } from "@/hooks/useApi";
-import { api } from "@/lib/api";
 import { toast } from "sonner";
 
 interface Subscription {
@@ -62,11 +59,9 @@ const MonitorPage = () => {
   const { data: subscriptions, isLoading, refetch } = useSubscriptions();
   const { data: monitorStatus, refetch: refetchStatus } = useMonitorStatus();
   const { data: servers } = useServers();
-  const [isRunning, setIsRunning] = useState(false);
   const [selectedSubscription, setSelectedSubscription] = useState<Subscription | null>(null);
   const [subscriptionHistory, setSubscriptionHistory] = useState<any[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
-  const [isToggling, setIsToggling] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
   const [isClearing, setIsClearing] = useState(false);
@@ -95,7 +90,6 @@ const MonitorPage = () => {
 
   useEffect(() => {
     if (monitorStatus) {
-      setIsRunning(monitorStatus.running);
       setNewInterval(monitorStatus.checkInterval || 5);
     }
   }, [monitorStatus]);
@@ -108,25 +102,6 @@ const MonitorPage = () => {
     }, 10000);
     return () => clearInterval(interval);
   }, [refetch, refetchStatus]);
-
-  const handleToggleMonitor = async () => {
-    setIsToggling(true);
-    try {
-      if (isRunning) {
-        await api.stopMonitor();
-        toast.success("监控已停止");
-      } else {
-        await api.startMonitor();
-        toast.success("监控已启动");
-      }
-      setIsRunning(!isRunning);
-      refetchStatus();
-    } catch (error: any) {
-      toast.error(`操作失败: ${error.message}`);
-    } finally {
-      setIsToggling(false);
-    }
-  };
 
   const handleAddSubscription = async () => {
     if (!newPlanCode) {
@@ -260,7 +235,13 @@ const MonitorPage = () => {
     }
     setIsSavingInterval(true);
     try {
-      await api.updateMonitorInterval(newInterval);
+      const result = await api.updateMonitorInterval(newInterval);
+      if (result.status !== "success") {
+        toast.info(result.message || "检查间隔已固定为 5 秒");
+        setNewInterval(monitorStatus?.checkInterval || 5);
+        setIsSettingsOpen(false);
+        return;
+      }
       toast.success(`检查间隔已更新为 ${newInterval} 秒`);
       setIsSettingsOpen(false);
       refetchStatus();
@@ -364,25 +345,9 @@ const MonitorPage = () => {
                 测试通知
               </Button>
               
-              <Button 
-                variant={isRunning ? "destructive" : "default"}
-                size="sm"
-                onClick={handleToggleMonitor}
-                disabled={isToggling}
-              >
-                {isToggling ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : isRunning ? (
-                  <Square className="h-4 w-4 mr-2" />
-                ) : (
-                  <Play className="h-4 w-4 mr-2" />
-                )}
-                {isRunning ? "停止监控" : "启动监控"}
-              </Button>
-              
-              <Dialog>
-                <DialogTrigger asChild>
-                  <Button size="sm">
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <Button size="sm">
                     <Plus className="h-4 w-4 mr-2" />
                     添加订阅
                   </Button>
@@ -477,25 +442,14 @@ const MonitorPage = () => {
           </div>
 
           {/* Monitor Status */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className={cn(
-              "terminal-card p-4",
-              isRunning ? "border-primary/30" : "border-destructive/30"
-            )}>
-              <div className="flex items-center gap-2 mb-1">
-                <Activity className={cn(
-                  "h-4 w-4",
-                  isRunning ? "text-primary animate-pulse" : "text-destructive"
-                )} />
-                <span className="text-xs uppercase text-muted-foreground">监控状态</span>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="terminal-card p-4 border-primary/30">
+                <div className="flex items-center gap-2 mb-1">
+                  <Activity className="h-4 w-4 text-primary animate-pulse" />
+                  <span className="text-xs uppercase text-muted-foreground">监控状态</span>
+                </div>
+                <p className="text-lg font-bold text-primary">运行中</p>
               </div>
-              <p className={cn(
-                "text-lg font-bold",
-                isRunning ? "text-primary" : "text-destructive"
-              )}>
-                {isRunning ? "运行中" : "已停止"}
-              </p>
-            </div>
             <div className="terminal-card p-4">
               <div className="flex items-center gap-2 mb-1 text-muted-foreground">
                 <Eye className="h-4 w-4" />
