@@ -17,7 +17,6 @@ import {
   Activity,
   Loader2,
   Zap,
-  DollarSign,
   Settings2
 } from "lucide-react";
 import { useState, useEffect } from "react";
@@ -31,6 +30,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import {
   Dialog,
   DialogContent,
@@ -48,13 +54,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
 
 const getAvailabilityInfo = (availability: string) => {
   if (availability === "unavailable" || availability === "unknown") {
@@ -221,7 +220,9 @@ const ServersPage = () => {
   const [configOptionsByPlan, setConfigOptionsByPlan] = useState<Record<string, Array<{ label: string; value: string }>>>({});
   const [availabilityByPlan, setAvailabilityByPlan] = useState<Record<string, Record<string, string>>>({});
   const [loadingAvailabilityByPlan, setLoadingAvailabilityByPlan] = useState<Record<string, boolean>>({});
-  const [optionFilter, setOptionFilter] = useState("");
+  const [configSheetOpen, setConfigSheetOpen] = useState(false);
+  const [configSheetServer, setConfigSheetServer] = useState<any>(null);
+  const [configSheetFilter, setConfigSheetFilter] = useState("");
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -254,14 +255,14 @@ const ServersPage = () => {
   };
 
   // 当选择变化时加载价格
-  // ??????????
+  // Load price when selection changes
   useEffect(() => {
     if (selectedServer && selectedDc) {
       loadPrice(selectedServer, selectedDc, selectedOptions);
     }
   }, [selectedServer, selectedDc, selectedOptions]);
 
-  // ????????????????
+  // Load config options when plan changes
   useEffect(() => {
     if (!selectedServer?.planCode) {
       return;
@@ -269,7 +270,7 @@ const ServersPage = () => {
     loadConfigOptionsForPlan(selectedServer.planCode);
   }, [selectedServer?.planCode]);
 
-  // ?????????????????
+  // Load config options when plan changes?
   useEffect(() => {
     if (!selectedServer?.planCode) {
       return;
@@ -398,22 +399,17 @@ const ServersPage = () => {
     setPriceInfo(null);
   };
 
-  const toggleOption = (option: string) => {
-    if (!selectedServer?.planCode) {
-      return;
-    }
-    setSelectedOptions((prev) => {
-      const category = getOptionCategory(option);
-      let next = prev.includes(option)
-        ? prev.filter((o) => o !== option)
-        : [...prev, option];
-      if (category !== "other") {
-        next = next.filter((o) => o === option || getOptionCategory(o) !== category);
-      }
-      setOptionsByPlan((byPlan) => ({ ...byPlan, [selectedServer.planCode]: next }));
-      updateAvailabilityForPlan(selectedServer.planCode, next, selectedServer);
-      return next;
-    });
+  const openConfigSheet = (server: any) => {
+    setConfigSheetServer(server);
+    setConfigSheetFilter("");
+    setConfigSheetOpen(true);
+    loadConfigOptionsForPlan(server.planCode);
+  };
+
+  const closeConfigSheet = () => {
+    setConfigSheetOpen(false);
+    setConfigSheetServer(null);
+    setConfigSheetFilter("");
   };
 
   const updatePlanOptions = (planCode: string, nextOptions: string[], server?: any) => {
@@ -438,6 +434,16 @@ const ServersPage = () => {
     const planCode = server.planCode;
     const current = optionsByPlan[planCode] || [];
     updatePlanOptions(planCode, current.filter((opt) => opt !== option), server);
+  };
+
+  const toggleOptionForPlan = (server: any, option: string) => {
+    const planCode = server.planCode;
+    const current = optionsByPlan[planCode] || [];
+    if (current.includes(option)) {
+      removeOptionForPlan(server, option);
+      return;
+    }
+    addOptionForPlan(server, option);
   };
 
   const serverList = servers || [];
@@ -468,6 +474,29 @@ const ServersPage = () => {
   });
 
   const availableCount = serverList.filter(hasAvailableForPlan).length;
+  const sheetOptions = configSheetServer ? getPlanOptions(configSheetServer) : [];
+  const sheetSelectedOptions = configSheetServer
+    ? optionsByPlan[configSheetServer.planCode] || []
+    : [];
+  const sheetDefaultOptions = configSheetServer ? getDefaultOptionsFromServer(configSheetServer) : [];
+  const sheetFilterKeyword = configSheetFilter.trim().toLowerCase();
+  const sheetFilteredOptions = sheetOptions.filter((opt: any) => {
+    if (!sheetFilterKeyword) return true;
+    const label = (opt?.label || "").toLowerCase();
+    const value = (opt?.value || "").toLowerCase();
+    return label.includes(sheetFilterKeyword) || value.includes(sheetFilterKeyword);
+  });
+  const groupedSheetOptions = sheetFilteredOptions.reduce(
+    (acc: Record<string, Array<{ label: string; value: string }>>, opt: any) => {
+      const value = opt?.value || "";
+      const label = opt?.label || value;
+      const category = getOptionCategory(value);
+      if (!acc[category]) acc[category] = [];
+      acc[category].push({ label, value });
+      return acc;
+    },
+    { memory: [], storage: [], other: [] } as Record<string, Array<{ label: string; value: string }>>
+  );
 
   return (
     <>
@@ -545,6 +574,7 @@ const ServersPage = () => {
             <div className="space-y-4">
               {filteredServers.map((server) => {
                 const hasAvailable = hasAvailableForPlan(server);
+                const selectedPlanOptions = optionsByPlan[server.planCode] || [];
                 
                 return (
                   <TerminalCard 
@@ -603,45 +633,40 @@ const ServersPage = () => {
                         </div>
                       </div>
 
-                        {/* Config Options */}
-                        <div className="space-y-2">
-                          <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wider">配置选项</p>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Select
-                              onOpenChange={(open) => open && loadConfigOptionsForPlan(server.planCode)}
-                              onValueChange={(value) => addOptionForPlan(server, value)}
+                                                {/* Config Options */}
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wider">配置选项</p>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-6 px-2 text-[10px] sm:text-xs"
+                              onClick={() => openConfigSheet(server)}
                             >
-                              <SelectTrigger className="h-8 text-xs">
-                                <SelectValue placeholder="选择配置" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {getPlanOptions(server).length === 0 && isLoadingOptions ? (
-                                  <div className="flex items-center justify-center py-3">
-                                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                                  </div>
-                                ) : (
-                                  getPlanOptions(server).map((option: any) => (
-                                    <SelectItem key={option.value} value={option.value}>
-                                      {option.label || option.value}
-                                    </SelectItem>
-                                  ))
-                                )}
-                              </SelectContent>
-                            </Select>
-                            {(optionsByPlan[server.planCode] || []).map((opt) => (
-                              <button
-                                key={opt}
-                                type="button"
-                                className="px-2 py-1 text-[10px] sm:text-xs rounded border border-border bg-muted/40 hover:bg-muted/60"
-                                onClick={() => removeOptionForPlan(server, opt)}
-                              >
-                                {opt} ×
-                              </button>
-                            ))}
+                              <Settings2 className="h-3 w-3 mr-1" />
+                              配置
+                            </Button>
                           </div>
+                          {selectedPlanOptions.length > 0 && (
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {selectedPlanOptions.slice(0, 4).map((opt) => (
+                                <span
+                                  key={opt}
+                                  className="px-2 py-1 text-[10px] sm:text-xs rounded border border-border/70 bg-muted/50 text-foreground truncate max-w-[160px]"
+                                >
+                                  {opt}
+                                </span>
+                              ))}
+                              {selectedPlanOptions.length > 4 && (
+                                <span className="px-2 py-1 text-[10px] sm:text-xs rounded border border-border/70 bg-muted/50">
+                                  +{selectedPlanOptions.length - 4}
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
 
-                        {/* Datacenter Availability */}
+{/* Datacenter Availability */}
                         <div className="space-y-2">
                           <div className="flex items-center justify-between">
                             <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wider">机房可用性</p>
@@ -708,6 +733,134 @@ const ServersPage = () => {
         </div>
       </AppLayout>
 
+      <Sheet open={configSheetOpen} onOpenChange={(open) => (open ? setConfigSheetOpen(true) : closeConfigSheet())}>
+        <SheetContent side="right" className="w-full sm:max-w-xl bg-card border-l border-border/60 p-0">
+          <div className="flex h-full flex-col">
+            <div className="border-b border-border/60 p-4 sm:p-6">
+              <SheetHeader className="space-y-2">
+                <SheetTitle className="text-primary">配置选项</SheetTitle>
+                <SheetDescription>
+                  {configSheetServer ? (
+                    <span>
+                      {configSheetServer.name || configSheetServer.planCode}
+                      <span className="ml-2 text-xs font-mono text-muted-foreground">
+                        {configSheetServer.planCode}
+                      </span>
+                    </span>
+                  ) : (
+                    "选择服务器以配置选项"
+                  )}
+                </SheetDescription>
+              </SheetHeader>
+              {configSheetServer && (
+                <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+                  <span>已选 {sheetSelectedOptions.length}</span>
+                  {sheetSelectedOptions.length > 0 && (
+                    <button
+                      type="button"
+                      className="text-xs text-muted-foreground hover:text-foreground"
+                      onClick={() => updatePlanOptions(configSheetServer.planCode, [], configSheetServer)}
+                    >
+                      清空
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+              {configSheetServer ? (
+                <>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      placeholder="搜索配置项"
+                      className="h-9 text-xs sm:text-sm"
+                      value={configSheetFilter}
+                      onChange={(e) => setConfigSheetFilter(e.target.value)}
+                    />
+                    <span className="text-xs text-muted-foreground">
+                      可选 {sheetFilteredOptions.length}
+                    </span>
+                  </div>
+
+                  {isLoadingOptions && sheetOptions.length === 0 ? (
+                    <div className="flex items-center justify-center py-6">
+                      <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                    </div>
+                  ) : sheetFilteredOptions.length === 0 ? (
+                    <div className="text-center py-6 text-muted-foreground">
+                      <Settings2 className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                      <p className="text-sm">没有匹配的配置项</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {[
+                        { key: "memory", label: "内存", icon: MemoryStick },
+                        { key: "storage", label: "存储", icon: HardDrive },
+                        { key: "other", label: "其他", icon: Settings2 },
+                      ].map((group) => {
+                        const options = groupedSheetOptions[group.key] || [];
+                        if (options.length === 0) return null;
+                        const Icon = group.icon;
+                        return (
+                          <div key={group.key} className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2 text-xs sm:text-sm">
+                                <Icon className="h-3.5 w-3.5 text-accent" />
+                                <span className="font-medium">{group.label}</span>
+                              </div>
+                              <span className="text-[10px] sm:text-xs text-muted-foreground">{options.length} 项</span>
+                            </div>
+                            <div className="grid gap-2 sm:grid-cols-2">
+                              {options.map((opt) => {
+                                const isSelected = sheetSelectedOptions.includes(opt.value);
+                                const isDefault = sheetDefaultOptions.includes(opt.value);
+                                return (
+                                  <button
+                                    key={opt.value}
+                                    type="button"
+                                    className={cn(
+                                      "rounded border px-3 py-2 text-left transition-colors",
+                                      isSelected
+                                        ? "border-primary/60 bg-primary/10 text-primary"
+                                        : "border-border bg-muted/20 hover:bg-muted/40"
+                                    )}
+                                    onClick={() => toggleOptionForPlan(configSheetServer, opt.value)}
+                                  >
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div>
+                                        <p className="text-xs sm:text-sm font-medium">{opt.label || opt.value}</p>
+                                        <p className="text-[10px] sm:text-xs text-muted-foreground font-mono">
+                                          {opt.value}
+                                        </p>
+                                      </div>
+                                      {isDefault && (
+                                        <span className="text-[9px] px-1 rounded bg-muted/70 text-muted-foreground">
+                                          默认
+                                        </span>
+                                      )}
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="text-center py-10 text-muted-foreground">
+                  <Settings2 className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                  <p className="text-sm">请选择服务器以配置选项</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+
       {/* Order Dialog */}
       <Dialog open={!!selectedServer} onOpenChange={() => closeDialog()}>
         <DialogContent className="terminal-card border-primary/30 max-w-lg">
@@ -721,138 +874,70 @@ const ServersPage = () => {
             </DialogDescription>
           </DialogHeader>
           
-          <Tabs defaultValue="config" className="space-y-4">
-            <TabsList className="w-full">
-              <TabsTrigger value="config" className="flex-1">配置选择</TabsTrigger>
-              <TabsTrigger value="options" className="flex-1">附加选项</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="config" className="space-y-4">
-              <div className="space-y-2">
-                <Label>服务器型号</Label>
-                <div className="p-3 bg-muted/50 rounded border border-border">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium">{selectedServer?.name || selectedServer?.planCode}</p>
-                      <p className="text-xs text-muted-foreground font-mono">{selectedServer?.planCode}</p>
-                    </div>
-                    {priceInfo?.prices?.withTax && (
-                      <p className="text-sm text-accent">
-                        {formatPrice(priceInfo.prices?.withTax, priceInfo.prices?.currencyCode)}/月
-                      </p>
-                    )}
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>服务器型号</Label>
+              <div className="p-3 bg-muted/50 rounded border border-border">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">{selectedServer?.name || selectedServer?.planCode}</p>
+                    <p className="text-xs text-muted-foreground font-mono">{selectedServer?.planCode}</p>
                   </div>
+                  {priceInfo?.prices?.withTax && (
+                    <p className="text-sm text-accent">
+                      {formatPrice(priceInfo.prices?.withTax, priceInfo.prices?.currencyCode)}/月
+                    </p>
+                  )}
                 </div>
               </div>
-              
-              <div className="space-y-2">
-                <Label>目标机房</Label>
-                <Select value={selectedDc} onValueChange={setSelectedDc}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="选择机房" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {getUniqueDatacenters(selectedServer?.datacenters || []).map((dc: any) => {
-                      const planAvailability = availabilityByPlan[selectedServer?.planCode || ""] || {};
-                      const availability = planAvailability[dc.datacenter] ?? dc.availability;
-                      const info = getAvailabilityInfo(availability);
-                      return (
-                        <SelectItem key={dc.datacenter} value={dc.datacenter}>
-                          <span className="flex items-center gap-2">
-                            <span className="uppercase font-mono">{dc.datacenter}</span>
-                            <span className={cn("text-xs px-1.5 py-0.5 rounded", info.color)}>
-                              {info.label}
-                            </span>
-                          </span>
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
-              </div>
+            </div>
 
-            </TabsContent>
-
-            <TabsContent value="options" className="space-y-4">
+            <div className="space-y-2">
               <Label>附加选项</Label>
-              {selectedOptions.length > 0 && (
+              <Select value={selectedDc} onValueChange={setSelectedDc}>
+                <SelectTrigger>
+                  <SelectValue placeholder="选择机房" />
+                </SelectTrigger>
+                <SelectContent>
+                  {getUniqueDatacenters(selectedServer?.datacenters || []).map((dc: any) => {
+                    const planAvailability = availabilityByPlan[selectedServer?.planCode || ""] || {};
+                    const availability = planAvailability[dc.datacenter] ?? dc.availability;
+                    const info = getAvailabilityInfo(availability);
+                    return (
+                      <SelectItem key={dc.datacenter} value={dc.datacenter}>
+                        <span className="flex items-center gap-2">
+                          <span className="uppercase font-mono">{dc.datacenter}</span>
+                          <span className={cn("text-xs px-1.5 py-0.5 rounded", info.color)}>
+                            {info.label}
+                          </span>
+                        </span>
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>附加选项</Label>
+              {selectedOptions.length === 0 ? (
+                <div className="text-xs text-muted-foreground">
+                  当前未选择附加选项，请在服务器卡片的“配置”中设置。
+                </div>
+              ) : (
                 <div className="flex flex-wrap gap-2">
                   {selectedOptions.map((opt) => (
-                    <button
+                    <span
                       key={opt}
-                      type="button"
-                      className="px-2 py-1 text-xs rounded border border-border bg-muted/40 hover:bg-muted/60"
-                      onClick={() => toggleOption(opt)}
+                      className="px-2 py-1 text-xs rounded border border-border bg-muted/40 truncate max-w-[220px]"
                     >
-                      {opt} ×
-                    </button>
+                      {opt}
+                    </span>
                   ))}
                 </div>
               )}
-              <div className="flex items-center gap-2">
-                <Input
-                  placeholder="搜索选项"
-                  className="h-8 text-xs"
-                  value={optionFilter}
-                  onChange={(e) => setOptionFilter(e.target.value)}
-                />
-                <span className="text-xs text-muted-foreground">
-                  已选 {selectedOptions.length}
-                </span>
-              </div>
-                {(() => {
-                  const displayOptions = getPlanOptions(selectedServer).filter((opt) => {
-                    if (!optionFilter.trim()) return true;
-                    const keyword = optionFilter.toLowerCase();
-                    return (opt.label || opt.value || "").toLowerCase().includes(keyword);
-                  });
-                if (displayOptions.length === 0 && !isLoadingOptions) {
-                  return (
-                    <div className="text-center py-6 text-muted-foreground">
-                      <Settings2 className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                      <p className="text-sm">此服务器暂无可选附加选项</p>
-                    </div>
-                  );
-                }
-
-                if (displayOptions.length === 0 && isLoadingOptions) {
-                  return (
-                    <div className="flex items-center justify-center py-6">
-                      <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                    </div>
-                  );
-                }
-
-                return (
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
-                    {displayOptions.map((option: any) => (
-                      <div 
-                        key={option.value}
-                        className="flex items-center space-x-2 p-2 border border-border rounded hover:bg-muted/30 cursor-pointer"
-                        onClick={() => toggleOption(option.value)}
-                      >
-                        <Checkbox 
-                          checked={selectedOptions.includes(option.value)}
-                          onClick={(e) => e.stopPropagation()}
-                          onCheckedChange={() => toggleOption(option.value)}
-                        />
-                        <div className="flex-1">
-                          <p className="text-sm">{option.label || option.value}</p>
-                          <p className="text-xs text-muted-foreground font-mono">{option.value}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                );
-              })()}
-              
-              {selectedOptions.length > 0 && (
-                <div className="p-2 bg-muted/30 rounded text-xs">
-                  已选: {selectedOptions.length} 个选项
-                </div>
-              )}
-            </TabsContent>
-          </Tabs>
+            </div>
+          </div>
 
           <DialogFooter className="gap-2">
             <DialogClose asChild>
