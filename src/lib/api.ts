@@ -531,20 +531,24 @@ export const api = {
       }
     ),
   
-  getInstallStatus: (serviceName: string) =>
-    apiRequest<{
-      success: boolean;
-      status?: {
-        elapsedTime: number;
-        progressPercentage: number;
-        totalSteps: number;
-        completedSteps: number;
-        hasError: boolean;
-        allDone: boolean;
-        steps: Array<{ comment: string; status: string; error: string }>;
+  getInstallStatus: async (serviceName: string) => {
+    const result = await apiRequest<any>(`/api/server-control/${serviceName}/install/status`);
+    if (!result?.success) {
+      return result;
+    }
+    if (result?.status) {
+      return result;
+    }
+    if (result?.hasInstallation === false || result?.noInstallation === true) {
+      return {
+        ...result,
+        status: {
+          noInstallation: true,
+        },
       };
-      noInstallation?: boolean;
-    }>(`/api/server-control/${serviceName}/install/status`),
+    }
+    return result;
+  },
   
   getServerTasks: (serviceName: string) =>
     apiRequest<{ success: boolean; tasks: Array<any> }>(`/api/server-control/${serviceName}/tasks`),
@@ -552,11 +556,24 @@ export const api = {
   getServerHardware: (serviceName: string) =>
     apiRequest<{ success: boolean; hardware: any }>(`/api/server-control/${serviceName}/hardware`),
   
-  getServerTemplates: (serviceName: string) =>
-    apiRequest<{
-      success: boolean;
-      templates: Array<{ name: string; description: string; category: string }>;
-    }>(`/api/server-control/${serviceName}/templates`),
+  getServerTemplates: async (serviceName: string) => {
+    const result = await apiRequest<any>(`/api/server-control/${serviceName}/templates`);
+    if (!result?.success) {
+      return result;
+    }
+    const templates = Array.isArray(result?.templates) ? result.templates : [];
+    const normalized: Array<{ name: string; description: string; category: string }> = [];
+    for (const template of templates) {
+      const name = template?.name ?? template?.templateName ?? "";
+      if (!name) continue;
+      normalized.push({
+        name,
+        description: template?.description ?? template?.distribution ?? "",
+        category: template?.category ?? template?.family ?? "",
+      });
+    }
+    return { ...result, templates: normalized };
+  },
   
   getServerIps: (serviceName: string) =>
     apiRequest<{
@@ -618,23 +635,34 @@ export const api = {
   },
   
   // Burst带宽管理
-  getBurstStatus: (serviceName: string) =>
-    apiRequest<{
-      success: boolean;
-      burst?: {
-        enabled: boolean;
-        capacity: number;
-        used: number;
-      };
-      error?: string;
-    }>(`/api/server-control/${serviceName}/burst`),
+  getBurstStatus: async (serviceName: string) => {
+    const result = await apiRequest<any>(`/api/server-control/${serviceName}/burst`);
+    if (!result?.success) {
+      return result;
+    }
+    const burst = result?.burst || {};
+    const status = typeof burst.status === "string" ? burst.status : undefined;
+    const enabled =
+      typeof burst.enabled === "boolean"
+        ? burst.enabled
+        : status
+          ? status.toLowerCase() === "active"
+          : false;
+    return {
+      ...result,
+      burst: {
+        ...burst,
+        enabled,
+      },
+    };
+  },
   
   toggleBurst: (serviceName: string, enable: boolean) =>
     apiRequest<{ success: boolean; message?: string; error?: string }>(
       `/api/server-control/${serviceName}/burst`,
       {
         method: 'PUT',
-        body: JSON.stringify({ enabled: enable }),
+        body: JSON.stringify({ status: enable ? 'active' : 'inactive' }),
       }
     ),
   
@@ -681,13 +709,19 @@ export const api = {
       }
     ),
   
-  getBackupFtpPassword: (serviceName: string) =>
-    apiRequest<{ success: boolean; password?: string; error?: string }>(
-      `/api/server-control/${serviceName}/backup-ftp/password`,
-      {
-        method: 'POST',
-      }
-    ),
+  getBackupFtpPassword: async (serviceName: string) => {
+    const result = await apiRequest<any>(`/api/server-control/${serviceName}/backup-ftp/password`, {
+      method: 'POST',
+    });
+    if (!result?.success) {
+      return result;
+    }
+    return {
+      ...result,
+      message: result?.message || result?.result?.message,
+      password: result?.password,
+    } as { success: boolean; password?: string; message?: string; error?: string };
+  },
   
   // BIOS设置
   getBiosSettings: (serviceName: string) =>

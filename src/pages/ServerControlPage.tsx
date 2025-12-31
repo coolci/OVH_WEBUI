@@ -6,7 +6,6 @@ import { Input } from "@/components/ui/input";
 import { Helmet } from "react-helmet-async";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
-import { Switch } from "@/components/ui/switch";
 import { 
   Cpu, 
   Search,
@@ -16,9 +15,7 @@ import {
   Network,
   Terminal,
   Activity,
-  Shield,
   Server,
-  MoreVertical,
   Monitor,
   Loader2,
   Calendar,
@@ -28,21 +25,11 @@ import {
   Wrench,
   CheckCircle2,
   XCircle,
-  Zap,
-  Database,
-  Move,
-  Trash2,
-  Key,
   Copy
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
   Tabs,
@@ -100,53 +87,25 @@ const ServerControlPage = () => {
   const [detailsWarning, setDetailsWarning] = useState<string | null>(null);
   const [isRebooting, setIsRebooting] = useState(false);
   
-  // 重装对话框状态
   const [isReinstallDialogOpen, setIsReinstallDialogOpen] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState("");
   const [isReinstalling, setIsReinstalling] = useState(false);
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
   
-  // 联系人变更对话框
   const [isContactDialogOpen, setIsContactDialogOpen] = useState(false);
   const [contactAdmin, setContactAdmin] = useState("");
   const [contactTech, setContactTech] = useState("");
   const [contactBilling, setContactBilling] = useState("");
   const [isChangingContact, setIsChangingContact] = useState(false);
   
-  // IPMI对话框
   const [isIpmiDialogOpen, setIsIpmiDialogOpen] = useState(false);
   const [ipmiInfo, setIpmiInfo] = useState<any>(null);
   const [isLoadingIpmi, setIsLoadingIpmi] = useState(false);
   
-  // 备份FTP对话框
-  const [isBackupFtpDialogOpen, setIsBackupFtpDialogOpen] = useState(false);
-  const [backupFtpInfo, setBackupFtpInfo] = useState<any>(null);
-  const [isLoadingBackupFtp, setIsLoadingBackupFtp] = useState(false);
-  const [isActivatingBackupFtp, setIsActivatingBackupFtp] = useState(false);
-  const [backupFtpPassword, setBackupFtpPassword] = useState<string | null>(null);
   
-  // 防火墙对话框
-  const [isFirewallDialogOpen, setIsFirewallDialogOpen] = useState(false);
-  const [firewallInfo, setFirewallInfo] = useState<any>(null);
-  const [isLoadingFirewall, setIsLoadingFirewall] = useState(false);
-  const [isTogglingFirewall, setIsTogglingFirewall] = useState(false);
   
-  // Burst带宽对话框
-  const [isBurstDialogOpen, setIsBurstDialogOpen] = useState(false);
-  const [burstInfo, setBurstInfo] = useState<any>(null);
-  const [isLoadingBurst, setIsLoadingBurst] = useState(false);
-  const [isTogglingBurst, setIsTogglingBurst] = useState(false);
   
-  // IP迁移对话框
-  const [isIpMoveDialogOpen, setIsIpMoveDialogOpen] = useState(false);
-  const [moveIpAddress, setMoveIpAddress] = useState("");
-  const [moveTargetService, setMoveTargetService] = useState("");
-  const [isMovingIp, setIsMovingIp] = useState(false);
   
-  // 终止服务对话框
-  const [isTerminateDialogOpen, setIsTerminateDialogOpen] = useState(false);
-  const [terminateConfirmText, setTerminateConfirmText] = useState("");
-  const [isTerminating, setIsTerminating] = useState(false);
 
   const servers = serversData?.servers || [];
 
@@ -175,7 +134,6 @@ const ServerControlPage = () => {
     }
   }, [selectedServer]);
 
-  // 自动刷新安装状态
   useEffect(() => {
     if (installStatus && !installStatus.allDone && !installStatus.hasError) {
       const interval = setInterval(async () => {
@@ -239,11 +197,11 @@ const ServerControlPage = () => {
     }
   };
 
-  const handleReboot = async (type: 'soft' | 'hardware' = 'soft') => {
+  const handleReboot = async () => {
     if (!selectedServer) return;
     setIsRebooting(true);
     try {
-      await api.rebootServer(selectedServer.serviceName, type);
+      await api.rebootServer(selectedServer.serviceName, 'hardware');
       toast.success(`服务器${type === 'soft' ? '软' : '硬'}重启已发起`);
       const tasks = await api.getServerTasks(selectedServer.serviceName);
       setServerTasks(tasks?.tasks || []);
@@ -268,7 +226,6 @@ const ServerControlPage = () => {
     }
   };
 
-  // IPMI控制台
   const handleOpenIpmi = async () => {
     if (!selectedServer) return;
     setIsIpmiDialogOpen(true);
@@ -289,175 +246,10 @@ const ServerControlPage = () => {
     }
   };
 
-  // 备份FTP
-  const handleOpenBackupFtp = async () => {
-    if (!selectedServer) return;
-    setIsBackupFtpDialogOpen(true);
-    setIsLoadingBackupFtp(true);
-    setBackupFtpInfo(null);
-    setBackupFtpPassword(null);
-    try {
-      const result = await api.getBackupFtp(selectedServer.serviceName);
-      if (result.success) {
-        setBackupFtpInfo(result.backupFtp);
-      }
-    } catch (error: any) {
-      console.error('获取备份FTP信息失败:', error);
-    } finally {
-      setIsLoadingBackupFtp(false);
-    }
-  };
 
-  const handleActivateBackupFtp = async () => {
-    if (!selectedServer) return;
-    setIsActivatingBackupFtp(true);
-    try {
-      const result = await api.activateBackupFtp(selectedServer.serviceName);
-      if (result.success) {
-        toast.success("备份FTP已激活");
-        handleOpenBackupFtp();
-      } else {
-        toast.error(result.error || "激活失败");
-      }
-    } catch (error: any) {
-      toast.error(`激活失败: ${error.message}`);
-    } finally {
-      setIsActivatingBackupFtp(false);
-    }
-  };
 
-  const handleGetBackupFtpPassword = async () => {
-    if (!selectedServer) return;
-    try {
-      const result = await api.getBackupFtpPassword(selectedServer.serviceName);
-      if (result.success) {
-        setBackupFtpPassword(result.password || null);
-        toast.success("密码已生成");
-      } else {
-        toast.error(result.error || "获取密码失败");
-      }
-    } catch (error: any) {
-      toast.error(`获取密码失败: ${error.message}`);
-    }
-  };
 
-  // 防火墙
-  const handleOpenFirewall = async () => {
-    if (!selectedServer) return;
-    setIsFirewallDialogOpen(true);
-    setIsLoadingFirewall(true);
-    setFirewallInfo(null);
-    try {
-      const result = await api.getFirewallStatus(selectedServer.serviceName);
-      if (result.success) {
-        setFirewallInfo(result.firewall);
-      }
-    } catch (error: any) {
-      console.error('获取防火墙信息失败:', error);
-    } finally {
-      setIsLoadingFirewall(false);
-    }
-  };
 
-  const handleToggleFirewall = async () => {
-    if (!selectedServer || !firewallInfo) return;
-    setIsTogglingFirewall(true);
-    try {
-      const result = await api.toggleFirewall(selectedServer.serviceName, !firewallInfo.enabled);
-      if (result.success) {
-        toast.success(firewallInfo.enabled ? "防火墙已禁用" : "防火墙已启用");
-        handleOpenFirewall();
-      } else {
-        toast.error(result.error || "操作失败");
-      }
-    } catch (error: any) {
-      toast.error(`操作失败: ${error.message}`);
-    } finally {
-      setIsTogglingFirewall(false);
-    }
-  };
-
-  // Burst带宽
-  const handleOpenBurst = async () => {
-    if (!selectedServer) return;
-    setIsBurstDialogOpen(true);
-    setIsLoadingBurst(true);
-    setBurstInfo(null);
-    try {
-      const result = await api.getBurstStatus(selectedServer.serviceName);
-      if (result.success) {
-        setBurstInfo(result.burst);
-      }
-    } catch (error: any) {
-      console.error('获取Burst信息失败:', error);
-    } finally {
-      setIsLoadingBurst(false);
-    }
-  };
-
-  const handleToggleBurst = async () => {
-    if (!selectedServer || !burstInfo) return;
-    setIsTogglingBurst(true);
-    try {
-      const result = await api.toggleBurst(selectedServer.serviceName, !burstInfo.enabled);
-      if (result.success) {
-        toast.success(burstInfo.enabled ? "Burst带宽已禁用" : "Burst带宽已启用");
-        handleOpenBurst();
-      } else {
-        toast.error(result.error || "操作失败");
-      }
-    } catch (error: any) {
-      toast.error(`操作失败: ${error.message}`);
-    } finally {
-      setIsTogglingBurst(false);
-    }
-  };
-
-  // IP迁移
-  const handleMoveIp = async () => {
-    if (!selectedServer || !moveIpAddress || !moveTargetService) return;
-    setIsMovingIp(true);
-    try {
-      const result = await api.moveIp(selectedServer.serviceName, moveIpAddress, moveTargetService);
-      if (result.success) {
-        toast.success("IP迁移任务已创建");
-        setIsIpMoveDialogOpen(false);
-        setMoveIpAddress("");
-        setMoveTargetService("");
-        const tasks = await api.getServerTasks(selectedServer.serviceName);
-        setServerTasks(tasks?.tasks || []);
-      } else {
-        toast.error(result.error || "迁移失败");
-      }
-    } catch (error: any) {
-      toast.error(`迁移失败: ${error.message}`);
-    } finally {
-      setIsMovingIp(false);
-    }
-  };
-
-  // 终止服务
-  const handleTerminate = async () => {
-    if (!selectedServer || terminateConfirmText !== selectedServer.serviceName) {
-      toast.error("请输入正确的服务名称确认");
-      return;
-    }
-    setIsTerminating(true);
-    try {
-      const result = await api.terminateServer(selectedServer.serviceName);
-      if (result.success) {
-        toast.success("终止请求已发送，请检查邮箱确认");
-        setIsTerminateDialogOpen(false);
-        setTerminateConfirmText("");
-      } else {
-        toast.error(result.error || "终止请求失败");
-      }
-    } catch (error: any) {
-      toast.error(`终止请求失败: ${error.message}`);
-    } finally {
-      setIsTerminating(false);
-    }
-  };
 
   const handleReinstall = async () => {
     if (!selectedServer || !selectedTemplate) return;
@@ -467,7 +259,6 @@ const ServerControlPage = () => {
       toast.success("重装系统任务已发起");
       setIsReinstallDialogOpen(false);
       setSelectedTemplate("");
-      // 刷新任务和安装状态
       const [tasks, install] = await Promise.all([
         api.getServerTasks(selectedServer.serviceName),
         api.getInstallStatus(selectedServer.serviceName),
@@ -606,73 +397,7 @@ const ServerControlPage = () => {
                 <TerminalCard
                   title={selectedServer.name || selectedServer.serviceName}
                   icon={<Cpu className="h-4 w-4" />}
-                  headerAction={
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" disabled={isRebooting}>
-                          {isRebooting ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <MoreVertical className="h-4 w-4" />
-                          )}
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleReboot('soft')}>
-                          <Power className="h-4 w-4 mr-2" />
-                          软重启
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleReboot('hardware')}>
-                          <Power className="h-4 w-4 mr-2 text-warning" />
-                          硬重启
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={handleOpenReinstall}>
-                          <HardDrive className="h-4 w-4 mr-2" />
-                          重装系统
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => setIsContactDialogOpen(true)}>
-                          <Users className="h-4 w-4 mr-2" />
-                          变更联系人
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={handleOpenIpmi}>
-                          <Terminal className="h-4 w-4 mr-2" />
-                          IPMI 控制台
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={handleOpenBackupFtp}>
-                          <Database className="h-4 w-4 mr-2" />
-                          备份 FTP
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={handleOpenFirewall}>
-                          <Shield className="h-4 w-4 mr-2" />
-                          防火墙管理
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={handleOpenBurst}>
-                          <Zap className="h-4 w-4 mr-2" />
-                          Burst 带宽
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={() => {
-                          if (serverIps.length > 0) {
-                            setMoveIpAddress(serverIps[0]?.ip || selectedServer?.ip || "");
-                          }
-                          setIsIpMoveDialogOpen(true);
-                        }}>
-                          <Move className="h-4 w-4 mr-2" />
-                          IP 迁移
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem 
-                          onClick={() => setIsTerminateDialogOpen(true)}
-                          className="text-destructive focus:text-destructive"
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          终止服务
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  }
+                  headerAction={null}
                 >
                   {isLoadingDetails ? (
                     <div className="flex items-center justify-center py-12">
@@ -801,11 +526,11 @@ const ServerControlPage = () => {
                           <Button 
                             variant="outline" 
                             className="h-auto py-4 flex-col gap-2"
-                            onClick={() => handleReboot('soft')}
+                            onClick={handleReboot}
                             disabled={isRebooting}
                           >
                             <Power className="h-5 w-5 text-warning" />
-                            <span className="text-xs">重启</span>
+                            <span className="text-xs">硬重启</span>
                           </Button>
                           <Button 
                             variant="outline" 
@@ -832,47 +557,7 @@ const ServerControlPage = () => {
                             <span className="text-xs">联系人</span>
                           </Button>
                         </div>
-                        
-                        {/* Advanced Actions */}
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                          <Button 
-                            variant="outline" 
-                            className="h-auto py-4 flex-col gap-2"
-                            onClick={handleOpenBackupFtp}
-                          >
-                            <Database className="h-5 w-5 text-accent" />
-                            <span className="text-xs">备份FTP</span>
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            className="h-auto py-4 flex-col gap-2"
-                            onClick={handleOpenFirewall}
-                          >
-                            <Shield className="h-5 w-5 text-warning" />
-                            <span className="text-xs">防火墙</span>
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            className="h-auto py-4 flex-col gap-2"
-                            onClick={handleOpenBurst}
-                          >
-                            <Zap className="h-5 w-5 text-primary" />
-                            <span className="text-xs">Burst</span>
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            className="h-auto py-4 flex-col gap-2"
-                            onClick={() => {
-                              if (serverIps.length > 0) {
-                                setMoveIpAddress(serverIps[0]?.ip || selectedServer?.ip || "");
-                              }
-                              setIsIpMoveDialogOpen(true);
-                            }}
-                          >
-                            <Move className="h-5 w-5" />
-                            <span className="text-xs">IP迁移</span>
-                          </Button>
-                        </div>
+
                       </TabsContent>
 
                       <TabsContent value="hardware">
@@ -1305,312 +990,10 @@ const ServerControlPage = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Backup FTP Dialog */}
-      <Dialog open={isBackupFtpDialogOpen} onOpenChange={setIsBackupFtpDialogOpen}>
-        <DialogContent className="terminal-card border-primary/30">
-          <DialogHeader>
-            <DialogTitle className="text-primary flex items-center gap-2">
-              <Database className="h-5 w-5" />
-              备份 FTP
-            </DialogTitle>
-            <DialogDescription>
-              管理服务器备份存储空间
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4 py-4">
-            {isLoadingBackupFtp ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-6 w-6 animate-spin text-primary" />
-              </div>
-            ) : backupFtpInfo ? (
-              <>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-3 bg-muted/30 rounded-sm">
-                    <p className="text-xs text-muted-foreground mb-1">FTP名称</p>
-                    <p className="font-mono text-sm">{backupFtpInfo.ftpBackupName}</p>
-                  </div>
-                  <div className="p-3 bg-muted/30 rounded-sm">
-                    <p className="text-xs text-muted-foreground mb-1">类型</p>
-                    <p className="text-sm">{backupFtpInfo.type}</p>
-                  </div>
-                  <div className="p-3 bg-muted/30 rounded-sm">
-                    <p className="text-xs text-muted-foreground mb-1">配额</p>
-                    <p className="text-sm">{backupFtpInfo.quota} GB</p>
-                  </div>
-                  <div className="p-3 bg-muted/30 rounded-sm">
-                    <p className="text-xs text-muted-foreground mb-1">已用</p>
-                    <p className="text-sm">{backupFtpInfo.usage || 0} GB</p>
-                  </div>
-                </div>
-                {backupFtpPassword && (
-                  <div className="p-3 bg-primary/10 border border-primary/30 rounded-sm">
-                    <p className="text-xs text-muted-foreground mb-1">新密码</p>
-                    <p className="font-mono flex items-center justify-between">
-                      {backupFtpPassword}
-                      <Button variant="ghost" size="sm" onClick={() => {
-                        navigator.clipboard.writeText(backupFtpPassword);
-                        toast.success("已复制");
-                      }}>
-                        <Copy className="h-3 w-3" />
-                      </Button>
-                    </p>
-                  </div>
-                )}
-                <Button variant="outline" className="w-full" onClick={handleGetBackupFtpPassword}>
-                  <Key className="h-4 w-4 mr-2" />
-                  重置密码
-                </Button>
-              </>
-            ) : (
-              <div className="text-center py-8">
-                <Database className="h-12 w-12 mx-auto mb-4 opacity-30 text-muted-foreground" />
-                <p className="text-muted-foreground mb-4">备份FTP未激活</p>
-                <Button onClick={handleActivateBackupFtp} disabled={isActivatingBackupFtp}>
-                  {isActivatingBackupFtp && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                  激活备份FTP
-                </Button>
-              </div>
-            )}
-          </div>
-          
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">关闭</Button>
-            </DialogClose>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
-      {/* Firewall Dialog */}
-      <Dialog open={isFirewallDialogOpen} onOpenChange={setIsFirewallDialogOpen}>
-        <DialogContent className="terminal-card border-primary/30">
-          <DialogHeader>
-            <DialogTitle className="text-primary flex items-center gap-2">
-              <Shield className="h-5 w-5" />
-              防火墙管理
-            </DialogTitle>
-            <DialogDescription>
-              管理服务器OVH防火墙
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4 py-4">
-            {isLoadingFirewall ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-6 w-6 animate-spin text-primary" />
-              </div>
-            ) : firewallInfo ? (
-              <>
-                <div className="flex items-center justify-between p-4 bg-muted/30 rounded-sm">
-                  <div>
-                    <p className="font-medium">防火墙状态</p>
-                    <p className={cn(
-                      "text-sm",
-                      firewallInfo.enabled ? "text-primary" : "text-muted-foreground"
-                    )}>
-                      {firewallInfo.enabled ? "已启用" : "已禁用"}
-                    </p>
-                  </div>
-                  <Switch 
-                    checked={firewallInfo.enabled} 
-                    onCheckedChange={handleToggleFirewall}
-                    disabled={isTogglingFirewall}
-                  />
-                </div>
-                {firewallInfo.mode && (
-                  <div className="p-3 bg-muted/30 rounded-sm">
-                    <p className="text-xs text-muted-foreground mb-1">模式</p>
-                    <p className="text-sm">{firewallInfo.mode}</p>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="text-center py-8 text-muted-foreground">
-                <Shield className="h-12 w-12 mx-auto mb-4 opacity-30" />
-                <p>防火墙信息不可用</p>
-              </div>
-            )}
-          </div>
-          
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">关闭</Button>
-            </DialogClose>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
-      {/* Burst Dialog */}
-      <Dialog open={isBurstDialogOpen} onOpenChange={setIsBurstDialogOpen}>
-        <DialogContent className="terminal-card border-primary/30">
-          <DialogHeader>
-            <DialogTitle className="text-primary flex items-center gap-2">
-              <Zap className="h-5 w-5" />
-              Burst 带宽
-            </DialogTitle>
-            <DialogDescription>
-              管理突发带宽功能
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4 py-4">
-            {isLoadingBurst ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-6 w-6 animate-spin text-primary" />
-              </div>
-            ) : burstInfo ? (
-              <>
-                <div className="flex items-center justify-between p-4 bg-muted/30 rounded-sm">
-                  <div>
-                    <p className="font-medium">Burst 状态</p>
-                    <p className={cn(
-                      "text-sm",
-                      burstInfo.enabled ? "text-primary" : "text-muted-foreground"
-                    )}>
-                      {burstInfo.enabled ? "已启用" : "已禁用"}
-                    </p>
-                  </div>
-                  <Switch 
-                    checked={burstInfo.enabled} 
-                    onCheckedChange={handleToggleBurst}
-                    disabled={isTogglingBurst}
-                  />
-                </div>
-                {burstInfo.capacity && (
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="p-3 bg-muted/30 rounded-sm">
-                      <p className="text-xs text-muted-foreground mb-1">容量</p>
-                      <p className="text-sm">{burstInfo.capacity} Gbps</p>
-                    </div>
-                    <div className="p-3 bg-muted/30 rounded-sm">
-                      <p className="text-xs text-muted-foreground mb-1">已用</p>
-                      <p className="text-sm">{burstInfo.used || 0} Gbps</p>
-                    </div>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="text-center py-8 text-muted-foreground">
-                <Zap className="h-12 w-12 mx-auto mb-4 opacity-30" />
-                <p>Burst带宽信息不可用</p>
-                <p className="text-xs mt-2">此服务器可能不支持Burst</p>
-              </div>
-            )}
-          </div>
-          
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">关闭</Button>
-            </DialogClose>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
-      {/* IP Move Dialog */}
-      <Dialog open={isIpMoveDialogOpen} onOpenChange={setIsIpMoveDialogOpen}>
-        <DialogContent className="terminal-card border-primary/30">
-          <DialogHeader>
-            <DialogTitle className="text-primary flex items-center gap-2">
-              <Move className="h-5 w-5" />
-              IP 迁移
-            </DialogTitle>
-            <DialogDescription>
-              将IP地址迁移到另一台服务器
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4 py-4">
-            <div className="p-3 bg-warning/10 border border-warning/30 rounded-sm">
-              <p className="text-sm text-warning">
-                ⚠️ IP迁移会导致短暂的网络中断
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label>IP 地址</Label>
-              <Input 
-                value={moveIpAddress}
-                onChange={(e) => setMoveIpAddress(e.target.value)}
-                placeholder="要迁移的IP地址"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>目标服务器 (服务名称)</Label>
-              <Input 
-                value={moveTargetService}
-                onChange={(e) => setMoveTargetService(e.target.value)}
-                placeholder="例如: nsxxxxxxx.ip-xx-xx-xx.eu"
-              />
-            </div>
-          </div>
-          
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">取消</Button>
-            </DialogClose>
-            <Button 
-              onClick={handleMoveIp} 
-              disabled={!moveIpAddress || !moveTargetService || isMovingIp}
-            >
-              {isMovingIp && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              确认迁移
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
-      {/* Terminate Dialog */}
-      <Dialog open={isTerminateDialogOpen} onOpenChange={setIsTerminateDialogOpen}>
-        <DialogContent className="terminal-card border-destructive/30">
-          <DialogHeader>
-            <DialogTitle className="text-destructive flex items-center gap-2">
-              <Trash2 className="h-5 w-5" />
-              终止服务
-            </DialogTitle>
-            <DialogDescription>
-              请求终止此服务器服务（不可恢复）
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4 py-4">
-            <div className="p-4 bg-destructive/10 border border-destructive/30 rounded-sm">
-              <p className="text-sm text-destructive font-medium mb-2">
-                ⚠️ 警告：此操作不可恢复！
-              </p>
-              <p className="text-xs text-muted-foreground">
-                终止服务后，服务器上的所有数据将被永久删除。
-                您将收到一封确认邮件，需要点击邮件中的链接确认终止。
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label>请输入服务名称确认</Label>
-              <Input 
-                value={terminateConfirmText}
-                onChange={(e) => setTerminateConfirmText(e.target.value)}
-                placeholder={selectedServer?.serviceName || ""}
-                className="font-mono"
-              />
-              <p className="text-xs text-muted-foreground">
-                请输入: <code className="bg-muted px-1 rounded">{selectedServer?.serviceName}</code>
-              </p>
-            </div>
-          </div>
-          
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">取消</Button>
-            </DialogClose>
-            <Button 
-              variant="destructive"
-              onClick={handleTerminate} 
-              disabled={terminateConfirmText !== selectedServer?.serviceName || isTerminating}
-            >
-              {isTerminating && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              确认终止
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </>
   );
 };
