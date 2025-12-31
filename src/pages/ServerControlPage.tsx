@@ -334,7 +334,7 @@ const ServerControlPage = () => {
             </Button>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
             {/* Server List */}
             <div className="lg:col-span-1 space-y-4">
               <div className="relative">
@@ -392,7 +392,7 @@ const ServerControlPage = () => {
             </div>
 
             {/* Server Details */}
-            <div className="lg:col-span-2">
+            <div className="lg:col-span-3">
               {selectedServer ? (
                 <TerminalCard
                   title={selectedServer.name || selectedServer.serviceName}
@@ -410,12 +410,12 @@ const ServerControlPage = () => {
                           {detailsWarning}
                         </div>
                       )}
-                      <TabsList className="bg-muted/50 border border-border">
-                        <TabsTrigger value="overview">概览</TabsTrigger>
-                        <TabsTrigger value="hardware">硬件</TabsTrigger>
-                        <TabsTrigger value="network">网络</TabsTrigger>
-                        <TabsTrigger value="tasks">任务</TabsTrigger>
-                        <TabsTrigger value="maintenance">维护</TabsTrigger>
+                      <TabsList className="bg-muted/50 border border-border grid w-full grid-cols-5">
+                        <TabsTrigger value="overview" className="w-full">概览</TabsTrigger>
+                        <TabsTrigger value="hardware" className="w-full">硬件</TabsTrigger>
+                        <TabsTrigger value="network" className="w-full">网络</TabsTrigger>
+                        <TabsTrigger value="tasks" className="w-full">任务</TabsTrigger>
+                        <TabsTrigger value="maintenance" className="w-full">维护</TabsTrigger>
                       </TabsList>
 
                       <TabsContent value="overview" className="space-y-4">
