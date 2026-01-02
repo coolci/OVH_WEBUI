@@ -108,6 +108,9 @@ const ServerControlPage = () => {
   
 
   const servers = serversData?.servers || [];
+  const isExpiredStatus = (status?: string) =>
+    typeof status === "string" && status.toLowerCase().includes("expired");
+  const activeServers = servers.filter((server) => !isExpiredStatus(server.status));
 
   const formatUnitValue = (value: any) => {
     if (value === null || value === undefined) return "未知";
@@ -123,10 +126,16 @@ const ServerControlPage = () => {
   };
 
   useEffect(() => {
-    if (servers.length > 0 && !selectedServer) {
-      setSelectedServer(servers[0]);
+    if (!selectedServer && activeServers.length > 0) {
+      setSelectedServer(activeServers[0]);
     }
-  }, [servers, selectedServer]);
+  }, [activeServers, selectedServer]);
+
+  useEffect(() => {
+    if (selectedServer && isExpiredStatus(selectedServer.status)) {
+      setSelectedServer(activeServers[0] || null);
+    }
+  }, [activeServers, selectedServer]);
 
   useEffect(() => {
     if (selectedServer) {
@@ -290,7 +299,7 @@ const ServerControlPage = () => {
     }
   };
 
-  const filteredServers = servers.filter((server: ManagedServer) => 
+  const filteredServers = activeServers.filter((server: ManagedServer) => 
     server.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     server.serviceName.toLowerCase().includes(searchTerm.toLowerCase()) ||
     server.ip?.includes(searchTerm)
@@ -324,7 +333,7 @@ const ServerControlPage = () => {
                 <span className="cursor-blink">_</span>
               </h1>
               <p className="text-sm text-muted-foreground mt-1">
-                管理 {servers.length} 台已购服务器
+                管理 {activeServers.length} 台已购服务器
               </p>
             </div>
             
@@ -383,7 +392,7 @@ const ServerControlPage = () => {
 
                     {filteredServers.length === 0 && !isLoading && (
                       <p className="text-center py-8 text-muted-foreground">
-                        {servers.length === 0 ? "暂无已购服务器" : "未找到服务器"}
+                        {activeServers.length === 0 ? "暂无已购服务器" : "未找到服务器"}
                       </p>
                     )}
                   </div>

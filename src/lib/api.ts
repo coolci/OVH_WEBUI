@@ -907,20 +907,49 @@ export const api = {
     ),
   
   // ==================== 性能监控 ====================
-  getServerStatistics: (
+  getServerStatistics: async (
     serviceName: string,
-    period?: 'lastday' | 'lastweek' | 'lastmonth' | 'lastyear',
+    period?: 'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly',
     type?: 'traffic:download' | 'traffic:upload'
   ) => {
     const params = new URLSearchParams();
     if (period) params.set('period', period);
     if (type) params.set('type', type);
     const query = params.toString();
-    return apiRequest<{
-      success: boolean;
-      statistics?: Array<{ timestamp: number; value: number }>;
-      error?: string;
-    }>(`/api/server-control/${serviceName}/statistics${query ? `?${query}` : ''}`);
+
+    const result = await apiRequest<any>(
+      `/api/server-control/${serviceName}/mrtg${query ? `?${query}` : ''}`
+    );
+
+    if (!result?.success) {
+      return result;
+    }
+
+    let data = Array.isArray(result?.statistics) ? result.statistics : null;
+    if (!data && Array.isArray(result?.data)) {
+      data = result.data;
+    }
+    if (!data && Array.isArray(result?.interfaces)) {
+      const iface = result.interfaces.find((item: any) => Array.isArray(item?.data) && item.data.length);
+      data = iface?.data || [];
+    }
+
+    const statistics = Array.isArray(data)
+      ? data.map((item: any) => {
+          if (Array.isArray(item)) {
+            return { timestamp: item[0], value: item[1] };
+          }
+          return {
+            timestamp: item?.timestamp ?? item?.time ?? 0,
+            value: item?.value ?? item?.avg ?? 0,
+          };
+        })
+      : [];
+
+    return {
+      success: true,
+      statistics,
+    };
   },
   
   // ==================== Telegram WEBHOOK下单 ====================

@@ -22,7 +22,6 @@ const pathNames: Record<string, string> = {
   "/server-control": "服务器控制",
   "/account": "账户管理",
   "/contact-change": "联系人变更",
-  "/performance": "性能监控",
   "/telegram-order": "Telegram 下单",
   "/settings": "系统设置",
   "/logs": "系统日志",

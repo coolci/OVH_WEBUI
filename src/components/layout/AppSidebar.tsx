@@ -37,7 +37,6 @@ const navGroups = [
     items: [
       { to: "/servers", icon: Server, label: "服务器列表" },
       { to: "/server-control", icon: Cpu, label: "服务器控制" },
-      { to: "/performance", icon: BarChart3, label: "性能监控" },
     ],
   },
   {

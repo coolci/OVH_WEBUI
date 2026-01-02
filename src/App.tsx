@@ -40,7 +40,6 @@ const App = () => (
             <Route path="/account" element={<AccountPage />} />
             <Route path="/server-control" element={<ServerControlPage />} />
             <Route path="/contact-change" element={<ContactChangePage />} />
-            <Route path="/performance" element={<PerformancePage />} />
             <Route path="/telegram-order" element={<TelegramOrderPage />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
