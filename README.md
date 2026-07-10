@@ -187,7 +187,7 @@ python scripts/smoke_test.py
 | 代码目录 | 服务器 `/opt/ovh-webui` |
 | 数据卷 | Docker volume `ovh_webui_data` → 容器内 `/data` |
 | 公网 | 仅 **80 / 443**（后端不暴露 19998） |
-| 域名示例 | `in.ddnsing.com`（A 记录 → 服务器公网 IP） |
+| 域名示例 | `ovh.example.com`（A 记录 → 服务器公网 IP） |
 | 登录 | `.env` 中 `API_SECRET_KEY` |
 | Webhook | `https://<DOMAIN>/api/telegram/webhook`（鉴权白名单） |
 
@@ -223,8 +223,8 @@ chmod +x scripts/linux-oneclick-deploy.sh
 sudo ./scripts/linux-oneclick-deploy.sh
 
 # 非交互示例
-export DOMAIN=in.ddnsing.com
-export ACME_EMAIL=admin@in.ddnsing.com
+export DOMAIN=ovh.example.com
+export ACME_EMAIL=ops@example.com
 sudo -E ./scripts/linux-oneclick-deploy.sh --yes
 ```
 

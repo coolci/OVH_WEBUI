@@ -214,7 +214,7 @@ function TelegramSection({
   const onApplyWebhook = async () => {
     const url = (form.webhookUrl || "").trim();
     if (!url) {
-      toast.error("请填写 Webhook 公网地址（如 https://in.ddnsing.com）");
+      toast.error("请填写 Webhook 公网地址（如 https://ovh.example.com）");
       return;
     }
     if (!form.tgToken?.trim()) {
@@ -264,7 +264,7 @@ function TelegramSection({
           <Input
             value={form.webhookUrl || ""}
             onChange={(e) => set("webhookUrl", e.target.value)}
-            placeholder="https://in.ddnsing.com"
+            placeholder="https://ovh.example.com"
             className="font-mono text-[13px]"
           />
         </Field>
