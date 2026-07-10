@@ -64,8 +64,10 @@ func main() {
 	// 监控器
 	mon := monitor.New(state)
 	mon.LoadFromDB()
+	mon.LoadMessageUUIDCacheFromDB()
 	mon.SetCheckInterval(5)
-	mon.SaveToDB()
+	// 注意：启动时不要 SaveToDB()。
+	// ReplaceMonitorSubscriptions 会先 DELETE 全表；若加载失败/空读却再写回，会把线上订阅抹掉。
 	console.Info("监控检查间隔已强制设置为: 5秒（全局固定值）")
 
 	// Gin

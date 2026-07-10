@@ -77,6 +77,7 @@ func TelegramWebhook(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 			userID, _ := getNumOrFloat(fromUser["id"])
 			state.Logger.Info(fmt.Sprintf("收到Telegram回调: user_id=%v, callback_data=%s...", userID, truncate(cbData, 50)), "telegram")
 
+			cbID := fmt.Sprintf("%v", cb["id"])
 			var callbackObj map[string]interface{}
 			if strings.HasPrefix(cbData, "b64:") {
 				base64Part := cbData[4:]
@@ -88,18 +89,21 @@ func TelegramWebhook(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 				if err != nil {
 					state.Logger.Warn("base64解码失败（可能是数据被截断）: "+err.Error()+", base64_len="+fmt.Sprintf("%d", len(cbData[4:])), "telegram")
 					state.Logger.Warn("callback_data（前100字符）: "+truncate(cbData, 100), "telegram")
-					c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "Callback data decoding failed (possibly truncated)"})
+					telegram.AnswerCallback(state, cbID, "按钮数据无效", true)
+					c.JSON(http.StatusOK, gin.H{"ok": true, "error": "callback_decode_failed"})
 					return
 				}
 				if err := json.Unmarshal(decoded, &callbackObj); err != nil {
 					state.Logger.Error("解析callback_data JSON失败: "+err.Error()+", data="+truncate(cbData, 100), "telegram")
-					c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "Invalid callback data format"})
+					telegram.AnswerCallback(state, cbID, "按钮数据无效", true)
+					c.JSON(http.StatusOK, gin.H{"ok": true, "error": "invalid_callback_json"})
 					return
 				}
 			} else {
 				if err := json.Unmarshal([]byte(cbData), &callbackObj); err != nil {
 					state.Logger.Error("解析callback_data JSON失败: "+err.Error()+", data="+truncate(cbData, 100), "telegram")
-					c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "Invalid callback data format"})
+					telegram.AnswerCallback(state, cbID, "按钮数据无效", true)
+					c.JSON(http.StatusOK, gin.H{"ok": true, "error": "invalid_callback_json"})
 					return
 				}
 			}
@@ -150,15 +154,16 @@ func TelegramWebhook(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 							userID, planCode, dc, optsStr), "telegram")
 						confirmMsg := fmt.Sprintf("✅ 已添加到抢购队列！\n\n型号: %s\n机房: %s\n配置: %s\n\n系统将自动尝试下单。",
 							planCode, strings.ToUpper(dc), optsStr)
-						telegram.AnswerCallback(state, fmt.Sprintf("%v", cb["id"]), "已添加到队列！", false)
+						telegram.AnswerCallback(state, cbID, "已添加到队列！", false)
 						telegram.SendReply(state, chatID, confirmMsg, int64(messageID))
+						// 必须 200：Telegram 收到非 2xx 会重试并标记 webhook 故障
 						c.JSON(http.StatusOK, gin.H{"ok": true})
 						return
 					}
 					state.Logger.Warn("UUID未找到 in cache: "+messageUUID, "telegram")
 				}
 
-				// 降级到旧机制
+				// 降级到旧机制（callback 内直接带 p/d/o）
 				planCode := strOr(callbackObj, "p", "planCode")
 				dc := strOr(callbackObj, "d", "datacenter")
 				var options []string
@@ -168,7 +173,16 @@ func TelegramWebhook(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 					options = toStringSlice(optsRaw)
 				}
 				if planCode == "" || dc == "" {
-					c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "Missing planCode or datacenter"})
+					// 典型原因：部署重启后旧按钮 UUID 未持久化；或按钮已超过 24h TTL
+					state.Logger.Warn(fmt.Sprintf("一键下单失败: UUID=%s 缓存未命中且无 planCode/datacenter 降级数据", messageUUID), "telegram")
+					telegram.AnswerCallback(state, cbID, "按钮已失效，请等待新的上架通知后再点", true)
+					if chatID != nil {
+						telegram.SendReply(state, chatID,
+							"❌ 一键下单失败：该通知按钮已过期或服务刚重启导致缓存丢失。\n\n请等待新的上架通知后重试，或在网页端手动加入抢购队列。",
+							int64(messageID))
+					}
+					// 对 Telegram 永远回 200，避免 pending_update 堆积与 webhook 报错
+					c.JSON(http.StatusOK, gin.H{"ok": true, "error": "button_expired"})
 					return
 				}
 				if len(options) == 0 {
@@ -207,13 +221,15 @@ func TelegramWebhook(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 				}
 				confirmMsg := fmt.Sprintf("✅ 已添加到抢购队列！\n\n型号: %s\n机房: %s\n配置: %s\n\n系统将自动尝试下单。",
 					planCode, strings.ToUpper(dc), confirmText)
-				telegram.AnswerCallback(state, fmt.Sprintf("%v", cb["id"]), "已添加到队列！", false)
+				telegram.AnswerCallback(state, cbID, "已添加到队列！", false)
 				telegram.SendReply(state, chatID, confirmMsg, int64(messageID))
 				c.JSON(http.StatusOK, gin.H{"ok": true})
 				return
 			}
 			state.Logger.Warn("未知的action: "+action, "telegram")
-			c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": "Unknown action: " + action})
+			// 未知 action 也回 200，避免 Telegram 反复重推
+			telegram.AnswerCallback(state, fmt.Sprintf("%v", cb["id"]), "未知操作", true)
+			c.JSON(http.StatusOK, gin.H{"ok": true, "error": "unknown_action"})
 			return
 		}
 

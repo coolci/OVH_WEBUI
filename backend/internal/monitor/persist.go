@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/ovh-webui/server/internal/types"
 )
@@ -87,7 +88,9 @@ func fromDBSub(s types.Subscription) *Subscription {
 func (m *Monitor) LoadFromDB() {
 	subs, err := m.state.DB.ListMonitorSubscriptions()
 	if err != nil {
-		m.state.Logger.Warn("加载监控订阅失败: "+err.Error(), "monitor")
+		// 失败时保留空列表，但绝不能随后 SaveToDB 全表覆盖（会抹掉库里的真实订阅）
+		m.state.Logger.Error("加载监控订阅失败（不会写回空列表）: "+err.Error(), "monitor")
+		subs = nil
 	}
 	known := []string{}
 	if _, err := m.state.DB.GetKV("monitor_known_servers", &known); err != nil {
@@ -108,7 +111,8 @@ func (m *Monitor) LoadFromDB() {
 	// 全局强制 5 秒
 	m.checkInterval = 5
 	m.state.Logger.Info("检查间隔已强制设置为: 5秒（全局固定值）", "monitor")
-	m.state.Logger.Info("已加载订阅", "monitor")
+	m.state.Logger.Info(fmt.Sprintf("已加载订阅: %d 条", len(m.subscriptions)), "monitor")
+	// TG 一键下单 UUID 在 LoadFromDB 返回后由调用方 LoadMessageUUIDCacheFromDB()
 }
 
 // SaveToDB 把订阅 + known_servers 写回 SQLite
@@ -123,8 +127,13 @@ func (m *Monitor) SaveToDB() {
 		known = append(known, k)
 	}
 	m.checkInterval = 5
+	n := len(subs)
 	m.subsMu.Unlock()
 
+	// Replace 会先清空表再写入；允许空列表（用户主动 clear），但打醒目日志便于排查
+	if n == 0 {
+		m.state.Logger.Warn("保存监控订阅: 当前内存列表为空，将清空 SQLite 订阅表", "monitor")
+	}
 	if err := m.state.DB.ReplaceMonitorSubscriptions(subs); err != nil {
 		m.state.Logger.Error("保存监控订阅失败: "+err.Error(), "monitor")
 		return
@@ -133,7 +142,7 @@ func (m *Monitor) SaveToDB() {
 		m.state.Logger.Error("保存已知服务器失败: "+err.Error(), "monitor")
 		return
 	}
-	m.state.Logger.Info("订阅数据已保存（检查间隔固定为5秒）", "monitor")
+	m.state.Logger.Info(fmt.Sprintf("订阅数据已保存: %d 条（检查间隔固定为5秒）", n), "monitor")
 }
 
 // SubscriptionAsJSON 帮助 handler 返回订阅

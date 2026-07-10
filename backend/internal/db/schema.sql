@@ -149,3 +149,18 @@ CREATE TABLE IF NOT EXISTS server_aliases (
   PRIMARY KEY (account_id, service_name)
 );
 CREATE INDEX IF NOT EXISTS idx_server_aliases_account ON server_aliases(account_id);
+
+-- ===========================================
+-- telegram_order_buttons: TG 一键下单按钮 UUID 缓存
+-- 按钮 callback_data 只有 UUID（受 Telegram 64 字节限制），完整下单参数存这里
+-- 必须持久化：进程重启 / Docker 重建后内存缓存会丢，否则一点击就 400
+-- ===========================================
+CREATE TABLE IF NOT EXISTS telegram_order_buttons (
+  id          TEXT PRIMARY KEY,
+  plan_code   TEXT NOT NULL,
+  datacenter  TEXT NOT NULL,
+  options     TEXT NOT NULL DEFAULT '[]',  -- JSON []string
+  config_info TEXT NOT NULL DEFAULT '{}', -- JSON object
+  created_at  REAL NOT NULL               -- unix seconds
+);
+CREATE INDEX IF NOT EXISTS idx_tg_buttons_created ON telegram_order_buttons(created_at);
