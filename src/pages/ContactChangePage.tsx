@@ -43,12 +43,19 @@ const ContactChangePage = () => {
   };
 
   const handleAccept = async (id: number) => {
+    // OVH 要求邮件中的 token，后端校验 token 非空
+    const token = window.prompt("请输入邮件中的确认 Token（accept 必需）：");
+    if (token === null) return;
+    if (!token.trim()) {
+      toast.error("Token 不能为空");
+      return;
+    }
     setProcessingId(id);
-    setProcessingAction('accept');
+    setProcessingAction("accept");
     try {
-      const result = await api.acceptContactChange(id);
+      const result = await api.acceptContactChange(id, token.trim());
       if (result.success) {
-        toast.success("已接受联系人变更请求");
+        toast.success(result.message || "已接受联系人变更请求");
         refetch();
       } else {
         toast.error(result.error || "操作失败");
@@ -62,12 +69,18 @@ const ContactChangePage = () => {
   };
 
   const handleRefuse = async (id: number) => {
+    const token = window.prompt("请输入邮件中的确认 Token（refuse 必需）：");
+    if (token === null) return;
+    if (!token.trim()) {
+      toast.error("Token 不能为空");
+      return;
+    }
     setProcessingId(id);
-    setProcessingAction('refuse');
+    setProcessingAction("refuse");
     try {
-      const result = await api.refuseContactChange(id);
+      const result = await api.refuseContactChange(id, token.trim());
       if (result.success) {
-        toast.success("已拒绝联系人变更请求");
+        toast.success(result.message || "已拒绝联系人变更请求");
         refetch();
       } else {
         toast.error(result.error || "操作失败");
@@ -234,10 +247,10 @@ const ContactChangePage = () => {
                           <span className="font-mono text-primary">{request.toAccount}</span>
                         </div>
 
-                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 text-xs text-muted-foreground break-all">
                           <span>请求者: {request.askingAccount}</span>
                           <span>
-                            请求时间: {new Date(request.dateRequest).toLocaleString("zh-CN")}
+                            请求时间: {request.dateRequest ? new Date(request.dateRequest).toLocaleString("zh-CN") : "—"}
                           </span>
                           {request.dateDone && (
                             <span>
@@ -248,10 +261,11 @@ const ContactChangePage = () => {
                       </div>
 
                       {(request.state === 'todo' || request.state === 'doing') && (
-                        <div className="flex gap-2 flex-wrap">
+                        <div className="flex gap-2 flex-wrap w-full lg:w-auto">
                           <Button
                             variant="default"
                             size="sm"
+                            className="min-h-10 flex-1 sm:flex-none touch-manipulation"
                             onClick={() => handleAccept(request.id)}
                             disabled={processingId === request.id}
                           >
@@ -265,6 +279,7 @@ const ContactChangePage = () => {
                           <Button
                             variant="destructive"
                             size="sm"
+                            className="min-h-10 flex-1 sm:flex-none touch-manipulation"
                             onClick={() => handleRefuse(request.id)}
                             disabled={processingId === request.id}
                           >
@@ -278,6 +293,7 @@ const ContactChangePage = () => {
                           <Button
                             variant="outline"
                             size="sm"
+                            className="min-h-10 flex-1 sm:flex-none touch-manipulation"
                             onClick={() => handleResend(request.id)}
                             disabled={processingId === request.id}
                           >

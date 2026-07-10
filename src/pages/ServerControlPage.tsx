@@ -1,1544 +1,580 @@
 import { AppLayout } from "@/components/layout/AppLayout";
-import { TerminalCard } from "@/components/ui/terminal-card";
-import { StatusBadge } from "@/components/ui/status-badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Helmet } from "react-helmet-async";
-import { Label } from "@/components/ui/label";
-import { Progress } from "@/components/ui/progress";
-import { Switch } from "@/components/ui/switch";
-import { 
-  Cpu, 
-  Search,
-  RefreshCw,
-  Power,
-  HardDrive,
-  Network,
-  Terminal,
-  Activity,
-  Shield,
-  Server,
-  MoreVertical,
-  Monitor,
-  Loader2,
-  Calendar,
-  Clock,
-  AlertTriangle,
-  Users,
-  Wrench,
-  CheckCircle2,
-  XCircle,
-  Zap,
-  Database,
-  Move,
-  Trash2,
-  Key,
-  Copy
-} from "lucide-react";
-import { useState, useEffect } from "react";
-import { cn } from "@/lib/utils";
+import { Terminal, Server, RefreshCw, Eye, EyeOff, CalendarClock, CalendarPlus, Repeat, Activity, Network, CalendarRange } from "lucide-react";
+import { useEffect, useState } from "react";
+import { PageHeader } from "@/components/common/PageHeader";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Chip } from "@/components/common/Chip";
+import { StatusDot } from "@/components/common/StatusDot";
+import { Skeleton } from "@/components/common/Skeleton";
+import { EmptyState } from "@/components/common/EmptyState";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  useOwnedServers,
+  useServerServiceInfo,
+  useServerMonitoring,
+  useToggleMonitoring,
+  type OwnedServer,
+} from "@/hooks/use-server-control";
+import { useHideIp, maskSensitive } from "@/hooks/use-hide-ip";
+import { useActiveServerControlAccount } from "@/hooks/use-active-account";
+import { useAccounts } from "@/hooks/use-accounts";
+import { useServerAliases, useSetServerAlias, aliasOf } from "@/hooks/use-server-aliases";
 import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogClose,
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { useMyServers } from "@/hooks/useApi";
-import { api } from "@/lib/api";
+import { Input } from "@/components/ui/input";
+import { OverviewTab } from "@/components/server-control/OverviewTab";
+import { PowerTab } from "@/components/server-control/PowerTab";
+import { MaintenanceTab } from "@/components/server-control/MaintenanceTab";
+import { AdvancedTab } from "@/components/server-control/AdvancedTab";
+import { NetworkSpecsDialog } from "@/components/server-control/NetworkSpecsDialog";
+import { RenewalDialog } from "@/components/server-control/RenewalDialog";
+import { ReinstallDialog } from "@/components/server-control/ReinstallDialog";
+import { EngagementDialog } from "@/components/server-control/EngagementDialog";
 import { toast } from "sonner";
 
-interface ManagedServer {
-  serviceName: string;
-  name: string;
-  commercialRange?: string;
-  datacenter: string;
-  state: string;
-  monitoring: boolean;
-  reverse?: string;
-  ip: string;
-  os: string;
-  status: string;
-}
+/** 服务器控制中心：顶部下拉切换服务器 + 4 tab 详情 */
+function ServerControlPage() {
+  const q = useOwnedServers();
+  const { hidden, toggle } = useHideIp();
+  const [selectedName, setSelectedName] = useState<string | null>(null);
+  const [activeAccount, setActiveAccount] = useActiveServerControlAccount();
+  const { data: accounts } = useAccounts();
+  const servers = q.data || [];
 
-const ServerControlPage = () => {
-  const { data: serversData, isLoading, refetch } = useMyServers();
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedServer, setSelectedServer] = useState<ManagedServer | null>(null);
-  const [serverDetails, setServerDetails] = useState<any>(null);
-  const [serverHardware, setServerHardware] = useState<any>(null);
-  const [serverIps, setServerIps] = useState<any[]>([]);
-  const [serverTasks, setServerTasks] = useState<any[]>([]);
-  const [serviceInfo, setServiceInfo] = useState<any>(null);
-  const [serverTemplates, setServerTemplates] = useState<any[]>([]);
-  const [plannedInterventions, setPlannedInterventions] = useState<any[]>([]);
-  const [historicalInterventions, setHistoricalInterventions] = useState<any[]>([]);
-  const [installStatus, setInstallStatus] = useState<any>(null);
-  const [isLoadingDetails, setIsLoadingDetails] = useState(false);
-  const [isRebooting, setIsRebooting] = useState(false);
-  
-  // 重装对话框状态
-  const [isReinstallDialogOpen, setIsReinstallDialogOpen] = useState(false);
-  const [selectedTemplate, setSelectedTemplate] = useState("");
-  const [isReinstalling, setIsReinstalling] = useState(false);
-  const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
-  
-  // 联系人变更对话框
-  const [isContactDialogOpen, setIsContactDialogOpen] = useState(false);
-  const [contactAdmin, setContactAdmin] = useState("");
-  const [contactTech, setContactTech] = useState("");
-  const [contactBilling, setContactBilling] = useState("");
-  const [isChangingContact, setIsChangingContact] = useState(false);
-  
-  // IPMI对话框
-  const [isIpmiDialogOpen, setIsIpmiDialogOpen] = useState(false);
-  const [ipmiInfo, setIpmiInfo] = useState<any>(null);
-  const [isLoadingIpmi, setIsLoadingIpmi] = useState(false);
-  
-  // 备份FTP对话框
-  const [isBackupFtpDialogOpen, setIsBackupFtpDialogOpen] = useState(false);
-  const [backupFtpInfo, setBackupFtpInfo] = useState<any>(null);
-  const [isLoadingBackupFtp, setIsLoadingBackupFtp] = useState(false);
-  const [isActivatingBackupFtp, setIsActivatingBackupFtp] = useState(false);
-  const [backupFtpPassword, setBackupFtpPassword] = useState<string | null>(null);
-  
-  // 防火墙对话框
-  const [isFirewallDialogOpen, setIsFirewallDialogOpen] = useState(false);
-  const [firewallInfo, setFirewallInfo] = useState<any>(null);
-  const [isLoadingFirewall, setIsLoadingFirewall] = useState(false);
-  const [isTogglingFirewall, setIsTogglingFirewall] = useState(false);
-  
-  // Burst带宽对话框
-  const [isBurstDialogOpen, setIsBurstDialogOpen] = useState(false);
-  const [burstInfo, setBurstInfo] = useState<any>(null);
-  const [isLoadingBurst, setIsLoadingBurst] = useState(false);
-  const [isTogglingBurst, setIsTogglingBurst] = useState(false);
-  
-  // IP迁移对话框
-  const [isIpMoveDialogOpen, setIsIpMoveDialogOpen] = useState(false);
-  const [moveIpAddress, setMoveIpAddress] = useState("");
-  const [moveTargetService, setMoveTargetService] = useState("");
-  const [isMovingIp, setIsMovingIp] = useState(false);
-  
-  // 终止服务对话框
-  const [isTerminateDialogOpen, setIsTerminateDialogOpen] = useState(false);
-  const [terminateConfirmText, setTerminateConfirmText] = useState("");
-  const [isTerminating, setIsTerminating] = useState(false);
-
-  const servers = serversData?.servers || [];
-
+  // 首次没选过账户 → 自动选默认账户
   useEffect(() => {
-    if (servers.length > 0 && !selectedServer) {
-      setSelectedServer(servers[0]);
+    if (!activeAccount && accounts && accounts.length > 0) {
+      const def = accounts.find((a) => a.isDefault) || accounts[0];
+      setActiveAccount(def.id);
     }
-  }, [servers, selectedServer]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accounts]);
 
+  // 切换账户时,选中的 service 也清空(不同账户的服务器不一样)
   useEffect(() => {
-    if (selectedServer) {
-      loadServerDetails(selectedServer.serviceName);
-    }
-  }, [selectedServer]);
+    setSelectedName(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeAccount]);
 
-  // 自动刷新安装状态
+  // 自动选中第一台（首次加载或切换列表后）
   useEffect(() => {
-    if (installStatus && !installStatus.allDone && !installStatus.hasError) {
-      const interval = setInterval(async () => {
-        if (selectedServer) {
-          const status = await api.getInstallStatus(selectedServer.serviceName).catch(() => null);
-          if (status?.status) {
-            setInstallStatus(status.status);
-          }
-        }
-      }, 5000);
-      return () => clearInterval(interval);
-    }
-  }, [installStatus, selectedServer]);
-
-  const loadServerDetails = async (serviceName: string) => {
-    setIsLoadingDetails(true);
-    try {
-      const [details, hardware, ips, tasks, info, planned, historical, install] = await Promise.all([
-        api.getServerDetails(serviceName).catch(() => null),
-        api.getServerHardware(serviceName).catch(() => null),
-        api.getServerIps(serviceName).catch(() => null),
-        api.getServerTasks(serviceName).catch(() => null),
-        api.getServiceInfo(serviceName).catch(() => null),
-        api.getPlannedInterventions(serviceName).catch(() => null),
-        api.getInterventions(serviceName).catch(() => null),
-        api.getInstallStatus(serviceName).catch(() => null),
-      ]);
-      
-      setServerDetails(details?.server);
-      setServerHardware(hardware?.hardware);
-      setServerIps(ips?.ips || []);
-      setServerTasks(tasks?.tasks || []);
-      setServiceInfo(info?.serviceInfo);
-      setPlannedInterventions(planned?.plannedInterventions || []);
-      setHistoricalInterventions(historical?.interventions || []);
-      setInstallStatus(install?.status || null);
-    } catch (error) {
-      console.error('加载服务器详情失败:', error);
-    } finally {
-      setIsLoadingDetails(false);
-    }
-  };
-
-  const handleReboot = async (type: 'soft' | 'hardware' = 'soft') => {
-    if (!selectedServer) return;
-    setIsRebooting(true);
-    try {
-      await api.rebootServer(selectedServer.serviceName, type);
-      toast.success(`服务器${type === 'soft' ? '软' : '硬'}重启已发起`);
-      const tasks = await api.getServerTasks(selectedServer.serviceName);
-      setServerTasks(tasks?.tasks || []);
-    } catch (error: any) {
-      toast.error(`重启失败: ${error.message}`);
-    } finally {
-      setIsRebooting(false);
-    }
-  };
-
-  const handleOpenReinstall = async () => {
-    if (!selectedServer) return;
-    setIsReinstallDialogOpen(true);
-    setIsLoadingTemplates(true);
-    try {
-      const result = await api.getServerTemplates(selectedServer.serviceName);
-      setServerTemplates(result?.templates || []);
-    } catch (error) {
-      toast.error("加载模板列表失败");
-    } finally {
-      setIsLoadingTemplates(false);
-    }
-  };
-
-  // IPMI控制台
-  const handleOpenIpmi = async () => {
-    if (!selectedServer) return;
-    setIsIpmiDialogOpen(true);
-    setIsLoadingIpmi(true);
-    setIpmiInfo(null);
-    try {
-      const result = await api.getIpmiAccess(selectedServer.serviceName);
-      if (result.success) {
-        setIpmiInfo(result.ipmiInfos);
-      } else {
-        toast.error(result.error || "获取IPMI信息失败");
-      }
-    } catch (error: any) {
-      toast.error(`获取IPMI信息失败: ${error.message}`);
-    } finally {
-      setIsLoadingIpmi(false);
-    }
-  };
-
-  // 备份FTP
-  const handleOpenBackupFtp = async () => {
-    if (!selectedServer) return;
-    setIsBackupFtpDialogOpen(true);
-    setIsLoadingBackupFtp(true);
-    setBackupFtpInfo(null);
-    setBackupFtpPassword(null);
-    try {
-      const result = await api.getBackupFtp(selectedServer.serviceName);
-      if (result.success) {
-        setBackupFtpInfo(result.backupFtp);
-      }
-    } catch (error: any) {
-      console.error('获取备份FTP信息失败:', error);
-    } finally {
-      setIsLoadingBackupFtp(false);
-    }
-  };
-
-  const handleActivateBackupFtp = async () => {
-    if (!selectedServer) return;
-    setIsActivatingBackupFtp(true);
-    try {
-      const result = await api.activateBackupFtp(selectedServer.serviceName);
-      if (result.success) {
-        toast.success("备份FTP已激活");
-        handleOpenBackupFtp();
-      } else {
-        toast.error(result.error || "激活失败");
-      }
-    } catch (error: any) {
-      toast.error(`激活失败: ${error.message}`);
-    } finally {
-      setIsActivatingBackupFtp(false);
-    }
-  };
-
-  const handleGetBackupFtpPassword = async () => {
-    if (!selectedServer) return;
-    try {
-      const result = await api.getBackupFtpPassword(selectedServer.serviceName);
-      if (result.success) {
-        setBackupFtpPassword(result.password || null);
-        toast.success("密码已生成");
-      } else {
-        toast.error(result.error || "获取密码失败");
-      }
-    } catch (error: any) {
-      toast.error(`获取密码失败: ${error.message}`);
-    }
-  };
-
-  // 防火墙
-  const handleOpenFirewall = async () => {
-    if (!selectedServer) return;
-    setIsFirewallDialogOpen(true);
-    setIsLoadingFirewall(true);
-    setFirewallInfo(null);
-    try {
-      const result = await api.getFirewallStatus(selectedServer.serviceName);
-      if (result.success) {
-        setFirewallInfo(result.firewall);
-      }
-    } catch (error: any) {
-      console.error('获取防火墙信息失败:', error);
-    } finally {
-      setIsLoadingFirewall(false);
-    }
-  };
-
-  const handleToggleFirewall = async () => {
-    if (!selectedServer || !firewallInfo) return;
-    setIsTogglingFirewall(true);
-    try {
-      const result = await api.toggleFirewall(selectedServer.serviceName, !firewallInfo.enabled);
-      if (result.success) {
-        toast.success(firewallInfo.enabled ? "防火墙已禁用" : "防火墙已启用");
-        handleOpenFirewall();
-      } else {
-        toast.error(result.error || "操作失败");
-      }
-    } catch (error: any) {
-      toast.error(`操作失败: ${error.message}`);
-    } finally {
-      setIsTogglingFirewall(false);
-    }
-  };
-
-  // Burst带宽
-  const handleOpenBurst = async () => {
-    if (!selectedServer) return;
-    setIsBurstDialogOpen(true);
-    setIsLoadingBurst(true);
-    setBurstInfo(null);
-    try {
-      const result = await api.getBurstStatus(selectedServer.serviceName);
-      if (result.success) {
-        setBurstInfo(result.burst);
-      }
-    } catch (error: any) {
-      console.error('获取Burst信息失败:', error);
-    } finally {
-      setIsLoadingBurst(false);
-    }
-  };
-
-  const handleToggleBurst = async () => {
-    if (!selectedServer || !burstInfo) return;
-    setIsTogglingBurst(true);
-    try {
-      const result = await api.toggleBurst(selectedServer.serviceName, !burstInfo.enabled);
-      if (result.success) {
-        toast.success(burstInfo.enabled ? "Burst带宽已禁用" : "Burst带宽已启用");
-        handleOpenBurst();
-      } else {
-        toast.error(result.error || "操作失败");
-      }
-    } catch (error: any) {
-      toast.error(`操作失败: ${error.message}`);
-    } finally {
-      setIsTogglingBurst(false);
-    }
-  };
-
-  // IP迁移
-  const handleMoveIp = async () => {
-    if (!selectedServer || !moveIpAddress || !moveTargetService) return;
-    setIsMovingIp(true);
-    try {
-      const result = await api.moveIp(selectedServer.serviceName, moveIpAddress, moveTargetService);
-      if (result.success) {
-        toast.success("IP迁移任务已创建");
-        setIsIpMoveDialogOpen(false);
-        setMoveIpAddress("");
-        setMoveTargetService("");
-        const tasks = await api.getServerTasks(selectedServer.serviceName);
-        setServerTasks(tasks?.tasks || []);
-      } else {
-        toast.error(result.error || "迁移失败");
-      }
-    } catch (error: any) {
-      toast.error(`迁移失败: ${error.message}`);
-    } finally {
-      setIsMovingIp(false);
-    }
-  };
-
-  // 终止服务
-  const handleTerminate = async () => {
-    if (!selectedServer || terminateConfirmText !== selectedServer.serviceName) {
-      toast.error("请输入正确的服务名称确认");
+    if (servers.length === 0) {
+      setSelectedName(null);
       return;
     }
-    setIsTerminating(true);
-    try {
-      const result = await api.terminateServer(selectedServer.serviceName);
-      if (result.success) {
-        toast.success("终止请求已发送，请检查邮箱确认");
-        setIsTerminateDialogOpen(false);
-        setTerminateConfirmText("");
-      } else {
-        toast.error(result.error || "终止请求失败");
-      }
-    } catch (error: any) {
-      toast.error(`终止请求失败: ${error.message}`);
-    } finally {
-      setIsTerminating(false);
+    if (!selectedName || !servers.some((s) => s.serviceName === selectedName)) {
+      setSelectedName(servers[0].serviceName);
     }
-  };
+  }, [servers, selectedName]);
 
-  const handleReinstall = async () => {
-    if (!selectedServer || !selectedTemplate) return;
-    setIsReinstalling(true);
-    try {
-      await api.reinstallServer(selectedServer.serviceName, selectedTemplate);
-      toast.success("重装系统任务已发起");
-      setIsReinstallDialogOpen(false);
-      setSelectedTemplate("");
-      // 刷新任务和安装状态
-      const [tasks, install] = await Promise.all([
-        api.getServerTasks(selectedServer.serviceName),
-        api.getInstallStatus(selectedServer.serviceName),
-      ]);
-      setServerTasks(tasks?.tasks || []);
-      setInstallStatus(install?.status || null);
-    } catch (error: any) {
-      toast.error(`重装失败: ${error.message}`);
-    } finally {
-      setIsReinstalling(false);
-    }
-  };
+  const selected = servers.find((s) => s.serviceName === selectedName) || null;
+  const activeAcc = accounts?.find((a) => a.id === activeAccount);
 
-  const handleChangeContact = async () => {
-    if (!selectedServer) return;
-    setIsChangingContact(true);
-    try {
-      await api.changeContact(selectedServer.serviceName, {
-        contactAdmin: contactAdmin || undefined,
-        contactTech: contactTech || undefined,
-        contactBilling: contactBilling || undefined,
-      });
-      toast.success("联系人变更请求已发送");
-      setIsContactDialogOpen(false);
-    } catch (error: any) {
-      toast.error(`变更失败: ${error.message}`);
-    } finally {
-      setIsChangingContact(false);
-    }
-  };
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        icon={Terminal}
+        title="服务器控制"
+        description={
+          activeAcc
+            ? `管理 OVH 独立服务器 · 当前账户 ${activeAcc.name} (${activeAcc.zone})`
+            : "管理 OVH 独立服务器"
+        }
+        action={
+          <div className="flex flex-wrap items-center gap-2">
+            {/* 账户切换器:只影响当前 tab,持久化到 localStorage */}
+            <Select value={activeAccount} onValueChange={setActiveAccount}>
+              <SelectTrigger className="w-full sm:w-[180px] min-h-10 touch-manipulation">
+                <SelectValue placeholder="选账户" />
+              </SelectTrigger>
+              <SelectContent>
+                {(accounts || []).map((a) => (
+                  <SelectItem key={a.id} value={a.id}>
+                    {a.name} · {a.zone}
+                    {a.isDefault && <span className="ml-2 text-[10px] text-muted-foreground">(默认)</span>}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="outline" size="icon" onClick={toggle} aria-label={hidden ? "显示 IP / MAC" : "隐藏 IP"}>
+                  {hidden ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{hidden ? "已隐藏敏感信息 · 点击显示" : "隐藏 IP"}</TooltipContent>
+            </Tooltip>
+            <Button variant="outline" onClick={() => q.refetch()} disabled={q.isFetching}>
+              <RefreshCw className={`w-4 h-4 ${q.isFetching ? "animate-spin" : ""}`} />
+              刷新
+            </Button>
+          </div>
+        }
+      />
 
-  const filteredServers = servers.filter((server: ManagedServer) => 
-    server.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    server.serviceName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    server.ip?.includes(searchTerm)
+      {q.isPending ? (
+        <Skeleton className="h-[500px] rounded-2xl" />
+      ) : servers.length === 0 ? (
+        <Card>
+          <EmptyState
+            icon={Server}
+            title="暂无服务器"
+            description="您的 OVH 账户下还没有独立服务器，或 API 没拿到数据"
+          />
+        </Card>
+      ) : (
+        <Card>
+          <CardContent className="p-4 sm:p-6 space-y-4 sm:space-y-5">
+            {/* 服务器切换器 + 当前选中卡概览 */}
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 pb-4 sm:pb-5 border-b border-border">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 min-w-0">
+                <ServerSelector
+                  servers={servers}
+                  selected={selected}
+                  onChange={(name) => setSelectedName(name)}
+                  hidden={hidden}
+                />
+                {selected && (
+                  <Chip tone={selected.state === "ok" ? "success" : "warning"} className="self-start sm:self-auto">
+                    <StatusDot tone={selected.state === "ok" ? "success" : "warning"} pulse={selected.state === "ok"} size="xs" />
+                    {selected.state}
+                  </Chip>
+                )}
+              </div>
+              {selected && (
+                <div className="text-[11px] sm:text-[12px] text-muted-foreground break-all sm:truncate font-mono">
+                  {selected.commercialRange} · {selected.datacenter.toUpperCase()} · {maskSensitive(selected.ip, hidden)}
+                </div>
+              )}
+            </div>
+
+            {/* Tabs */}
+            {selected && <ServerTabs server={selected} />}
+          </CardContent>
+        </Card>
+      )}
+    </div>
   );
+}
 
-  const getStateColor = (state: string) => {
-    switch (state) {
-      case "ok": return "text-primary bg-primary/10";
-      case "error": return "text-destructive bg-destructive/10";
-      case "hacked":
-      case "hackedBlocked": return "text-warning bg-warning/10";
-      default: return "text-muted-foreground bg-muted";
+/**
+ * 顶部服务器选择器：胶囊样式 Select。
+ * - 显示用 alias(有则用之,否则用原 name / service_name)
+ * - 右键单击列表项弹"重命名"小菜单 → 进入 alias 编辑对话框
+ */
+function ServerSelector({
+  servers,
+  selected,
+  onChange,
+  hidden,
+}: {
+  servers: OwnedServer[];
+  selected: OwnedServer | null;
+  onChange: (serviceName: string) => void;
+  hidden: boolean;
+}) {
+  const { data: aliases } = useServerAliases();
+  const [ctxMenu, setCtxMenu] = useState<null | { server: OwnedServer; x: number; y: number }>(null);
+  const [renaming, setRenaming] = useState<null | OwnedServer>(null);
+
+  // 全局点击 / Esc 关闭 context menu
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const handler = () => setCtxMenu(null);
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setCtxMenu(null); };
+    window.addEventListener("click", handler);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("click", handler);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [ctxMenu]);
+
+  const displayName = (s: OwnedServer) => aliasOf(aliases, s.serviceName, s.name);
+
+  return (
+    <>
+    <Select value={selected?.serviceName || ""} onValueChange={onChange}>
+      <SelectTrigger
+        className="rounded-full w-full sm:min-w-[280px] sm:w-auto lg:min-w-[340px] h-10 min-h-10 font-mono text-sm touch-manipulation"
+        // 拦截右键 pointerdown(button=2),不让 Radix Select 打开下拉
+        onPointerDown={(e) => {
+          if (e.button === 2) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+        }}
+        // 右键当前选中那个胶囊 → 设别名(最直观)
+        onContextMenu={(e) => {
+          if (!selected) return;
+          e.preventDefault();
+          e.stopPropagation();
+          setCtxMenu({ server: selected, x: e.clientX, y: e.clientY });
+        }}
+        title="左键打开列表;右键给当前服务器设别名"
+      >
+        <SelectValue placeholder="选择服务器">
+          {selected && (
+            <div className="flex items-center gap-2">
+              <StatusDot tone={selected.state === "ok" ? "success" : "warning"} size="xs" />
+              <span className="font-semibold">{maskSensitive(displayName(selected), hidden)}</span>
+              <span className="text-[11px] text-muted-foreground font-sans ml-1">
+                {selected.commercialRange} · {selected.datacenter.toUpperCase()}
+              </span>
+            </div>
+          )}
+        </SelectValue>
+      </SelectTrigger>
+      <SelectContent className="max-h-[400px]">
+        {servers.map((s) => (
+          <SelectItem
+            key={s.serviceName}
+            value={s.serviceName}
+            className="font-mono"
+          >
+            {/* 内层 div 兜底右键 —— Radix SelectItem 自己的 onContextMenu 偶尔被吞 */}
+            <div
+              className="flex items-center gap-2"
+              onContextMenu={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setCtxMenu({ server: s, x: e.clientX, y: e.clientY });
+              }}
+            >
+              <StatusDot tone={s.state === "ok" ? "success" : "warning"} size="xs" />
+              <span className="font-semibold">{maskSensitive(displayName(s), hidden)}</span>
+              <span className="text-[11px] text-muted-foreground font-sans ml-1">
+                {s.commercialRange} · {s.datacenter.toUpperCase()}
+              </span>
+            </div>
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+
+    {/* 右键菜单:固定定位到鼠标位置,点空白 / Esc 关 */}
+    {ctxMenu && (
+      <div
+        className="fixed z-[200] min-w-[140px] rounded-lg border border-border bg-popover shadow-md py-1 text-sm"
+        style={{ left: ctxMenu.x, top: ctxMenu.y }}
+        onClick={(e) => e.stopPropagation()}
+        onContextMenu={(e) => e.preventDefault()}
+      >
+        <button
+          type="button"
+          className="w-full text-left px-3 py-1.5 hover:bg-muted text-foreground"
+          onClick={() => {
+            setRenaming(ctxMenu.server);
+            setCtxMenu(null);
+          }}
+        >
+          设置别名
+        </button>
+        {aliases?.[ctxMenu.server.serviceName] && (
+          <button
+            type="button"
+            className="w-full text-left px-3 py-1.5 hover:bg-muted text-destructive"
+            onClick={() => {
+              setRenaming(ctxMenu.server);
+              setCtxMenu(null);
+            }}
+          >
+            清除别名…
+          </button>
+        )}
+      </div>
+    )}
+
+    <RenameDialog
+      server={renaming}
+      currentAlias={renaming ? aliases?.[renaming.serviceName] || "" : ""}
+      onClose={() => setRenaming(null)}
+    />
+    </>
+  );
+}
+
+/** 服务器别名编辑对话框。alias 留空 + 保存 = 删除别名,恢复显示原 service_name。 */
+function RenameDialog({
+  server,
+  currentAlias,
+  onClose,
+}: {
+  server: OwnedServer | null;
+  currentAlias: string;
+  onClose: () => void;
+}) {
+  const set = useSetServerAlias();
+  const [value, setValue] = useState(currentAlias);
+  useEffect(() => {
+    setValue(currentAlias);
+  }, [currentAlias, server?.serviceName]);
+
+  if (!server) return null;
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await set.mutateAsync({ serviceName: server.serviceName, alias: value });
+    onClose();
+  };
+
+  return (
+    <Dialog open={!!server} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>设置别名</DialogTitle>
+          <DialogDescription className="font-mono text-[11px]">
+            {server.serviceName}
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={submit} className="space-y-3">
+          <Input
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder="例如:kele(留空清除别名)"
+            autoFocus
+            maxLength={64}
+          />
+          <p className="text-[11px] text-muted-foreground">
+            别名仅在本程序里显示,不会下发到 OVH。
+          </p>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>
+              取消
+            </Button>
+            <Button type="submit" disabled={set.isPending}>
+              {set.isPending ? "保存中…" : value.trim() === "" ? "清除并保存" : "保存"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ServerTabs({ server }: { server: OwnedServer }) {
+  const info = useServerServiceInfo(server.serviceName);
+  const monitoring = useServerMonitoring(server.serviceName);
+  const toggleMon = useToggleMonitoring();
+  const [netSpecsOpen, setNetSpecsOpen] = useState(false);
+  const [renewalOpen, setRenewalOpen] = useState(false);
+  const [reinstallOpen, setReinstallOpen] = useState(false);
+  const [engagementOpen, setEngagementOpen] = useState(false);
+
+  const handleToggleMonitoring = async () => {
+    try {
+      await toggleMon.mutateAsync({ serviceName: server.serviceName, enabled: !monitoring.data });
+      toast.success(monitoring.data ? "OVH 监控已关闭" : "OVH 监控已开启");
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error || "操作失败");
     }
   };
 
   return (
     <>
-      <Helmet>
-        <title>服务器控制 | OVH Sniper</title>
-        <meta name="description" content="管理和控制已购服务器" />
-      </Helmet>
-      
-      <AppLayout>
-        <div className="space-y-6">
-          {/* Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-bold text-primary flex items-center gap-2">
-                <span className="text-muted-foreground">&gt;</span>
-                服务器控制
-                <span className="cursor-blink">_</span>
-              </h1>
-              <p className="text-sm text-muted-foreground mt-1">
-                管理 {servers.length} 台已购服务器
-              </p>
+      <Tabs defaultValue="overview">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <TabsList className="grid grid-cols-4 sm:flex h-auto gap-1 p-1">
+            <TabsTrigger value="overview" className="text-[12px] sm:text-sm px-2 sm:px-3">概览</TabsTrigger>
+            <TabsTrigger value="power" className="text-[12px] sm:text-sm px-2 sm:px-3">电源</TabsTrigger>
+            <TabsTrigger value="maintenance" className="text-[12px] sm:text-sm px-2 sm:px-3">维护</TabsTrigger>
+            <TabsTrigger value="advanced" className="text-[12px] sm:text-sm px-2 sm:px-3">高级</TabsTrigger>
+          </TabsList>
+
+          {/* 服务信息胶囊条 + 全局开关 */}
+          {info.isPending ? (
+            <div className="flex flex-wrap gap-2">
+              <Skeleton className="h-7 w-28 rounded-full" />
+              <Skeleton className="h-7 w-28 rounded-full" />
+              <Skeleton className="h-7 w-20 rounded-full" />
+              <Skeleton className="h-7 w-32 rounded-full" />
             </div>
-            
-            <Button variant="terminal" onClick={() => refetch()} disabled={isLoading}>
-              <RefreshCw className={cn("h-4 w-4 mr-2", isLoading && "animate-spin")} />
-              刷新列表
-            </Button>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Server List */}
-            <div className="lg:col-span-1 space-y-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input 
-                  placeholder="搜索服务器..." 
-                  className="pl-9"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-              </div>
-
-              <TerminalCard title="服务器列表" icon={<Server className="h-4 w-4" />}>
-                {isLoading ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {filteredServers.map((server: ManagedServer) => (
-                      <div
-                        key={server.serviceName}
-                        className={cn(
-                          "p-3 rounded-sm border cursor-pointer transition-all",
-                          selectedServer?.serviceName === server.serviceName
-                            ? "border-primary bg-primary/5"
-                            : "border-border hover:border-primary/30"
-                        )}
-                        onClick={() => setSelectedServer(server)}
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="font-medium">{server.name || server.serviceName.split('.')[0]}</span>
-                          <span className={cn(
-                            "px-2 py-0.5 rounded-sm text-xs uppercase",
-                            getStateColor(server.state)
-                          )}>
-                            {server.state}
-                          </span>
-                        </div>
-                        <div className="text-xs text-muted-foreground space-y-1">
-                          <p className="font-mono">{server.ip}</p>
-                          <p>{server.datacenter?.toUpperCase()} | {server.os}</p>
-                        </div>
-                      </div>
-                    ))}
-
-                    {filteredServers.length === 0 && !isLoading && (
-                      <p className="text-center py-8 text-muted-foreground">
-                        {servers.length === 0 ? "暂无已购服务器" : "未找到服务器"}
-                      </p>
-                    )}
-                  </div>
-                )}
-              </TerminalCard>
-            </div>
-
-            {/* Server Details */}
-            <div className="lg:col-span-2">
-              {selectedServer ? (
-                <TerminalCard
-                  title={selectedServer.name || selectedServer.serviceName}
-                  icon={<Cpu className="h-4 w-4" />}
-                  headerAction={
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" disabled={isRebooting}>
-                          {isRebooting ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <MoreVertical className="h-4 w-4" />
-                          )}
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleReboot('soft')}>
-                          <Power className="h-4 w-4 mr-2" />
-                          软重启
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleReboot('hardware')}>
-                          <Power className="h-4 w-4 mr-2 text-warning" />
-                          硬重启
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={handleOpenReinstall}>
-                          <HardDrive className="h-4 w-4 mr-2" />
-                          重装系统
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => setIsContactDialogOpen(true)}>
-                          <Users className="h-4 w-4 mr-2" />
-                          变更联系人
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={handleOpenIpmi}>
-                          <Terminal className="h-4 w-4 mr-2" />
-                          IPMI 控制台
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={handleOpenBackupFtp}>
-                          <Database className="h-4 w-4 mr-2" />
-                          备份 FTP
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={handleOpenFirewall}>
-                          <Shield className="h-4 w-4 mr-2" />
-                          防火墙管理
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={handleOpenBurst}>
-                          <Zap className="h-4 w-4 mr-2" />
-                          Burst 带宽
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={() => {
-                          if (serverIps.length > 0) {
-                            setMoveIpAddress(serverIps[0]?.ip || selectedServer?.ip || "");
-                          }
-                          setIsIpMoveDialogOpen(true);
-                        }}>
-                          <Move className="h-4 w-4 mr-2" />
-                          IP 迁移
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem 
-                          onClick={() => setIsTerminateDialogOpen(true)}
-                          className="text-destructive focus:text-destructive"
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          终止服务
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  }
-                >
-                  {isLoadingDetails ? (
-                    <div className="flex items-center justify-center py-12">
-                      <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                    </div>
-                  ) : (
-                    <Tabs defaultValue="overview" className="space-y-4">
-                      <TabsList className="bg-muted/50 border border-border">
-                        <TabsTrigger value="overview">概览</TabsTrigger>
-                        <TabsTrigger value="hardware">硬件</TabsTrigger>
-                        <TabsTrigger value="network">网络</TabsTrigger>
-                        <TabsTrigger value="tasks">任务</TabsTrigger>
-                        <TabsTrigger value="maintenance">维护</TabsTrigger>
-                      </TabsList>
-
-                      <TabsContent value="overview" className="space-y-4">
-                        {/* Installation Progress */}
-                        {installStatus && !installStatus.noInstallation && (
-                          <div className={cn(
-                            "p-4 border rounded-sm",
-                            installStatus.hasError ? "border-destructive/30 bg-destructive/5" :
-                            installStatus.allDone ? "border-primary/30 bg-primary/5" :
-                            "border-warning/30 bg-warning/5"
-                          )}>
-                            <div className="flex items-center justify-between mb-2">
-                              <h3 className="text-sm font-medium flex items-center gap-2">
-                                <HardDrive className="h-4 w-4" />
-                                系统安装进度
-                              </h3>
-                              {installStatus.allDone ? (
-                                <CheckCircle2 className="h-4 w-4 text-primary" />
-                              ) : installStatus.hasError ? (
-                                <XCircle className="h-4 w-4 text-destructive" />
-                              ) : (
-                                <Loader2 className="h-4 w-4 animate-spin text-warning" />
-                              )}
-                            </div>
-                            <Progress value={installStatus.progressPercentage || 0} className="h-2 mb-2" />
-                            <div className="flex justify-between text-xs text-muted-foreground">
-                              <span>{installStatus.completedSteps}/{installStatus.totalSteps} 步骤</span>
-                              <span>{installStatus.progressPercentage}%</span>
-                            </div>
-                            {installStatus.steps && (
-                              <div className="mt-3 space-y-1 max-h-32 overflow-y-auto">
-                                {installStatus.steps.map((step: any, i: number) => (
-                                  <div key={i} className="flex items-center gap-2 text-xs">
-                                    {step.status === "done" ? (
-                                      <CheckCircle2 className="h-3 w-3 text-primary" />
-                                    ) : step.status === "error" ? (
-                                      <XCircle className="h-3 w-3 text-destructive" />
-                                    ) : (
-                                      <Clock className="h-3 w-3 text-muted-foreground" />
-                                    )}
-                                    <span className={step.status === "error" ? "text-destructive" : ""}>
-                                      {step.comment}
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Server Info Grid */}
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                          <div className="p-3 bg-muted/30 rounded-sm">
-                            <p className="text-xs text-muted-foreground mb-1">状态</p>
-                            <StatusBadge status={selectedServer.state === "ok" ? "online" : "offline"} />
-                          </div>
-                          <div className="p-3 bg-muted/30 rounded-sm">
-                            <p className="text-xs text-muted-foreground mb-1">机房</p>
-                            <p className="font-mono uppercase">{selectedServer.datacenter}</p>
-                          </div>
-                          <div className="p-3 bg-muted/30 rounded-sm">
-                            <p className="text-xs text-muted-foreground mb-1">IP 地址</p>
-                            <p className="font-mono">{selectedServer.ip}</p>
-                          </div>
-                          <div className="p-3 bg-muted/30 rounded-sm">
-                            <p className="text-xs text-muted-foreground mb-1">操作系统</p>
-                            <p className="truncate">{selectedServer.os}</p>
-                          </div>
-                        </div>
-
-                        {/* Service Info */}
-                        <div className="p-4 border border-border rounded-sm">
-                          <h3 className="text-sm font-medium mb-3">服务信息</h3>
-                          <div className="grid grid-cols-2 gap-4 text-sm">
-                            <div>
-                              <p className="text-muted-foreground">服务名称</p>
-                              <p className="font-mono text-xs break-all">{selectedServer.serviceName}</p>
-                            </div>
-                            <div>
-                              <p className="text-muted-foreground">自动续费</p>
-                              <p className={serviceInfo?.renewalType ? "text-primary" : "text-destructive"}>
-                                {serviceInfo?.renewalType ? "已开启" : "已关闭"}
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-muted-foreground">监控状态</p>
-                              <p className={selectedServer.monitoring ? "text-primary" : "text-muted-foreground"}>
-                                {selectedServer.monitoring ? "启用" : "禁用"}
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-muted-foreground">服务状态</p>
-                              <p>{serviceInfo?.status || selectedServer.status}</p>
-                            </div>
-                            {serviceInfo?.expiration && (
-                              <div>
-                                <p className="text-muted-foreground flex items-center gap-1">
-                                  <Calendar className="h-3 w-3" /> 到期时间
-                                </p>
-                                <p>{new Date(serviceInfo.expiration).toLocaleDateString("zh-CN")}</p>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Quick Actions */}
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                          <Button 
-                            variant="outline" 
-                            className="h-auto py-4 flex-col gap-2"
-                            onClick={() => handleReboot('soft')}
-                            disabled={isRebooting}
-                          >
-                            <Power className="h-5 w-5 text-warning" />
-                            <span className="text-xs">重启</span>
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            className="h-auto py-4 flex-col gap-2"
-                            onClick={handleOpenReinstall}
-                          >
-                            <HardDrive className="h-5 w-5 text-accent" />
-                            <span className="text-xs">重装</span>
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            className="h-auto py-4 flex-col gap-2"
-                            onClick={handleOpenIpmi}
-                          >
-                            <Terminal className="h-5 w-5 text-primary" />
-                            <span className="text-xs">控制台</span>
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            className="h-auto py-4 flex-col gap-2"
-                            onClick={() => setIsContactDialogOpen(true)}
-                          >
-                            <Users className="h-5 w-5" />
-                            <span className="text-xs">联系人</span>
-                          </Button>
-                        </div>
-                        
-                        {/* Advanced Actions */}
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                          <Button 
-                            variant="outline" 
-                            className="h-auto py-4 flex-col gap-2"
-                            onClick={handleOpenBackupFtp}
-                          >
-                            <Database className="h-5 w-5 text-accent" />
-                            <span className="text-xs">备份FTP</span>
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            className="h-auto py-4 flex-col gap-2"
-                            onClick={handleOpenFirewall}
-                          >
-                            <Shield className="h-5 w-5 text-warning" />
-                            <span className="text-xs">防火墙</span>
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            className="h-auto py-4 flex-col gap-2"
-                            onClick={handleOpenBurst}
-                          >
-                            <Zap className="h-5 w-5 text-primary" />
-                            <span className="text-xs">Burst</span>
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            className="h-auto py-4 flex-col gap-2"
-                            onClick={() => {
-                              if (serverIps.length > 0) {
-                                setMoveIpAddress(serverIps[0]?.ip || selectedServer?.ip || "");
-                              }
-                              setIsIpMoveDialogOpen(true);
-                            }}
-                          >
-                            <Move className="h-5 w-5" />
-                            <span className="text-xs">IP迁移</span>
-                          </Button>
-                        </div>
-                      </TabsContent>
-
-                      <TabsContent value="hardware">
-                        <div className="space-y-4">
-                          {serverHardware ? (
-                            <>
-                              <div className="p-4 border border-border rounded-sm">
-                                <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
-                                  <Cpu className="h-4 w-4 text-accent" />
-                                  处理器
-                                </h3>
-                                <p className="text-muted-foreground">{serverHardware.processorName || serverHardware.processor || '未知'}</p>
-                              </div>
-                              <div className="p-4 border border-border rounded-sm">
-                                <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
-                                  <Monitor className="h-4 w-4 text-accent" />
-                                  内存
-                                </h3>
-                                <p className="text-muted-foreground">{serverHardware.memorySize || '未知'}</p>
-                              </div>
-                              <div className="p-4 border border-border rounded-sm">
-                                <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
-                                  <HardDrive className="h-4 w-4 text-accent" />
-                                  存储
-                                </h3>
-                                <p className="text-muted-foreground">
-                                  {serverHardware.diskGroups?.map((d: any) => d.description).join(', ') || '未知'}
-                                </p>
-                              </div>
-                            </>
-                          ) : (
-                            <p className="text-center py-8 text-muted-foreground">暂无硬件信息</p>
-                          )}
-                        </div>
-                      </TabsContent>
-
-                      <TabsContent value="network">
-                        <div className="space-y-4">
-                          <div className="p-4 border border-border rounded-sm">
-                            <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
-                              <Network className="h-4 w-4 text-accent" />
-                              IP 地址
-                            </h3>
-                            {serverIps.length > 0 ? (
-                              <div className="space-y-2 text-sm">
-                                {serverIps.map((ip: any, index: number) => (
-                                  <div key={index} className="flex justify-between">
-                                    <span className="font-mono">{ip.ip || ip}</span>
-                                    <span className="text-muted-foreground">{ip.type || 'IPv4'}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <p className="text-muted-foreground font-mono">{selectedServer.ip}</p>
-                            )}
-                          </div>
-                        </div>
-                      </TabsContent>
-
-                      <TabsContent value="tasks">
-                        {serverTasks.length > 0 ? (
-                          <div className="space-y-2">
-                            {serverTasks.map((task: any, index: number) => (
-                              <div key={index} className="p-3 border border-border rounded-sm">
-                                <div className="flex items-center justify-between mb-2">
-                                  <span className="font-medium">{task.function || task.comment}</span>
-                                  <span className={cn(
-                                    "px-2 py-0.5 rounded-sm text-xs",
-                                    task.status === "done" ? "bg-primary/20 text-primary" :
-                                    task.status === "error" ? "bg-destructive/20 text-destructive" :
-                                    "bg-warning/20 text-warning"
-                                  )}>
-                                    {task.status}
-                                  </span>
-                                </div>
-                                <div className="text-xs text-muted-foreground flex items-center gap-2">
-                                  <Clock className="h-3 w-3" />
-                                  {new Date(task.startDate || task.todoDate).toLocaleString("zh-CN")}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="text-center py-8 text-muted-foreground">
-                            <Activity className="h-12 w-12 mx-auto mb-4 opacity-30" />
-                            <p>暂无进行中的任务</p>
-                          </div>
-                        )}
-                      </TabsContent>
-
-                      <TabsContent value="maintenance">
-                        <div className="space-y-6">
-                          {/* Planned Interventions */}
-                          <div className="space-y-4">
-                            <h3 className="text-sm font-medium flex items-center gap-2">
-                              <AlertTriangle className="h-4 w-4 text-warning" />
-                              计划维护
-                            </h3>
-                            {plannedInterventions.length > 0 ? (
-                              <div className="space-y-2">
-                                {plannedInterventions.map((intervention: any, index: number) => (
-                                  <div key={index} className="p-4 border border-warning/30 bg-warning/5 rounded-sm">
-                                    <div className="flex items-start gap-3">
-                                      <AlertTriangle className="h-5 w-5 text-warning mt-0.5" />
-                                      <div className="flex-1">
-                                        <p className="font-medium">{intervention.type || '计划维护'}</p>
-                                        <p className="text-sm text-muted-foreground mt-1">
-                                          {intervention.comment || intervention.description}
-                                        </p>
-                                        {intervention.date && (
-                                          <p className="text-xs text-warning mt-2 flex items-center gap-1">
-                                            <Calendar className="h-3 w-3" />
-                                            {new Date(intervention.date).toLocaleString("zh-CN")}
-                                          </p>
-                                        )}
-                                      </div>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <div className="text-center py-4 text-muted-foreground border border-border rounded-sm">
-                                <CheckCircle2 className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                                <p className="text-sm">暂无计划维护</p>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Historical Interventions */}
-                          <div className="space-y-4">
-                            <h3 className="text-sm font-medium flex items-center gap-2">
-                              <Wrench className="h-4 w-4" />
-                              历史干预记录
-                            </h3>
-                            {historicalInterventions.length > 0 ? (
-                              <div className="space-y-2 max-h-64 overflow-y-auto">
-                                {historicalInterventions.map((intervention: any, index: number) => (
-                                  <div key={index} className="p-3 border border-border rounded-sm">
-                                    <div className="flex items-start justify-between gap-3">
-                                      <div className="flex-1">
-                                        <p className="font-medium text-sm">{intervention.type || '干预'}</p>
-                                        {intervention.description && (
-                                          <p className="text-xs text-muted-foreground mt-1">
-                                            {intervention.description}
-                                          </p>
-                                        )}
-                                      </div>
-                                      <span className={cn(
-                                        "px-2 py-0.5 rounded-sm text-xs",
-                                        intervention.status === "done" ? "bg-primary/20 text-primary" :
-                                        intervention.status === "error" ? "bg-destructive/20 text-destructive" :
-                                        "bg-muted text-muted-foreground"
-                                      )}>
-                                        {intervention.status || 'N/A'}
-                                      </span>
-                                    </div>
-                                    <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
-                                      {intervention.date && (
-                                        <span className="flex items-center gap-1">
-                                          <Calendar className="h-3 w-3" />
-                                          {new Date(intervention.date).toLocaleString("zh-CN")}
-                                        </span>
-                                      )}
-                                      {intervention.interventionId && (
-                                        <span className="font-mono">#{intervention.interventionId}</span>
-                                      )}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <div className="text-center py-4 text-muted-foreground border border-border rounded-sm">
-                                <Wrench className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                                <p className="text-sm">暂无历史干预记录</p>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </TabsContent>
-                    </Tabs>
-                  )}
-                </TerminalCard>
-              ) : (
-                <div className="flex items-center justify-center h-64 border border-border rounded-sm text-muted-foreground">
-                  <div className="text-center">
-                    <Server className="h-12 w-12 mx-auto mb-4 opacity-30" />
-                    <p>选择一台服务器查看详情</p>
-                  </div>
-                </div>
+          ) : (
+            <div className="flex flex-wrap gap-2 items-center">
+              {info.data && (
+                <>
+                  <InfoPill
+                    icon={<CalendarClock className="w-3.5 h-3.5" />}
+                    label="到期"
+                    value={info.data.expiration ? new Date(info.data.expiration).toLocaleDateString("zh-CN") : "—"}
+                  />
+                  <InfoPill
+                    icon={<CalendarPlus className="w-3.5 h-3.5" />}
+                    label="开通"
+                    value={info.data.creation ? new Date(info.data.creation).toLocaleDateString("zh-CN") : "—"}
+                  />
+                  <InfoPill
+                    icon={<Repeat className="w-3.5 h-3.5" />}
+                    label="续费"
+                    value={formatRenewal(info.data)}
+                    onClick={() => setRenewalOpen(true)}
+                  />
+                  <InfoPill
+                    icon={<Terminal className="w-3.5 h-3.5" />}
+                    label="OS"
+                    value={server.os || "—"}
+                    onClick={() => setReinstallOpen(true)}
+                  />
+                </>
               )}
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 rounded-full"
+                    onClick={handleToggleMonitoring}
+                    disabled={toggleMon.isPending}
+                  >
+                    <Activity className={`w-3.5 h-3.5 mr-1 ${monitoring.data ? "text-success" : "text-muted-foreground"}`} />
+                    {monitoring.data ? "监控 已开" : "监控 已关"}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>OVH 自动监控（异常会邮件通知）</TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-7 rounded-full" onClick={() => setNetSpecsOpen(true)}>
+                    <Network className="w-3.5 h-3.5 mr-1" />
+                    网络规格
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>带宽四档 + IPv4 / IPv6 路由</TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-7 rounded-full" onClick={() => setEngagementOpen(true)}>
+                    <CalendarRange className="w-3.5 h-3.5 mr-1" />
+                    合同期
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>切换更长承诺期享受折扣 / 改到期策略</TooltipContent>
+              </Tooltip>
             </div>
-          </div>
+          )}
         </div>
-      </AppLayout>
 
-      {/* Reinstall Dialog */}
-      <Dialog open={isReinstallDialogOpen} onOpenChange={setIsReinstallDialogOpen}>
-        <DialogContent className="terminal-card border-primary/30">
-          <DialogHeader>
-            <DialogTitle className="text-primary flex items-center gap-2">
-              <HardDrive className="h-5 w-5" />
-              重装系统
-            </DialogTitle>
-            <DialogDescription>
-              选择系统模板进行重装，此操作将清除所有数据
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4 py-4">
-            <div className="p-3 bg-destructive/10 border border-destructive/30 rounded-sm">
-              <p className="text-sm text-destructive flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4" />
-                警告：重装系统将删除服务器上的所有数据！
-              </p>
-            </div>
-            
-            <div className="space-y-2">
-              <Label>系统模板</Label>
-              {isLoadingTemplates ? (
-                <div className="flex items-center justify-center py-4">
-                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                </div>
-              ) : (
-                <Select value={selectedTemplate} onValueChange={setSelectedTemplate}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="选择系统模板" />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-64">
-                    {serverTemplates.map((template: any) => (
-                      <SelectItem key={template.name} value={template.name}>
-                        <div className="flex flex-col">
-                          <span>{template.name}</span>
-                          {template.description && (
-                            <span className="text-xs text-muted-foreground">{template.description}</span>
-                          )}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            </div>
-          </div>
-          
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">取消</Button>
-            </DialogClose>
-            <Button 
-              variant="destructive" 
-              onClick={handleReinstall} 
-              disabled={!selectedTemplate || isReinstalling}
-            >
-              {isReinstalling ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <HardDrive className="h-4 w-4 mr-2" />}
-              确认重装
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        <TabsContent value="overview">
+          <OverviewTab server={server} />
+        </TabsContent>
+        <TabsContent value="power">
+          <PowerTab server={server} />
+        </TabsContent>
+        <TabsContent value="maintenance">
+          <MaintenanceTab server={server} />
+        </TabsContent>
+        <TabsContent value="advanced">
+          <AdvancedTab server={server} />
+        </TabsContent>
+      </Tabs>
 
-      {/* Contact Change Dialog */}
-      <Dialog open={isContactDialogOpen} onOpenChange={setIsContactDialogOpen}>
-        <DialogContent className="terminal-card border-primary/30">
-          <DialogHeader>
-            <DialogTitle className="text-primary flex items-center gap-2">
-              <Users className="h-5 w-5" />
-              变更联系人
-            </DialogTitle>
-            <DialogDescription>
-              修改服务器的管理员、技术和账单联系人
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>管理员联系人 (NIC Handle)</Label>
-              <Input 
-                value={contactAdmin}
-                onChange={(e) => setContactAdmin(e.target.value)}
-                placeholder="例如: xx12345-ovh"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>技术联系人 (NIC Handle)</Label>
-              <Input 
-                value={contactTech}
-                onChange={(e) => setContactTech(e.target.value)}
-                placeholder="例如: xx12345-ovh"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>账单联系人 (NIC Handle)</Label>
-              <Input 
-                value={contactBilling}
-                onChange={(e) => setContactBilling(e.target.value)}
-                placeholder="例如: xx12345-ovh"
-              />
-            </div>
-          </div>
-          
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">取消</Button>
-            </DialogClose>
-            <Button onClick={handleChangeContact} disabled={isChangingContact}>
-              {isChangingContact ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Users className="h-4 w-4 mr-2" />}
-              提交变更
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <NetworkSpecsDialog
+        serviceName={server.serviceName}
+        open={netSpecsOpen}
+        onOpenChange={setNetSpecsOpen}
+      />
 
-      {/* IPMI Dialog */}
-      <Dialog open={isIpmiDialogOpen} onOpenChange={setIsIpmiDialogOpen}>
-        <DialogContent className="terminal-card border-primary/30">
-          <DialogHeader>
-            <DialogTitle className="text-primary flex items-center gap-2">
-              <Terminal className="h-5 w-5" />
-              IPMI 控制台
-            </DialogTitle>
-            <DialogDescription>
-              远程管理服务器的KVM和BIOS访问
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4 py-4">
-            {isLoadingIpmi ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-6 w-6 animate-spin text-primary" />
-              </div>
-            ) : ipmiInfo ? (
-              <>
-                <div className="space-y-3">
-                  <div className="p-3 bg-muted/30 rounded-sm">
-                    <p className="text-xs text-muted-foreground mb-1">IP 地址</p>
-                    <p className="font-mono flex items-center justify-between">
-                      {ipmiInfo.ip}
-                      <Button variant="ghost" size="sm" onClick={() => {
-                        navigator.clipboard.writeText(ipmiInfo.ip);
-                        toast.success("已复制");
-                      }}>
-                        <Copy className="h-3 w-3" />
-                      </Button>
-                    </p>
-                  </div>
-                  <div className="p-3 bg-muted/30 rounded-sm">
-                    <p className="text-xs text-muted-foreground mb-1">用户名</p>
-                    <p className="font-mono flex items-center justify-between">
-                      {ipmiInfo.login}
-                      <Button variant="ghost" size="sm" onClick={() => {
-                        navigator.clipboard.writeText(ipmiInfo.login);
-                        toast.success("已复制");
-                      }}>
-                        <Copy className="h-3 w-3" />
-                      </Button>
-                    </p>
-                  </div>
-                  <div className="p-3 bg-muted/30 rounded-sm">
-                    <p className="text-xs text-muted-foreground mb-1">密码</p>
-                    <p className="font-mono flex items-center justify-between">
-                      {ipmiInfo.password}
-                      <Button variant="ghost" size="sm" onClick={() => {
-                        navigator.clipboard.writeText(ipmiInfo.password);
-                        toast.success("已复制");
-                      }}>
-                        <Copy className="h-3 w-3" />
-                      </Button>
-                    </p>
-                  </div>
-                  {ipmiInfo.expires && (
-                    <p className="text-xs text-muted-foreground text-center">
-                      有效期至: {new Date(ipmiInfo.expires).toLocaleString("zh-CN")}
-                    </p>
-                  )}
-                </div>
-                <div className="p-3 bg-warning/10 border border-warning/30 rounded-sm">
-                  <p className="text-xs text-warning">
-                    ⚠️ IPMI凭证每次请求都会重新生成，请及时使用
-                  </p>
-                </div>
-              </>
-            ) : (
-              <div className="text-center py-8 text-muted-foreground">
-                <Terminal className="h-12 w-12 mx-auto mb-4 opacity-30" />
-                <p>IPMI信息不可用</p>
-                <p className="text-xs mt-2">此服务器可能不支持IPMI</p>
-              </div>
-            )}
-          </div>
-          
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">关闭</Button>
-            </DialogClose>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {info.data && (
+        <RenewalDialog
+          serviceName={server.serviceName}
+          info={info.data}
+          open={renewalOpen}
+          onOpenChange={setRenewalOpen}
+        />
+      )}
 
-      {/* Backup FTP Dialog */}
-      <Dialog open={isBackupFtpDialogOpen} onOpenChange={setIsBackupFtpDialogOpen}>
-        <DialogContent className="terminal-card border-primary/30">
-          <DialogHeader>
-            <DialogTitle className="text-primary flex items-center gap-2">
-              <Database className="h-5 w-5" />
-              备份 FTP
-            </DialogTitle>
-            <DialogDescription>
-              管理服务器备份存储空间
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4 py-4">
-            {isLoadingBackupFtp ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-6 w-6 animate-spin text-primary" />
-              </div>
-            ) : backupFtpInfo ? (
-              <>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-3 bg-muted/30 rounded-sm">
-                    <p className="text-xs text-muted-foreground mb-1">FTP名称</p>
-                    <p className="font-mono text-sm">{backupFtpInfo.ftpBackupName}</p>
-                  </div>
-                  <div className="p-3 bg-muted/30 rounded-sm">
-                    <p className="text-xs text-muted-foreground mb-1">类型</p>
-                    <p className="text-sm">{backupFtpInfo.type}</p>
-                  </div>
-                  <div className="p-3 bg-muted/30 rounded-sm">
-                    <p className="text-xs text-muted-foreground mb-1">配额</p>
-                    <p className="text-sm">{backupFtpInfo.quota} GB</p>
-                  </div>
-                  <div className="p-3 bg-muted/30 rounded-sm">
-                    <p className="text-xs text-muted-foreground mb-1">已用</p>
-                    <p className="text-sm">{backupFtpInfo.usage || 0} GB</p>
-                  </div>
-                </div>
-                {backupFtpPassword && (
-                  <div className="p-3 bg-primary/10 border border-primary/30 rounded-sm">
-                    <p className="text-xs text-muted-foreground mb-1">新密码</p>
-                    <p className="font-mono flex items-center justify-between">
-                      {backupFtpPassword}
-                      <Button variant="ghost" size="sm" onClick={() => {
-                        navigator.clipboard.writeText(backupFtpPassword);
-                        toast.success("已复制");
-                      }}>
-                        <Copy className="h-3 w-3" />
-                      </Button>
-                    </p>
-                  </div>
-                )}
-                <Button variant="outline" className="w-full" onClick={handleGetBackupFtpPassword}>
-                  <Key className="h-4 w-4 mr-2" />
-                  重置密码
-                </Button>
-              </>
-            ) : (
-              <div className="text-center py-8">
-                <Database className="h-12 w-12 mx-auto mb-4 opacity-30 text-muted-foreground" />
-                <p className="text-muted-foreground mb-4">备份FTP未激活</p>
-                <Button onClick={handleActivateBackupFtp} disabled={isActivatingBackupFtp}>
-                  {isActivatingBackupFtp && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                  激活备份FTP
-                </Button>
-              </div>
-            )}
-          </div>
-          
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">关闭</Button>
-            </DialogClose>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ReinstallDialog
+        serviceName={server.serviceName}
+        open={reinstallOpen}
+        onOpenChange={setReinstallOpen}
+      />
 
-      {/* Firewall Dialog */}
-      <Dialog open={isFirewallDialogOpen} onOpenChange={setIsFirewallDialogOpen}>
-        <DialogContent className="terminal-card border-primary/30">
-          <DialogHeader>
-            <DialogTitle className="text-primary flex items-center gap-2">
-              <Shield className="h-5 w-5" />
-              防火墙管理
-            </DialogTitle>
-            <DialogDescription>
-              管理服务器OVH防火墙
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4 py-4">
-            {isLoadingFirewall ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-6 w-6 animate-spin text-primary" />
-              </div>
-            ) : firewallInfo ? (
-              <>
-                <div className="flex items-center justify-between p-4 bg-muted/30 rounded-sm">
-                  <div>
-                    <p className="font-medium">防火墙状态</p>
-                    <p className={cn(
-                      "text-sm",
-                      firewallInfo.enabled ? "text-primary" : "text-muted-foreground"
-                    )}>
-                      {firewallInfo.enabled ? "已启用" : "已禁用"}
-                    </p>
-                  </div>
-                  <Switch 
-                    checked={firewallInfo.enabled} 
-                    onCheckedChange={handleToggleFirewall}
-                    disabled={isTogglingFirewall}
-                  />
-                </div>
-                {firewallInfo.mode && (
-                  <div className="p-3 bg-muted/30 rounded-sm">
-                    <p className="text-xs text-muted-foreground mb-1">模式</p>
-                    <p className="text-sm">{firewallInfo.mode}</p>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="text-center py-8 text-muted-foreground">
-                <Shield className="h-12 w-12 mx-auto mb-4 opacity-30" />
-                <p>防火墙信息不可用</p>
-              </div>
-            )}
-          </div>
-          
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">关闭</Button>
-            </DialogClose>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Burst Dialog */}
-      <Dialog open={isBurstDialogOpen} onOpenChange={setIsBurstDialogOpen}>
-        <DialogContent className="terminal-card border-primary/30">
-          <DialogHeader>
-            <DialogTitle className="text-primary flex items-center gap-2">
-              <Zap className="h-5 w-5" />
-              Burst 带宽
-            </DialogTitle>
-            <DialogDescription>
-              管理突发带宽功能
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4 py-4">
-            {isLoadingBurst ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-6 w-6 animate-spin text-primary" />
-              </div>
-            ) : burstInfo ? (
-              <>
-                <div className="flex items-center justify-between p-4 bg-muted/30 rounded-sm">
-                  <div>
-                    <p className="font-medium">Burst 状态</p>
-                    <p className={cn(
-                      "text-sm",
-                      burstInfo.enabled ? "text-primary" : "text-muted-foreground"
-                    )}>
-                      {burstInfo.enabled ? "已启用" : "已禁用"}
-                    </p>
-                  </div>
-                  <Switch 
-                    checked={burstInfo.enabled} 
-                    onCheckedChange={handleToggleBurst}
-                    disabled={isTogglingBurst}
-                  />
-                </div>
-                {burstInfo.capacity && (
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="p-3 bg-muted/30 rounded-sm">
-                      <p className="text-xs text-muted-foreground mb-1">容量</p>
-                      <p className="text-sm">{burstInfo.capacity} Gbps</p>
-                    </div>
-                    <div className="p-3 bg-muted/30 rounded-sm">
-                      <p className="text-xs text-muted-foreground mb-1">已用</p>
-                      <p className="text-sm">{burstInfo.used || 0} Gbps</p>
-                    </div>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="text-center py-8 text-muted-foreground">
-                <Zap className="h-12 w-12 mx-auto mb-4 opacity-30" />
-                <p>Burst带宽信息不可用</p>
-                <p className="text-xs mt-2">此服务器可能不支持Burst</p>
-              </div>
-            )}
-          </div>
-          
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">关闭</Button>
-            </DialogClose>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* IP Move Dialog */}
-      <Dialog open={isIpMoveDialogOpen} onOpenChange={setIsIpMoveDialogOpen}>
-        <DialogContent className="terminal-card border-primary/30">
-          <DialogHeader>
-            <DialogTitle className="text-primary flex items-center gap-2">
-              <Move className="h-5 w-5" />
-              IP 迁移
-            </DialogTitle>
-            <DialogDescription>
-              将IP地址迁移到另一台服务器
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4 py-4">
-            <div className="p-3 bg-warning/10 border border-warning/30 rounded-sm">
-              <p className="text-sm text-warning">
-                ⚠️ IP迁移会导致短暂的网络中断
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label>IP 地址</Label>
-              <Input 
-                value={moveIpAddress}
-                onChange={(e) => setMoveIpAddress(e.target.value)}
-                placeholder="要迁移的IP地址"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>目标服务器 (服务名称)</Label>
-              <Input 
-                value={moveTargetService}
-                onChange={(e) => setMoveTargetService(e.target.value)}
-                placeholder="例如: nsxxxxxxx.ip-xx-xx-xx.eu"
-              />
-            </div>
-          </div>
-          
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">取消</Button>
-            </DialogClose>
-            <Button 
-              onClick={handleMoveIp} 
-              disabled={!moveIpAddress || !moveTargetService || isMovingIp}
-            >
-              {isMovingIp && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              确认迁移
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Terminate Dialog */}
-      <Dialog open={isTerminateDialogOpen} onOpenChange={setIsTerminateDialogOpen}>
-        <DialogContent className="terminal-card border-destructive/30">
-          <DialogHeader>
-            <DialogTitle className="text-destructive flex items-center gap-2">
-              <Trash2 className="h-5 w-5" />
-              终止服务
-            </DialogTitle>
-            <DialogDescription>
-              请求终止此服务器服务（不可恢复）
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4 py-4">
-            <div className="p-4 bg-destructive/10 border border-destructive/30 rounded-sm">
-              <p className="text-sm text-destructive font-medium mb-2">
-                ⚠️ 警告：此操作不可恢复！
-              </p>
-              <p className="text-xs text-muted-foreground">
-                终止服务后，服务器上的所有数据将被永久删除。
-                您将收到一封确认邮件，需要点击邮件中的链接确认终止。
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label>请输入服务名称确认</Label>
-              <Input 
-                value={terminateConfirmText}
-                onChange={(e) => setTerminateConfirmText(e.target.value)}
-                placeholder={selectedServer?.serviceName || ""}
-                className="font-mono"
-              />
-              <p className="text-xs text-muted-foreground">
-                请输入: <code className="bg-muted px-1 rounded">{selectedServer?.serviceName}</code>
-              </p>
-            </div>
-          </div>
-          
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">取消</Button>
-            </DialogClose>
-            <Button 
-              variant="destructive"
-              onClick={handleTerminate} 
-              disabled={terminateConfirmText !== selectedServer?.serviceName || isTerminating}
-            >
-              {isTerminating && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              确认终止
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <EngagementDialog
+        serviceName={server.serviceName}
+        open={engagementOpen}
+        onOpenChange={setEngagementOpen}
+      />
     </>
   );
-};
+}
 
-export default ServerControlPage;
+/** 紧凑胶囊:服务信息条的单元素。
+ *  传 onClick → 视觉与右侧 outline 按钮(监控/网络规格)对齐:bg-background + accent hover,
+ *  跟纯展示的胶囊(到期/开通/OS,bg-secondary/50)在外观上明确区分。 */
+function InfoPill({
+  icon,
+  label,
+  value,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  onClick?: () => void;
+}) {
+  // 注意:本项目 --accent 在亮色模式被定义为近黑色(用作强调对比),不能用作 hover bg。
+  // 跟旁边 Button outline 变体对齐(用 hover:bg-muted,见 button.tsx)。
+  const cls = [
+    "inline-flex items-center gap-1.5 h-7 pl-2.5 pr-3 rounded-full border text-[12px]",
+    onClick
+      ? "border-border bg-background hover:bg-muted cursor-pointer transition-colors shadow-sm"
+      : "border-border bg-secondary/50",
+  ].join(" ");
+  const inner = (
+    <>
+      <span className="flex items-center gap-1 text-muted-foreground">
+        {icon}
+        {label}
+      </span>
+      <span className="font-medium text-foreground">{value}</span>
+    </>
+  );
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} className={cls}>
+        {inner}
+      </button>
+    );
+  }
+  return <div className={cls}>{inner}</div>;
+}
+
+/** 续费状态友好文案。OVH 在 manager 后台标的 "Cancellation scheduled"
+ *  其实就是 renew.deleteAtExpiration=true(到期不续 + 自动注销)。
+ *
+ *  - 到期注销         deleteAtExpiration=true (优先级最高,其它字段无意义)
+ *  - 强制自动续费     forced=true (OVH 套餐限制,用户改不了)
+ *  - 自动 / 手动      根据 automatic 显示,带 N 月周期
+ */
+function formatRenewal(info: {
+  renewalType: boolean;
+  renewalPeriod: number;
+  renewalDeleteAtExpiration: boolean;
+  renewalForced: boolean;
+}): string {
+  if (info.renewalDeleteAtExpiration) return "到期注销";
+  const period = info.renewalPeriod > 0 ? ` · ${info.renewalPeriod}月` : "";
+  if (info.renewalForced) return `强制自动${period}`;
+  return (info.renewalType ? "自动" : "手动") + period;
+}
+
+
+const Page = () => (
+  <>
+    <Helmet>
+      <title>服务器控制 | OVH WebUI</title>
+    </Helmet>
+    <AppLayout>
+      <ServerControlPage />
+    </AppLayout>
+  </>
+);
+
+export default Page;

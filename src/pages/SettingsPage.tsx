@@ -1,718 +1,571 @@
 import { AppLayout } from "@/components/layout/AppLayout";
-import { TerminalCard } from "@/components/ui/terminal-card";
+import { Helmet } from "react-helmet-async";
+import { Settings as SettingsIcon, KeyRound, Globe, Send, Database, Save, Webhook, AlertTriangle, CheckCircle2, Plus, Star, RotateCw, Trash2, Pencil } from "lucide-react";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
+import { PageHeader } from "@/components/common/PageHeader";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Helmet } from "react-helmet-async";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { 
-  Settings, 
-  Key,
-  Globe,
-  MessageSquare,
-  Database,
-  Shield,
-  Save,
-  RefreshCw,
-  Trash2,
-  CheckCircle2,
-  XCircle,
-  Eye,
-  EyeOff,
-  Server,
-  Wifi,
-  WifiOff,
-  Loader2
-} from "lucide-react";
-import { useState, useEffect } from "react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/common/Skeleton";
+import { Chip } from "@/components/common/Chip";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import {
+  useSettings,
+  useSaveSettings,
+  useCacheInfo,
+  useClearCache,
+  useTelegramWebhookInfo,
+  type SettingsConfig,
+} from "@/hooks/use-settings";
+import { getApiSecretKey, setApiSecretKey } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { toast } from "sonner";
-import api from "@/lib/api";
+import { OVH_SUBSIDIARIES } from "@/lib/ovh-subsidiaries";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
+  useAccounts,
+  useCreateAccount,
+  useUpdateAccount,
+  useDeleteAccount,
+  useSetDefaultAccount,
+  useVerifyAccount,
+  accountChipColor,
+  type OVHAccount,
+} from "@/hooks/use-accounts";
 
-const SettingsPage = () => {
-  const [showSecrets, setShowSecrets] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isConnected, setIsConnected] = useState(false);
-  const [isTesting, setIsTesting] = useState(false);
-  
-  // 后端连接配置（存储在localStorage）
-  const [backendConfig, setBackendConfig] = useState({
-    backendUrl: localStorage.getItem('backendUrl') || 'http://localhost:19998',
-    apiSecretKey: localStorage.getItem('apiSecretKey') || '',
-  });
-  
-  // OVH API配置（从后端获取）
-  const [config, setConfig] = useState({
-    appKey: "",
-    appSecret: "",
-    consumerKey: "",
-    endpoint: "ovh-eu",
-    zone: "IE",
-    iam: "go-ovh-ie",
-    tgToken: "",
-    tgChatId: "",
-  });
+/** 根据 zone 推 endpoint */
+function endpointForZone(zone: string): string {
+  return OVH_SUBSIDIARIES.find((s) => s.code === zone)?.endpoint || "ovh-eu";
+}
 
-  const [cacheInfo, setCacheInfo] = useState<{
-    backend: {
-      hasCachedData: boolean;
-      timestamp: number | null;
-      cacheAge: number | null;
-      cacheDuration: number;
-      serverCount: number;
-      cacheValid: boolean;
-    };
-    storage: {
-      dataDir: string;
-      cacheDir: string;
-      logsDir: string;
-      files: Record<string, boolean>;
-    };
-  } | null>(null);
+/** API 设置：左 sub-nav 200px + 右 form sections */
+const SECTIONS = [
+  { id: "password", icon: KeyRound, label: "访问密码" },
+  { id: "accounts", icon: Globe, label: "OVH 账户" },
+  { id: "telegram", icon: Send, label: "Telegram" },
+  { id: "cache", icon: Database, label: "缓存管理" },
+] as const;
 
-  const [webhookInfo, setWebhookInfo] = useState<any>(null);
-  const [isLoadingWebhook, setIsLoadingWebhook] = useState(false);
-
-  // 检测后端连接
-  const checkConnection = async () => {
-    try {
-      await api.health();
-      setIsConnected(true);
-      return true;
-    } catch {
-      setIsConnected(false);
-      return false;
-    }
-  };
-
-  // 加载配置
-  const loadConfig = async () => {
-    setIsLoading(true);
-    try {
-      const connected = await checkConnection();
-      if (connected) {
-        const remoteConfig = await api.getConfig();
-        setConfig({
-          appKey: remoteConfig.appKey || "",
-          appSecret: remoteConfig.appSecret || "",
-          consumerKey: remoteConfig.consumerKey || "",
-          endpoint: remoteConfig.endpoint || "ovh-eu",
-          zone: remoteConfig.zone || "IE",
-          iam: remoteConfig.iam || "go-ovh-ie",
-          tgToken: remoteConfig.tgToken || "",
-          tgChatId: remoteConfig.tgChatId || "",
-        });
-        
-        // 加载缓存信息
-        try {
-          const cache = await api.getCacheInfo();
-          setCacheInfo(cache);
-        } catch {}
-
-        // 加载Webhook信息
-        loadWebhookInfo();
-      }
-    } catch (err) {
-      console.error("Failed to load config:", err);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // 加载Webhook信息
-  const loadWebhookInfo = async () => {
-    setIsLoadingWebhook(true);
-    try {
-      const result = await api.getTelegramWebhookInfo();
-      if (result.success) {
-        setWebhookInfo(result.webhook_info);
-      }
-    } catch (err) {
-      console.error("Failed to load webhook info:", err);
-    } finally {
-      setIsLoadingWebhook(false);
-    }
-  };
+function SettingsPage() {
+  const cfg = useSettings();
+  const save = useSaveSettings();
+  const [active, setActive] = useState<typeof SECTIONS[number]["id"]>("password");
+  const [form, setForm] = useState<SettingsConfig>({});
+  const [apiKey, setApiKey] = useState("");
 
   useEffect(() => {
-    loadConfig();
+    if (cfg.data) setForm(cfg.data);
+  }, [cfg.data]);
+
+  useEffect(() => {
+    setApiKey(getApiSecretKey() || "");
   }, []);
 
-  // 保存后端连接配置
-  const saveBackendConfig = () => {
-    localStorage.setItem('backendUrl', backendConfig.backendUrl);
-    localStorage.setItem('apiSecretKey', backendConfig.apiSecretKey);
-    toast.success("后端连接配置已保存");
-    loadConfig();
-  };
+  const set = (k: keyof SettingsConfig, v: string) => setForm((prev) => ({ ...prev, [k]: v }));
 
-  // 测试后端连接
-  const testConnection = async () => {
-    setIsTesting(true);
-    try {
-      const connected = await checkConnection();
-      if (connected) {
-        toast.success("后端连接成功");
-      } else {
-        toast.error("后端连接失败");
-      }
-    } catch {
-      toast.error("后端连接失败");
-    } finally {
-      setIsTesting(false);
-    }
-  };
-
-  // 保存OVH配置到后端
-  const handleSave = async () => {
-    setIsSaving(true);
-    try {
-      await api.saveConfig(config);
-      toast.success("配置已保存");
-    } catch (err: any) {
-      toast.error(`保存失败: ${err.message}`);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  // 验证OVH API连接
-  const testOvhApi = async () => {
-    try {
-      const result = await api.getOvhAccountInfo();
-      if (result.success) {
-        toast.success(`OVH API 连接成功: ${result.account?.nichandle}`);
-      } else {
-        toast.error(`OVH API 连接失败: ${result.error}`);
-      }
-    } catch (err: any) {
-      toast.error(`OVH API 连接失败: ${err.message}`);
-    }
-  };
-
-  // 测试Telegram通知
-  const testTelegram = async () => {
-    try {
-      const result = await api.testNotification();
-      toast.success(result.message || "测试消息已发送");
-    } catch (err: any) {
-      toast.error(`发送失败: ${err.message}`);
-    }
-  };
-
-  // 设置Telegram Webhook
-  const setWebhook = async () => {
-    const webhookUrl = prompt("请输入 Webhook URL (包含域名):");
-    if (!webhookUrl) return;
-    
-    try {
-      const result = await api.setTelegramWebhook(webhookUrl);
-      if (result.success) {
-        toast.success("Webhook 设置成功");
-      } else {
-        toast.error(`设置失败: ${result.error}`);
-      }
-    } catch (err: any) {
-      toast.error(`设置失败: ${err.message}`);
-    }
-  };
-
-  // 清空缓存
-  const clearCache = async (type?: 'all' | 'memory' | 'files') => {
-    try {
-      const result = await api.clearCache(type);
-      toast.success(result.message);
-      const cache = await api.getCacheInfo();
-      setCacheInfo(cache);
-    } catch (err: any) {
-      toast.error(`清空失败: ${err.message}`);
-    }
-  };
-
-  const maskValue = (value: string) => {
-    if (!value) return "";
-    if (showSecrets) return value;
-    if (value.length <= 8) return "••••••••";
-    return value.substring(0, 4) + "••••••••" + value.substring(value.length - 4);
+  const onSave = () => {
+    if (apiKey) setApiSecretKey(apiKey);
+    // 提交前根据 zone 自动同步 endpoint，避免两者不一致
+    const zone = form.zone || "IE";
+    save.mutate({ ...form, zone, endpoint: endpointForZone(zone) });
   };
 
   return (
-    <>
-      <Helmet>
-        <title>系统设置 | OVH Sniper</title>
-        <meta name="description" content="配置OVH API和系统参数" />
-      </Helmet>
-      
-      <AppLayout>
-        <div className="space-y-6">
-          {/* Header */}
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-              <div className="flex-1 min-w-0">
-                <h1 className="text-xl sm:text-2xl font-bold text-primary flex items-center gap-2">
-                  <span className="text-muted-foreground">&gt;</span>
-                  系统设置
-                  <span className="cursor-blink">_</span>
-                </h1>
-                <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-                  配置 API 凭证和系统参数
-                </p>
-              </div>
-              {isConnected ? (
-                <span className="flex items-center gap-1 text-xs text-primary bg-primary/10 px-2 py-1 rounded w-fit">
-                  <Wifi className="h-3 w-3" /> 已连接
-                </span>
-              ) : (
-                <span className="flex items-center gap-1 text-xs text-destructive bg-destructive/10 px-2 py-1 rounded w-fit">
-                  <WifiOff className="h-3 w-3" /> 未连接
-                </span>
-              )}
-            </div>
-            
-            <div className="flex gap-2 flex-wrap">
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={() => setShowSecrets(!showSecrets)}
-                className="text-xs sm:text-sm"
-              >
-                {showSecrets ? (
-                  <><EyeOff className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" /><span className="hidden xs:inline">隐藏</span>密钥</>
-                ) : (
-                  <><Eye className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" /><span className="hidden xs:inline">显示</span>密钥</>
+    <div className="space-y-6">
+      <PageHeader
+        icon={SettingsIcon}
+        title="API 设置"
+        description="配置 OVH API 和通知设置"
+        action={
+          <Button onClick={onSave} disabled={save.isPending}>
+            <Save className="w-4 h-4" />
+            {save.isPending ? "保存中..." : "保存设置"}
+          </Button>
+        }
+      />
+
+      <div className="grid grid-cols-1 lg:grid-cols-[200px_1fr] gap-4">
+        {/* sub-nav:桌面竖向左栏,手机横向滚动 tab */}
+        <nav className="lg:space-y-1 flex lg:flex-col overflow-x-auto lg:overflow-visible gap-1 lg:gap-0 -mx-3 px-3 lg:mx-0 lg:px-0">
+          {SECTIONS.map((s) => {
+            const Icon = s.icon;
+            const a = active === s.id;
+            return (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => setActive(s.id)}
+                className={cn(
+                  "flex items-center gap-2 px-3 py-2 rounded-md text-[13px] transition-colors whitespace-nowrap flex-shrink-0",
+                  "lg:w-full lg:border-l-2",
+                  a
+                    ? "bg-secondary text-foreground font-medium lg:border-l-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground lg:border-l-transparent"
                 )}
-              </Button>
-              <Button size="sm" onClick={handleSave} disabled={isSaving || !isConnected} className="text-xs sm:text-sm">
-                {isSaving ? (
-                  <RefreshCw className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2 animate-spin" />
-                ) : (
-                  <Save className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                )}
-                保存
-              </Button>
-            </div>
-          </div>
-
-          <Tabs defaultValue="backend" className="space-y-6">
-            <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
-              <TabsList className="bg-muted/50 border border-border w-max sm:w-auto">
-                <TabsTrigger value="backend" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-xs sm:text-sm px-2 sm:px-3">
-                  <Server className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                  <span className="hidden xs:inline">后端</span>连接
-                </TabsTrigger>
-                <TabsTrigger value="ovh" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-xs sm:text-sm px-2 sm:px-3">
-                  <Globe className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                  OVH
-                </TabsTrigger>
-                <TabsTrigger value="telegram" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-xs sm:text-sm px-2 sm:px-3">
-                  <MessageSquare className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                  TG
-                </TabsTrigger>
-                <TabsTrigger value="security" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-xs sm:text-sm px-2 sm:px-3">
-                  <Shield className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                  安全
-                </TabsTrigger>
-                <TabsTrigger value="cache" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-xs sm:text-sm px-2 sm:px-3">
-                  <Database className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                  缓存
-                </TabsTrigger>
-              </TabsList>
-            </div>
-
-            {/* Backend Connection Settings */}
-            <TabsContent value="backend">
-              <TerminalCard
-                title="后端连接配置"
-                icon={<Server className="h-4 w-4" />}
               >
-                <div className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                      <Label>后端地址 (Backend URL)</Label>
-                      <Input 
-                        value={backendConfig.backendUrl}
-                        onChange={(e) => setBackendConfig({...backendConfig, backendUrl: e.target.value})}
-                        placeholder="http://localhost:19998"
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Flask 后端服务器地址
-                      </p>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>API 密钥 (X-API-Key)</Label>
-                      <Input 
-                        value={showSecrets ? backendConfig.apiSecretKey : maskValue(backendConfig.apiSecretKey)}
-                        onChange={(e) => setBackendConfig({...backendConfig, apiSecretKey: e.target.value})}
-                        placeholder="输入 API 密钥"
-                        type={showSecrets ? "text" : "password"}
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        需要与后端 .env 文件中的 API_SECRET_KEY 一致
-                      </p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex flex-wrap gap-2 pt-4 border-t border-border">
-                    <Button variant="terminal" onClick={saveBackendConfig} size="sm" className="text-xs sm:text-sm">
-                      <Save className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                      保存配置
-                    </Button>
-                    <Button variant="outline" onClick={testConnection} disabled={isTesting} size="sm" className="text-xs sm:text-sm">
-                      {isTesting ? (
-                        <RefreshCw className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2 animate-spin" />
-                      ) : (
-                        <CheckCircle2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                      )}
-                      测试连接
-                    </Button>
-                  </div>
-                </div>
-              </TerminalCard>
-            </TabsContent>
+                <Icon className="w-4 h-4" />
+                {s.label}
+              </button>
+            );
+          })}
+        </nav>
 
-            {/* OVH API Settings */}
-            <TabsContent value="ovh">
-              <TerminalCard
-                title="OVH API 配置"
-                icon={<Globe className="h-4 w-4" />}
-              >
-                {!isConnected ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <WifiOff className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                    <p>请先配置后端连接</p>
-                  </div>
-                ) : (
-                  <div className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="space-y-2">
-                        <Label>Application Key</Label>
-                        <Input 
-                          value={showSecrets ? config.appKey : maskValue(config.appKey)}
-                          onChange={(e) => setConfig({...config, appKey: e.target.value})}
-                          placeholder="输入 Application Key"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Application Secret</Label>
-                        <Input 
-                          value={showSecrets ? config.appSecret : maskValue(config.appSecret)}
-                          onChange={(e) => setConfig({...config, appSecret: e.target.value})}
-                          placeholder="输入 Application Secret"
-                          type={showSecrets ? "text" : "password"}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Consumer Key</Label>
-                        <Input 
-                          value={showSecrets ? config.consumerKey : maskValue(config.consumerKey)}
-                          onChange={(e) => setConfig({...config, consumerKey: e.target.value})}
-                          placeholder="输入 Consumer Key"
-                          type={showSecrets ? "text" : "password"}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>API Endpoint</Label>
-                        <Select value={config.endpoint} onValueChange={(v) => setConfig({...config, endpoint: v})}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="ovh-eu">OVH Europe (ovh-eu)</SelectItem>
-                            <SelectItem value="ovh-us">OVH US (ovh-us)</SelectItem>
-                            <SelectItem value="ovh-ca">OVH Canada (ovh-ca)</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <div className="flex flex-wrap gap-1 pt-1">
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            className="text-xs h-7 px-2"
-                            onClick={() => setConfig({...config, endpoint: 'ovh-eu', zone: 'IE'})}
-                          >
-                            🇪🇺 EU
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            className="text-xs h-7 px-2"
-                            onClick={() => setConfig({...config, endpoint: 'ovh-us', zone: 'US'})}
-                          >
-                            🇺🇸 US
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            className="text-xs h-7 px-2"
-                            onClick={() => setConfig({...config, endpoint: 'ovh-ca', zone: 'CA'})}
-                          >
-                            🇨🇦 CA
-                          </Button>
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Zone / Subsidiary</Label>
-                        <Select value={config.zone} onValueChange={(v) => setConfig({...config, zone: v})}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="IE">爱尔兰 (IE)</SelectItem>
-                            <SelectItem value="DE">德国 (DE)</SelectItem>
-                            <SelectItem value="FR">法国 (FR)</SelectItem>
-                            <SelectItem value="GB">英国 (GB)</SelectItem>
-                            <SelectItem value="US">美国 (US)</SelectItem>
-                            <SelectItem value="CA">加拿大 (CA)</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>IAM 标识</Label>
-                        <Input 
-                          value={config.iam}
-                          onChange={(e) => setConfig({...config, iam: e.target.value})}
-                          placeholder="输入 IAM 标识"
-                        />
-                      </div>
-                    </div>
-                    
-                    <div className="pt-4 border-t border-border">
-                      <Button variant="terminal" onClick={testOvhApi} size="sm" className="text-xs sm:text-sm">
-                        <CheckCircle2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                        验证连接
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </TerminalCard>
-            </TabsContent>
-
-            {/* Telegram Settings */}
-            <TabsContent value="telegram">
-              <TerminalCard
-                title="Telegram 通知配置"
-                icon={<MessageSquare className="h-4 w-4" />}
-              >
-                {!isConnected ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <WifiOff className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                    <p>请先配置后端连接</p>
-                  </div>
-                ) : (
-                  <div className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="space-y-2">
-                        <Label>Bot Token</Label>
-                        <Input 
-                          value={showSecrets ? config.tgToken : maskValue(config.tgToken)}
-                          onChange={(e) => setConfig({...config, tgToken: e.target.value})}
-                          placeholder="输入 Telegram Bot Token"
-                          type={showSecrets ? "text" : "password"}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Chat ID</Label>
-                        <Input 
-                          value={config.tgChatId}
-                          onChange={(e) => setConfig({...config, tgChatId: e.target.value})}
-                          placeholder="输入 Chat ID"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-4 pt-4 border-t border-border">
-                      <h3 className="text-sm font-medium">Webhook 配置</h3>
-                      
-                      {/* Webhook Status */}
-                      {isLoadingWebhook ? (
-                        <div className="p-3 bg-muted/30 rounded border border-border">
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        </div>
-                      ) : webhookInfo ? (
-                        <div className={cn(
-                          "p-4 rounded border",
-                          webhookInfo.url ? "border-primary/30 bg-primary/5" : "border-muted"
-                        )}>
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-sm font-medium">当前 Webhook</span>
-                            {webhookInfo.url ? (
-                              <CheckCircle2 className="h-4 w-4 text-primary" />
-                            ) : (
-                              <XCircle className="h-4 w-4 text-muted-foreground" />
-                            )}
-                          </div>
-                          {webhookInfo.url ? (
-                            <div className="space-y-1 text-xs text-muted-foreground">
-                              <p>URL: <span className="font-mono text-foreground break-all">{webhookInfo.url}</span></p>
-                              {webhookInfo.pending_update_count !== undefined && (
-                                <p>待处理更新: <span className="text-foreground">{webhookInfo.pending_update_count}</span></p>
-                              )}
-                              {webhookInfo.last_error_message && (
-                                <p className="text-destructive">错误: {webhookInfo.last_error_message}</p>
-                              )}
-                            </div>
-                          ) : (
-                            <p className="text-xs text-muted-foreground">未设置 Webhook</p>
-                          )}
-                        </div>
-                      ) : null}
-
-                      <div className="flex flex-wrap gap-2 sm:gap-4">
-                        <Button variant="terminal" onClick={setWebhook} size="sm" className="text-xs sm:text-sm">
-                          设置 Webhook
-                        </Button>
-                        <Button variant="outline" onClick={() => loadWebhookInfo()} size="sm" className="text-xs sm:text-sm">
-                          <RefreshCw className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                          刷新
-                        </Button>
-                        <Button variant="outline" onClick={testTelegram} size="sm" className="text-xs sm:text-sm">
-                          测试消息
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </TerminalCard>
-            </TabsContent>
-
-            {/* Security Settings */}
-            <TabsContent value="security">
-              <TerminalCard
-                title="安全设置"
-                icon={<Shield className="h-4 w-4" />}
-              >
-                <div className="space-y-6">
-                  <div className="p-3 sm:p-4 bg-muted/30 rounded border border-border">
-                    <p className="text-xs sm:text-sm text-muted-foreground">
-                      API 密钥已在"后端连接"标签页中配置。该密钥用于前端与后端的安全通信。
-                    </p>
-                  </div>
-
-                  <div className="space-y-4 pt-4 border-t border-border">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <Label className="text-xs sm:text-sm">请求时间戳验证</Label>
-                        <p className="text-[10px] sm:text-xs text-muted-foreground">
-                          拒绝时间偏差超过 5 分钟的请求
-                        </p>
-                      </div>
-                      <Switch defaultChecked />
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <Label className="text-xs sm:text-sm">IP 白名单</Label>
-                        <p className="text-[10px] sm:text-xs text-muted-foreground">
-                          仅允许指定 IP 访问
-                        </p>
-                      </div>
-                      <Switch />
-                    </div>
-                  </div>
-                </div>
-              </TerminalCard>
-            </TabsContent>
-
-            {/* Cache Settings */}
-            <TabsContent value="cache">
-              <TerminalCard
-                title="缓存管理"
-                icon={<Database className="h-4 w-4" />}
-              >
-                {!isConnected ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <WifiOff className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                    <p>请先配置后端连接</p>
-                  </div>
-                ) : cacheInfo ? (
-                  <div className="space-y-6">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
-                      <div 
-                        className={cn(
-                          "p-3 sm:p-4 rounded-sm border",
-                          cacheInfo.backend.cacheValid ? "border-primary/30" : "border-destructive/30"
-                        )}
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-xs sm:text-sm font-medium">服务器缓存</span>
-                          {cacheInfo.backend.cacheValid ? (
-                            <CheckCircle2 className="h-3 w-3 sm:h-4 sm:w-4 text-primary" />
-                          ) : (
-                            <XCircle className="h-3 w-3 sm:h-4 sm:w-4 text-destructive" />
-                          )}
-                        </div>
-                        <div className="space-y-1 text-[10px] sm:text-xs text-muted-foreground">
-                          <p>服务器数: <span className="text-foreground">{cacheInfo.backend.serverCount}</span></p>
-                          <p>缓存年龄: <span className="text-foreground">
-                            {cacheInfo.backend.cacheAge ? `${Math.round(cacheInfo.backend.cacheAge / 60)} 分钟` : 'N/A'}
-                          </span></p>
-                          <p>状态: <span className={cacheInfo.backend.cacheValid ? "text-primary" : "text-destructive"}>
-                            {cacheInfo.backend.cacheValid ? "有效" : "已过期"}
-                          </span></p>
-                        </div>
-                      </div>
-                      
-                      {Object.entries(cacheInfo.storage.files).map(([name, exists]) => (
-                        <div 
-                          key={name}
-                          className={cn(
-                            "p-3 sm:p-4 rounded-sm border",
-                            exists ? "border-primary/30" : "border-muted"
-                          )}
-                        >
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-xs sm:text-sm font-medium capitalize">{name}</span>
-                            {exists ? (
-                              <CheckCircle2 className="h-3 w-3 sm:h-4 sm:w-4 text-primary" />
-                            ) : (
-                              <XCircle className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
-                            )}
-                          </div>
-                          <div className="text-[10px] sm:text-xs text-muted-foreground">
-                            <p>状态: <span className={exists ? "text-primary" : "text-muted-foreground"}>
-                              {exists ? "存在" : "不存在"}
-                            </span></p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="flex flex-wrap gap-2 pt-4 border-t border-border">
-                      <Button variant="outline" onClick={() => clearCache('memory')} size="sm" className="text-xs sm:text-sm">
-                        <RefreshCw className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                        清除内存
-                      </Button>
-                      <Button variant="destructive" onClick={() => clearCache('all')} size="sm" className="text-xs sm:text-sm">
-                        <Trash2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                        清空全部
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <RefreshCw className="h-8 w-8 mx-auto mb-2 opacity-50 animate-spin" />
-                    <p>加载中...</p>
-                  </div>
-                )}
-              </TerminalCard>
-            </TabsContent>
-          </Tabs>
-        </div>
-      </AppLayout>
-    </>
+        {/* 右内容 */}
+        <Card>
+          <CardContent className="p-4 sm:p-6">
+            {cfg.isPending ? (
+              <Skeleton className="h-64 rounded-2xl" />
+            ) : active === "password" ? (
+              <Section title="访问密码 / API Secret Key">
+                <Field label="访问密码 *" hint="后端 .env 中的 API_SECRET_KEY，本地仅保存在 localStorage">
+                  <Input
+                    type="password"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    placeholder="输入访问密码"
+                  />
+                </Field>
+              </Section>
+            ) : active === "accounts" ? (
+              <AccountsSection />
+            ) : active === "telegram" ? (
+              <TelegramSection form={form} set={set} />
+            ) : (
+              <CacheSection />
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   );
-};
+}
 
-export default SettingsPage;
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-5">
+      <h2 className="text-base font-semibold">{title}</h2>
+      <div className="space-y-4">{children}</div>
+    </div>
+  );
+}
+
+function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="block text-[13px] font-medium mb-1.5">{label}</label>
+      {children}
+      {hint && <p className="text-[11px] text-muted-foreground mt-1">{hint}</p>}
+    </div>
+  );
+}
+
+function TelegramSection({
+  form,
+  set,
+}: {
+  form: SettingsConfig;
+  set: (k: keyof SettingsConfig, v: string) => void;
+}) {
+  const webhook = useTelegramWebhookInfo();
+  const onFetch = () => {
+    if (!form.tgToken) {
+      toast.error("请先填写并保存 Bot Token");
+      return;
+    }
+    webhook.refetch();
+  };
+  return (
+    <Section title="Telegram 通知">
+      <Field label="Bot Token">
+        <Input
+          type="password"
+          value={form.tgToken || ""}
+          onChange={(e) => set("tgToken", e.target.value)}
+          placeholder="123456:ABCdef..."
+        />
+      </Field>
+      <Field label="Chat ID">
+        <Input
+          value={form.tgChatId || ""}
+          onChange={(e) => set("tgChatId", e.target.value)}
+          placeholder="-1001234567890"
+        />
+      </Field>
+      <Field label="Webhook URL（可选）">
+        <Input
+          value={form.webhookUrl || ""}
+          onChange={(e) => set("webhookUrl", e.target.value)}
+          placeholder="https://your.domain/webhook"
+        />
+      </Field>
+
+      <div className="pt-2">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-[13px] font-medium flex items-center gap-1.5">
+            <Webhook className="w-3.5 h-3.5 text-muted-foreground" />
+            Webhook 信息
+          </h3>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onFetch}
+            disabled={webhook.isFetching}
+          >
+            <Webhook className={cn("w-3.5 h-3.5", webhook.isFetching && "animate-pulse")} />
+            {webhook.isFetching ? "查询中..." : "查看 webhook 信息"}
+          </Button>
+        </div>
+
+        {webhook.isError ? (
+          <div className="border border-border rounded-2xl p-4 text-[12px] text-destructive flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            <span>{(webhook.error as Error)?.message || "获取 webhook 信息失败"}</span>
+          </div>
+        ) : webhook.data ? (
+          <div className="border border-border rounded-2xl p-4 space-y-2 text-[12px]">
+            <InfoRow
+              label="URL"
+              value={
+                webhook.data.url ? (
+                  <code className="font-mono break-all text-foreground">{webhook.data.url}</code>
+                ) : (
+                  <Chip tone="warning">未设置</Chip>
+                )
+              }
+            />
+            <InfoRow
+              label="待处理更新"
+              value={
+                <span className="font-mono">
+                  {webhook.data.pending_update_count ?? 0}
+                </span>
+              }
+            />
+            {webhook.data.ip_address && (
+              <InfoRow
+                label="IP 地址"
+                value={<code className="font-mono">{webhook.data.ip_address}</code>}
+              />
+            )}
+            {webhook.data.max_connections != null && (
+              <InfoRow
+                label="最大连接数"
+                value={<span className="font-mono">{webhook.data.max_connections}</span>}
+              />
+            )}
+            {webhook.data.last_error_date ? (
+              <InfoRow
+                label="上次错误"
+                value={
+                  <div className="text-right">
+                    <Chip tone="danger">
+                      <AlertTriangle className="w-3 h-3" />
+                      {new Date(webhook.data.last_error_date * 1000).toLocaleString("zh-CN")}
+                    </Chip>
+                    {webhook.data.last_error_message && (
+                      <p className="mt-1 text-destructive break-words max-w-[280px]">
+                        {webhook.data.last_error_message}
+                      </p>
+                    )}
+                  </div>
+                }
+              />
+            ) : (
+              <InfoRow
+                label="错误状态"
+                value={
+                  <Chip tone="success">
+                    <CheckCircle2 className="w-3 h-3" />
+                    正常
+                  </Chip>
+                }
+              />
+            )}
+          </div>
+        ) : (
+          <p className="text-[12px] text-muted-foreground">
+            点击右上角按钮查询当前 Telegram Bot 的 webhook 状态
+          </p>
+        )}
+      </div>
+    </Section>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex justify-between items-start gap-3">
+      <span className="text-muted-foreground flex-shrink-0">{label}</span>
+      <span className="font-medium text-right min-w-0">{value}</span>
+    </div>
+  );
+}
+
+function CacheSection() {
+  const info = useCacheInfo();
+  const clear = useClearCache();
+  const sqliteUpdated = info.data?.sqlite?.updatedAtMs
+    ? new Date(info.data.sqlite.updatedAtMs).toLocaleString("zh-CN")
+    : "从未刷新";
+  return (
+    <Section title="缓存管理">
+      {info.isPending ? (
+        <Skeleton className="h-32 rounded-2xl" />
+      ) : (
+        <div className="border border-border rounded-2xl p-4 space-y-2.5 text-[13px]">
+          <Row label="内存缓存条数" value={info.data?.backend?.serverCount ?? 0} />
+          <Row label="内存缓存状态" value={info.data?.backend?.cacheValid ? "有效" : "已过期"} />
+          <Row label="SQLite 缓存条数" value={info.data?.sqlite?.serverCount ?? 0} />
+          <Row label="SQLite 最近刷新" value={<span className="text-[12px]">{sqliteUpdated}</span>} />
+          <Row
+            label="数据库位置"
+            value={
+              <code className="text-[11px] font-mono">
+                {info.data?.sqlite?.path || info.data?.storage?.dataDir || "—"}
+              </code>
+            }
+          />
+        </div>
+      )}
+      <p className="text-[11px] text-muted-foreground">
+        缓存只指 OVH 服务器目录。订阅 / 队列 / 历史 等业务数据不在此清理范围内。
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <Button variant="outline" onClick={() => clear.mutate("memory")} disabled={clear.isPending}>
+          清除内存缓存
+        </Button>
+        <Button variant="outline" onClick={() => clear.mutate("sqlite")} disabled={clear.isPending}>
+          清除 SQLite 缓存
+        </Button>
+        <Button variant="destructive" onClick={() => clear.mutate("all")} disabled={clear.isPending}>
+          清除全部
+        </Button>
+      </div>
+    </Section>
+  );
+}
+
+function Row({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex justify-between items-center gap-2">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-medium text-right">{value}</span>
+    </div>
+  );
+}
+
+// ─── 账户管理 ───────────────────────────────────────────────────────────────
+
+function AccountsSection() {
+  const accounts = useAccounts();
+  const [showAdd, setShowAdd] = useState(false);
+  const [editAcc, setEditAcc] = useState<OVHAccount | null>(null);
+  const list = accounts.data || [];
+
+  return (
+    <Section title="OVH 账户管理">
+      <div className="flex items-center justify-between">
+        <p className="text-[12px] text-muted-foreground">
+          每个 OVH 账户(凭据)单独保存,抢购队列 / 狙击 / 订阅创建时各自指定账户。删账户会一并清除关联的 queue / history / sniper tasks。
+        </p>
+        <Button onClick={() => setShowAdd(true)} size="sm">
+          <Plus className="w-4 h-4" />
+          添加账户
+        </Button>
+      </div>
+
+      {accounts.isPending ? (
+        <div className="space-y-2">
+          {Array.from({ length: 2 }).map((_, i) => (
+            <Skeleton key={i} className="h-24 rounded-2xl" />
+          ))}
+        </div>
+      ) : list.length === 0 ? (
+        <Card>
+          <CardContent className="p-8 text-center text-sm text-muted-foreground">
+            还没有账户,点右上角"添加账户"创建一个
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {list.map((a) => (
+            <AccountCard key={a.id} acc={a} onEdit={() => setEditAcc(a)} />
+          ))}
+        </div>
+      )}
+
+      {showAdd && <AccountDialog onClose={() => setShowAdd(false)} />}
+      {editAcc && <AccountDialog acc={editAcc} onClose={() => setEditAcc(null)} />}
+    </Section>
+  );
+}
+
+function AccountCard({ acc, onEdit }: { acc: OVHAccount; onEdit: () => void }) {
+  const setDefault = useSetDefaultAccount();
+  const del = useDeleteAccount();
+  const verify = useVerifyAccount();
+  const [confirming, setConfirming] = useState(false);
+
+  return (
+    <div className="border border-border rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-1 flex-wrap">
+          <span className="font-semibold text-sm">{acc.name}</span>
+          <span className={cn("inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium", accountChipColor(acc.zone))}>
+            {acc.zone}
+          </span>
+          {acc.isDefault && (
+            <Chip tone="success">
+              <Star className="w-3 h-3" />
+              默认
+            </Chip>
+          )}
+        </div>
+        <div className="text-[11px] text-muted-foreground flex items-center gap-2 flex-wrap font-mono">
+          <span>{acc.endpoint}</span>
+          <span>·</span>
+          <span>{acc.iam}</span>
+          <span>·</span>
+          <span>建于 {new Date(acc.createdAt).toLocaleDateString("zh-CN")}</span>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 flex-shrink-0">
+        <Button variant="ghost" size="icon" onClick={() => verify.mutate(acc.id)} disabled={verify.isPending} title="重新验证凭据">
+          <RotateCw className={cn("w-4 h-4", verify.isPending && "animate-spin")} />
+        </Button>
+        {!acc.isDefault && (
+          <Button variant="ghost" size="icon" onClick={() => setDefault.mutate(acc.id)} disabled={setDefault.isPending} title="设为默认">
+            <Star className="w-4 h-4" />
+          </Button>
+        )}
+        <Button variant="ghost" size="icon" onClick={onEdit} title="编辑">
+          <Pencil className="w-4 h-4" />
+        </Button>
+        <Button variant="ghost" size="icon" onClick={() => setConfirming(true)} title="删除" className="text-destructive hover:text-destructive">
+          <Trash2 className="w-4 h-4" />
+        </Button>
+      </div>
+
+      <Dialog open={confirming} onOpenChange={setConfirming}>
+        <DialogContent className="w-[95vw] sm:w-full sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>确认删除账户 {acc.name}?</DialogTitle>
+            <DialogDescription className="text-destructive">
+              将级联删除该账户的所有 queue 任务、history 历史。
+              监控订阅的 auto_order 引用此账户的会清空。该操作不可逆。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirming(false)}>取消</Button>
+            <Button
+              variant="destructive"
+              onClick={async () => {
+                await del.mutateAsync(acc.id);
+                setConfirming(false);
+              }}
+              disabled={del.isPending}
+            >
+              确认删除
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function AccountDialog({ acc, onClose }: { acc?: OVHAccount; onClose: () => void }) {
+  const create = useCreateAccount();
+  const update = useUpdateAccount();
+  const isEdit = !!acc;
+  const [form, setForm] = useState({
+    name: acc?.name || "",
+    appKey: acc?.appKey || "",
+    appSecret: acc?.appSecret || "",
+    consumerKey: acc?.consumerKey || "",
+    zone: acc?.zone || "IE",
+  });
+  const set = (k: keyof typeof form, v: string) => setForm((p) => ({ ...p, [k]: v }));
+  const canSubmit = form.name.trim() && form.appKey.trim() && form.appSecret.trim() && form.consumerKey.trim();
+
+  const submit = async () => {
+    if (!canSubmit) return;
+    const payload = {
+      name: form.name.trim(),
+      appKey: form.appKey.trim(),
+      appSecret: form.appSecret.trim(),
+      consumerKey: form.consumerKey.trim(),
+      zone: form.zone,
+      endpoint: endpointForZone(form.zone),
+    };
+    if (isEdit) {
+      await update.mutateAsync({ id: acc!.id, input: payload });
+    } else {
+      await create.mutateAsync(payload);
+    }
+    onClose();
+  };
+
+  return (
+    <Dialog open onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="w-[95vw] sm:w-full sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{isEdit ? `编辑账户 ${acc!.name}` : "添加 OVH 账户"}</DialogTitle>
+          <DialogDescription>填三个 OVH 密钥 + 选子公司,保存时会自动调 /me 验证凭据。</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <Field label="账户名称 *">
+            <Input value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="主号 / 小号 A" autoFocus />
+          </Field>
+          <Field label="APP KEY *">
+            <Input type="password" value={form.appKey} onChange={(e) => set("appKey", e.target.value)} placeholder="xxxxxxxxxxxxxxxx" />
+          </Field>
+          <Field label="APP SECRET *">
+            <Input type="password" value={form.appSecret} onChange={(e) => set("appSecret", e.target.value)} placeholder="xxxxxxxxxxxxxxxx" />
+          </Field>
+          <Field label="CONSUMER KEY *">
+            <Input type="password" value={form.consumerKey} onChange={(e) => set("consumerKey", e.target.value)} placeholder="xxxxxxxxxxxxxxxx" />
+          </Field>
+          <Field
+            label="OVH 子公司 (Zone)"
+            hint={`Endpoint ${endpointForZone(form.zone)} · IAM go-ovh-${form.zone.toLowerCase()} 由子公司自动派生`}
+          >
+            <Select value={form.zone} onValueChange={(v) => set("zone", v)}>
+              <SelectTrigger className="h-11">
+                <SelectValue placeholder="请选择子公司" />
+              </SelectTrigger>
+              <SelectContent className="z-[300] max-h-[min(20rem,50vh)]">
+                {OVH_SUBSIDIARIES.map((s) => (
+                  <SelectItem key={s.code} value={s.code}>
+                    {s.code} · {s.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>取消</Button>
+          <Button onClick={submit} disabled={!canSubmit || create.isPending || update.isPending}>
+            {(create.isPending || update.isPending) ? "保存中…" : "保存并验证"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+
+const Page = () => (
+  <>
+    <Helmet>
+      <title>系统设置 | OVH WebUI</title>
+    </Helmet>
+    <AppLayout>
+      <SettingsPage />
+    </AppLayout>
+  </>
+);
+
+export default Page;

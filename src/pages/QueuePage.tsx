@@ -1,510 +1,652 @@
 import { AppLayout } from "@/components/layout/AppLayout";
-import { TerminalCard } from "@/components/ui/terminal-card";
-import { StatusBadge } from "@/components/ui/status-badge";
+import { Helmet } from "react-helmet-async";
+import {
+  ClipboardList,
+  RefreshCw,
+  Trash2,
+  PauseCircle,
+  PlayCircle,
+  X,
+  Clock,
+  Plus,
+  Loader2,
+} from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { toast } from "sonner";
+import { PageHeader } from "@/components/common/PageHeader";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Helmet } from "react-helmet-async";
-import { 
-  ListOrdered, 
-  Plus, 
-  Trash2, 
-  Play,
-  Pause,
-  RefreshCw,
-  Clock,
-  CheckCircle2,
-  XCircle,
-  MoreVertical,
-  Loader2,
-  Power,
-  Square
-} from "lucide-react";
-import { useState, useEffect } from "react";
-import { cn } from "@/lib/utils";
-import { toast } from "sonner";
-import api from "@/lib/api";
-import { useQueue, useServers } from "@/hooks/useApi";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Chip } from "@/components/common/Chip";
+import { StatusDot } from "@/components/common/StatusDot";
+import { EmptyState } from "@/components/common/EmptyState";
+import { Skeleton } from "@/components/common/Skeleton";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
-  DialogFooter,
-  DialogClose,
 } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  useQueueList,
+  useToggleQueueItem,
+  useRemoveQueueItem,
+  useClearQueue,
+  useCreateQueueItem,
+  type QueueItem,
+} from "@/hooks/use-queue";
+import { useServers } from "@/hooks/use-servers";
+import { OVH_DATACENTERS as OVH_DC_LIST } from "@/lib/datacenters";
+import { AccountSelect } from "@/components/common/AccountSelect";
+import { AccountChip } from "@/components/common/AccountChip";
+import { PlanCodeCombobox } from "@/components/common/PlanCodeCombobox";
+import { OptionGroupSection } from "@/components/common/OptionGroupSection";
+import { groupOptions, type OptionGroupKey } from "@/lib/option-groups";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
+  useAvailability,
+  buildVariantIndex,
+  hasStockWithOption,
+} from "@/hooks/use-availability";
 
-const QueuePage = () => {
-  const { data: queue, isLoading, refetch } = useQueue();
-  const { data: servers } = useServers();
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [newTask, setNewTask] = useState({ planCode: "", datacenter: "", retryInterval: 30 });
-  const [isAdding, setIsAdding] = useState(false);
-  const [isProcessorRunning, setIsProcessorRunning] = useState(false);
-  const [isTogglingProcessor, setIsTogglingProcessor] = useState(false);
-  const [isClearingQueue, setIsClearingQueue] = useState(false);
+/** 抢购队列：列表 + 暂停/恢复/删除/清空 + 新建抢购任务 */
+/** OVH 数据中心列表：复用 lib/datacenters.ts 的共享常量 */
+const OVH_DATACENTERS = OVH_DC_LIST;
 
+/** 任务重试间隔默认值（秒），与后端 TASK_RETRY_INTERVAL 保持一致 */
+const DEFAULT_RETRY_INTERVAL = 60;
+
+function QueuePage() {
+  const queue = useQueueList();
+  const toggle = useToggleQueueItem();
+  const remove = useRemoveQueueItem();
+  const clear = useClearQueue();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const createPlanCode = searchParams.get("create") || undefined;
+  const createOptions = searchParams.get("options") || undefined;
+  const [showClearDialog, setShowClearDialog] = useState(false);
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [prefillPlanCode, setPrefillPlanCode] = useState<string>("");
+  const [prefillOptions, setPrefillOptions] = useState<string>("");
+
+  // 从其它页跳到 /queue?create=KS-A-1&options=...，自动打开新建对话框并预填
   useEffect(() => {
-    const interval = setInterval(refetch, 5000);
-    return () => clearInterval(interval);
-  }, [refetch]);
-
-  // 检查处理器状态
-  useEffect(() => {
-    const checkProcessorStatus = async () => {
-      try {
-        const status = await api.getQueueProcessorStatus();
-        setIsProcessorRunning(status.running);
-      } catch {
-        // fallback to stats
-        try {
-          const stats = await api.getStats();
-          setIsProcessorRunning(stats.queueProcessorRunning || false);
-        } catch {}
-      }
-    };
-    checkProcessorStatus();
-    const interval = setInterval(checkProcessorStatus, 10000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const handleToggleProcessor = async () => {
-    setIsTogglingProcessor(true);
-    try {
-      if (isProcessorRunning) {
-        await api.stopQueueProcessor();
-        toast.success("队列处理器已停止");
-      } else {
-        await api.startQueueProcessor();
-        toast.success("队列处理器已启动");
-      }
-      setIsProcessorRunning(!isProcessorRunning);
-    } catch (err: any) {
-      toast.error(err.message);
-    } finally {
-      setIsTogglingProcessor(false);
+    if (createPlanCode) {
+      setPrefillPlanCode(createPlanCode);
+      setPrefillOptions(createOptions || "");
+      setShowCreateDialog(true);
     }
-  };
+  }, [createPlanCode, createOptions]);
 
-  const queueList = queue || [];
-
-  const activeCount = queueList.filter(q => q.status === "running" || q.status === "pending").length;
-  const completedCount = queueList.filter(q => q.status === "completed").length;
-  const failedCount = queueList.filter(q => q.status === "failed").length;
-
-  const formatTime = (timestamp: string) => {
-    try {
-      const date = new Date(timestamp);
-      return date.toLocaleString("zh-CN", { 
-        month: "2-digit", 
-        day: "2-digit",
-        hour: "2-digit", 
-        minute: "2-digit" 
-      });
-    } catch {
-      return "N/A";
-    }
-  };
-
-  const getLastCheckDisplay = (lastCheckTime: number) => {
-    if (!lastCheckTime || lastCheckTime === 0) return "从未";
-    const diff = Date.now() - lastCheckTime * 1000;
-    if (diff < 60000) return `${Math.floor(diff / 1000)}秒前`;
-    if (diff < 3600000) return `${Math.floor(diff / 60000)}分钟前`;
-    if (diff < 86400000) return `${Math.floor(diff / 3600000)}小时前`;
-    return `${Math.floor(diff / 86400000)}天前`;
-  };
-
-  const handleAddTask = async () => {
-    if (!newTask.planCode || !newTask.datacenter) {
-      toast.error("请选择服务器型号和机房");
-      return;
-    }
-    
-    setIsAdding(true);
-    try {
-      await api.addQueueItem({
-        planCode: newTask.planCode,
-        datacenter: newTask.datacenter,
-        retryInterval: newTask.retryInterval,
-      });
-      toast.success("任务已添加");
-      setIsAddDialogOpen(false);
-      setNewTask({ planCode: "", datacenter: "", retryInterval: 30 });
-      refetch();
-    } catch (err: any) {
-      toast.error(err.message);
-    } finally {
-      setIsAdding(false);
-    }
-  };
-
-  const handleDeleteTask = async (id: string) => {
-    try {
-      await api.removeQueueItem(id);
-      toast.success("任务已删除");
-      refetch();
-    } catch (err: any) {
-      toast.error(err.message);
-    }
-  };
-
-  const handleUpdateStatus = async (id: string, status: string) => {
-    try {
-      await api.updateQueueStatus(id, status);
-      toast.success(`任务状态已更新为 ${status}`);
-      refetch();
-    } catch (err: any) {
-      toast.error(err.message);
-    }
-  };
-
-  const handleClearQueue = async () => {
-    setIsClearingQueue(true);
-    try {
-      const result = await api.clearQueue();
-      toast.success(`已清空 ${result.count} 个任务`);
-      refetch();
-    } catch (err: any) {
-      toast.error(err.message);
-    } finally {
-      setIsClearingQueue(false);
-    }
-  };
-
-  const selectedServer = servers?.find(s => s.planCode === newTask.planCode);
+  const items = queue.data || [];
 
   return (
-    <>
-      <Helmet>
-        <title>抢购队列 | OVH Sniper</title>
-        <meta name="description" content="管理服务器抢购任务队列" />
-      </Helmet>
-      
-      <AppLayout>
-        <div className="space-y-6">
-          {/* Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-bold text-primary flex items-center gap-2">
-                <span className="text-muted-foreground">&gt;</span>
-                抢购队列
-                <span className="cursor-blink">_</span>
-              </h1>
-              <p className="text-sm text-muted-foreground mt-1">
-                活跃: {activeCount} | 完成: {completedCount} | 失败: {failedCount}
+    <div className="space-y-6">
+      <PageHeader
+        icon={ClipboardList}
+        title="抢购队列"
+        description="管理自动抢购服务器的队列"
+        action={
+          <div className="flex gap-2">
+            <Button onClick={() => setShowCreateDialog(true)}>
+              <Plus className="w-4 h-4" />
+              新建抢购任务
+            </Button>
+            <Button variant="outline" onClick={() => queue.refetch()} disabled={queue.isFetching}>
+              <RefreshCw className={`w-4 h-4 ${queue.isFetching ? "animate-spin" : ""}`} />
+              刷新
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setShowClearDialog(true)}
+              disabled={items.length === 0}
+            >
+              <Trash2 className="w-4 h-4" />
+              清空
+            </Button>
+          </div>
+        }
+      />
+
+      {queue.isPending ? (
+        <div className="space-y-3">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-20 rounded-2xl" />
+          ))}
+        </div>
+      ) : items.length === 0 ? (
+        <Card>
+          <EmptyState
+            icon={ClipboardList}
+            title="暂无任务"
+            description="点击右上角“新建抢购任务”开始抢购"
+          />
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {items.map((q) => (
+            <QueueRow
+              key={q.id}
+              item={q}
+              onToggle={() =>
+                toggle.mutate({
+                  id: q.id,
+                  action: q.status === "running" ? "pause" : "resume",
+                })
+              }
+              onDelete={() => remove.mutate(q.id)}
+            />
+          ))}
+        </div>
+      )}
+
+      <Dialog open={showClearDialog} onOpenChange={setShowClearDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>确认清空队列？</DialogTitle>
+            <DialogDescription>所有任务将被删除，此操作不可撤销。</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowClearDialog(false)}>
+              取消
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                clear.mutate();
+                setShowClearDialog(false);
+              }}
+            >
+              确认清空
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <CreateQueueDialog
+        open={showCreateDialog}
+        onOpenChange={(v) => {
+          setShowCreateDialog(v);
+          if (!v) {
+            setPrefillPlanCode("");
+            setPrefillOptions("");
+            // 清掉 URL 上的 create / options 参数
+            navigate("/queue", { replace: true });
+          }
+        }}
+        initialPlanCode={prefillPlanCode}
+        initialOptions={prefillOptions}
+      />
+    </div>
+  );
+}
+
+/** 创建抢购任务对话框 */
+function CreateQueueDialog({
+  open,
+  onOpenChange,
+  initialPlanCode,
+  initialOptions,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  initialPlanCode?: string;
+  initialOptions?: string;
+}) {
+  const servers = useServers();
+  const availQ = useAvailability();
+  const variantIndex = useMemo(() => buildVariantIndex(availQ.data), [availQ.data]);
+  const create = useCreateQueueItem();
+  const [accountId, setAccountId] = useState("");
+  const [planCode, setPlanCode] = useState(initialPlanCode || "");
+  const [datacenters, setDatacenters] = useState<string[]>([]);
+  const [quantity, setQuantity] = useState("1");
+  const [retryInterval, setRetryInterval] = useState(String(DEFAULT_RETRY_INTERVAL));
+  // 用户选的 addon,按组索引。每次切 planCode 自动清空(让用户重新选)。
+  const [picked, setPicked] = useState<Partial<Record<OptionGroupKey, string>>>({});
+  // 手填的额外 addon planCode(catalog 里没分组覆盖到的、或用户想加的特殊 addon)
+  const [extraInput, setExtraInput] = useState("");
+
+  useEffect(() => {
+    if (open) {
+      if (initialPlanCode) setPlanCode(initialPlanCode);
+    }
+  }, [initialPlanCode, open]);
+
+  /** planCode 匹配到的服务器（用于显示名称提示） */
+  const matchedServer = useMemo(
+    () => (servers.data || []).find((s) => s.planCode === planCode.trim()),
+    [servers.data, planCode]
+  );
+
+  // 切 planCode 清空 picked —— 之前选的 addon 对新机型多半不适用。
+  // initialOptions 由外部传入时(从其它入口"快速添加"过来),解析后塞进 picked 让用户能看到。
+  const prevPlanCodeRef = useRef("");
+  useEffect(() => {
+    const code = planCode.trim();
+    if (code === prevPlanCodeRef.current) return;
+    prevPlanCodeRef.current = code;
+    if (initialOptions && code === (initialPlanCode || "").trim()) {
+      // 走"外部带 initialOptions 进来"分支:
+      //   - 能映射到 chip 组的塞进 picked
+      //   - 剩下没匹配上的(chip 没覆盖到的 addon)塞进 extraInput
+      const wantedList = initialOptions.split(",").map((v) => v.trim()).filter(Boolean);
+      const consumed = new Set<string>();
+      const next: Partial<Record<OptionGroupKey, string>> = {};
+      const groupedMap = matchedServer ? groupOptions(matchedServer.availableOptions) : null;
+      if (groupedMap) {
+        for (const g of Object.keys(groupedMap) as OptionGroupKey[]) {
+          const hit = groupedMap[g].find((o) => wantedList.includes(o.value));
+          if (hit) {
+            next[g] = hit.value;
+            consumed.add(hit.value);
+          }
+        }
+      }
+      setPicked(next);
+      const leftover = wantedList.filter((v) => !consumed.has(v));
+      setExtraInput(leftover.join(", "));
+    } else {
+      setPicked({});
+      setExtraInput("");
+    }
+  }, [planCode, initialOptions, initialPlanCode, matchedServer]);
+
+  /** 按组拆分该机型的所有可选 addon */
+  const grouped = useMemo(
+    () => (matchedServer ? groupOptions(matchedServer.availableOptions) : null),
+    [matchedServer]
+  );
+  const defaultValueSet = useMemo(
+    () => new Set((matchedServer?.defaultOptions || []).map((o) => o.value)),
+    [matchedServer]
+  );
+
+  /** 提交给后端的 addon planCode 列表。
+   *  matchedServer 在 → 走 chip 选择(picked);不在 → 走手填(extraInput)。
+   *  二选一,不混用。 */
+  const parsedOptions = useMemo(() => {
+    if (matchedServer) {
+      return Object.values(picked).filter(Boolean) as string[];
+    }
+    return extraInput
+      .split(",")
+      .map((v) => v.trim())
+      .filter(Boolean);
+  }, [matchedServer, picked, extraInput]);
+
+  // option chip 的绿/红点:跟服务器列表对话框同一套逻辑
+  const variants = matchedServer ? variantIndex[matchedServer.planCode] : undefined;
+  const optionHasStock = (groupKey: OptionGroupKey, value: string): boolean => {
+    if (groupKey === "bandwidth" || groupKey === "vrack" || groupKey === "cpu" || groupKey === "other") {
+      return true;
+    }
+    return hasStockWithOption(
+      variants,
+      picked as Record<string, string>,
+      groupKey,
+      value,
+      datacenters.length > 0 ? datacenters : undefined
+    );
+  };
+
+  const qty = Number(quantity) || 1;
+  const totalTasks = datacenters.length * qty;
+  const canSubmit = !!accountId && planCode.trim().length > 0 && datacenters.length > 0 && qty > 0;
+
+  const reset = () => {
+    setPlanCode("");
+    setDatacenters([]);
+    setQuantity("1");
+    setRetryInterval(String(DEFAULT_RETRY_INTERVAL));
+    setPicked({});
+    setExtraInput("");
+    prevPlanCodeRef.current = "";
+  };
+
+  const handleClose = () => {
+    if (create.isPending) return;
+    onOpenChange(false);
+  };
+
+  const toggleDC = (code: string) => {
+    setDatacenters((prev) =>
+      prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]
+    );
+  };
+
+  const selectAllDC = () => setDatacenters(OVH_DATACENTERS.map((d) => d.code));
+  const clearAllDC = () => setDatacenters([]);
+
+  const handleSubmit = async () => {
+    if (!canSubmit) {
+      toast.error("请填写计划代码并至少选择一个数据中心");
+      return;
+    }
+    const result = await create.mutateAsync({
+      account_id: accountId,
+      planCode: planCode.trim(),
+      datacenters,
+      quantity: qty,
+      retryInterval: Number(retryInterval) || DEFAULT_RETRY_INTERVAL,
+      options: parsedOptions,
+    });
+    if (result.success > 0) {
+      toast.success(`已创建 ${result.success}/${result.total} 个抢购任务`);
+    }
+    if (result.failed > 0) {
+      toast.error(`${result.failed} 个任务创建失败`);
+    }
+    if (result.success > 0) {
+      reset();
+      onOpenChange(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent className="w-[95vw] sm:w-full sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>新建抢购任务</DialogTitle>
+          <DialogDescription>
+            为每个数据中心创建指定数量的独立任务，每台服务器单独成单。
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-5 py-2">
+          {/* OVH 账户 */}
+          <div>
+            <label className="block text-[13px] font-medium mb-1.5">OVH 账户 *</label>
+            <AccountSelect value={accountId} onChange={setAccountId} />
+            <p className="text-[11px] text-muted-foreground mt-1">下单时用该账户的凭据,购物车 subsidiary 跟随账户 zone</p>
+          </div>
+
+          {/* 服务器计划代码 */}
+          <div>
+            <label className="block text-[13px] font-medium mb-1.5">服务器计划代码</label>
+            <PlanCodeCombobox
+              value={planCode}
+              onChange={setPlanCode}
+              servers={servers.data || []}
+              placeholder="选择或搜索服务器型号"
+            />
+            {matchedServer && (
+              <p className="text-[11px] text-muted-foreground mt-1 truncate">
+                {matchedServer.cpu} · {matchedServer.memory} · {matchedServer.storage}
               </p>
-            </div>
-            
-            <div className="flex gap-2">
-              {/* 处理器控制按钮 */}
-              <Button 
-                variant={isProcessorRunning ? "destructive" : "default"}
-                size="sm"
-                onClick={handleToggleProcessor}
-                disabled={isTogglingProcessor}
-              >
-                {isTogglingProcessor ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : isProcessorRunning ? (
-                  <Square className="h-4 w-4 mr-2" />
-                ) : (
-                  <Power className="h-4 w-4 mr-2" />
+            )}
+          </div>
+
+          {/* 数据中心多选 */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-[13px] font-medium">
+                选择数据中心
+                {datacenters.length > 0 && (
+                  <span className="text-muted-foreground ml-2 font-normal">
+                    （已选 {datacenters.length}）
+                  </span>
                 )}
-                {isProcessorRunning ? "停止处理器" : "启动处理器"}
-              </Button>
-              
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" disabled={queueList.length === 0}>
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    清空队列
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent className="terminal-card border-destructive/30">
-                  <AlertDialogHeader>
-                    <AlertDialogTitle className="text-destructive">确认清空队列？</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      此操作将删除所有 {queueList.length} 个任务，且无法撤销。
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>取消</AlertDialogCancel>
-                    <AlertDialogAction 
-                      onClick={handleClearQueue}
-                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                      disabled={isClearingQueue}
-                    >
-                      {isClearingQueue && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                      确认清空
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-              <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button size="sm">
-                    <Plus className="h-4 w-4 mr-2" />
-                    添加任务
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="terminal-card border-primary/30">
-                  <DialogHeader>
-                    <DialogTitle className="text-primary">添加抢购任务</DialogTitle>
-                    <DialogDescription>
-                      配置服务器抢购参数
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4 py-4">
-                    <div className="space-y-2">
-                      <Label>服务器型号</Label>
-                      <Select 
-                        value={newTask.planCode} 
-                        onValueChange={(v) => setNewTask({...newTask, planCode: v, datacenter: ""})}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="选择型号" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {servers?.slice(0, 50).map(server => (
-                            <SelectItem key={server.planCode} value={server.planCode}>
-                              {server.name || server.planCode} ({server.planCode})
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>目标机房</Label>
-                      <Select 
-                        value={newTask.datacenter} 
-                        onValueChange={(v) => setNewTask({...newTask, datacenter: v})}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="选择机房" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {selectedServer?.datacenters?.map(dc => (
-                            <SelectItem key={dc.datacenter} value={dc.datacenter}>
-                              {dc.datacenter.toUpperCase()} - {dc.availability}
-                            </SelectItem>
-                          )) || (
-                            <>
-                              <SelectItem value="gra">GRA (Gravelines)</SelectItem>
-                              <SelectItem value="rbx">RBX (Roubaix)</SelectItem>
-                              <SelectItem value="sbg">SBG (Strasbourg)</SelectItem>
-                              <SelectItem value="bhs">BHS (Beauharnois)</SelectItem>
-                            </>
-                          )}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>重试间隔 (秒)</Label>
-                      <Input 
-                        type="number" 
-                        value={newTask.retryInterval}
-                        onChange={(e) => setNewTask({...newTask, retryInterval: parseInt(e.target.value) || 30})}
-                        min={5} 
-                        max={300} 
-                      />
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <DialogClose asChild>
-                      <Button variant="outline">取消</Button>
-                    </DialogClose>
-                    <Button onClick={handleAddTask} disabled={isAdding}>
-                      {isAdding ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                      添加任务
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
+              </label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={selectAllDC}
+                  className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  全选
+                </button>
+                <span className="text-muted-foreground text-[11px]">/</span>
+                <button
+                  type="button"
+                  onClick={clearAllDC}
+                  className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  清空
+                </button>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 border border-border rounded-2xl p-3 max-h-56 overflow-y-auto">
+              {OVH_DATACENTERS.map((dc) => {
+                const checked = datacenters.includes(dc.code);
+                return (
+                  <label
+                    key={dc.code}
+                    className="flex items-center gap-2 cursor-pointer text-[13px] py-1"
+                  >
+                    <Checkbox
+                      checked={checked}
+                      onCheckedChange={() => toggleDC(dc.code)}
+                    />
+                    <span className="truncate" title={`${dc.name} (${dc.code})`}>
+                      <span className="font-mono uppercase">{dc.code}</span>
+                      <span className="text-muted-foreground ml-1">{dc.name}</span>
+                    </span>
+                  </label>
+                );
+              })}
             </div>
           </div>
 
-          {/* Stats Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="terminal-card p-4 border-accent/30">
-              <div className="flex items-center gap-2 text-accent mb-1">
-                <Play className="h-4 w-4" />
-                <span className="text-xs uppercase">运行中</span>
-              </div>
-              <p className="text-2xl font-bold text-accent">
-                {queueList.filter(q => q.status === "running").length}
+          {/* 数量 + 重试间隔 */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-[13px] font-medium mb-1.5">
+                每个数据中心数量
+              </label>
+              <Input
+                type="text"
+                inputMode="numeric"
+                value={quantity}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === "" || /^\d*$/.test(v)) setQuantity(v);
+                }}
+                placeholder="默认: 1"
+              />
+              <p className="text-[11px] text-muted-foreground mt-1">
+                每台服务器单独成单
               </p>
             </div>
-            <div className="terminal-card p-4">
-              <div className="flex items-center gap-2 text-muted-foreground mb-1">
-                <Clock className="h-4 w-4" />
-                <span className="text-xs uppercase">等待中</span>
-              </div>
-              <p className="text-2xl font-bold">
-                {queueList.filter(q => q.status === "pending").length}
+            <div>
+              <label className="block text-[13px] font-medium mb-1.5">
+                重试间隔（秒）
+              </label>
+              <Input
+                type="text"
+                inputMode="numeric"
+                value={retryInterval}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === "" || /^\d*$/.test(v)) setRetryInterval(v);
+                }}
+                placeholder={`默认: ${DEFAULT_RETRY_INTERVAL}`}
+              />
+              <p className="text-[11px] text-muted-foreground mt-1">
+                抢购失败后等待秒数再重试
               </p>
-            </div>
-            <div className="terminal-card p-4 border-primary/30">
-              <div className="flex items-center gap-2 text-primary mb-1">
-                <CheckCircle2 className="h-4 w-4" />
-                <span className="text-xs uppercase">已完成</span>
-              </div>
-              <p className="text-2xl font-bold text-primary">{completedCount}</p>
-            </div>
-            <div className="terminal-card p-4 border-destructive/30">
-              <div className="flex items-center gap-2 text-destructive mb-1">
-                <XCircle className="h-4 w-4" />
-                <span className="text-xs uppercase">失败</span>
-              </div>
-              <p className="text-2xl font-bold text-destructive">{failedCount}</p>
             </div>
           </div>
 
-          {/* Queue Table */}
-          <TerminalCard
-            title="任务列表"
-            icon={<ListOrdered className="h-4 w-4" />}
-          >
-            {isLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              </div>
-            ) : queueList.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">
-                <ListOrdered className="h-12 w-12 mx-auto mb-4 opacity-30" />
-                <p>暂无队列任务</p>
+          {/* 可选配置:planCode 在 catalog 里 → 走 chip 选择;
+                planCode 自定义不在 catalog → 走手填。两者互斥不同时存在。 */}
+          <div>
+            <label className="block text-[13px] font-medium mb-1.5">
+              可选配置
+              <span className="text-muted-foreground ml-2 font-normal">
+                {grouped
+                  ? "（点击 chip 选择,留空走 OVH 默认下单）"
+                  : "（catalog 里没找到这个型号,需要手填 addon planCode）"}
+              </span>
+            </label>
+            {grouped ? (
+              <div className="space-y-4">
+                {(["cpu", "memory", "systemStorage", "storage", "bandwidth", "vrack", "other"] as OptionGroupKey[])
+                  .filter((g) => grouped[g].length > 0)
+                  .map((g) => (
+                    <OptionGroupSection
+                      key={g}
+                      groupKey={g}
+                      options={grouped[g]}
+                      picked={picked[g] || ""}
+                      defaultValueSet={defaultValueSet}
+                      hasStock={variants && variants.length > 0 ? (value) => optionHasStock(g, value) : undefined}
+                      onPick={(value) =>
+                        setPicked((p) => ({
+                          ...p,
+                          [g]: p[g] === value ? "" : value, // 再点一次取消选中
+                        }))
+                      }
+                    />
+                  ))}
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-xs text-muted-foreground uppercase border-b border-border">
-                      <th className="text-left py-3 px-2">任务ID</th>
-                      <th className="text-left py-3 px-2">服务器</th>
-                      <th className="text-left py-3 px-2">机房</th>
-                      <th className="text-left py-3 px-2 hidden md:table-cell">创建时间</th>
-                      <th className="text-center py-3 px-2">重试</th>
-                      <th className="text-left py-3 px-2 hidden lg:table-cell">最后检查</th>
-                      <th className="text-center py-3 px-2">状态</th>
-                      <th className="text-right py-3 px-2">操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {queueList.map((item, index) => (
-                      <tr 
-                        key={item.id}
-                        className={cn(
-                          "border-b border-border/50 transition-colors",
-                          item.status === "running" && "bg-accent/5",
-                          item.status === "failed" && "bg-destructive/5"
-                        )}
-                      >
-                        <td className="py-3 px-2">
-                          <span className="font-mono text-primary text-xs">{item.id.slice(0, 8)}</span>
-                        </td>
-                        <td className="py-3 px-2">
-                          <div>
-                            <p className="font-medium">{item.planCode}</p>
-                          </div>
-                        </td>
-                        <td className="py-3 px-2">
-                          <span className="uppercase font-mono text-xs bg-muted px-2 py-1 rounded-sm">
-                            {item.datacenter}
-                          </span>
-                        </td>
-                        <td className="py-3 px-2 hidden md:table-cell text-muted-foreground">
-                          {formatTime(item.createdAt)}
-                        </td>
-                        <td className="py-3 px-2 text-center">
-                          <span className={cn(
-                            "font-mono",
-                            item.retryCount > 500 && "text-warning",
-                            item.retryCount > 900 && "text-destructive"
-                          )}>
-                            {item.retryCount}
-                          </span>
-                        </td>
-                        <td className="py-3 px-2 hidden lg:table-cell text-muted-foreground text-xs">
-                          {getLastCheckDisplay(item.lastCheckTime)}
-                        </td>
-                        <td className="py-3 px-2 text-center">
-                          <StatusBadge status={item.status as any} size="sm" />
-                        </td>
-                        <td className="py-3 px-2 text-right">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8">
-                                <MoreVertical className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              {item.status === "running" && (
-                                <DropdownMenuItem onClick={() => handleUpdateStatus(item.id, "paused")}>
-                                  <Pause className="h-4 w-4 mr-2" />
-                                  暂停
-                                </DropdownMenuItem>
-                              )}
-                              {(item.status === "paused" || item.status === "pending") && (
-                                <DropdownMenuItem onClick={() => handleUpdateStatus(item.id, "running")}>
-                                  <Play className="h-4 w-4 mr-2" />
-                                  启动
-                                </DropdownMenuItem>
-                              )}
-                              {item.status === "failed" && (
-                                <DropdownMenuItem onClick={() => handleUpdateStatus(item.id, "running")}>
-                                  <RefreshCw className="h-4 w-4 mr-2" />
-                                  重试
-                                </DropdownMenuItem>
-                              )}
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem 
-                                className="text-destructive"
-                                onClick={() => handleDeleteTask(item.id)}
-                              >
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                删除
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              // planCode 不在 catalog 里(用户手填了自定义型号) → 走手动输入
+              <Input
+                placeholder="addon planCode,逗号分隔。例如:ram-64g-ecc-2400, softraid-2x450nvme-24sk50"
+                value={extraInput}
+                onChange={(e) => setExtraInput(e.target.value)}
+              />
+            )}
+
+            {parsedOptions.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-border">
+                <span className="text-[11px] text-muted-foreground">已选:</span>
+                {parsedOptions.map((opt, i) => (
+                  <Chip key={`${opt}-${i}`} tone="default" className="font-mono">
+                    {opt}
+                  </Chip>
+                ))}
               </div>
             )}
-          </TerminalCard>
-        </div>
-      </AppLayout>
-    </>
-  );
-};
+          </div>
 
-export default QueuePage;
+
+          {/* 汇总提示 */}
+          {datacenters.length > 0 && (
+            <div className="border border-border rounded-2xl p-3 text-[12px] text-muted-foreground">
+              将创建 <span className="font-semibold text-foreground">{totalTasks}</span> 个独立任务
+              （{datacenters.length} 个数据中心 × {qty} 台
+              {parsedOptions.length > 0 ? ` · 含 ${parsedOptions.length} 个可选配置` : ""}）
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={handleClose} disabled={create.isPending}>
+            取消
+          </Button>
+          <Button onClick={handleSubmit} disabled={!canSubmit || create.isPending}>
+            {create.isPending ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                创建中...
+              </>
+            ) : (
+              <>
+                <Plus className="w-4 h-4" />
+                {datacenters.length > 0 ? `创建 ${totalTasks} 个任务` : "创建任务"}
+              </>
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function QueueRow({
+  item,
+  onToggle,
+  onDelete,
+}: {
+  item: QueueItem;
+  onToggle: () => void;
+  onDelete: () => void;
+}) {
+  const chip = (() => {
+    if (item.status === "running")
+      return (
+        <Chip tone="success">
+          <StatusDot tone="success" pulse size="xs" />运行中
+        </Chip>
+      );
+    if (item.status === "pending")
+      return (
+        <Chip tone="warning">
+          <StatusDot tone="warning" size="xs" />等待中
+        </Chip>
+      );
+    if (item.status === "paused")
+      return (
+        <Chip tone="default">
+          <StatusDot tone="muted" size="xs" />已暂停
+        </Chip>
+      );
+    if (item.status === "completed")
+      return (
+        <Chip tone="info">
+          <StatusDot tone="info" size="xs" />已完成
+        </Chip>
+      );
+    return (
+      <Chip tone="danger">
+        <StatusDot tone="danger" size="xs" />失败
+      </Chip>
+    );
+  })();
+
+  return (
+    <Card>
+      <CardContent className="p-3 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
+            <span className="font-mono font-semibold text-sm">{item.planCode}</span>
+            <AccountChip accountId={item.accountId} />
+            <Chip tone="default">DC {item.datacenter.toUpperCase()}</Chip>
+            {item.options && item.options.length > 0 && (
+              <Chip tone="default">含 {item.options.length} 个可选配置</Chip>
+            )}
+          </div>
+          <div className="text-[11px] text-muted-foreground flex items-center gap-2 flex-wrap">
+            <Clock className="w-3 h-3" />
+            <span>
+              下次尝试 {item.retryCount > 0 ? `${item.retryInterval}秒后（第 ${item.retryCount + 1} 次）` : "即将开始"}
+            </span>
+            <span>·</span>
+            <span>{new Date(item.createdAt).toLocaleString()}</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {chip}
+          {item.status !== "completed" && item.status !== "failed" && (
+            <Button variant="ghost" size="icon" onClick={onToggle} aria-label={item.status === "running" ? "暂停" : "恢复"}>
+              {item.status === "running" ? <PauseCircle className="w-4 h-4" /> : <PlayCircle className="w-4 h-4" />}
+            </Button>
+          )}
+          <Button variant="ghost" size="icon" onClick={onDelete} aria-label="删除">
+            <X className="w-4 h-4" />
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+
+const Page = () => (
+  <>
+    <Helmet>
+      <title>抢购队列 | OVH WebUI</title>
+    </Helmet>
+    <AppLayout>
+      <QueuePage />
+    </AppLayout>
+  </>
+);
+
+export default Page;

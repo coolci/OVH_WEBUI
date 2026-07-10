@@ -11,60 +11,58 @@ interface TerminalCardProps {
 }
 
 const variantStyles = {
-  default: "border-border",
-  accent: "border-accent/30",
+  default: "border-border/90",
+  accent: "border-accent/25",
   warning: "border-warning/30",
   danger: "border-destructive/30",
 };
 
-const headerVariantStyles = {
-  default: "border-border",
-  accent: "border-accent/30",
-  warning: "border-warning/30",
-  danger: "border-destructive/30",
+const headerAccent = {
+  default: "from-primary/10 via-transparent to-transparent",
+  accent: "from-accent/15 via-transparent to-transparent",
+  warning: "from-warning/15 via-transparent to-transparent",
+  danger: "from-destructive/15 via-transparent to-transparent",
 };
 
-export const TerminalCard = forwardRef<HTMLDivElement, TerminalCardProps>(({ 
-  title, 
-  icon, 
-  children, 
-  className,
-  headerAction,
-  variant = "default"
-}, ref) => {
-  return (
-    <div 
-      ref={ref}
-      className={cn(
-        "terminal-card overflow-hidden",
-        variantStyles[variant],
-        className
-      )}
-    >
-      {title && (
-        <div className={cn(
-          "flex items-center justify-between px-3 sm:px-4 py-2 border-b bg-muted/30",
-          headerVariantStyles[variant]
-        )}>
-          <div className="flex items-center gap-2 min-w-0">
-            {/* Terminal window dots */}
-            <div className="flex items-center gap-1 mr-1 sm:mr-2 flex-shrink-0">
-              <span className="h-1.5 w-1.5 sm:h-2 sm:w-2 rounded-full bg-destructive/60" />
-              <span className="h-1.5 w-1.5 sm:h-2 sm:w-2 rounded-full bg-warning/60" />
-              <span className="h-1.5 w-1.5 sm:h-2 sm:w-2 rounded-full bg-primary/60" />
+export const TerminalCard = forwardRef<HTMLDivElement, TerminalCardProps>(
+  ({ title, icon, children, className, headerAction, variant = "default" }, ref) => {
+    return (
+      <div
+        ref={ref}
+        className={cn("terminal-card", variantStyles[variant], className)}
+      >
+        {title && (
+          <div
+            className={cn(
+              "relative flex items-center justify-between gap-2 border-b border-border/60 px-3.5 py-3 sm:px-5",
+              "bg-gradient-to-r",
+              headerAccent[variant]
+            )}
+          >
+            <div className="flex min-w-0 items-center gap-2.5">
+              <div className="flex flex-shrink-0 items-center gap-1" aria-hidden>
+                <span className="h-1.5 w-1.5 rounded-full bg-destructive/65" />
+                <span className="h-1.5 w-1.5 rounded-full bg-warning/65" />
+                <span className="h-1.5 w-1.5 rounded-full bg-primary/70" />
+              </div>
+              {icon && (
+                <span className="text-primary flex-shrink-0 [&_svg]:h-3.5 [&_svg]:w-3.5 opacity-90">
+                  {icon}
+                </span>
+              )}
+              <span className="text-xs sm:text-sm font-semibold text-foreground/95 truncate tracking-tight">
+                {title}
+              </span>
             </div>
-            
-            {icon && <span className="text-primary flex-shrink-0">{icon}</span>}
-            <span className="text-xs sm:text-sm font-medium text-foreground truncate">{title}</span>
+            {headerAction && (
+              <div className="flex items-center gap-1.5 flex-shrink-0">{headerAction}</div>
+            )}
           </div>
-          {headerAction}
-        </div>
-      )}
-      <div className="p-3 sm:p-4">
-        {children}
+        )}
+        <div className="p-3.5 sm:p-4 md:p-5">{children}</div>
       </div>
-    </div>
-  );
-});
+    );
+  }
+);
 
 TerminalCard.displayName = "TerminalCard";

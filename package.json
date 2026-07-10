@@ -8,7 +8,15 @@
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "init": "powershell -ExecutionPolicy Bypass -File scripts/init-first-run.ps1",
+    "init:fresh": "powershell -ExecutionPolicy Bypass -File scripts/init-first-run.ps1 -Fresh",
+    "backend": "powershell -ExecutionPolicy Bypass -File scripts/start-backend.ps1",
+    "backend:rebuild": "powershell -ExecutionPolicy Bypass -File scripts/start-backend.ps1 -Rebuild",
+    "dev:all": "powershell -ExecutionPolicy Bypass -File scripts/start-dev.ps1",
+    "test:unit:backend": "cd backend && go test ./internal/catalog/ ./internal/numconv/ -count=1",
+    "test:smoke": "python scripts/smoke_test.py",
+    "test:full": "python scripts/full_functional_test.py"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -41,6 +49,7 @@
     "@radix-ui/react-tooltip": "^1.2.7",
     "@radix-ui/react-visually-hidden": "^1.2.4",
     "@tanstack/react-query": "^5.83.0",
+    "axios": "^1.18.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
@@ -81,5 +90,10 @@
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.38.0",
     "vite": "^5.4.19"
+  },
+  "allowScripts": {
+    "@swc/core@1.13.2": true,
+    "esbuild@0.21.5": true,
+    "esbuild@0.25.0": true
   }
 }

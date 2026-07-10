@@ -1,335 +1,337 @@
 import { AppLayout } from "@/components/layout/AppLayout";
-import { TerminalCard } from "@/components/ui/terminal-card";
-import { StatusBadge } from "@/components/ui/status-badge";
-import { Button } from "@/components/ui/button";
 import { Helmet } from "react-helmet-async";
-import { 
-  History, 
-  ExternalLink, 
-  Trash2,
-  CheckCircle2,
-  XCircle,
-  Clock,
-  DollarSign,
-  AlertTriangle,
-  Loader2,
-  RefreshCw
-} from "lucide-react";
-import { useState, useEffect } from "react";
-import { cn } from "@/lib/utils";
+import { Clock, RefreshCw, Trash2, Search, ExternalLink, AlertCircle, Hourglass } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import api from "@/lib/api";
-import { usePurchaseHistory } from "@/hooks/useApi";
+import { PageHeader } from "@/components/common/PageHeader";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Chip } from "@/components/common/Chip";
+import { AccountChip } from "@/components/common/AccountChip";
+import { Skeleton } from "@/components/common/Skeleton";
+import { EmptyState } from "@/components/common/EmptyState";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { useHistory, useClearHistory, type PurchaseHistory } from "@/hooks/use-history";
 
-const HistoryPage = () => {
-  const { data: history, isLoading, refetch } = usePurchaseHistory();
-  const [now, setNow] = useState(Date.now());
-  const [isClearing, setIsClearing] = useState(false);
-  const [isRefreshing, setIsRefreshing] = useState(false);
+/** 抢购历史：表格 + 搜索 + 状态过滤 */
+/** 订单有效期 15 天，未提供 expirationTime 时用 purchaseTime + 15d 兜底 */
+const ORDER_VALIDITY_MS = 15 * 24 * 60 * 60 * 1000;
 
+/** 把毫秒倒计时格式化为 `2天5时12分` / `12分` / `已过期` */
+function formatCountdown(remainingMs: number): string {
+  if (remainingMs <= 0) return "已过期";
+  const totalMinutes = Math.floor(remainingMs / 60_000);
+  const days = Math.floor(totalMinutes / (24 * 60));
+  const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+  const minutes = totalMinutes % 60;
+  if (days > 0) return `${days}天${hours}时${minutes}分`;
+  if (hours > 0) return `${hours}时${minutes}分`;
+  return `${minutes}分`;
+}
+
+function getExpirationMs(item: PurchaseHistory): number {
+  if (item.expirationTime) return new Date(item.expirationTime).getTime();
+  return new Date(item.purchaseTime).getTime() + ORDER_VALIDITY_MS;
+}
+
+function HistoryPage() {
+  const list = useHistory();
+  const clear = useClearHistory();
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "success" | "failed">("all");
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+
+  // 每分钟刷新一次 now，让所有行的倒计时同步推进
   useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
+    const id = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(id);
   }, []);
 
-  useEffect(() => {
-    const interval = setInterval(refetch, 30000);
-    return () => clearInterval(interval);
-  }, [refetch]);
-
-  const historyList = history || [];
-
-  const successCount = historyList.filter(h => h.status === "success").length;
-  const failedCount = historyList.filter(h => h.status === "failed").length;
-  const totalSpent = historyList
-    .filter(h => h.status === "success" && h.price)
-    .reduce((sum, h) => sum + (h.price?.withTax || 0), 0);
-
-  const formatTime = (timestamp: string) => {
-    try {
-      const date = new Date(timestamp);
-      return date.toLocaleString("zh-CN");
-    } catch {
-      return "N/A";
-    }
-  };
-
-  const getTimeRemaining = (expirationTime: string) => {
-    try {
-      const expiry = new Date(expirationTime).getTime();
-      const diff = expiry - now;
-      
-      if (diff <= 0) return { text: "已过期", isExpired: true, isUrgent: true };
-      
-      const days = Math.floor(diff / 86400000);
-      const hours = Math.floor((diff % 86400000) / 3600000);
-      const minutes = Math.floor((diff % 3600000) / 60000);
-      
-      if (days > 0) {
-        return { text: `${days}天 ${hours}小时`, isExpired: false, isUrgent: days < 3 };
-      }
-      if (hours > 0) {
-        return { text: `${hours}小时 ${minutes}分钟`, isExpired: false, isUrgent: true };
-      }
-      return { text: `${minutes}分钟`, isExpired: false, isUrgent: true };
-    } catch {
-      return { text: "N/A", isExpired: false, isUrgent: false };
-    }
-  };
-
-  const handleClearHistory = async () => {
-    setIsClearing(true);
-    try {
-      await api.clearPurchaseHistory();
-      toast.success("购买历史已清空");
-      refetch();
-    } catch (err: any) {
-      toast.error(err.message);
-    } finally {
-      setIsClearing(false);
-    }
-  };
-
-  const handleRefresh = async () => {
-    setIsRefreshing(true);
-    try {
-      await refetch();
-      toast.success("数据已刷新");
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
+  const items = list.data || [];
+  const filtered = useMemo(() => {
+    const s = search.trim().toLowerCase();
+    return items.filter((i) => {
+      if (statusFilter !== "all" && i.status !== statusFilter) return false;
+      if (s && !`${i.planCode} ${i.datacenter} ${i.orderId || ""}`.toLowerCase().includes(s)) return false;
+      return true;
+    });
+  }, [items, search, statusFilter]);
 
   return (
-    <>
-      <Helmet>
-        <title>购买历史 | OVH Sniper</title>
-        <meta name="description" content="查看服务器购买记录和订单状态" />
-      </Helmet>
-      
-      <AppLayout>
-        <div className="space-y-6">
-          {/* Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-bold text-primary flex items-center gap-2">
-                <span className="text-muted-foreground">&gt;</span>
-                购买历史
-                <span className="cursor-blink">_</span>
-              </h1>
-              <p className="text-sm text-muted-foreground mt-1">
-                共 {historyList.length} 条记录
-              </p>
-            </div>
-            
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isRefreshing}>
-                <RefreshCw className={cn("h-4 w-4 mr-2", isRefreshing && "animate-spin")} />
-                刷新
-              </Button>
-              
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    className="text-destructive hover:text-destructive"
-                    disabled={historyList.length === 0}
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    清空历史
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent className="terminal-card border-destructive/30">
-                  <AlertDialogHeader>
-                    <AlertDialogTitle className="text-destructive">确认清空历史记录？</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      此操作将删除所有 {historyList.length} 条购买记录，且无法撤销。
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>取消</AlertDialogCancel>
-                    <AlertDialogAction 
-                      onClick={handleClearHistory}
-                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                      disabled={isClearing}
-                    >
-                      {isClearing && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                      确认清空
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            </div>
+    <div className="space-y-6">
+      <PageHeader
+        icon={Clock}
+        title="抢购历史"
+        description="查看服务器购买历史记录"
+        action={
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => list.refetch()} disabled={list.isFetching}>
+              <RefreshCw className={`w-4 h-4 ${list.isFetching ? "animate-spin" : ""}`} />
+              刷新
+            </Button>
+            <Button variant="outline" onClick={() => setConfirmClear(true)} disabled={items.length === 0}>
+              <Trash2 className="w-4 h-4" />
+              清空
+            </Button>
           </div>
+        }
+      />
 
-          {/* Stats Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="terminal-card p-4 border-primary/30">
-              <div className="flex items-center gap-2 text-primary mb-1">
-                <CheckCircle2 className="h-4 w-4" />
-                <span className="text-xs uppercase">成功</span>
-              </div>
-              <p className="text-2xl font-bold text-primary">{successCount}</p>
+      <Card>
+        <CardContent className="p-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="relative">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+              <Input
+                placeholder="搜索型号 / 机房 / 订单号..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9 rounded-full"
+              />
             </div>
-            <div className="terminal-card p-4 border-destructive/30">
-              <div className="flex items-center gap-2 text-destructive mb-1">
-                <XCircle className="h-4 w-4" />
-                <span className="text-xs uppercase">失败</span>
-              </div>
-              <p className="text-2xl font-bold text-destructive">{failedCount}</p>
-            </div>
-            <div className="terminal-card p-4 border-accent/30">
-              <div className="flex items-center gap-2 text-accent mb-1">
-                <DollarSign className="h-4 w-4" />
-                <span className="text-xs uppercase">总消费</span>
-              </div>
-              <p className="text-2xl font-bold text-accent">€{totalSpent.toFixed(2)}</p>
-            </div>
-            <div className="terminal-card p-4">
-              <div className="flex items-center gap-2 text-muted-foreground mb-1">
-                <Clock className="h-4 w-4" />
-                <span className="text-xs uppercase">总订单</span>
-              </div>
-              <p className="text-2xl font-bold">{historyList.length}</p>
-            </div>
+            <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as any)}>
+              <SelectTrigger className="rounded-full">
+                <SelectValue placeholder="所有状态" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">所有状态</SelectItem>
+                <SelectItem value="success">成功</SelectItem>
+                <SelectItem value="failed">失败</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
+        </CardContent>
+      </Card>
 
-          {/* History List */}
-          <TerminalCard
-            title="订单记录"
-            icon={<History className="h-4 w-4" />}
-          >
-            {isLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              </div>
-            ) : historyList.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">
-                <History className="h-12 w-12 mx-auto mb-4 opacity-30" />
-                <p>暂无购买记录</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {historyList.map((item, index) => {
-                  const timeRemaining = (item as any).expirationTime ? getTimeRemaining((item as any).expirationTime) : null;
-                  
-                  return (
-                    <div 
-                      key={item.id}
-                      className={cn(
-                        "p-4 rounded-sm border transition-all",
-                        item.status === "success" 
-                          ? "border-primary/20 bg-primary/5" 
-                          : "border-destructive/20 bg-destructive/5"
-                      )}
-                    >
-                      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                        {/* Order Info */}
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            <StatusBadge status={item.status === "success" ? "completed" : "failed"} />
-                            <span className="font-bold text-foreground">{item.planCode}</span>
-                            <span className="text-xs text-muted-foreground uppercase bg-muted px-2 py-0.5 rounded-sm">
-                              {item.datacenter}
-                            </span>
-                          </div>
-                          
-                          <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-                            <span>下单时间: {formatTime(item.purchaseTime)}</span>
-                            {item.orderId && (
-                              <span>订单号: <span className="text-accent font-mono">#{item.orderId}</span></span>
-                            )}
-                            {item.errorMessage && (
-                              <span className="text-destructive">错误: {item.errorMessage}</span>
-                            )}
-                          </div>
+      {list.isPending ? (
+        <Card>
+          <CardContent className="p-4 space-y-2">
+            {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-xl" />)}
+          </CardContent>
+        </Card>
+      ) : filtered.length === 0 ? (
+        <Card>
+          <EmptyState icon={Clock} title="没有匹配的订单" />
+        </Card>
+      ) : (
+        <>
+          {/* 桌面 / 平板:横向表格 */}
+          <Card className="hidden md:block">
+            <div className="table-scroll">
+            <table className="w-full min-w-[760px]">
+              <thead>
+                <tr className="text-left text-[11px] font-medium text-muted-foreground border-b border-border">
+                  <th className="px-4 py-3">型号</th>
+                  <th className="px-4 py-3">机房</th>
+                  <th className="px-4 py-3">配置</th>
+                  <th className="px-4 py-3">价格</th>
+                  <th className="px-4 py-3">状态</th>
+                  <th className="px-4 py-3">时间</th>
+                  <th className="px-4 py-3">剩余</th>
+                  <th className="px-4 py-3">操作</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {filtered.map((item) => <HistoryRow key={item.id} item={item} now={now} />)}
+              </tbody>
+            </table>
+            </div>
+          </Card>
 
-                          {item.options && item.options.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-2">
-                              {item.options.map(opt => (
-                                <span 
-                                  key={opt}
-                                  className="text-xs bg-muted px-2 py-0.5 rounded-sm text-muted-foreground"
-                                >
-                                  {opt}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
+          {/* 手机:卡片堆叠,每条订单一张卡 */}
+          <div className="md:hidden space-y-2">
+            {filtered.map((item) => <HistoryCard key={item.id} item={item} now={now} />)}
+          </div>
+        </>
+      )}
 
-                        {/* Price & Expiry */}
-                        {item.status === "success" && (
-                          <div className="flex items-center gap-6">
-                            {item.price && (
-                              <div className="text-right">
-                                <p className="text-lg font-bold text-primary">
-                                  €{(item.price as any).withTax?.toFixed(2) || 'N/A'}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  {item.price.currency || 'EUR'}
-                                </p>
-                              </div>
-                            )}
-                            
-                            {timeRemaining && (
-                              <div className={cn(
-                                "text-right px-3 py-2 rounded-sm border",
-                                timeRemaining.isExpired 
-                                  ? "border-destructive/30 bg-destructive/10" 
-                                  : timeRemaining.isUrgent 
-                                    ? "border-warning/30 bg-warning/10"
-                                    : "border-border"
-                              )}>
-                                <div className="flex items-center gap-1 mb-1">
-                                  {timeRemaining.isUrgent && !timeRemaining.isExpired && (
-                                    <AlertTriangle className="h-3 w-3 text-warning" />
-                                  )}
-                                  <p className="text-xs text-muted-foreground">剩余时间</p>
-                                </div>
-                                <p className={cn(
-                                  "font-mono font-bold",
-                                  timeRemaining.isExpired && "text-destructive",
-                                  timeRemaining.isUrgent && !timeRemaining.isExpired && "text-warning"
-                                )}>
-                                  {timeRemaining.text}
-                                </p>
-                              </div>
-                            )}
-                            
-                            {item.orderUrl && (
-                              <Button variant="terminal" size="sm" asChild>
-                                <a href={item.orderUrl} target="_blank" rel="noopener noreferrer">
-                                  <ExternalLink className="h-4 w-4 mr-1" />
-                                  支付订单
-                                </a>
-                              </Button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </TerminalCard>
-        </div>
-      </AppLayout>
-    </>
+      <Dialog open={confirmClear} onOpenChange={setConfirmClear}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>确认清空所有历史？</DialogTitle>
+            <DialogDescription>所有抢购历史将被删除，此操作不可撤销。</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmClear(false)}>取消</Button>
+            <Button variant="destructive" onClick={() => { clear.mutate(); setConfirmClear(false); }}>
+              确认清空
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
-};
+}
 
-export default HistoryPage;
+function HistoryRow({ item, now }: { item: PurchaseHistory; now: number }) {
+  // 只有成功且拿到 orderId 的行才显示倒计时
+  const showCountdown = item.status === "success" && !!item.orderId;
+  const remainingMs = showCountdown ? getExpirationMs(item) - now : 0;
+  const isExpired = showCountdown && remainingMs <= 0;
+  // 24 小时内进入告警色
+  const isUrgent = showCountdown && !isExpired && remainingMs < 24 * 60 * 60 * 1000;
+  return (
+    <tr className={`text-[13px] hover:bg-muted ${isExpired ? "opacity-60" : ""}`}>
+      <td className={`px-4 py-3 font-mono font-semibold ${isExpired ? "line-through" : ""}`}>
+        <div className="flex items-center gap-2 flex-wrap">
+          {item.planCode}
+          <AccountChip accountId={item.accountId} />
+        </div>
+      </td>
+      <td className={`px-4 py-3 ${isExpired ? "line-through" : ""}`}>{item.datacenter.toUpperCase()}</td>
+      <td className={`px-4 py-3 text-muted-foreground max-w-[200px] truncate ${isExpired ? "line-through" : ""}`}>
+        {item.options && item.options.length > 0 ? item.options.join(", ") : "默认配置"}
+      </td>
+      <td className="px-4 py-3">
+        {item.price?.withTax != null ? (
+          <span className={`font-mono font-medium text-success ${isExpired ? "line-through" : ""}`}>
+            {item.price.withTax} {item.price.currencyCode || "EUR"}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
+      </td>
+      <td className="px-4 py-3">
+        {item.status === "success" ? (
+          <Chip tone="success">成功</Chip>
+        ) : (
+          <Chip tone="danger">失败</Chip>
+        )}
+      </td>
+      <td className="px-4 py-3 text-[11px] text-muted-foreground font-mono whitespace-nowrap">
+        {new Date(item.purchaseTime).toLocaleString("zh-CN", {
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+        })}
+      </td>
+      <td className="px-4 py-3 whitespace-nowrap">
+        {showCountdown ? (
+          <Chip tone={isExpired ? "danger" : isUrgent ? "warning" : "info"}>
+            <Hourglass className="w-3 h-3" />
+            {formatCountdown(remainingMs)}
+          </Chip>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
+      </td>
+      <td className="px-4 py-3">
+        {item.status === "success" && item.orderUrl ? (
+          <a
+            href={item.orderUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-disabled={isExpired}
+            className={`inline-flex items-center gap-1 text-foreground hover:underline text-[12px] ${
+              isExpired ? "pointer-events-none opacity-50" : ""
+            }`}
+          >
+            <ExternalLink className="w-3 h-3" />
+            订单
+          </a>
+        ) : item.status === "failed" && item.errorMessage ? (
+          <button
+            type="button"
+            onClick={() => toast.info(item.errorMessage)}
+            className="inline-flex items-center gap-1 text-destructive hover:underline text-[12px]"
+          >
+            <AlertCircle className="w-3 h-3" />
+            错误
+          </button>
+        ) : "—"}
+      </td>
+    </tr>
+  );
+}
+
+/** 手机端的订单卡片渲染。跟 HistoryRow 字段一一对应,但堆叠成卡片。 */
+function HistoryCard({ item, now }: { item: PurchaseHistory; now: number }) {
+  const showCountdown = item.status === "success" && !!item.orderId;
+  const remainingMs = showCountdown ? getExpirationMs(item) - now : 0;
+  const isExpired = showCountdown && remainingMs <= 0;
+  const isUrgent = showCountdown && !isExpired && remainingMs < 24 * 60 * 60 * 1000;
+  return (
+    <Card className={isExpired ? "opacity-60" : ""}>
+      <CardContent className="p-3 space-y-2">
+        <div className="flex items-start justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap min-w-0">
+            <span className={`font-mono font-semibold text-[13px] ${isExpired ? "line-through" : ""}`}>{item.planCode}</span>
+            <AccountChip accountId={item.accountId} />
+            <Chip tone="default" className="text-[10px]">{item.datacenter.toUpperCase()}</Chip>
+          </div>
+          {item.status === "success" ? (
+            <Chip tone="success">成功</Chip>
+          ) : (
+            <Chip tone="danger">失败</Chip>
+          )}
+        </div>
+        <div className={`text-[11px] text-muted-foreground break-all ${isExpired ? "line-through" : ""}`}>
+          {item.options && item.options.length > 0 ? item.options.join(", ") : "默认配置"}
+        </div>
+        <div className="flex items-center justify-between gap-2 text-[11px]">
+          <span className="text-muted-foreground font-mono">
+            {new Date(item.purchaseTime).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
+          </span>
+          {item.price?.withTax != null ? (
+            <span className={`font-mono font-medium text-success ${isExpired ? "line-through" : ""}`}>
+              {item.price.withTax} {item.price.currencyCode || "EUR"}
+            </span>
+          ) : null}
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          {showCountdown ? (
+            <Chip tone={isExpired ? "danger" : isUrgent ? "warning" : "info"}>
+              <Hourglass className="w-3 h-3" />
+              {formatCountdown(remainingMs)}
+            </Chip>
+          ) : <span />}
+          {item.status === "success" && item.orderUrl ? (
+            <a
+              href={item.orderUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`inline-flex items-center gap-1 text-foreground hover:underline text-[12px] ${isExpired ? "pointer-events-none opacity-50" : ""}`}
+            >
+              <ExternalLink className="w-3 h-3" />
+              订单
+            </a>
+          ) : item.status === "failed" && item.errorMessage ? (
+            <button
+              type="button"
+              onClick={() => toast.info(item.errorMessage)}
+              className="inline-flex items-center gap-1 text-destructive hover:underline text-[12px]"
+            >
+              <AlertCircle className="w-3 h-3" />
+              错误详情
+            </button>
+          ) : null}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+
+const Page = () => (
+  <>
+    <Helmet>
+      <title>购买历史 | OVH WebUI</title>
+    </Helmet>
+    <AppLayout>
+      <HistoryPage />
+    </AppLayout>
+  </>
+);
+
+export default Page;

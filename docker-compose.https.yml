@@ -1,0 +1,121 @@
+# ═══════════════════════════════════════════════════════════
+# OVH_WEBUI · 完整 HTTPS 栈（一键生产，含 Telegram Webhook）
+# ═══════════════════════════════════════════════════════════
+#
+# 前置：域名 A → 本机；放行 80/443；.env 含 DOMAIN / ACME_EMAIL / API_SECRET_KEY
+#
+#   ./scripts/linux-oneclick-deploy.sh
+#   docker compose -f docker-compose.https.yml up -d --build
+#
+# 公网仅暴露 Caddy 80/443；backend/frontend 仅 Docker 内网。
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    image: ovh-webui-backend:latest
+    container_name: ovh-webui-backend
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PORT: "19998"
+      LISTEN_HOST: ""
+      DATA_DIR: /data
+      GIN_MODE: release
+      ENABLE_API_KEY_AUTH: ${ENABLE_API_KEY_AUTH:-true}
+      API_SECRET_KEY: ${API_SECRET_KEY:?Set API_SECRET_KEY in .env}
+      PUBLIC_BASE_URL: https://${DOMAIN:?Set DOMAIN in .env}
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - ovh_webui_data:/data
+    expose:
+      - "19998"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:19998/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    networks:
+      - ovh_net
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    image: ovh-webui-frontend:latest
+    container_name: ovh-webui-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    expose:
+      - "80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - ovh_net
+
+  caddy:
+    image: caddy:2.8-alpine
+    container_name: ovh-webui-caddy
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:-admin@example.com}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    # caddy version 作为存活探针（admin API 已关闭）
+    healthcheck:
+      test: ["CMD", "caddy", "version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - ovh_net
+
+volumes:
+  ovh_webui_data:
+    name: ovh_webui_data
+  caddy_data:
+    name: ovh_webui_caddy_data
+  caddy_config:
+    name: ovh_webui_caddy_config
+
+networks:
+  ovh_net:
+    name: ovh_webui_net

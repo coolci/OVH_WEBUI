@@ -1,0 +1,6 @@
+# Shell scripts must be LF for Linux containers
+*.sh text eol=lf
+backend/docker-entrypoint.sh text eol=lf
+
+# Windows scripts
+*.ps1 text eol=crlf

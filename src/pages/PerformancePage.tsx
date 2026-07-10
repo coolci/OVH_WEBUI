@@ -1,20 +1,17 @@
 import { AppLayout } from "@/components/layout/AppLayout";
-import { TerminalCard } from "@/components/ui/terminal-card";
 import { Button } from "@/components/ui/button";
 import { Helmet } from "react-helmet-async";
-import { 
-  Activity, 
-  Cpu, 
-  MemoryStick, 
-  Network, 
+import {
+  Activity,
   RefreshCw,
-  Loader2,
-  Server
+  Server,
+  Network,
+  Gauge,
+  Radio,
 } from "lucide-react";
 import { useState, useEffect } from "react";
-import { cn } from "@/lib/utils";
 import { useMyServers } from "@/hooks/useApi";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { toast } from "sonner";
 import {
   Select,
@@ -23,363 +20,276 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Legend
-} from "recharts";
+import { PageHeader } from "@/components/common/PageHeader";
+import { EmptyState } from "@/components/common/EmptyState";
+import { CapabilityNotice } from "@/components/common/CapabilityNotice";
+import { MrtgTrafficChart } from "@/components/server-control/MrtgTrafficChart";
+import { Chip } from "@/components/common/Chip";
+import { Skeleton } from "@/components/common/Skeleton";
+import { cn } from "@/lib/utils";
 
-interface StatPoint {
-  timestamp: number;
-  value: number;
-}
-
-interface Statistics {
-  cpu?: StatPoint[];
-  mem?: StatPoint[];
-  net_tx?: StatPoint[];
-  net_rx?: StatPoint[];
-}
-
+/**
+ * 性能监控
+ * - 主数据源：MRTG 网络流量（几乎所有独服可用）
+ * - 次要：OVH /statistics 主机指标（多数机型 notAvailable，软降级不报错）
+ */
 const PerformancePage = () => {
-  const { data: serversData, isLoading: isLoadingServers } = useMyServers();
+  const { data: serversData, isLoading: isLoadingServers, refetch } = useMyServers();
   const [selectedServer, setSelectedServer] = useState<string>("");
-  const [period, setPeriod] = useState<'hourly' | 'daily' | 'weekly' | 'monthly'>('hourly');
-  const [statistics, setStatistics] = useState<Statistics | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [hostStatsState, setHostStatsState] = useState<
+    "idle" | "loading" | "available" | "unavailable" | "error"
+  >("idle");
+  const [hostHint, setHostHint] = useState<string>("");
+  const [refreshKey, setRefreshKey] = useState(0);
 
-  const servers = serversData?.servers || [];
+  const servers = (serversData?.servers || []).filter((s) => {
+    const st = (s.state || "").toLowerCase();
+    return st === "ok" || st === "active";
+  });
 
-  const loadStatistics = async () => {
-    if (!selectedServer) return;
-    
-    setIsLoading(true);
-    try {
-      const result = await api.getServerStatistics(selectedServer, period);
-      if (result.success) {
-        setStatistics(result.statistics || null);
-      } else {
-        toast.error(result.error || "加载统计数据失败");
-      }
-    } catch (error: any) {
-      toast.error(`加载失败: ${error.message}`);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const selectedMeta = servers.find((s) => s.serviceName === selectedServer);
 
   useEffect(() => {
-    if (selectedServer) {
-      loadStatistics();
-    }
-  }, [selectedServer, period]);
-
-  useEffect(() => {
-    if (!autoRefresh || !selectedServer) return;
-    
-    const interval = setInterval(loadStatistics, 30000);
-    return () => clearInterval(interval);
-  }, [autoRefresh, selectedServer, period]);
-
-  // Auto select first server
-  useEffect(() => {
-    if (servers.length > 0 && !selectedServer) {
+    if (!selectedServer && servers.length > 0) {
       setSelectedServer(servers[0].serviceName);
     }
   }, [servers, selectedServer]);
 
-  const formatChartData = (data: StatPoint[] | undefined) => {
-    if (!data) return [];
-    return data.map(point => ({
-      time: new Date(point.timestamp * 1000).toLocaleTimeString("zh-CN", { 
-        hour: '2-digit', 
-        minute: '2-digit' 
-      }),
-      value: point.value
-    }));
-  };
+  // 探测主机 /statistics 是否开通（不阻塞主 UI；失败 → soft unavailable）
+  useEffect(() => {
+    if (!selectedServer) return;
+    let cancelled = false;
+    setHostStatsState("loading");
+    setHostHint("");
+    (async () => {
+      try {
+        const result = await api.getServerStatistics(selectedServer, "daily");
+        if (cancelled) return;
+        if (result?.notAvailable || result?.success === false) {
+          setHostStatsState("unavailable");
+          setHostHint(
+            result?.hint ||
+              result?.error ||
+              "此机型未开通主机级指标接口"
+          );
+          return;
+        }
+        if (result?.success && result?.statistics) {
+          setHostStatsState("available");
+          return;
+        }
+        setHostStatsState("unavailable");
+        setHostHint("未返回可用时序数据");
+      } catch (e: unknown) {
+        if (cancelled) return;
+        if (e instanceof ApiError && (e.status === 404 || e.status === 0)) {
+          setHostStatsState("unavailable");
+          setHostHint(e.message);
+          return;
+        }
+        // 其它错误也当 soft（避免红屏）
+        setHostStatsState("unavailable");
+        setHostHint(e instanceof Error ? e.message : "探测失败");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedServer, refreshKey]);
 
-  const formatNetworkData = () => {
-    if (!statistics?.net_tx && !statistics?.net_rx) return [];
-    
-    const txData = statistics.net_tx || [];
-    const rxData = statistics.net_rx || [];
-    
-    const combined: { time: string; tx: number; rx: number }[] = [];
-    const maxLen = Math.max(txData.length, rxData.length);
-    
-    for (let i = 0; i < maxLen; i++) {
-      const tx = txData[i];
-      const rx = rxData[i];
-      combined.push({
-        time: new Date((tx?.timestamp || rx?.timestamp) * 1000).toLocaleTimeString("zh-CN", {
-          hour: '2-digit',
-          minute: '2-digit'
-        }),
-        tx: tx?.value || 0,
-        rx: rx?.value || 0
-      });
-    }
-    
-    return combined;
+  const onRefresh = () => {
+    void refetch();
+    setRefreshKey((k) => k + 1);
+    toast.success("已刷新");
   };
-
-  const cpuData = formatChartData(statistics?.cpu);
-  const memData = formatChartData(statistics?.mem);
-  const networkData = formatNetworkData();
 
   return (
     <>
       <Helmet>
-        <title>性能监控 | OVH Sniper</title>
-        <meta name="description" content="实时监控服务器性能" />
+        <title>性能监控 | OVH WebUI</title>
       </Helmet>
-      
       <AppLayout>
-        <div className="space-y-6">
-          {/* Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-bold text-primary flex items-center gap-2">
-                <span className="text-muted-foreground">&gt;</span>
-                性能监控
-                <span className="cursor-blink">_</span>
-              </h1>
-              <p className="text-sm text-muted-foreground mt-1">
-                实时监控服务器资源使用情况
-              </p>
-            </div>
-            
-            <div className="flex gap-2 items-center">
-              <Select value={selectedServer} onValueChange={setSelectedServer}>
-                <SelectTrigger className="w-48">
-                  <SelectValue placeholder="选择服务器" />
-                </SelectTrigger>
-                <SelectContent>
-                  {servers.map(server => (
-                    <SelectItem key={server.serviceName} value={server.serviceName}>
-                      {server.name || server.serviceName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              
-              <Select value={period} onValueChange={(v) => setPeriod(v as any)}>
-                <SelectTrigger className="w-32">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="hourly">最近1小时</SelectItem>
-                  <SelectItem value="daily">最近24小时</SelectItem>
-                  <SelectItem value="weekly">最近7天</SelectItem>
-                  <SelectItem value="monthly">最近30天</SelectItem>
-                </SelectContent>
-              </Select>
-
-              <Button 
-                variant="terminal" 
-                onClick={loadStatistics} 
-                disabled={isLoading || !selectedServer}
+        <div className="space-y-6 sm:space-y-7">
+          <PageHeader
+            icon={Activity}
+            title="性能监控"
+            description="网络流量观测 · OVH MRTG 官方带宽时序"
+            action={
+              <Button
+                variant="outline"
+                size="sm"
+                className="min-h-9 rounded-full px-4"
+                onClick={onRefresh}
               >
-                <RefreshCw className={cn("h-4 w-4 mr-2", isLoading && "animate-spin")} />
+                <RefreshCw className="h-3.5 w-3.5" />
                 刷新
               </Button>
+            }
+          />
+
+          {/* 控制条 */}
+          <div className="glass-panel rounded-2xl p-4 sm:p-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div className="grid flex-1 grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 max-w-3xl">
+                <div className="space-y-1.5">
+                  <label className="section-label">服务器</label>
+                  <Select
+                    value={selectedServer}
+                    onValueChange={setSelectedServer}
+                    disabled={isLoadingServers || servers.length === 0}
+                  >
+                    <SelectTrigger className="min-h-11 rounded-xl border-border/80 bg-background/50">
+                      <SelectValue
+                        placeholder={isLoadingServers ? "加载中…" : "选择服务器"}
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {servers.map((s) => (
+                        <SelectItem key={s.serviceName} value={s.serviceName}>
+                          <span className="font-mono text-xs sm:text-sm">
+                            {s.name || s.serviceName}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="section-label">实例信息</label>
+                  <div className="flex min-h-11 items-center gap-2 rounded-xl border border-border/80 bg-background/40 px-3">
+                    {selectedMeta ? (
+                      <>
+                        <Chip tone="success">{selectedMeta.state || "ok"}</Chip>
+                        <span className="truncate font-mono text-[11px] text-muted-foreground">
+                          {selectedMeta.datacenter?.toUpperCase()}
+                          {selectedMeta.ip ? ` · ${selectedMeta.ip}` : ""}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">未选择</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <MetaPill
+                  icon={Network}
+                  label="流量"
+                  value="MRTG"
+                  active
+                />
+                <MetaPill
+                  icon={Gauge}
+                  label="主机指标"
+                  value={
+                    hostStatsState === "loading"
+                      ? "检测中"
+                      : hostStatsState === "available"
+                        ? "可用"
+                        : "未开通"
+                  }
+                  active={hostStatsState === "available"}
+                  muted={hostStatsState !== "available"}
+                />
+              </div>
             </div>
           </div>
 
           {isLoadingServers ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <div className="space-y-4">
+              <Skeleton className="h-28 rounded-2xl" />
+              <Skeleton className="h-[420px] rounded-2xl" />
             </div>
-          ) : servers.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground">
-              <Server className="h-12 w-12 mx-auto mb-4 opacity-30" />
-              <p>暂无可监控的服务器</p>
+          ) : !selectedServer ? (
+            <div className="glass-panel rounded-2xl">
+              <EmptyState
+                icon={Server}
+                title="暂无可用服务器"
+                description="请先在「服务器控制」确认账户下有运行中的独服"
+              />
             </div>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* CPU Chart */}
-              <TerminalCard
-                title="CPU 使用率"
-                icon={<Cpu className="h-4 w-4" />}
-              >
-                {isLoading ? (
-                  <div className="flex items-center justify-center py-12">
-                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            <>
+              {/* 主：MRTG */}
+              <section className="space-y-3">
+                <div className="flex items-center justify-between gap-2 px-0.5">
+                  <div className="flex items-center gap-2">
+                    <Radio className="h-4 w-4 text-primary" />
+                    <h2 className="text-sm font-semibold tracking-tight">网络流量</h2>
+                    <span className="text-[11px] text-muted-foreground">
+                      OVH MRTG · 公网带宽
+                    </span>
                   </div>
-                ) : cpuData.length === 0 ? (
-                  <div className="text-center py-12 text-muted-foreground">
-                    <Activity className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                    <p className="text-sm">暂无数据</p>
-                  </div>
-                ) : (
-                  <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={cpuData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                        <XAxis 
-                          dataKey="time" 
-                          stroke="hsl(var(--muted-foreground))" 
-                          fontSize={12}
-                        />
-                        <YAxis 
-                          stroke="hsl(var(--muted-foreground))" 
-                          fontSize={12}
-                          domain={[0, 100]}
-                          tickFormatter={(v) => `${v}%`}
-                        />
-                        <Tooltip 
-                          contentStyle={{
-                            backgroundColor: 'hsl(var(--card))',
-                            border: '1px solid hsl(var(--border))',
-                            borderRadius: '4px'
-                          }}
-                          labelStyle={{ color: 'hsl(var(--foreground))' }}
-                          formatter={(value: number) => [`${value.toFixed(1)}%`, 'CPU']}
-                        />
-                        <Line 
-                          type="monotone" 
-                          dataKey="value" 
-                          stroke="hsl(var(--primary))" 
-                          strokeWidth={2}
-                          dot={false}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
-              </TerminalCard>
+                </div>
+                <MrtgTrafficChart key={`${selectedServer}-${refreshKey}`} serviceName={selectedServer} />
+              </section>
 
-              {/* Memory Chart */}
-              <TerminalCard
-                title="内存使用率"
-                icon={<MemoryStick className="h-4 w-4" />}
-              >
-                {isLoading ? (
-                  <div className="flex items-center justify-center py-12">
-                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                  </div>
-                ) : memData.length === 0 ? (
-                  <div className="text-center py-12 text-muted-foreground">
-                    <Activity className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                    <p className="text-sm">暂无数据</p>
-                  </div>
+              {/* 次：主机 statistics 能力说明 */}
+              <section className="space-y-3">
+                <div className="flex items-center gap-2 px-0.5">
+                  <Gauge className="h-4 w-4 text-muted-foreground" />
+                  <h2 className="text-sm font-semibold tracking-tight text-muted-foreground">
+                    主机级指标
+                  </h2>
+                </div>
+                {hostStatsState === "loading" ? (
+                  <Skeleton className="h-24 rounded-2xl" />
+                ) : hostStatsState === "available" ? (
+                  <CapabilityNotice
+                    icon={Gauge}
+                    tone="info"
+                    title="主机级 /statistics 已开通"
+                    description="此机型返回了 OVH statistics 数据。详细时序请结合 MRTG 查看网络侧。"
+                  />
                 ) : (
-                  <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={memData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                        <XAxis 
-                          dataKey="time" 
-                          stroke="hsl(var(--muted-foreground))" 
-                          fontSize={12}
-                        />
-                        <YAxis 
-                          stroke="hsl(var(--muted-foreground))" 
-                          fontSize={12}
-                          domain={[0, 100]}
-                          tickFormatter={(v) => `${v}%`}
-                        />
-                        <Tooltip 
-                          contentStyle={{
-                            backgroundColor: 'hsl(var(--card))',
-                            border: '1px solid hsl(var(--border))',
-                            borderRadius: '4px'
-                          }}
-                          labelStyle={{ color: 'hsl(var(--foreground))' }}
-                          formatter={(value: number) => [`${value.toFixed(1)}%`, '内存']}
-                        />
-                        <Line 
-                          type="monotone" 
-                          dataKey="value" 
-                          stroke="hsl(var(--accent))" 
-                          strokeWidth={2}
-                          dot={false}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
+                  <CapabilityNotice
+                    icon={Gauge}
+                    tone="muted"
+                    title="主机 CPU / 内存接口未开通"
+                    description={
+                      hostHint ||
+                      "OVH 独服默认不提供带内主机 agent 指标；/statistics 在多数机型上不存在。"
+                    }
+                    alternative="网络带宽请使用上方 MRTG 流量图（官方监控）"
+                  />
                 )}
-              </TerminalCard>
-
-              {/* Network Chart */}
-              <TerminalCard
-                title="网络流量"
-                icon={<Network className="h-4 w-4" />}
-                className="lg:col-span-2"
-              >
-                {isLoading ? (
-                  <div className="flex items-center justify-center py-12">
-                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                  </div>
-                ) : networkData.length === 0 ? (
-                  <div className="text-center py-12 text-muted-foreground">
-                    <Activity className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                    <p className="text-sm">暂无数据</p>
-                  </div>
-                ) : (
-                  <div className="h-64">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={networkData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                        <XAxis 
-                          dataKey="time" 
-                          stroke="hsl(var(--muted-foreground))" 
-                          fontSize={12}
-                        />
-                        <YAxis 
-                          stroke="hsl(var(--muted-foreground))" 
-                          fontSize={12}
-                          tickFormatter={(v) => `${(v / 1024 / 1024).toFixed(1)}MB`}
-                        />
-                        <Tooltip 
-                          contentStyle={{
-                            backgroundColor: 'hsl(var(--card))',
-                            border: '1px solid hsl(var(--border))',
-                            borderRadius: '4px'
-                          }}
-                          labelStyle={{ color: 'hsl(var(--foreground))' }}
-                          formatter={(value: number, name: string) => [
-                            `${(value / 1024 / 1024).toFixed(2)} MB/s`,
-                            name === 'tx' ? '上传' : '下载'
-                          ]}
-                        />
-                        <Legend 
-                          formatter={(value) => value === 'tx' ? '上传' : '下载'}
-                        />
-                        <Line 
-                          type="monotone" 
-                          dataKey="tx" 
-                          stroke="hsl(var(--primary))" 
-                          strokeWidth={2}
-                          dot={false}
-                          name="tx"
-                        />
-                        <Line 
-                          type="monotone" 
-                          dataKey="rx" 
-                          stroke="hsl(var(--accent))" 
-                          strokeWidth={2}
-                          dot={false}
-                          name="rx"
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
-              </TerminalCard>
-            </div>
+              </section>
+            </>
           )}
         </div>
       </AppLayout>
     </>
   );
 };
+
+function MetaPill({
+  icon: Icon,
+  label,
+  value,
+  active,
+  muted,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+  active?: boolean;
+  muted?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px]",
+        active && !muted
+          ? "border-primary/30 bg-primary/10 text-primary"
+          : "border-border/80 bg-muted/30 text-muted-foreground"
+      )}
+    >
+      <Icon className="h-3.5 w-3.5" />
+      <span className="font-medium">{label}</span>
+      <span className="font-mono opacity-90">{value}</span>
+    </div>
+  );
+}
 
 export default PerformancePage;

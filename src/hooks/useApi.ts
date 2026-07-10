@@ -1,11 +1,21 @@
-import { useState, useEffect, useCallback } from 'react';
-import api from '@/lib/api';
+import { useState, useEffect, useCallback } from "react";
+import api from "@/lib/api";
+import type {
+  Stats,
+  QueueItem,
+  LogEntry,
+  HistoryEntry,
+  MonitorStatus,
+  Subscription,
+  VpsSubscription,
+  ServerPlan,
+  ManagedServer,
+  ContactChangeRequest,
+  AccountInfo,
+} from "@/lib/types";
 
-// 通用API Hook
-export function useApiQuery<T>(
-  queryFn: () => Promise<T>,
-  deps: any[] = []
-) {
+// 通用 API Hook
+export function useApiQuery<T>(queryFn: () => Promise<T>, deps: unknown[] = []) {
   const [data, setData] = useState<T | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
@@ -21,53 +31,46 @@ export function useApiQuery<T>(
     } finally {
       setIsLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
 
   useEffect(() => {
-    refetch();
+    void refetch();
   }, [refetch]);
 
   return { data, isLoading, error, refetch };
 }
 
-// 统计数据Hook
 export function useStats() {
-  return useApiQuery(() => api.getStats(), []);
+  return useApiQuery<Stats>(() => api.getStats(), []);
 }
 
-// 服务器列表Hook
 export function useServers() {
-  return useApiQuery(() => api.getServers(), []);
+  return useApiQuery<ServerPlan[]>(() => api.getServers(), []);
 }
 
-// 队列Hook
 export function useQueue() {
-  return useApiQuery(() => api.getQueue(), []);
+  return useApiQuery<QueueItem[]>(() => api.getQueue(), []);
 }
 
-// 购买历史Hook
 export function usePurchaseHistory() {
-  return useApiQuery(() => api.getPurchaseHistory(), []);
+  return useApiQuery<HistoryEntry[]>(() => api.getPurchaseHistory(), []);
 }
 
-// 日志Hook
 export function useLogs(limit?: number) {
-  return useApiQuery(() => api.getLogs(limit), [limit]);
+  return useApiQuery<LogEntry[]>(() => api.getLogs(limit), [limit]);
 }
 
-// 订阅列表Hook（专机监控）
 export function useSubscriptions() {
-  return useApiQuery(() => api.getSubscriptions(), []);
+  return useApiQuery<Subscription[]>(() => api.getSubscriptions(), []);
 }
 
-// 监控状态Hook
 export function useMonitorStatus() {
-  return useApiQuery(() => api.getMonitorStatus(), []);
+  return useApiQuery<MonitorStatus>(() => api.getMonitorStatus(), []);
 }
 
-// 手动检查专机可用性Hook（不自动执行）
 export function useManualCheckDedicated() {
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<unknown>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
@@ -79,9 +82,9 @@ export function useManualCheckDedicated() {
       setData(result);
       return result;
     } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
-      setError(error);
-      throw error;
+      const e = err instanceof Error ? err : new Error(String(err));
+      setError(e);
+      throw e;
     } finally {
       setIsLoading(false);
     }
@@ -90,72 +93,84 @@ export function useManualCheckDedicated() {
   return { data, isLoading, error, check };
 }
 
-// VPS订阅Hook
 export function useVpsSubscriptions() {
-  return useApiQuery(() => api.getVpsSubscriptions(), []);
+  return useApiQuery<VpsSubscription[]>(() => api.getVpsSubscriptions(), []);
 }
 
-// VPS监控状态Hook
 export function useVpsMonitorStatus() {
-  return useApiQuery(() => api.getVpsMonitorStatus(), []);
+  return useApiQuery<MonitorStatus>(() => api.getVpsMonitorStatus(), []);
 }
 
-// 配置绑定狙击任务Hook
-export function useConfigSniperTasks() {
-  return useApiQuery(() => api.getConfigSniperTasks(), []);
-}
-
-// 已购服务器Hook
 export function useMyServers() {
-  return useApiQuery(() => api.getMyServers(), []);
+  return useApiQuery<{ success: boolean; servers: ManagedServer[]; total: number }>(
+    () => api.getMyServers(),
+    []
+  );
 }
 
-// OVH账户信息Hook
 export function useOvhAccount() {
-  return useApiQuery(() => api.getOvhAccountInfo(), []);
+  return useApiQuery<{ success: boolean; account?: AccountInfo; error?: string }>(
+    () => api.getOvhAccountInfo(),
+    []
+  );
 }
 
-// OVH余额Hook
 export function useOvhBalance() {
-  return useApiQuery(() => api.getOvhBalance(), []);
+  return useApiQuery<{ success: boolean; balance?: { value: number; currencyCode: string }; data?: unknown }>(
+    () => api.getOvhBalance() as Promise<{ success: boolean; balance?: { value: number; currencyCode: string }; data?: unknown }>,
+    []
+  );
 }
 
-// OVH订单Hook
 export function useOvhOrders(limit?: number) {
-  return useApiQuery(() => api.getOvhOrders(limit), [limit]);
+  return useApiQuery<{ success: boolean; orders: unknown[] }>(
+    () => api.getOvhOrders(limit),
+    [limit]
+  );
 }
 
-// OVH账单Hook
 export function useOvhBills(limit?: number) {
-  return useApiQuery(() => api.getOvhBills(limit), [limit]);
+  return useApiQuery<{ success: boolean; bills: unknown[] }>(
+    () => api.getOvhBills(limit),
+    [limit]
+  );
 }
 
-// OVH邮件历史Hook
 export function useOvhEmails(limit?: number) {
-  return useApiQuery(() => api.getOvhEmails(limit), [limit]);
+  return useApiQuery<{ success: boolean; emails: unknown[] }>(
+    () => api.getOvhEmails(limit),
+    [limit]
+  );
 }
 
-// OVH退款记录Hook
 export function useOvhRefunds(limit?: number) {
-  return useApiQuery(() => api.getOvhRefunds(limit), [limit]);
+  return useApiQuery<{ success: boolean; refunds: unknown[] }>(
+    () => api.getOvhRefunds(limit),
+    [limit]
+  );
 }
 
-// 联系人变更请求Hook
 export function useContactChangeRequests() {
-  return useApiQuery(() => api.getContactChangeRequests(), []);
+  return useApiQuery<{ success: boolean; requests: ContactChangeRequest[] }>(
+    () => api.getContactChangeRequests(),
+    []
+  );
 }
 
-// OVH信用余额Hook
 export function useOvhCreditBalance() {
-  return useApiQuery(() => api.getOvhCreditBalance(), []);
+  return useApiQuery<{ success: boolean; data?: unknown[] }>(
+    () => api.getOvhCreditBalance(),
+    []
+  );
 }
 
-// OVH子账户Hook
 export function useOvhSubAccounts() {
-  return useApiQuery(() => api.getOvhSubAccounts(), []);
+  return useApiQuery<{ success: boolean; data?: unknown[] }>(
+    () => api.getOvhSubAccounts(),
+    []
+  );
 }
 
-// 后端连接状态Hook
 export function useBackendConnection() {
   const [isConnected, setIsConnected] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
@@ -163,19 +178,33 @@ export function useBackendConnection() {
   const checkConnection = useCallback(async () => {
     setIsChecking(true);
     try {
-      await api.health();
-      setIsConnected(true);
+      // 1) 优先走配置的 api.health（可能经 backendUrl）
+      try {
+        await api.health();
+        setIsConnected(true);
+        return true;
+      } catch {
+        /* fallthrough */
+      }
+      // 2) 回退：Vite 同源代理 /health（避免 backendUrl 填错导致误报离线）
+      const res = await fetch("/health", { method: "GET" });
+      if (res.ok) {
+        setIsConnected(true);
+        return true;
+      }
+      setIsConnected(false);
+      return false;
     } catch {
       setIsConnected(false);
+      return false;
     } finally {
       setIsChecking(false);
     }
   }, []);
 
   useEffect(() => {
-    checkConnection();
-    // 每30秒检查一次连接状态
-    const interval = setInterval(checkConnection, 30000);
+    void checkConnection();
+    const interval = setInterval(() => void checkConnection(), 30000);
     return () => clearInterval(interval);
   }, [checkConnection]);
 

@@ -1,0 +1,54 @@
+# Caddy 自动 HTTPS（Let's Encrypt）
+# 由 docker-compose.ssl.yml 挂载；环境变量：DOMAIN / ACME_EMAIL
+#
+# Telegram Webhook 公网地址：
+#   https://{$DOMAIN}/api/telegram/webhook
+# （该路径后端免 X-API-Key，仅 Telegram 服务器会 POST）
+
+{
+	# ACME 账户邮箱（证书到期通知）
+	email {$ACME_EMAIL}
+	# 生产日志
+	admin off
+}
+
+{$DOMAIN} {
+	encode gzip zstd
+
+	# 安全头
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options SAMEORIGIN
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	# —— API / 健康检查 → 后端（长超时给 IPMI、Webhook 处理）——
+	handle /api/* {
+		reverse_proxy backend:19998 {
+			transport http {
+				read_timeout 180s
+				write_timeout 180s
+			}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	handle /health {
+		reverse_proxy backend:19998
+	}
+
+	# —— 静态前端 + nginx 内部反代（assets 等）——
+	handle {
+		reverse_proxy frontend:80 {
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

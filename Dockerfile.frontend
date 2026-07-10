@@ -1,0 +1,29 @@
+# syntax=docker/dockerfile:1
+# OVH_WEBUI frontend — Vite build + nginx 反代 /api → backend
+# 构建: docker build -f Dockerfile.frontend -t ovh-webui-frontend .
+
+FROM node:20-alpine AS build
+WORKDIR /app
+
+COPY package.json package-lock.json* ./
+RUN npm ci --ignore-scripts 2>/dev/null || npm install --ignore-scripts
+
+COPY index.html vite.config.ts tsconfig*.json tailwind.config.ts postcss.config.js components.json ./
+COPY public ./public
+COPY src ./src
+
+# 生产构建：前端走同源 /api（由 nginx 反代）
+ENV NODE_ENV=production
+RUN npm run build
+
+FROM nginx:1.27-alpine
+RUN apk add --no-cache wget
+COPY nginx/default.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html
+
+EXPOSE 80
+
+HEALTHCHECK --interval=20s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -qO- http://127.0.0.1/health >/dev/null || exit 1
+
+CMD ["nginx", "-g", "daemon off;"]

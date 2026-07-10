@@ -1,0 +1,64 @@
+# SSL / 公网生产覆盖（Caddy 自动证书 + Telegram Webhook）
+#
+# 前置：
+#   1. 域名 A 记录指向本机公网 IP
+#   2. 放行 TCP 80、443（证书申请必须）
+#   3. .env 中设置 DOMAIN、ACME_EMAIL、API_SECRET_KEY
+#
+# 启动：
+#   docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d --build
+#   或: ./scripts/linux-oneclick-deploy.sh
+
+services:
+  # 公网只暴露 Caddy；backend/frontend 仅内网
+  backend:
+    ports: !override []
+    environment:
+      GIN_MODE: release
+      ENABLE_API_KEY_AUTH: "true"
+      # 供业务拼绝对链接时可选
+      PUBLIC_BASE_URL: https://${DOMAIN}
+
+  frontend:
+    ports: !override []
+
+  caddy:
+    image: caddy:2.8-alpine
+    container_name: ovh-webui-caddy
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3 可选
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:-admin@example.com}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:2019/config/" ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    # Caddy admin API 默认 2019 仅容器内；健康检查若失败可忽略（证书申请中）
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - ovh_net
+
+volumes:
+  caddy_data:
+    name: ovh_webui_caddy_data
+  caddy_config:
+    name: ovh_webui_caddy_config

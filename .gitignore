@@ -1,24 +1,43 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
+# deps
+node_modules/
+backend/vendor/
 
-node_modules
-dist
-dist-ssr
-*.local
+# build
+dist/
+backend/dist/
+*.exe
+*.test
+*.out
 
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
+# runtime data
+backend/data/
+data/
+*.db
+*.db-journal
+
+# env / secrets（切勿提交真实密钥 / 数据）
+.env
+.env.local
+.env.*.local
+.env.development.local
+.env.production.local
+backend/.env
+backend/.env.bak*
+backend/data.bak*
+secrets/
+*.pem
+*.key
+# 可能含账户/密钥的本地导出
+**/credentials*.json
+**/secrets*.json
+
+# IDE / OS
+.idea/
+.vscode/
 .DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+Thumbs.db
+*.log
+
+# coverage
+coverage/
+*.coverprofile

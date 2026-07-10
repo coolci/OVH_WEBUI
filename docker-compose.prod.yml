@@ -1,0 +1,31 @@
+# 生产覆盖：资源限制 + 后端仅本机可达（API 走前端 nginx 反代）
+# 用法：
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# 前置：.env 中 API_SECRET_KEY 必须为强随机串（勿用默认值）
+
+services:
+  backend:
+    # 不把 API 暴露到公网；仅宿主机本机可直连调试
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-19998}:19998"
+    environment:
+      GIN_MODE: release
+      ENABLE_API_KEY_AUTH: "true"
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1G
+        reservations:
+          cpus: "0.25"
+          memory: 128M
+
+  frontend:
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 256M

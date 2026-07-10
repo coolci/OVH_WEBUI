@@ -1,0 +1,47 @@
+# syntax=docker/dockerfile:1
+# OVH_WEBUI backend — Linux 生产镜像（静态二进制 + purego SQLite，无 CGO）
+# 构建: docker build -f Dockerfile.backend -t ovh-webui-backend .
+
+ARG GO_VERSION=1.25
+
+FROM golang:${GO_VERSION}-bookworm AS build
+WORKDIR /src
+
+# 依赖层缓存
+COPY backend/go.mod backend/go.sum ./
+RUN go mod download
+
+COPY backend/ ./
+# CGO_ENABLED=0 → 使用 modernc.org/sqlite（driver_purego.go）
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -trimpath -ldflags="-s -w" -o /out/ovh-webui .
+
+# 运行时：alpine 便于 HEALTHCHECK + CA 证书
+FROM alpine:3.20
+RUN apk add --no-cache ca-certificates tzdata wget \
+    && addgroup -S ovh && adduser -S -G ovh -h /app ovh
+
+WORKDIR /app
+COPY --from=build /out/ovh-webui /app/ovh-webui
+COPY backend/docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/ovh-webui /app/docker-entrypoint.sh \
+    && mkdir -p /data/cache /data/logs \
+    && chown -R ovh:ovh /app /data
+
+ENV PORT=19998 \
+    DATA_DIR=/data \
+    GIN_MODE=release \
+    ENABLE_API_KEY_AUTH=true \
+    TZ=Asia/Shanghai
+
+# 持久化：库 / 缓存 / 日志
+VOLUME ["/data"]
+
+EXPOSE 19998
+USER ovh
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=5 \
+  CMD wget -qO- "http://127.0.0.1:${PORT}/health" >/dev/null || exit 1
+
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
+CMD ["/app/ovh-webui"]

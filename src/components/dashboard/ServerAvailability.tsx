@@ -112,8 +112,8 @@ export function ServerAvailability() {
                     </td>
                     <td className="py-3 px-2 hidden md:table-cell">
                       <div className="text-xs text-muted-foreground">
-                        <p>{server.cpu || 'N/A'}</p>
-                        <p>{server.ram || 'N/A'}</p>
+                        <p>{String(server.cpu || 'N/A')}</p>
+                        <p>{String(server.ram || server.memory || 'N/A')}</p>
                       </div>
                     </td>
                     <td className="py-3 px-2">

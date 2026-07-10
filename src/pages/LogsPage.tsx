@@ -1,325 +1,332 @@
 import { AppLayout } from "@/components/layout/AppLayout";
-import { TerminalCard } from "@/components/ui/terminal-card";
+import { Helmet } from "react-helmet-async";
+import {
+  FileText,
+  RefreshCw,
+  Trash2,
+  Search,
+  ChevronDown,
+  AlertTriangle,
+} from "lucide-react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { PageHeader } from "@/components/common/PageHeader";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Helmet } from "react-helmet-async";
-import { 
-  ScrollText, 
-  Search,
-  Trash2,
-  RefreshCw,
-  Download,
-  Filter,
-  ChevronDown,
-  AlertCircle,
-  AlertTriangle,
-  Info,
-  Bug,
-  Loader2
-} from "lucide-react";
-import { useState, useEffect } from "react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Chip } from "@/components/common/Chip";
+import { Skeleton } from "@/components/common/Skeleton";
+import { EmptyState } from "@/components/common/EmptyState";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { useLogs, useClearLogs, type LogEntry } from "@/hooks/use-logs";
 import { cn } from "@/lib/utils";
-import { toast } from "sonner";
-import api from "@/lib/api";
-import { useLogs } from "@/hooks/useApi";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
 
-const levelConfig = {
-  INFO: {
-    icon: Info,
-    color: "text-primary",
-    bg: "bg-primary/10",
-    borderColor: "border-primary/30",
-  },
-  WARNING: {
-    icon: AlertTriangle,
-    color: "text-warning",
-    bg: "bg-warning/10",
-    borderColor: "border-warning/30",
-  },
-  ERROR: {
-    icon: AlertCircle,
-    color: "text-destructive",
-    bg: "bg-destructive/10",
-    borderColor: "border-destructive/30",
-  },
-  DEBUG: {
-    icon: Bug,
-    color: "text-muted-foreground",
-    bg: "bg-muted",
-    borderColor: "border-border",
-  },
-};
+const PAGE_SIZE = 80; // 前端一次渲染条数，避免 200+ DOM 卡顿
+const LIMIT_OPTIONS = [100, 200, 300, 500] as const;
 
-const LogsPage = () => {
-  const { data: logs, isLoading, refetch } = useLogs();
-  const [searchTerm, setSearchTerm] = useState("");
+/** 防抖 */
+function useDebounced<T>(value: T, ms: number): T {
+  const [v, setV] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setV(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return v;
+}
+
+function LogsPage() {
+  const [autoRefresh, setAutoRefresh] = useState(false); // 默认关，避免常驻轮询
+  const [limit, setLimit] = useState<number>(200);
+  const [search, setSearch] = useState("");
   const [levelFilter, setLevelFilter] = useState<string>("all");
-  const [autoRefresh, setAutoRefresh] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isClearing, setIsClearing] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+
+  const debouncedSearch = useDebounced(search, 280);
+
+  // 级别过滤下推到服务端；关键字仅客户端（消息内容）
+  const logs = useLogs({
+    limit,
+    level: levelFilter === "all" ? undefined : levelFilter,
+    order: "desc",
+    autoRefresh,
+    refreshIntervalMs: 12_000,
+  });
+  const clear = useClearLogs();
+
+  const items = logs.data?.logs || [];
+  const total = logs.data?.total ?? items.length;
+  const truncated = logs.data?.truncated ?? false;
+
+  const filtered = useMemo(() => {
+    const s = debouncedSearch.trim().toLowerCase();
+    if (!s) return items;
+    return items.filter((l) => `${l.message} ${l.source}`.toLowerCase().includes(s));
+  }, [items, debouncedSearch]);
+
+  // 筛选/limit 变化时重置可视窗口
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [limit, levelFilter, debouncedSearch, items.length]);
+
+  const windowed = useMemo(
+    () => filtered.slice(0, visibleCount),
+    [filtered, visibleCount]
+  );
+  const hasMore = visibleCount < filtered.length;
+
+  // 仅当用户靠近底部时自动跟滚（避免刷新打断浏览）
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const stickBottomRef = useRef(true);
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
+      stickBottomRef.current = dist < 80;
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
 
   useEffect(() => {
-    if (!autoRefresh) return;
-    const interval = setInterval(refetch, 5000);
-    return () => clearInterval(interval);
-  }, [autoRefresh, refetch]);
-
-  const handleRefresh = async () => {
-    setIsRefreshing(true);
-    await refetch();
-    setIsRefreshing(false);
-  };
-
-  const handleFlush = async () => {
-    try {
-      await api.flushLogs();
-      toast.success("日志已刷新到磁盘");
-      refetch();
-    } catch (err: any) {
-      toast.error(err.message);
+    if (!autoRefresh || !stickBottomRef.current) return;
+    // desc 列表顶部是最新：贴顶
+    const el = scrollerRef.current;
+    if (el && el.scrollTop < 40) {
+      /* already near top */
     }
-  };
-
-  const handleClear = async () => {
-    setIsClearing(true);
-    try {
-      await api.clearLogs();
-      toast.success("日志已清空");
-      refetch();
-    } catch (err: any) {
-      toast.error(err.message);
-    } finally {
-      setIsClearing(false);
-    }
-  };
-
-  const logList = logs || [];
-
-  const filteredLogs = logList.filter(log => {
-    const matchesSearch = 
-      log.message.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      log.source.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    if (levelFilter === "all") return matchesSearch;
-    return matchesSearch && log.level.toUpperCase() === levelFilter;
-  }).reverse();
-
-  const formatTime = (timestamp: string) => {
-    try {
-      const date = new Date(timestamp);
-      return date.toLocaleTimeString("zh-CN", { hour12: false });
-    } catch {
-      return "--:--:--";
-    }
-  };
-
-  const logCounts = {
-    INFO: logList.filter(l => l.level.toUpperCase() === "INFO").length,
-    WARNING: logList.filter(l => l.level.toUpperCase() === "WARNING").length,
-    ERROR: logList.filter(l => l.level.toUpperCase() === "ERROR").length,
-    DEBUG: logList.filter(l => l.level.toUpperCase() === "DEBUG").length,
-  };
+  }, [windowed, autoRefresh]);
 
   return (
-    <>
-      <Helmet>
-        <title>系统日志 | OVH Sniper</title>
-        <meta name="description" content="查看系统运行日志" />
-      </Helmet>
-      
-      <AppLayout>
-        <div className="space-y-4 sm:space-y-6">
-          {/* Header */}
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h1 className="text-xl sm:text-2xl font-bold text-primary flex items-center gap-2">
-                  <span className="text-muted-foreground">&gt;</span>
-                  系统日志
-                  <span className="cursor-blink">_</span>
-                </h1>
-                <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-                  共 {logList.length} 条日志
-                </p>
-              </div>
-              
-              <div className="flex items-center gap-2 sm:gap-4">
-                <div className="flex items-center gap-1.5 sm:gap-2">
-                  <Switch 
-                    id="auto-refresh" 
-                    checked={autoRefresh}
-                    onCheckedChange={setAutoRefresh}
-                  />
-                  <Label htmlFor="auto-refresh" className="text-xs sm:text-sm">自动</Label>
-                </div>
-              </div>
-            </div>
-            
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isRefreshing} className="h-8 text-xs">
-                <RefreshCw className={cn("h-3 w-3 sm:h-4 sm:w-4 mr-1", isRefreshing && "animate-spin")} />
-                刷新
-              </Button>
-              <Button variant="outline" size="sm" onClick={handleFlush} className="h-8 text-xs">
-                <Download className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
-                <span className="hidden xs:inline">写入</span>磁盘
-              </Button>
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="destructive" size="sm" disabled={logList.length === 0} className="h-8 text-xs">
-                    <Trash2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
-                    清空
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent className="terminal-card border-destructive/30 max-w-[90vw] sm:max-w-lg">
-                  <AlertDialogHeader>
-                    <AlertDialogTitle className="text-destructive">确认清空日志？</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      此操作将删除所有 {logList.length} 条日志记录，且无法撤销。
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>取消</AlertDialogCancel>
-                    <AlertDialogAction 
-                      onClick={handleClear}
-                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                      disabled={isClearing}
-                    >
-                      {isClearing && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                      确认清空
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            </div>
+    <div className="space-y-5 sm:space-y-6">
+      <PageHeader
+        icon={FileText}
+        title="系统日志"
+        description="限量拉取 · 本地筛选 · 避免一次渲染过多"
+        action={
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => logs.refetch()}
+              disabled={logs.isFetching}
+            >
+              <RefreshCw className={cn("w-4 h-4", logs.isFetching && "animate-spin")} />
+              刷新
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setConfirmClear(true)}
+              disabled={items.length === 0}
+            >
+              <Trash2 className="w-4 h-4" />
+              清空
+            </Button>
           </div>
+        }
+      />
 
-          {/* Stats */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">
-            {(Object.keys(levelConfig) as Array<keyof typeof levelConfig>).map(level => {
-              const config = levelConfig[level];
-              const Icon = config.icon;
-              return (
-                <div 
-                  key={level}
-                  className={cn(
-                    "terminal-card p-2 sm:p-4 cursor-pointer transition-all",
-                    levelFilter === level && config.borderColor
-                  )}
-                  onClick={() => setLevelFilter(levelFilter === level ? "all" : level)}
-                >
-                  <div className={cn("flex items-center gap-1.5 sm:gap-2 mb-0.5 sm:mb-1", config.color)}>
-                    <Icon className="h-3 w-3 sm:h-4 sm:w-4" />
-                    <span className="text-[10px] sm:text-xs uppercase">{level}</span>
-                  </div>
-                  <p className={cn("text-lg sm:text-2xl font-bold", config.color)}>
-                    {logCounts[level]}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Filters */}
-          <div className="flex flex-col sm:flex-row gap-2 sm:gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input 
-                placeholder="搜索日志内容..." 
-                className="pl-9 h-9 text-sm"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+      <Card>
+        <CardContent className="p-4 sm:p-5">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:items-center">
+            <div className="relative sm:col-span-2 lg:col-span-1">
+              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="搜索消息 / 来源…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="rounded-full pl-9"
               />
             </div>
-            
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="w-full sm:w-auto h-9 text-xs sm:text-sm">
-                  <Filter className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                  {levelFilter === "all" ? "全部" : levelFilter}
-                  <ChevronDown className="h-3 w-3 sm:h-4 sm:w-4 ml-1 sm:ml-2" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                <DropdownMenuItem onClick={() => setLevelFilter("all")}>
-                  全部级别
-                </DropdownMenuItem>
-                {Object.keys(levelConfig).map(level => (
-                  <DropdownMenuItem key={level} onClick={() => setLevelFilter(level)}>
-                    {level}
-                  </DropdownMenuItem>
+            <Select value={levelFilter} onValueChange={setLevelFilter}>
+              <SelectTrigger className="rounded-full">
+                <SelectValue placeholder="级别" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">所有级别</SelectItem>
+                <SelectItem value="INFO">INFO</SelectItem>
+                <SelectItem value="WARNING">WARNING</SelectItem>
+                <SelectItem value="ERROR">ERROR</SelectItem>
+                <SelectItem value="DEBUG">DEBUG</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select
+              value={String(limit)}
+              onValueChange={(v) => setLimit(Number(v))}
+            >
+              <SelectTrigger className="rounded-full">
+                <SelectValue placeholder="条数" />
+              </SelectTrigger>
+              <SelectContent>
+                {LIMIT_OPTIONS.map((n) => (
+                  <SelectItem key={n} value={String(n)}>
+                    最近 {n} 条
+                  </SelectItem>
                 ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+              </SelectContent>
+            </Select>
+            <label className="inline-flex cursor-pointer items-center gap-2 text-sm">
+              <Checkbox
+                checked={autoRefresh}
+                onCheckedChange={(c) => setAutoRefresh(c === true)}
+              />
+              <span className="text-muted-foreground">
+                自动刷新 <span className="font-mono text-[11px]">12s</span>
+              </span>
+            </label>
           </div>
+          {(truncated || total > items.length) && (
+            <p className="mt-3 flex items-start gap-1.5 text-[11px] text-muted-foreground">
+              <AlertTriangle className="mt-0.5 h-3 w-3 flex-shrink-0 text-warning" />
+              内存中共 {total} 条匹配日志，当前仅加载最新 {items.length} 条。增大「最近 N 条」可看更多。
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
-          {/* Logs */}
-          <TerminalCard
-            title="日志输出"
-            icon={<ScrollText className="h-4 w-4" />}
-          >
-            {isLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <Card className="overflow-hidden">
+        <div className="flex items-center justify-between border-b border-border px-4 py-2.5 text-[12px]">
+          <span className="font-semibold">日志流</span>
+          <span className="font-mono text-muted-foreground">
+            显示 {windowed.length}
+            {filtered.length !== windowed.length ? ` / ${filtered.length}` : ""}
+            {items.length !== filtered.length ? `（筛选自 ${items.length}）` : ""}
+            {logs.isFetching ? " · 更新中…" : ""}
+          </span>
+        </div>
+
+        {logs.isPending && items.length === 0 ? (
+          <div className="space-y-2 p-4">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <Skeleton key={i} className="h-8" />
+            ))}
+          </div>
+        ) : filtered.length === 0 ? (
+          <EmptyState icon={FileText} title="没有日志" description="试试调整级别或搜索关键字" />
+        ) : (
+          <>
+            <div
+              ref={scrollerRef}
+              className="max-h-[min(70vh,calc(100dvh-320px))] overflow-y-auto overscroll-contain"
+            >
+              <div className="divide-y divide-border/80">
+                {windowed.map((log) => (
+                  <LogRow key={log.id} log={log} />
+                ))}
               </div>
-            ) : filteredLogs.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">
-                <ScrollText className="h-12 w-12 mx-auto mb-4 opacity-30" />
-                <p>暂无日志记录</p>
-              </div>
-            ) : (
-              <div className="space-y-1 font-mono text-xs max-h-[600px] overflow-y-auto">
-                {filteredLogs.map((log, index) => {
-                  const config = levelConfig[log.level.toUpperCase() as keyof typeof levelConfig] || levelConfig.DEBUG;
-                  const Icon = config.icon;
-                  
-                  return (
-                    <div 
-                      key={log.id}
-                      className={cn(
-                        "flex items-start gap-2 p-2 rounded-sm border-l-2 transition-colors hover:bg-muted/30",
-                        config.borderColor,
-                        config.bg
-                      )}
-                    >
-                      <Icon className={cn("h-3.5 w-3.5 mt-0.5 flex-shrink-0", config.color)} />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-muted-foreground">{formatTime(log.timestamp)}</span>
-                          <span className={cn("uppercase font-bold", config.color)}>[{log.level}]</span>
-                          <span className="text-accent">[{log.source}]</span>
-                        </div>
-                        <p className="text-foreground/90 break-words mt-0.5">{log.message}</p>
-                      </div>
-                    </div>
-                  );
-                })}
+            </div>
+            {hasMore && (
+              <div className="border-t border-border p-3 text-center">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="rounded-full"
+                  onClick={() => setVisibleCount((n) => n + PAGE_SIZE)}
+                >
+                  <ChevronDown className="h-3.5 w-3.5" />
+                  再显示 {Math.min(PAGE_SIZE, filtered.length - visibleCount)} 条
+                </Button>
               </div>
             )}
-          </TerminalCard>
-        </div>
-      </AppLayout>
-    </>
-  );
-};
+          </>
+        )}
+      </Card>
 
-export default LogsPage;
+      <Dialog open={confirmClear} onOpenChange={setConfirmClear}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>确认清空日志？</DialogTitle>
+            <DialogDescription>将清空后端内存与日志文件，不可撤销。</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmClear(false)}>
+              取消
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                clear.mutate();
+                setConfirmClear(false);
+              }}
+            >
+              确认清空
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+const LogRow = memo(function LogRow({ log }: { log: LogEntry }) {
+  const tone =
+    log.level === "ERROR"
+      ? "danger"
+      : log.level === "WARNING" || log.level === "WARN"
+        ? "warning"
+        : log.level === "DEBUG"
+          ? "default"
+          : "info";
+
+  let timeLabel = log.timestamp;
+  try {
+    timeLabel = new Date(log.timestamp).toLocaleString("zh-CN", {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  } catch {
+    /* keep raw */
+  }
+
+  return (
+    <div className="flex items-start gap-2.5 px-3 py-2 text-[12px] hover:bg-muted/40 sm:gap-3 sm:px-4">
+      <span className="w-[4.5rem] flex-shrink-0 font-mono text-[11px] text-muted-foreground sm:w-32">
+        {timeLabel}
+      </span>
+      <Chip tone={tone as "danger" | "warning" | "default" | "info"} className="w-14 justify-center font-mono sm:w-16">
+        {log.level === "WARNING" ? "WARN" : log.level}
+      </Chip>
+      <span className="hidden w-24 flex-shrink-0 truncate font-mono text-muted-foreground sm:inline sm:w-28">
+        [{log.source}]
+      </span>
+      <span className="min-w-0 flex-1 break-words leading-relaxed text-foreground/90">
+        <span className="mr-1.5 font-mono text-[10px] text-muted-foreground sm:hidden">
+          [{log.source}]
+        </span>
+        {log.message}
+      </span>
+    </div>
+  );
+});
+
+const Page = () => (
+  <>
+    <Helmet>
+      <title>系统日志 | OVH WebUI</title>
+    </Helmet>
+    <AppLayout>
+      <LogsPage />
+    </AppLayout>
+  </>
+);
+
+export default Page;

@@ -3,8 +3,7 @@ import { ScrollText, ArrowRight, AlertCircle, Info, AlertTriangle, Loader2 } fro
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { useLogs } from "@/hooks/useApi";
-import { useEffect } from "react";
+import { useRecentLogs } from "@/hooks/use-logs";
 
 const levelConfig = {
   INFO: {
@@ -30,14 +29,9 @@ const levelConfig = {
 };
 
 export function RecentLogs() {
-  const { data: logs, isLoading, refetch } = useLogs(10);
-
-  useEffect(() => {
-    const interval = setInterval(refetch, 5000);
-    return () => clearInterval(interval);
-  }, [refetch]);
-
-  const displayLogs = logs?.slice(-10).reverse() || [];
+  // 后端限量 12 条 + 15s 轮询（标签隐藏时自动停）
+  const { data, isPending } = useRecentLogs(12, true);
+  const displayLogs = data?.logs || [];
 
   const formatTime = (timestamp: string) => {
     try {
@@ -60,7 +54,7 @@ export function RecentLogs() {
         </Link>
       }
     >
-      {isLoading && !logs ? (
+      {isPending && displayLogs.length === 0 ? (
         <div className="flex items-center justify-center py-8">
           <Loader2 className="h-6 w-6 animate-spin text-primary" />
         </div>

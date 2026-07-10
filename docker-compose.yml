@@ -1,0 +1,83 @@
+# OVH_WEBUI — Docker Compose（开发/小规模生产）
+#
+# Linux 首次部署：
+#   cp .env.example .env
+#   # 编辑 .env：设置强随机 API_SECRET_KEY
+#   docker compose up -d --build
+#   # UI http://服务器IP:8080  API :19998
+#
+# 查看日志： docker compose logs -f backend
+# 重启：     docker compose restart backend
+# 停止：     docker compose down
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    image: ovh-webui-backend:latest
+    container_name: ovh-webui-backend
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PORT: "19998"
+      LISTEN_HOST: ""
+      DATA_DIR: /data
+      GIN_MODE: release
+      ENABLE_API_KEY_AUTH: ${ENABLE_API_KEY_AUTH:-true}
+      API_SECRET_KEY: ${API_SECRET_KEY:-change-me-to-a-long-random-string}
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - ovh_webui_data:/data
+    ports:
+      # 若只走前端反代，可注释掉下行，仅暴露 8080
+      - "${BACKEND_PORT:-19998}:19998"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:19998/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    networks:
+      - ovh_net
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    image: ovh-webui-frontend:latest
+    container_name: ovh-webui-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - ovh_net
+
+volumes:
+  ovh_webui_data:
+    name: ovh_webui_data
+
+networks:
+  ovh_net:
+    name: ovh_webui_net

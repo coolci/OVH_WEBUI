@@ -1,0 +1,43 @@
+# git / IDE
+.git
+.gitignore
+.idea
+.vscode
+**/.DS_Store
+
+# local env & secrets (注入用 compose env_file，勿打进镜像)
+.env
+.env.*
+backend/.env
+backend/.env.*
+secrets
+
+# runtime data (volume 挂载)
+backend/data
+backend/data/**
+data
+**/*.db
+**/*.db-*
+
+# binaries / build
+**/node_modules
+**/dist
+**/*.exe
+**/*.exe~
+**/ovh-webui
+backend/ovh-webui*
+**/*.test
+**/*.out
+**/coverage
+**/*.tsbuildinfo
+
+# docs / scripts not needed in image
+docs
+scripts
+**/*.md
+!package.json
+!package-lock.json
+
+# frontend unused in backend image (Dockerfile.backend only copies backend/)
+# keep whole tree for frontend build but ignore large junk
+bun.lockb
