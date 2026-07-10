@@ -17,6 +17,7 @@ import {
   useCacheInfo,
   useClearCache,
   useTelegramWebhookInfo,
+  useSetTelegramWebhook,
   type SettingsConfig,
 } from "@/hooks/use-settings";
 import { getApiSecretKey, setApiSecretKey } from "@/lib/api";
@@ -63,11 +64,17 @@ function SettingsPage() {
 
   const set = (k: keyof SettingsConfig, v: string) => setForm((prev) => ({ ...prev, [k]: v }));
 
-  const onSave = () => {
+  const onSave = async () => {
     if (apiKey) setApiSecretKey(apiKey);
     // 提交前根据 zone 自动同步 endpoint，避免两者不一致
     const zone = form.zone || "IE";
-    save.mutate({ ...form, zone, endpoint: endpointForZone(zone) });
+    // webhookUrl 不走 /settings；由 Telegram 区块单独「注册 Webhook」
+    const { webhookUrl: _w, ...rest } = form;
+    try {
+      await save.mutateAsync({ ...rest, zone, endpoint: endpointForZone(zone) });
+    } catch {
+      /* toast 已在 hook 里 */
+    }
   };
 
   return (
@@ -129,7 +136,7 @@ function SettingsPage() {
             ) : active === "accounts" ? (
               <AccountsSection />
             ) : active === "telegram" ? (
-              <TelegramSection form={form} set={set} />
+              <TelegramSection form={form} set={set} onSaveToken={onSave} saving={save.isPending} />
             ) : (
               <CacheSection />
             )}
@@ -162,21 +169,71 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 function TelegramSection({
   form,
   set,
+  onSaveToken,
+  saving,
 }: {
   form: SettingsConfig;
   set: (k: keyof SettingsConfig, v: string) => void;
+  onSaveToken: () => Promise<void>;
+  saving: boolean;
 }) {
   const webhook = useTelegramWebhookInfo();
+  const setWebhook = useSetTelegramWebhook();
+
+  // 默认填当前站点源（HTTPS 部署时通常就是正确公网域名）
+  useEffect(() => {
+    if (form.webhookUrl) return;
+    try {
+      const origin = window.location.origin;
+      if (origin.startsWith("https://")) {
+        set("webhookUrl", origin);
+      }
+    } catch {
+      /* ignore */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 从 Telegram 拉回已注册 URL 时回填
+  useEffect(() => {
+    if (webhook.data?.url && !form.webhookUrl) {
+      // 展示完整 URL；设置时后端也会自动补全 /api/telegram/webhook
+      set("webhookUrl", webhook.data.url.replace(/\/api\/telegram\/webhook\/?$/, "") || webhook.data.url);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [webhook.data?.url]);
+
   const onFetch = () => {
     if (!form.tgToken) {
       toast.error("请先填写并保存 Bot Token");
       return;
     }
-    webhook.refetch();
+    void webhook.refetch();
   };
+
+  const onApplyWebhook = async () => {
+    const url = (form.webhookUrl || "").trim();
+    if (!url) {
+      toast.error("请填写 Webhook 公网地址（如 https://in.ddnsing.com）");
+      return;
+    }
+    if (!form.tgToken?.trim()) {
+      toast.error("请先填写 Bot Token");
+      return;
+    }
+    // 先落库 Token，再调 Telegram setWebhook（与「Telegram 下单」同一链路）
+    try {
+      await onSaveToken();
+      await setWebhook.mutateAsync(url);
+      void webhook.refetch();
+    } catch {
+      /* toast 已处理 */
+    }
+  };
+
   return (
     <Section title="Telegram 通知">
-      <Field label="Bot Token">
+      <Field label="Bot Token" hint="保存设置后写入后端；Webhook 需再点下方「注册 Webhook」才会生效">
         <Input
           type="password"
           value={form.tgToken || ""}
@@ -191,30 +248,47 @@ function TelegramSection({
           placeholder="-1001234567890"
         />
       </Field>
-      <Field label="Webhook URL（可选）">
-        <Input
-          value={form.webhookUrl || ""}
-          onChange={(e) => set("webhookUrl", e.target.value)}
-          placeholder="https://your.domain/webhook"
-        />
-      </Field>
+
+      <div className="rounded-2xl border border-border/80 bg-muted/20 p-4 space-y-3">
+        <div>
+          <h3 className="text-[13px] font-semibold flex items-center gap-1.5">
+            <Webhook className="w-4 h-4 text-primary" />
+            Telegram Webhook（公网 HTTPS）
+          </h3>
+          <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+            Webhook 注册在 Telegram 服务器，不会只存在本地表单。填写域名根即可，后端会自动补全{" "}
+            <code className="font-mono text-[10px]">/api/telegram/webhook</code>。
+          </p>
+        </div>
+        <Field label="公网 URL">
+          <Input
+            value={form.webhookUrl || ""}
+            onChange={(e) => set("webhookUrl", e.target.value)}
+            placeholder="https://in.ddnsing.com"
+            className="font-mono text-[13px]"
+          />
+        </Field>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            onClick={() => void onApplyWebhook()}
+            disabled={setWebhook.isPending || saving}
+          >
+            <Webhook className={cn("w-3.5 h-3.5", setWebhook.isPending && "animate-pulse")} />
+            {setWebhook.isPending ? "注册中…" : "保存 Token 并注册 Webhook"}
+          </Button>
+          <Button type="button" variant="outline" onClick={onFetch} disabled={webhook.isFetching}>
+            {webhook.isFetching ? "查询中…" : "查看当前 Webhook"}
+          </Button>
+        </div>
+      </div>
 
       <div className="pt-2">
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-[13px] font-medium flex items-center gap-1.5">
             <Webhook className="w-3.5 h-3.5 text-muted-foreground" />
-            Webhook 信息
+            当前 Webhook 状态（来自 Telegram）
           </h3>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={onFetch}
-            disabled={webhook.isFetching}
-          >
-            <Webhook className={cn("w-3.5 h-3.5", webhook.isFetching && "animate-pulse")} />
-            {webhook.isFetching ? "查询中..." : "查看 webhook 信息"}
-          </Button>
         </div>
 
         {webhook.isError ? (
@@ -285,7 +359,7 @@ function TelegramSection({
           </div>
         ) : (
           <p className="text-[12px] text-muted-foreground">
-            点击右上角按钮查询当前 Telegram Bot 的 webhook 状态
+            点击「查看当前 Webhook」从 Telegram 拉取实时状态（非本地缓存）
           </p>
         )}
       </div>

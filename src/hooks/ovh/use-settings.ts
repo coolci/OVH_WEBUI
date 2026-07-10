@@ -35,19 +35,53 @@ export function useSettings() {
   });
 }
 
-/** 保存 config */
+/** 保存 config（仅本地后端配置：Token/ChatID 等；不含 Telegram setWebhook） */
 export function useSaveSettings() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (payload: SettingsConfig) => (await api.post("/settings", payload)).data,
+    mutationFn: async (payload: SettingsConfig) => {
+      // webhookUrl 不由 /settings 持久化，避免用户误以为已注册到 Telegram
+      const { webhookUrl: _w, ...body } = payload;
+      return (await api.post("/settings", body)).data;
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.settings.config() });
-      // TG 配置可能变了,让监控对话框下次打开重新 verify
       qc.invalidateQueries({ queryKey: ["telegram", "verify"] });
       toast.success("设置已保存");
     },
     onError: (e: any) =>
       toast.error(e.response?.data?.message || e.response?.data?.error || "保存失败"),
+  });
+}
+
+/** 向 Telegram 注册 Webhook（与「Telegram 下单」页同一接口） */
+export function useSetTelegramWebhook() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (webhookUrl: string) => {
+      const res = await api.post<{
+        success?: boolean;
+        error?: string;
+        message?: string;
+        webhook_url?: string;
+        webhook_info?: TelegramWebhookInfo;
+      }>("/telegram/set-webhook", { webhook_url: webhookUrl.trim() });
+      if (res.data?.success === false) {
+        throw new Error(res.data?.error || res.data?.message || "Webhook 设置失败");
+      }
+      return res.data;
+    },
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: qk.settings.telegramWebhookInfo() });
+      toast.success(data?.message || `Webhook 已注册：${data?.webhook_url || ""}`);
+    },
+    onError: (e: any) =>
+      toast.error(
+        e?.response?.data?.error ||
+          e?.response?.data?.message ||
+          e?.message ||
+          "Webhook 设置失败"
+      ),
   });
 }
 
