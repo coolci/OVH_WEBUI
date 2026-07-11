@@ -100,15 +100,15 @@ func IsAuthorizedActor(state *app.State, chatID, userID interface{}) bool {
 
 	// 主路径：chat 完全匹配
 	if gotChat != "" && gotChat == want {
-		// 若配置的是用户 ID（正数）而消息来自群，拒绝（防把用户 ID 误配成群后仍放行群内全员）
-		// 正数 chat = 私聊，安全；负数 = 群/超级群
+		// 群/超级群（chat id 为负）：必须配置 TG_ALLOWED_USER_IDS 白名单，禁止群内任意成员下单
 		if strings.HasPrefix(gotChat, "-") {
-			// 群：无法用单一 TgChatID 限制成员时，至少要求 user 非空（已由 TG 保证）
-			// 可选：若环境变量 TG_ALLOWED_USER_IDS=1,2,3 则再过滤
-			if allow := strings.TrimSpace(os.Getenv("TG_ALLOWED_USER_IDS")); allow != "" {
-				return userInList(gotUser, allow)
+			allow := strings.TrimSpace(os.Getenv("TG_ALLOWED_USER_IDS"))
+			if allow == "" {
+				return false
 			}
+			return userInList(gotUser, allow)
 		}
+		// 私聊：chat 匹配即可
 		return true
 	}
 

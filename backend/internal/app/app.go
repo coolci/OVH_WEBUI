@@ -91,6 +91,10 @@ type State struct {
 
 	MonitorRunning        bool
 	QueueProcessorRunning bool
+
+	// 串行化全表 Replace 落盘，避免并发 SaveHistory/SaveQueue 快照互相覆盖丢数据
+	historyPersistMu sync.Mutex
+	queuePersistMu   sync.Mutex
 }
 
 // NewState 构造应用状态。DB 必须已 Open。
@@ -281,8 +285,10 @@ func (s *State) CountPurchase() (success, failed int) {
 	return
 }
 
-// SaveQueue 把内存中 Queue 整表覆盖写入 SQLite
+// SaveQueue 把内存中 Queue 整表覆盖写入 SQLite（串行化，取最新快照）
 func (s *State) SaveQueue() error {
+	s.queuePersistMu.Lock()
+	defer s.queuePersistMu.Unlock()
 	s.QueueMu.Lock()
 	cp := make([]types.QueueItem, len(s.Queue))
 	copy(cp, s.Queue)
@@ -290,8 +296,10 @@ func (s *State) SaveQueue() error {
 	return s.DB.ReplaceQueue(cp)
 }
 
-// SaveHistory 把内存中 History 整表覆盖写入 SQLite
+// SaveHistory 把内存中 History 整表覆盖写入 SQLite（串行化，取最新快照）
 func (s *State) SaveHistory() error {
+	s.historyPersistMu.Lock()
+	defer s.historyPersistMu.Unlock()
 	s.HistoryMu.Lock()
 	cp := make([]types.PurchaseHistoryEntry, len(s.History))
 	copy(cp, s.History)

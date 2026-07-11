@@ -200,10 +200,15 @@ export function useVpsStop(svc: string) {
 }
 
 export function useVpsReboot(svc: string) {
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: async () => (await api.post(`/vps-control/${svc}/reboot`)).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.vpsControl.list() });
+      qc.invalidateQueries({ queryKey: qk.vpsControl.info(svc) });
+      qc.invalidateQueries({ queryKey: qk.vpsControl.tasks(svc) });
+    },
   });
-}
 
 export function useVpsConsoleUrl(svc: string) {
   return useMutation({

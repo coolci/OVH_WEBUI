@@ -144,6 +144,8 @@ func (m *Monitor) monitorLoop() {
 				}(sub, traceID)
 			}
 			wg.Wait()
+			// 持久化 LastStatus / History，避免重启后空基线触发误下单
+			m.SaveToDB()
 		} else {
 			m.state.Logger.Info("当前无订阅，跳过检查", "monitor")
 		}

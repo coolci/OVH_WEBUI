@@ -66,12 +66,21 @@ function SettingsPage() {
 
   const onSave = async () => {
     if (apiKey) setApiSecretKey(apiKey);
-    // 提交前根据 zone 自动同步 endpoint，避免两者不一致
-    const zone = form.zone || "IE";
-    // webhookUrl 不走 /settings；由 Telegram 区块单独「注册 Webhook」
-    const { webhookUrl: _w, ...rest } = form;
+    // 配置未加载完成时禁止整包覆盖，避免抹掉 tgWebhookSecret / 凭据
+    if (cfg.isPending || !cfg.data) {
+      toast.error("配置尚未加载完成，请稍后再保存");
+      return;
+    }
+    // 与服务端已有配置合并；webhookUrl 不走 /settings
+    const { webhookUrl: _w, ...formRest } = form;
+    const base = { ...cfg.data, ...formRest };
+    const zone = (base.zone || cfg.data.zone || "IE").trim();
     try {
-      await save.mutateAsync({ ...rest, zone, endpoint: endpointForZone(zone) });
+      await save.mutateAsync({
+        ...base,
+        zone,
+        endpoint: base.endpoint || endpointForZone(zone),
+      });
     } catch {
       /* toast 已在 hook 里 */
     }
@@ -84,7 +93,7 @@ function SettingsPage() {
         title="API 设置"
         description="配置 OVH API 和通知设置"
         action={
-          <Button onClick={onSave} disabled={save.isPending}>
+          <Button onClick={onSave} disabled={save.isPending || cfg.isPending || !cfg.data}>
             <Save className="w-4 h-4" />
             {save.isPending ? "保存中..." : "保存设置"}
           </Button>

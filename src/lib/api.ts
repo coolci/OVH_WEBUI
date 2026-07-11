@@ -224,7 +224,12 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ status }),
     }),
-  quickOrder: (order: { planCode: string; datacenter: string; options?: string[] }) =>
+  quickOrder: (order: {
+    planCode: string;
+    datacenter: string;
+    options?: string[];
+    account_id: string;
+  }) =>
     apiRequest<any>("/api/queue/quick-order", {
       method: "POST",
       body: JSON.stringify(order),

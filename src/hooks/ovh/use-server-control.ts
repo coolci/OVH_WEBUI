@@ -52,12 +52,13 @@ export function useOwnedServers() {
     queryFn: async () => {
       const res = await api.get("/server-control/list");
       const raw = (res.data?.servers || []) as OwnedServer[];
+      // 排除明确不可用账单状态；保留 detail 失败(无 state)与 hacked 等，避免整表消失
       return raw.filter((s) => {
         const state = s.state?.toLowerCase();
         const status = s.status?.toLowerCase();
         if (status === "expired" || status === "suspended") return false;
-        if (state === "error" || state === "suspended") return false;
-        return state === "ok" || state === "active";
+        if (state === "suspended") return false;
+        return true;
       });
     },
     staleTime: 60_000,

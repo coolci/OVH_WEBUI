@@ -3,7 +3,6 @@ package telegram
 import (
 	"fmt"
 	"strings"
-	"sync"
 
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/catalog"
@@ -62,6 +61,16 @@ func EnqueueSingle(state *app.State, accountID, planCode, datacenter string, opt
 	state.Queue = append(state.Queue, item)
 	state.QueueMu.Unlock()
 	if err := state.SaveQueue(); err != nil {
+		// 落盘失败回滚内存，避免只在内存里可执行、重启却丢失
+		state.QueueMu.Lock()
+		kept := state.Queue[:0]
+		for _, q := range state.Queue {
+			if q.ID != item.ID {
+				kept = append(kept, q)
+			}
+		}
+		state.Queue = kept
+		state.QueueMu.Unlock()
 		state.Logger.Error("Telegram 入队落盘失败: "+err.Error(), "telegram")
 		return OrderResult{Success: false, Message: "入队保存失败，请重试"}
 	}
@@ -170,26 +179,14 @@ func ProcessOrder(state *app.State, planCode, datacenter string, quantity int, o
 			if status, ok := ce.data.Datacenters[dc]; ok && (status == "unavailable" || status == "unknown") {
 				continue
 			}
+			// 队列中已有同配置活跃任务时整组跳过（不与 quantity 混用）
+			if HasActiveDuplicate(state, planCode, dc, configOptions) {
+				skippedDup += quantity
+				continue
+			}
+			// quantity 表示同配置入队条数（每条独立抢购任务），允许同批重复
 			for i := 0; i < quantity; i++ {
-				if HasActiveDuplicate(state, planCode, dc, configOptions) {
-					skippedDup++
-					continue
-				}
-				// 临时写入检测用：同批内也要避免重复
 				item := NewTelegramQueueItem(accountID, planCode, dc, configOptions)
-				// 用已规划列表做同批去重
-				dupInBatch := false
-				fp := OptionsFingerprint(configOptions)
-				for _, existing := range ordersToCreate {
-					if existing.PlanCode == planCode && existing.Datacenter == dc && OptionsFingerprint(existing.Options) == fp {
-						dupInBatch = true
-						break
-					}
-				}
-				if dupInBatch {
-					skippedDup++
-					continue
-				}
 				ordersToCreate = append(ordersToCreate, item)
 			}
 		}
@@ -203,13 +200,24 @@ func ProcessOrder(state *app.State, planCode, datacenter string, quantity int, o
 		return OrderResult{Success: false, Message: msg}
 	}
 
-	// 串行入队 + 一次落盘（避免原先无意义的并发 append）
-	var mu sync.Mutex
-	_ = mu
+	// 串行入队 + 一次落盘
 	state.QueueMu.Lock()
 	state.Queue = append(state.Queue, ordersToCreate...)
 	state.QueueMu.Unlock()
 	if err := state.SaveQueue(); err != nil {
+		idSet := map[string]struct{}{}
+		for _, it := range ordersToCreate {
+			idSet[it.ID] = struct{}{}
+		}
+		state.QueueMu.Lock()
+		kept := state.Queue[:0]
+		for _, q := range state.Queue {
+			if _, drop := idSet[q.ID]; !drop {
+				kept = append(kept, q)
+			}
+		}
+		state.Queue = kept
+		state.QueueMu.Unlock()
 		state.Logger.Error("Telegram 批量入队落盘失败: "+err.Error(), "telegram")
 		return OrderResult{Success: false, Message: "入队保存失败，请重试"}
 	}

@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"crypto/subtle"
 	"net/http"
 	"strconv"
 	"strings"
@@ -20,12 +21,12 @@ type Config struct {
 // DefaultWhitelist 不需要 X-API-Key 即可访问的路径
 func DefaultWhitelist() map[string]struct{} {
 	return map[string]struct{}{
-		"/health":                      {},
-		"/api/health":                  {},
-		"/api/version":                 {}, // 前端启动时拉版本号,登录前可见
-		"/api/version/check-update":    {}, // 更新检查也免鉴权,登录前可提示
-		"/api/internal/monitor/price":  {},
-		"/api/telegram/webhook":        {},
+		"/health":                   {},
+		"/api/health":               {},
+		"/api/version":              {}, // 前端启动时拉版本号,登录前可见
+		"/api/version/check-update": {}, // 更新检查也免鉴权,登录前可提示
+		// /api/internal/monitor/price 已移出白名单：改进程内直调，或需 X-API-Key
+		"/api/telegram/webhook": {},
 	}
 }
 
@@ -67,7 +68,10 @@ func Middleware(cfg Config) gin.HandlerFunc {
 			return
 		}
 
-		if key != cfg.APIKey {
+		// 常量时间比较，避免时序侧信道（长度不同时仍做一次比较）
+		want := []byte(cfg.APIKey)
+		got := []byte(key)
+		if len(got) != len(want) || subtle.ConstantTimeCompare(got, want) != 1 {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"error":   "Invalid API key",
 				"message": "API密钥无效，禁止访问",

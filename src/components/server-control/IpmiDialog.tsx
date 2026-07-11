@@ -61,15 +61,24 @@ export function IpmiDialog({
       setCountdown((p) => (p <= 1 ? 0 : p - 1));
     }, 1000);
 
+    const finish = () => {
+      clearInterval(interval);
+      if (runId === runIdRef.current) {
+        setLoading(false);
+      }
+    };
+
     try {
       // 后端最长 ~60s 轮询；前端 axios timeout 120s（lib/http）
       const res = await api.get(`/server-control/${serviceName}/console`, {
         timeout: 120_000,
       });
-      if (runId !== runIdRef.current) return;
+      if (runId !== runIdRef.current) {
+        clearInterval(interval);
+        return;
+      }
 
-      clearInterval(interval);
-      setLoading(false);
+      finish();
 
       const data = res.data || {};
       if (data.success === false || data.notAvailable) {
@@ -108,9 +117,11 @@ export function IpmiDialog({
 
       setResult({ url: String(raw), accessType });
     } catch (e: any) {
-      if (runId !== runIdRef.current) return;
-      clearInterval(interval);
-      setLoading(false);
+      if (runId !== runIdRef.current) {
+        clearInterval(interval);
+        return;
+      }
+      finish();
       const msg =
         e?.response?.data?.error ||
         e?.response?.data?.message ||

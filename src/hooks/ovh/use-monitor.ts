@@ -109,7 +109,7 @@ export function useRemoveMonitorSubscription() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (planCode: string) =>
-      (await api.delete(`/monitor/subscriptions/${planCode}`)).data,
+      (await api.delete(`/monitor/subscriptions/${encodeURIComponent(planCode)}`)).data,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.monitor.list() });
       qc.invalidateQueries({ queryKey: qk.monitor.status() });

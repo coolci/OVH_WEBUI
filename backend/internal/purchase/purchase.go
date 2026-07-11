@@ -357,6 +357,15 @@ func PurchaseServer(state *app.State, item *types.QueueItem) bool {
 		state.Logger.Info("⚠️ 用户未提供任何硬件选项，将使用默认配置下单", "purchase")
 	}
 
+	// 结账前再确认任务未被用户删除，避免删队后仍下单成功
+	state.DeletedTaskIDsMu.Lock()
+	_, deletedBeforeCheckout := state.DeletedTaskIDs[item.ID]
+	state.DeletedTaskIDsMu.Unlock()
+	if deletedBeforeCheckout {
+		state.Logger.Info("任务 "+item.ID+" 已在结账前被删除，取消 checkout", "purchase")
+		return false
+	}
+
 	// 直接结账 —— 跳过 /summary(它只是日志用的价格,2 秒开销),
 	// 价格 + 过期时间下面 checkout 成功后用 /me/order 异步补,不阻塞主流程。
 	state.Logger.Info("对购物车 "+cartID+" 执行结账", "purchase")

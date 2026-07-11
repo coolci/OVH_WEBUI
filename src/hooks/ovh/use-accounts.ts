@@ -61,12 +61,13 @@ export function useCreateAccount() {
       if (data?.account?.id) {
         setActiveServerControlAccount(data.account.id);
         void qc.invalidateQueries({ queryKey: ["server-control"] });
+        void qc.invalidateQueries({ queryKey: ["vps-control"] });
         void qc.invalidateQueries({ queryKey: ["account"] });
       }
       if (data.valid) {
         toast.success(`账户 ${data.account.name} 创建成功`);
       } else {
-        toast.warning(`账户已保存,但 OVH 验证失败,请检查凭据`);
+        toast.warning(`账户创建失败或 OVH 验证未通过，请检查凭据`);
       }
     },
     onError: (e: any) => toast.error(e?.response?.data?.error || "创建失败"),
@@ -105,6 +106,7 @@ export function useDeleteAccount() {
       qc.invalidateQueries({ queryKey: ["queue"] });
       qc.invalidateQueries({ queryKey: ["history"] });
       qc.invalidateQueries({ queryKey: ["server-control"] });
+      qc.invalidateQueries({ queryKey: ["vps-control"] });
       qc.invalidateQueries({ queryKey: ["account"] });
       toast.success("账户已删除,关联数据一并清理");
     },

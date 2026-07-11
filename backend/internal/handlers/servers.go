@@ -233,15 +233,10 @@ func containsCI(s, sub string) bool {
 	return strings.Contains(strings.ToLower(s), strings.ToLower(sub))
 }
 
-// MonitorPrice POST /api/internal/monitor/price (本地白名单)
+// MonitorPrice POST /api/internal/monitor/price
+// 需 X-API-Key（已移出鉴权白名单）。监控主路径已改为进程内 price.GetInternal，此接口保留兼容。
 func MonitorPrice(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		clientIP := c.ClientIP()
-		if clientIP != "127.0.0.1" && clientIP != "::1" && clientIP != "localhost" {
-			state.Logger.Warn("[monitor price API] 拒绝非本地请求: "+clientIP, "price")
-			c.JSON(http.StatusForbidden, gin.H{"success": false, "error": "此API仅限本地访问"})
-			return
-		}
 		var body struct {
 			AccountID  string   `json:"account_id"` // 哪个账户询价(空 = 默认)
 			PlanCode   string   `json:"plan_code"`

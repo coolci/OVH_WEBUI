@@ -275,7 +275,7 @@ func (m *Monitor) SendAvailabilityAlert(planCode, datacenter, status, changeType
 		if priceText == "" {
 			// 1:1 对应 Python server_monitor.py:1331-1392：用 30 秒超时保护，
 			// 否则在 OVH 价格 API 卡死时整个通知会阻塞
-			priceText, _ = m.getPriceWithTimeout(planCode, datacenter, configInfo, 30*time.Second)
+			priceText, _ = m.getPriceWithTimeout("", planCode, datacenter, configInfo, 30*time.Second)
 		}
 		if priceText != "" {
 			msg.WriteString("\n💰 价格: " + priceText + "\n")

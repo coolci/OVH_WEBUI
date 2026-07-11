@@ -32,8 +32,8 @@ services:
     volumes:
       - ovh_webui_data:/data
     ports:
-      # 若只走前端反代，可注释掉下行，仅暴露 8080
-      - "${BACKEND_PORT:-19998}:19998"
+      # 默认仅本机可访问后端 API，避免公网直连绕过反代
+      - "127.0.0.1:${BACKEND_PORT:-19998}:19998"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:19998/health"]
       interval: 15s

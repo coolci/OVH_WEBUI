@@ -5,6 +5,7 @@ import { Loader2, Settings2, Zap } from "lucide-react";
 import api from "@/lib/api";
 import { useBackendConnection, useServers } from "@/hooks/useApi";
 import { cn } from "@/lib/utils";
+import { AccountSelect } from "@/components/common/AccountSelect";
 
 import {
   Dialog,
@@ -30,6 +31,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 const quickOrderSchema = z.object({
   planCode: z.string().trim().min(1),
   datacenter: z.string().trim().min(1),
+  accountId: z.string().trim().min(1, "请选择下单账户"),
   options: z.array(z.string().trim().min(1)).max(50).optional(),
 });
 
@@ -44,6 +46,7 @@ export function QuickOrderDialog({ open, onOpenChange }: QuickOrderDialogProps) 
 
   const [planCode, setPlanCode] = useState<string>("");
   const [datacenter, setDatacenter] = useState<string>("");
+  const [accountId, setAccountId] = useState<string>("");
   const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoadingPrice, setIsLoadingPrice] = useState(false);
@@ -113,6 +116,7 @@ export function QuickOrderDialog({ open, onOpenChange }: QuickOrderDialogProps) 
     const parsed = quickOrderSchema.safeParse({
       planCode,
       datacenter,
+      accountId,
       options: selectedOptions,
     });
 
@@ -133,7 +137,12 @@ export function QuickOrderDialog({ open, onOpenChange }: QuickOrderDialogProps) 
 
     setIsSubmitting(true);
     try {
-      const payload = { planCode, datacenter, options: selectedOptions };
+      const payload = {
+        planCode,
+        datacenter,
+        options: selectedOptions,
+        account_id: accountId,
+      };
       const res = await api.quickOrder(payload);
       if (res?.success) {
         // eslint-disable-next-line no-alert
@@ -141,7 +150,7 @@ export function QuickOrderDialog({ open, onOpenChange }: QuickOrderDialogProps) 
         onOpenChange(false);
       } else {
         // eslint-disable-next-line no-alert
-        alert(res?.message || "下单失败");
+        alert(res?.message || res?.error || "下单失败");
       }
     } catch (err: any) {
       const msg = err?.message?.includes("Failed to fetch")
@@ -172,6 +181,11 @@ export function QuickOrderDialog({ open, onOpenChange }: QuickOrderDialogProps) 
         </DialogHeader>
 
         <div className="space-y-4">
+          <div className="space-y-2">
+            <Label>下单账户</Label>
+            <AccountSelect value={accountId} onChange={setAccountId} placeholder="选择 OVH 账户" />
+          </div>
+
           <div className="space-y-2">
             <Label>服务器型号</Label>
             <Select value={planCode} onValueChange={setPlanCode}>

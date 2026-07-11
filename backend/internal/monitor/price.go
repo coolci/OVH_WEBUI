@@ -1,152 +1,94 @@
 package monitor
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"time"
 
 	"github.com/ovh-webui/server/internal/numconv"
+	"github.com/ovh-webui/server/internal/price"
 )
 
-// verifyPriceAvailable 对应 Python: _verify_price_available
-// 返回 (是否可下单, 失败原因)
-func (m *Monitor) verifyPriceAvailable(planCode, datacenter string, configInfo map[string]interface{}) (bool, string) {
+// resolvePriceAccount 询价账户：优先订阅 auto-order 账户，否则默认账户。
+func (m *Monitor) resolvePriceAccount(sub *Subscription) string {
+	if sub != nil && sub.AutoOrderAccountID != "" {
+		return sub.AutoOrderAccountID
+	}
+	acc, ok := m.state.FindAccount("")
+	if ok {
+		return acc.ID
+	}
+	return ""
+}
+
+func optionsFromConfig(configInfo map[string]interface{}) []string {
 	options := []string{}
-	if configInfo != nil {
-		if opts, ok := configInfo["options"].([]string); ok {
-			options = opts
-		} else if optsRaw, ok := configInfo["options"].([]interface{}); ok {
-			for _, o := range optsRaw {
-				if s, ok := o.(string); ok {
-					options = append(options, s)
-				}
+	if configInfo == nil {
+		return options
+	}
+	if opts, ok := configInfo["options"].([]string); ok {
+		return append(options, opts...)
+	}
+	if optsRaw, ok := configInfo["options"].([]interface{}); ok {
+		for _, o := range optsRaw {
+			if s, ok := o.(string); ok {
+				options = append(options, s)
 			}
 		}
 	}
+	return options
+}
 
-	url := "http://127.0.0.1:" + m.state.Port + "/api/internal/monitor/price"
-	body, _ := json.Marshal(map[string]interface{}{
-		"plan_code":  planCode,
-		"datacenter": datacenter,
-		"options":    options,
-	})
-	client := &http.Client{Timeout: 30 * time.Second}
-	req, _ := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := client.Do(req)
-	if err != nil {
-		errMsg := "价格校验API请求失败: " + err.Error()
-		m.state.Logger.Debug(fmt.Sprintf("价格校验API请求失败: %s@%s - %s", planCode, datacenter, err.Error()), "monitor")
-		return false, errMsg
-	}
-	defer resp.Body.Close()
-	respBody, _ := io.ReadAll(resp.Body)
-	var result map[string]interface{}
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		return false, "价格校验API响应解析失败"
-	}
-
-	success, _ := result["success"].(bool)
-	if !success {
-		errMsg, _ := result["error"].(string)
+// verifyPriceAvailable 进程内询价（不再 HTTP 自调 /api/internal/monitor/price）。
+// accountID 为空时用默认账户。
+func (m *Monitor) verifyPriceAvailable(accountID, planCode, datacenter string, configInfo map[string]interface{}) (bool, string) {
+	options := optionsFromConfig(configInfo)
+	result := price.GetInternal(m.state, accountID, planCode, datacenter, options)
+	if !result.Success {
+		errMsg := result.Error
 		if errMsg == "" {
 			errMsg = "未知错误"
 		}
 		m.state.Logger.Debug(fmt.Sprintf("价格校验失败: %s@%s - %s", planCode, datacenter, errMsg), "monitor")
 		return false, errMsg
 	}
-
-	priceRaw, ok := result["price"]
-	if !ok || priceRaw == nil {
+	if result.Price == nil {
 		m.state.Logger.Debug(fmt.Sprintf("价格校验失败: %s@%s - price字段缺失", planCode, datacenter), "monitor")
 		return false, "price字段缺失"
 	}
-	priceInfo, ok := priceRaw.(map[string]interface{})
-	if !ok {
-		m.state.Logger.Debug(fmt.Sprintf("价格校验失败: %s@%s - price字段类型错误", planCode, datacenter), "monitor")
-		return false, "price字段类型错误"
-	}
-	prices, ok := priceInfo["prices"].(map[string]interface{})
-	if !ok {
-		m.state.Logger.Debug(fmt.Sprintf("价格校验失败: %s@%s - prices字段缺失或类型错误", planCode, datacenter), "monitor")
-		return false, "prices字段缺失或类型错误"
-	}
-	withTax := prices["withTax"]
+	withTax := result.Price.Prices["withTax"]
 	if withTax == nil {
 		errMsg := "withTax无效(<nil>)"
 		m.state.Logger.Debug(fmt.Sprintf("价格校验失败: %s@%s - %s", planCode, datacenter, errMsg), "monitor")
 		return false, errMsg
 	}
-	if v, ok := numconv.ToFloat64(withTax); ok {
-		if v == 0 {
-			m.state.Logger.Debug(fmt.Sprintf("价格校验失败: %s@%s - withTax无效(0)", planCode, datacenter), "monitor")
-			return false, "withTax无效(0)"
-		}
+	if v, ok := numconv.ToFloat64(withTax); ok && v == 0 {
+		m.state.Logger.Debug(fmt.Sprintf("价格校验失败: %s@%s - withTax无效(0)", planCode, datacenter), "monitor")
+		return false, "withTax无效(0)"
 	}
 	m.state.Logger.Debug(fmt.Sprintf("价格校验通过: %s@%s - 含税价格: %v", planCode, datacenter, withTax), "monitor")
 	return true, ""
 }
 
-// GetPriceInfoText 对应 Python: _get_price_info
-func (m *Monitor) GetPriceInfoText(planCode, datacenter string, configInfo map[string]interface{}) string {
-	options := []string{}
-	if configInfo != nil {
-		if opts, ok := configInfo["options"].([]string); ok {
-			options = opts
-		} else if optsRaw, ok := configInfo["options"].([]interface{}); ok {
-			for _, o := range optsRaw {
-				if s, ok := o.(string); ok {
-					options = append(options, s)
-				}
-			}
-		}
-	}
+// GetPriceInfoText 进程内询价并格式化为通知文案
+func (m *Monitor) GetPriceInfoText(accountID, planCode, datacenter string, configInfo map[string]interface{}) string {
+	options := optionsFromConfig(configInfo)
+	m.state.Logger.Debug(fmt.Sprintf("开始获取价格: plan_code=%s, datacenter=%s, options=%v account=%s",
+		planCode, datacenter, options, accountID), "monitor")
 
-	m.state.Logger.Debug(fmt.Sprintf("开始获取价格: plan_code=%s, datacenter=%s, options=%v",
-		planCode, datacenter, options), "monitor")
-
-	url := "http://127.0.0.1:" + m.state.Port + "/api/internal/monitor/price"
-	body, _ := json.Marshal(map[string]interface{}{
-		"plan_code":  planCode,
-		"datacenter": datacenter,
-		"options":    options,
-	})
-	client := &http.Client{Timeout: 30 * time.Second}
-	req, _ := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := client.Do(req)
-	if err != nil {
-		m.state.Logger.Warn("价格API请求失败: "+err.Error(), "monitor")
+	result := price.GetInternal(m.state, accountID, planCode, datacenter, options)
+	if !result.Success {
+		m.state.Logger.Warn("价格获取失败: "+result.Error, "monitor")
 		return ""
 	}
-	defer resp.Body.Close()
-	respBody, _ := io.ReadAll(resp.Body)
-	var result map[string]interface{}
-	if err := json.Unmarshal(respBody, &result); err != nil {
+	if result.Price == nil || result.Price.Prices == nil {
 		return ""
 	}
-	if ok, _ := result["success"].(bool); !ok {
-		errMsg, _ := result["error"].(string)
-		m.state.Logger.Warn("价格获取失败: "+errMsg, "monitor")
-		return ""
-	}
-	priceInfo, _ := result["price"].(map[string]interface{})
-	if priceInfo == nil {
-		return ""
-	}
-	prices, _ := priceInfo["prices"].(map[string]interface{})
-	if prices == nil {
-		return ""
-	}
-	withTaxRaw, ok := prices["withTax"]
-	if !ok || withTaxRaw == nil {
+	withTaxRaw := result.Price.Prices["withTax"]
+	if withTaxRaw == nil {
 		m.state.Logger.Warn("价格获取成功但withTax为None", "monitor")
 		return ""
 	}
-	currency, _ := prices["currencyCode"].(string)
+	currency, _ := result.Price.Prices["currencyCode"].(string)
 	if currency == "" {
 		currency = "EUR"
 	}
@@ -165,16 +107,15 @@ func (m *Monitor) GetPriceInfoText(planCode, datacenter string, configInfo map[s
 	return ""
 }
 
-// getPriceWithTimeout 模拟 Python 中 30 秒超时
-func (m *Monitor) getPriceWithTimeout(planCode, datacenter string, configInfo map[string]interface{}, timeout time.Duration) (string, string) {
+// getPriceWithTimeout 带超时的询价
+func (m *Monitor) getPriceWithTimeout(accountID, planCode, datacenter string, configInfo map[string]interface{}, timeout time.Duration) (string, string) {
 	type res struct {
-		text   string
-		errMsg string
+		text string
 	}
 	ch := make(chan res, 1)
 	start := time.Now()
 	go func() {
-		text := m.GetPriceInfoText(planCode, datacenter, configInfo)
+		text := m.GetPriceInfoText(accountID, planCode, datacenter, configInfo)
 		ch <- res{text: text}
 	}()
 	select {

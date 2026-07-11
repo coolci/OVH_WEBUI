@@ -104,7 +104,7 @@ func (m *Monitor) CheckAvailabilityChange(sub *Subscription, traceID string) {
 				go func(dc string) {
 					defer wg.Done()
 					defer func() { <-sem }()
-					ok, errMsg := m.verifyPriceAvailable(planCode, dc, configInfo)
+					ok, errMsg := m.verifyPriceAvailable(m.resolvePriceAccount(sub), planCode, dc, configInfo)
 					pcMu.Lock()
 					priceCheckResults[dc] = [2]interface{}{ok, errMsg}
 					pcMu.Unlock()
@@ -260,7 +260,7 @@ func (m *Monitor) CheckAvailabilityChange(sub *Subscription, traceID string) {
 				}
 			}
 			if firstDC != "" {
-				priceText, priceFetchError = m.getPriceWithTimeout(planCode, firstDC, configInfo, 30*time.Second)
+				priceText, priceFetchError = m.getPriceWithTimeout(m.resolvePriceAccount(sub), planCode, firstDC, configInfo, 30*time.Second)
 				if priceText != "" {
 					m.state.Logger.Debug(fmt.Sprintf("配置 %s 价格获取成功: %s，将在所有通知中复用", configDisplay, priceText), "monitor")
 				} else {
@@ -285,10 +285,11 @@ func (m *Monitor) CheckAvailabilityChange(sub *Subscription, traceID string) {
 			}
 		}
 
-		// 自动下单
+		// 自动下单：仅边沿触发 unavailable → available。
+		// 禁止 !hasOld（首检/重启后无基线）直接下单，避免误抢购。
 		orderTargets := []notification{}
 		for _, n := range availables {
-			if !n.priceCheckFailed && (!n.hasOld || n.oldStatus == "unavailable") {
+			if !n.priceCheckFailed && n.hasOld && n.oldStatus == "unavailable" {
 				orderTargets = append(orderTargets, n)
 			}
 		}
@@ -349,7 +350,7 @@ func (m *Monitor) CheckAvailabilityChange(sub *Subscription, traceID string) {
 		for _, n := range priceFailed {
 			m.state.Logger.Info(fmt.Sprintf("准备发送价格校验失败提醒: %s@%s [%s] - 可用性有货但价格校验失败",
 				planCode, n.dc, configDisplay), "monitor")
-			priceTextFailed := m.GetPriceInfoText(planCode, n.dc, configInfo)
+			priceTextFailed := m.GetPriceInfoText(m.resolvePriceAccount(sub), planCode, n.dc, configInfo)
 			configInfoFailed := copyMap(configInfo)
 			if priceTextFailed != "" {
 				configInfoFailed["cached_price"] = priceTextFailed

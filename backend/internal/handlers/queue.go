@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -23,12 +24,18 @@ func AddQueueItem(state *app.State) gin.HandlerFunc {
 			RetryInterval int      `json:"retryInterval"`
 		}
 		_ = c.ShouldBindJSON(&body)
+		body.PlanCode = strings.TrimSpace(body.PlanCode)
+		body.Datacenter = strings.TrimSpace(body.Datacenter)
 		if body.AccountID == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "缺少 account_id"})
 			return
 		}
 		if _, ok := state.FindAccount(body.AccountID); !ok {
 			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "account_id 不存在"})
+			return
+		}
+		if body.PlanCode == "" || body.Datacenter == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "缺少 planCode 或 datacenter"})
 			return
 		}
 		if body.RetryInterval == 0 {
@@ -45,6 +52,7 @@ func AddQueueItem(state *app.State) gin.HandlerFunc {
 			UpdatedAt:     types.NowISO(),
 			RetryInterval: body.RetryInterval,
 			RetryCount:    0,
+			MaxRetries:    0, // 0 = 无限抢购（与 Telegram 一致）；quick-order 路径单独设上限
 			LastCheckTime: 0,
 		}
 		state.QueueMu.Lock()

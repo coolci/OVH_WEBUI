@@ -19,22 +19,58 @@ func GetSettings(state *app.State) gin.HandlerFunc {
 }
 
 // SaveSettings POST /api/settings
+// 合并更新：前端可不传敏感/内部字段；空值保留服务端已有配置，避免抹掉 TgWebhookSecret 等。
 func SaveSettings(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var newCfg types.Config
-		if err := c.ShouldBindJSON(&newCfg); err != nil {
+		var patch types.Config
+		if err := c.ShouldBindJSON(&patch); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": err.Error()})
 			return
 		}
 
 		prev := state.Config.Get()
+		newCfg := prev
 
 		// 凭据去空白（前端粘贴时常带空格/换行，会导致 OVH 签名失败 "Invalid signature"）
-		newCfg.AppKey = strings.TrimSpace(newCfg.AppKey)
-		newCfg.AppSecret = strings.TrimSpace(newCfg.AppSecret)
-		newCfg.ConsumerKey = strings.TrimSpace(newCfg.ConsumerKey)
-		newCfg.TgToken = strings.TrimSpace(newCfg.TgToken)
-		newCfg.TgChatID = strings.TrimSpace(newCfg.TgChatID)
+		patch.AppKey = strings.TrimSpace(patch.AppKey)
+		patch.AppSecret = strings.TrimSpace(patch.AppSecret)
+		patch.ConsumerKey = strings.TrimSpace(patch.ConsumerKey)
+		patch.TgToken = strings.TrimSpace(patch.TgToken)
+		patch.TgChatID = strings.TrimSpace(patch.TgChatID)
+		patch.TgWebhookSecret = strings.TrimSpace(patch.TgWebhookSecret)
+		patch.Endpoint = strings.TrimSpace(patch.Endpoint)
+		patch.Zone = strings.TrimSpace(patch.Zone)
+		patch.IAM = strings.TrimSpace(patch.IAM)
+
+		// 非空才覆盖（合并语义）；Webhook secret 绝不用空串覆盖
+		if patch.AppKey != "" {
+			newCfg.AppKey = patch.AppKey
+		}
+		if patch.AppSecret != "" {
+			newCfg.AppSecret = patch.AppSecret
+		}
+		if patch.ConsumerKey != "" {
+			newCfg.ConsumerKey = patch.ConsumerKey
+		}
+		if patch.TgToken != "" {
+			newCfg.TgToken = patch.TgToken
+		}
+		// ChatID 允许显式清空？一般不允许空覆盖已有，避免误清通知
+		if patch.TgChatID != "" {
+			newCfg.TgChatID = patch.TgChatID
+		}
+		if patch.TgWebhookSecret != "" {
+			newCfg.TgWebhookSecret = patch.TgWebhookSecret
+		}
+		if patch.Endpoint != "" {
+			newCfg.Endpoint = patch.Endpoint
+		}
+		if patch.Zone != "" {
+			newCfg.Zone = patch.Zone
+		}
+		if patch.IAM != "" {
+			newCfg.IAM = patch.IAM
+		}
 
 		// 默认值兜底
 		if newCfg.Endpoint == "" {

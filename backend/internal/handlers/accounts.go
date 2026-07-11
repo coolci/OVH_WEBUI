@@ -101,7 +101,7 @@ func GetAccountByID(state *app.State) gin.HandlerFunc {
 }
 
 // CreateAccount POST /api/accounts
-// 创建后立即用新凭据调 OVH /me 验证,验证失败回滚不入库。
+// 写入后立即用新凭据调 OVH /me 验证；验证失败回滚删除。
 func CreateAccount(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var in accountInput
@@ -137,11 +137,23 @@ func CreateAccount(state *app.State) gin.HandlerFunc {
 		}
 		_ = state.ReloadAccounts()
 
-		// 用新凭据验证
+		// 用新凭据验证；失败回滚，避免坏默认账户污染
 		valid := verifyAccountCreds(state, acc.ID)
-		state.Logger.Info("创建账户: "+acc.Name+" ("+acc.Zone+") valid="+boolStr(valid), "accounts")
+		if !valid {
+			_ = state.DB.DeleteAccount(acc.ID)
+			state.OVH.Invalidate(acc.ID)
+			_ = state.ReloadAccounts()
+			state.Logger.Warn("创建账户校验失败已回滚: "+acc.Name+" ("+acc.Zone+")", "accounts")
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":  "OVH 凭据校验失败，账户未保存",
+				"valid":  false,
+				"account": nil,
+			})
+			return
+		}
+		state.Logger.Info("创建账户: "+acc.Name+" ("+acc.Zone+") valid=true", "accounts")
 
-		c.JSON(http.StatusOK, gin.H{"account": acc, "valid": valid})
+		c.JSON(http.StatusOK, gin.H{"account": acc, "valid": true})
 	}
 }
 
@@ -198,7 +210,8 @@ func UpdateAccount(state *app.State) gin.HandlerFunc {
 }
 
 // DeleteAccountByID DELETE /api/accounts/:id  级联删除
-func DeleteAccountByID(state *app.State) gin.HandlerFunc {
+// mon 可为 nil（测试）；非 nil 时重载监控订阅内存，清掉已删账户的 auto_order_account_id。
+func DeleteAccountByID(state *app.State, mon interface{ LoadFromDB() }) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
 		if err := state.DB.DeleteAccount(id); err != nil {
@@ -209,6 +222,9 @@ func DeleteAccountByID(state *app.State) gin.HandlerFunc {
 		_ = state.ReloadAccounts()
 		// 关联的内存数据也得清掉(queue / history / sniper_tasks)
 		reloadAfterAccountDelete(state, id)
+		if mon != nil {
+			mon.LoadFromDB()
+		}
 		state.Logger.Info("删除账户 + 级联清理: "+id, "accounts")
 		c.JSON(http.StatusOK, gin.H{"status": "success"})
 	}
@@ -270,11 +286,7 @@ func reloadAfterAccountDelete(state *app.State, _ string) {
 		}
 		state.HistoryMu.Unlock()
 	}
-	// 监控订阅的 auto_order_account_id 已经被 SQL UPDATE 清空了,
-	// 但内存里还是旧值,得重载
-	if subs, err := state.DB.ListMonitorSubscriptions(); err == nil {
-		_ = subs // 实际由 monitor 包自己 LoadFromDB,这里跳过
-	}
+	// 监控订阅内存由 DeleteAccountByID 调用 mon.LoadFromDB() 刷新
 	if subs, err := state.DB.ListVPSSubscriptions(); err == nil {
 		state.VPSSubsMu.Lock()
 		state.VPSSubscriptions = subs

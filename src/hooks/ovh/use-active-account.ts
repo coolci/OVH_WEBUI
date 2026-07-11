@@ -31,6 +31,7 @@ export function useActiveServerControlAccount(): [string, (id: string) => void] 
     setAccountId(id);
     // 让所有依赖账户的查询重拉
     qc.invalidateQueries({ queryKey: ["server-control"] });
+    qc.invalidateQueries({ queryKey: ["vps-control"] });
     qc.invalidateQueries({ queryKey: ["account"] });
   };
   return [accountId, set];

@@ -18,10 +18,25 @@ export interface AvailabilityItem {
   datacenters: DatacenterInfo[];
 }
 
-/** 从后端 config 读取 endpoint 决定调哪个 OVH 公开 API */
-async function getApiBaseUrl(): Promise<string> {
-  const res = await api.get("/settings");
-  const endpoint = res.data?.endpoint || "ovh-eu";
+/** 从默认 OVH 账户 endpoint（优先）或全局 settings 决定公开 API 区域 */
+async function resolveAvailabilityEndpoint(): Promise<string> {
+  try {
+    const accRes = await api.get<{ accounts?: { isDefault?: boolean; endpoint?: string }[] }>("/accounts");
+    const accounts = accRes.data?.accounts || [];
+    const def = accounts.find((a) => a.isDefault) || accounts[0];
+    if (def?.endpoint) return def.endpoint;
+  } catch {
+    /* fall through */
+  }
+  try {
+    const res = await api.get("/settings");
+    return res.data?.endpoint || "ovh-eu";
+  } catch {
+    return "ovh-eu";
+  }
+}
+
+function endpointToPublicApiBase(endpoint: string): string {
   switch (endpoint) {
     case "ovh-us":
       return "https://api.us.ovhcloud.com";
@@ -39,9 +54,10 @@ async function getApiBaseUrl(): Promise<string> {
  */
 export function useAvailability() {
   return useQuery({
-    queryKey: qk.availability.all("auto"),
+    queryKey: qk.availability.all("account-endpoint"),
     queryFn: async () => {
-      const baseUrl = await getApiBaseUrl();
+      const endpoint = await resolveAvailabilityEndpoint();
+      const baseUrl = endpointToPublicApiBase(endpoint);
       const res = await axios.get<AvailabilityItem[]>(
         `${baseUrl}/v1/dedicated/server/datacenter/availabilities`,
         { timeout: 30000 }

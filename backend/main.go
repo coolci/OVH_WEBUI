@@ -51,9 +51,18 @@ func main() {
 	lg := logger.New(paths.LogFile("app.log.json"), console)
 	cfgStore := config.New(sqliteDB)
 	state := app.NewState(paths, cfgStore, lg, sqliteDB)
-	state.APIKey = os.Getenv("API_SECRET_KEY")
-	if state.APIKey == "" {
-		state.APIKey = "123456"
+	state.APIKey = strings.TrimSpace(os.Getenv("API_SECRET_KEY"))
+	allowInsecureKey := strings.EqualFold(os.Getenv("ALLOW_INSECURE_DEFAULT_KEY"), "true")
+	if state.APIKey == "" || state.APIKey == "123456" || state.APIKey == "change-me-to-a-long-random-string" {
+		if allowInsecureKey {
+			if state.APIKey == "" {
+				state.APIKey = "123456"
+			}
+			console.Warn("using insecure API_SECRET_KEY (ALLOW_INSECURE_DEFAULT_KEY=true); do not use in production")
+		} else {
+			console.Error("API_SECRET_KEY is missing or weak; set a long random secret, or ALLOW_INSECURE_DEFAULT_KEY=true for local dev only")
+			os.Exit(1)
+		}
 	}
 	state.Port = os.Getenv("PORT")
 	if state.Port == "" {
@@ -77,6 +86,8 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 	r := gin.New()
+	// 不信任任意反向代理头，避免 X-Forwarded-For 伪造 ClientIP
+	_ = r.SetTrustedProxies(nil)
 	r.Use(gin.Recovery())
 	r.Use(cors.New(cors.Config{
 		AllowAllOrigins:  true,
@@ -163,7 +174,7 @@ func main() {
 		api.GET("/accounts/:id", handlers.GetAccountByID(state))
 		api.POST("/accounts", handlers.CreateAccount(state))
 		api.PUT("/accounts/:id", handlers.UpdateAccount(state))
-		api.DELETE("/accounts/:id", handlers.DeleteAccountByID(state))
+		api.DELETE("/accounts/:id", handlers.DeleteAccountByID(state, mon))
 		api.POST("/accounts/:id/set-default", handlers.SetDefaultAccountByID(state))
 		api.POST("/accounts/:id/verify", handlers.VerifyAccount(state))
 
