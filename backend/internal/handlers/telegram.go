@@ -4,17 +4,16 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/monitor"
 	"github.com/ovh-webui/server/internal/telegram"
-	"github.com/ovh-webui/server/internal/types"
 )
 
 // SetTelegramWebhook POST /api/telegram/set-webhook
@@ -32,7 +31,7 @@ func SetTelegramWebhook(state *app.State) gin.HandlerFunc {
 		if ok {
 			c.JSON(http.StatusOK, gin.H{
 				"success":      true,
-				"message":      "Webhook 设置成功",
+				"message":      "Webhook 设置成功（已启用 secret_token + 命令菜单）",
 				"webhook_url":  msg,
 				"webhook_info": info,
 			})
@@ -47,11 +46,7 @@ func GetTelegramWebhookInfo(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ok, info, errMsg := telegram.GetWebhookInfo(state)
 		if !ok {
-			status := http.StatusBadRequest
-			if strings.Contains(errMsg, "未配置") {
-				status = http.StatusBadRequest
-			}
-			c.JSON(status, gin.H{"success": false, "error": errMsg})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": errMsg})
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"success": true, "webhook_info": info})
@@ -59,177 +54,58 @@ func GetTelegramWebhookInfo(state *app.State) gin.HandlerFunc {
 }
 
 // TelegramWebhook POST /api/telegram/webhook
+// 安全链：secret_token → body 大小 → update_id 幂等 → Chat/User 白名单 → 业务
 func TelegramWebhook(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// 1) secret_token：伪造来源直接 401（Telegram 不会伪造错误 secret）
+		secretHdr := c.GetHeader(telegram.SecretTokenHeader)
+		if !telegram.ValidateWebhookSecret(state, secretHdr) {
+			state.Logger.Warn("拒绝无效 secret_token 的 webhook 请求 from="+c.ClientIP(), "telegram")
+			c.JSON(http.StatusUnauthorized, gin.H{"ok": false, "error": "invalid_secret_token"})
+			return
+		}
+
+		// 2) 限制 body 大小
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, telegram.MaxTelegramBodyBytes)
+		raw, err := io.ReadAll(c.Request.Body)
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{"ok": true, "error": "body_too_large_or_read_error"})
+			return
+		}
 		var data map[string]interface{}
-		if err := c.ShouldBindJSON(&data); err != nil {
+		if err := json.Unmarshal(raw, &data); err != nil {
 			c.JSON(http.StatusOK, gin.H{"ok": true})
 			return
 		}
 
-		// 处理 callback_query
-		if cb, ok := data["callback_query"].(map[string]interface{}); ok {
-			cbData, _ := cb["data"].(string)
-			message, _ := cb["message"].(map[string]interface{})
-			chatID := getNested(message, "chat", "id")
-			messageID, _ := getNumOrFloat(message["message_id"])
-			fromUser, _ := cb["from"].(map[string]interface{})
-			userID, _ := getNumOrFloat(fromUser["id"])
-			state.Logger.Info(fmt.Sprintf("收到Telegram回调: user_id=%v, callback_data=%s...", userID, truncate(cbData, 50)), "telegram")
-
-			cbID := fmt.Sprintf("%v", cb["id"])
-			var callbackObj map[string]interface{}
-			if strings.HasPrefix(cbData, "b64:") {
-				base64Part := cbData[4:]
-				// padding
-				if missing := len(base64Part) % 4; missing != 0 {
-					base64Part += strings.Repeat("=", 4-missing)
-				}
-				decoded, err := base64.StdEncoding.DecodeString(base64Part)
-				if err != nil {
-					state.Logger.Warn("base64解码失败（可能是数据被截断）: "+err.Error()+", base64_len="+fmt.Sprintf("%d", len(cbData[4:])), "telegram")
-					state.Logger.Warn("callback_data（前100字符）: "+truncate(cbData, 100), "telegram")
-					telegram.AnswerCallback(state, cbID, "按钮数据无效", true)
-					c.JSON(http.StatusOK, gin.H{"ok": true, "error": "callback_decode_failed"})
-					return
-				}
-				if err := json.Unmarshal(decoded, &callbackObj); err != nil {
-					state.Logger.Error("解析callback_data JSON失败: "+err.Error()+", data="+truncate(cbData, 100), "telegram")
-					telegram.AnswerCallback(state, cbID, "按钮数据无效", true)
-					c.JSON(http.StatusOK, gin.H{"ok": true, "error": "invalid_callback_json"})
-					return
-				}
-			} else {
-				if err := json.Unmarshal([]byte(cbData), &callbackObj); err != nil {
-					state.Logger.Error("解析callback_data JSON失败: "+err.Error()+", data="+truncate(cbData, 100), "telegram")
-					telegram.AnswerCallback(state, cbID, "按钮数据无效", true)
-					c.JSON(http.StatusOK, gin.H{"ok": true, "error": "invalid_callback_json"})
-					return
-				}
-			}
-
-			action := ""
-			if v, ok := callbackObj["a"].(string); ok {
-				action = v
-			} else if v, ok := callbackObj["action"].(string); ok {
-				action = v
-			}
-
-			if action == "add_to_queue" {
-				messageUUID := ""
-				if v, ok := callbackObj["u"].(string); ok {
-					messageUUID = v
-				} else if v, ok := callbackObj["uuid"].(string); ok {
-					messageUUID = v
-				}
-				if messageUUID != "" {
-					if cached := mon.MessageUUIDCacheLookup(messageUUID); cached != nil {
-						planCode := cached.PlanCode
-						dc := cached.Datacenter
-						options := cached.Options
-						state.Logger.Info(fmt.Sprintf("✅ 从UUID缓存恢复配置: UUID=%s, %s@%s, options=%v",
-							messageUUID, planCode, dc, options), "telegram")
-						item := types.QueueItem{
-							ID:            uuid.NewString(),
-							PlanCode:      planCode,
-							Datacenter:    dc,
-							Options:       options,
-							Status:        "running",
-							CreatedAt:     types.NowISO(),
-							UpdatedAt:     types.NowISO(),
-							RetryInterval: 30,
-							RetryCount:    0,
-							LastCheckTime: 0,
-							FromTelegram:  true,
-						}
-						state.QueueMu.Lock()
-						state.Queue = append(state.Queue, item)
-						state.QueueMu.Unlock()
-						_ = state.SaveQueue()
-						optsStr := strings.Join(options, ", ")
-						if optsStr == "" {
-							optsStr = "无（默认配置）"
-						}
-						state.Logger.Info(fmt.Sprintf("Telegram用户 %v 通过UUID按钮添加到队列: %s@%s, 配置选项: %s",
-							userID, planCode, dc, optsStr), "telegram")
-						confirmMsg := fmt.Sprintf("✅ 已添加到抢购队列！\n\n型号: %s\n机房: %s\n配置: %s\n\n系统将自动尝试下单。",
-							planCode, strings.ToUpper(dc), optsStr)
-						telegram.AnswerCallback(state, cbID, "已添加到队列！", false)
-						telegram.SendReply(state, chatID, confirmMsg, int64(messageID))
-						// 必须 200：Telegram 收到非 2xx 会重试并标记 webhook 故障
-						c.JSON(http.StatusOK, gin.H{"ok": true})
-						return
-					}
-					state.Logger.Warn("UUID未找到 in cache: "+messageUUID, "telegram")
-				}
-
-				// 降级到旧机制（callback 内直接带 p/d/o）
-				planCode := strOr(callbackObj, "p", "planCode")
-				dc := strOr(callbackObj, "d", "datacenter")
-				var options []string
-				if optsRaw, ok := callbackObj["o"]; ok {
-					options = toStringSlice(optsRaw)
-				} else if optsRaw, ok := callbackObj["options"]; ok {
-					options = toStringSlice(optsRaw)
-				}
-				if planCode == "" || dc == "" {
-					// 典型原因：部署重启后旧按钮 UUID 未持久化；或按钮已超过 24h TTL
-					state.Logger.Warn(fmt.Sprintf("一键下单失败: UUID=%s 缓存未命中且无 planCode/datacenter 降级数据", messageUUID), "telegram")
-					telegram.AnswerCallback(state, cbID, "按钮已失效，请等待新的上架通知后再点", true)
-					if chatID != nil {
-						telegram.SendReply(state, chatID,
-							"❌ 一键下单失败：该通知按钮已过期或服务刚重启导致缓存丢失。\n\n请等待新的上架通知后重试，或在网页端手动加入抢购队列。",
-							int64(messageID))
-					}
-					// 对 Telegram 永远回 200，避免 pending_update 堆积与 webhook 报错
-					c.JSON(http.StatusOK, gin.H{"ok": true, "error": "button_expired"})
-					return
-				}
-				if len(options) == 0 {
-					cacheKey := planCode + "|" + dc
-					options = mon.OptionsCacheLookup(cacheKey)
-					if len(options) > 0 {
-						state.Logger.Info("✅ 从缓存恢复 options: "+cacheKey+" = "+strings.Join(options, ","), "telegram")
-					}
-				}
-				item := types.QueueItem{
-					ID:            uuid.NewString(),
-					PlanCode:      planCode,
-					Datacenter:    dc,
-					Options:       options,
-					Status:        "running",
-					CreatedAt:     types.NowISO(),
-					UpdatedAt:     types.NowISO(),
-					RetryInterval: 30,
-					RetryCount:    0,
-					LastCheckTime: 0,
-					FromTelegram:  true,
-				}
-				state.QueueMu.Lock()
-				state.Queue = append(state.Queue, item)
-				state.QueueMu.Unlock()
-				_ = state.SaveQueue()
-				optsStr := strings.Join(options, ", ")
-				if optsStr == "" {
-					optsStr = "无（默认配置）"
-				}
-				state.Logger.Info(fmt.Sprintf("Telegram用户 %v 通过按钮添加到队列（旧机制）: %s@%s, 配置选项: %s",
-					userID, planCode, dc, optsStr), "telegram")
-				confirmText := strings.Join(options, ", ")
-				if confirmText == "" {
-					confirmText = "默认配置"
-				}
-				confirmMsg := fmt.Sprintf("✅ 已添加到抢购队列！\n\n型号: %s\n机房: %s\n配置: %s\n\n系统将自动尝试下单。",
-					planCode, strings.ToUpper(dc), confirmText)
-				telegram.AnswerCallback(state, cbID, "已添加到队列！", false)
-				telegram.SendReply(state, chatID, confirmMsg, int64(messageID))
-				c.JSON(http.StatusOK, gin.H{"ok": true})
+		// 3) update_id 幂等（重放直接 200 吞掉）
+		var updateID int64
+		switch v := data["update_id"].(type) {
+		case float64:
+			updateID = int64(v)
+		case json.Number:
+			n, _ := v.Int64()
+			updateID = n
+		}
+		if state.DB != nil && updateID > 0 {
+			claimed, err := state.DB.TryClaimTelegramUpdate(updateID)
+			if err != nil {
+				state.Logger.Warn("update_id 幂等写入失败: "+err.Error(), "telegram")
+			} else if !claimed {
+				state.Logger.Info(fmt.Sprintf("忽略重复 update_id=%d", updateID), "telegram")
+				c.JSON(http.StatusOK, gin.H{"ok": true, "duplicate": true})
 				return
 			}
-			state.Logger.Warn("未知的action: "+action, "telegram")
-			// 未知 action 也回 200，避免 Telegram 反复重推
-			telegram.AnswerCallback(state, fmt.Sprintf("%v", cb["id"]), "未知操作", true)
-			c.JSON(http.StatusOK, gin.H{"ok": true, "error": "unknown_action"})
+			// 偶发清理 7 天前记录
+			if updateID%50 == 0 {
+				before := float64(time.Now().Add(-time.Duration(telegram.UpdateIDRetentionDays) * 24 * time.Hour).Unix())
+				_, _ = state.DB.CleanupTelegramUpdates(before)
+			}
+		}
+
+		// 处理 callback_query
+		if cb, ok := data["callback_query"].(map[string]interface{}); ok {
+			handleCallbackQuery(state, mon, cb, c)
 			return
 		}
 
@@ -248,37 +124,199 @@ func TelegramWebhook(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 			state.Logger.Info(fmt.Sprintf("收到Telegram普通消息: user_id=%v, username=%s, text=%s",
 				userID, username, truncate(text, 100)), "telegram")
 
-			orderInfo := telegram.ParseOrderMessage(text)
-			if orderInfo != nil {
-				state.Logger.Info(fmt.Sprintf("解析下单消息: planCode=%s, datacenter=%s, quantity=%d, options=%v",
-					orderInfo.PlanCode, orderInfo.Datacenter, orderInfo.Quantity, orderInfo.Options), "telegram")
-				result := telegram.ProcessOrder(state, orderInfo.PlanCode, orderInfo.Datacenter, orderInfo.Quantity, orderInfo.Options)
-				var reply string
-				if result.Success {
-					dcText := "所有可用机房"
-					if orderInfo.Datacenter != "" {
-						dcText = strings.ToUpper(orderInfo.Datacenter)
-					}
-					optsText := "所有可用配置"
-					if len(orderInfo.Options) > 0 {
-						optsText = strings.Join(orderInfo.Options, ", ")
-					}
-					reply = fmt.Sprintf("✅ 下单成功！\n\n型号: %s\n机房: %s\n数量: %d\n配置: %s\n\n已创建: %d/%d 个订单\n系统将自动尝试下单。",
-						orderInfo.PlanCode, dcText, orderInfo.Quantity, optsText, result.CreatedOrders, result.TotalOrders)
-				} else {
-					reply = "❌ 下单失败\n\n" + result.Message
-				}
-				telegram.SendReply(state, chatID, reply, int64(messageID))
-				c.JSON(http.StatusOK, gin.H{"ok": true})
+			// 频率限制
+			rateKey := telegram.ChatIDString(chatID)
+			if rateKey == "" {
+				rateKey = fmt.Sprintf("%v", userID)
+			}
+			if !telegram.AllowRate(rateKey) {
+				telegram.SendReply(state, chatID, "⚠️ 操作过于频繁，请稍后再试", int64(messageID))
+				c.JSON(http.StatusOK, gin.H{"ok": true, "error": "rate_limited"})
 				return
 			}
-			state.Logger.Debug("消息不是下单格式，忽略", "telegram")
+
+			handleTelegramText(state, mon, text, chatID, userID, messageID)
 			c.JSON(http.StatusOK, gin.H{"ok": true})
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"ok": true})
-		_ = time.Now() // keep import
 	}
+}
+
+func handleCallbackQuery(state *app.State, mon *monitor.Monitor, cb map[string]interface{}, c *gin.Context) {
+	cbData, _ := cb["data"].(string)
+	message, _ := cb["message"].(map[string]interface{})
+	chatID := getNested(message, "chat", "id")
+	messageID, _ := getNumOrFloat(message["message_id"])
+	fromUser, _ := cb["from"].(map[string]interface{})
+	userID, _ := getNumOrFloat(fromUser["id"])
+	state.Logger.Info(fmt.Sprintf("收到Telegram回调: user_id=%v, callback_data=%s...", userID, truncate(cbData, 50)), "telegram")
+
+	cbID := fmt.Sprintf("%v", cb["id"])
+
+	// 频率限制
+	if !telegram.AllowRate(fmt.Sprintf("cb:%v", userID)) {
+		telegram.AnswerCallback(state, cbID, "操作过于频繁", true)
+		c.JSON(http.StatusOK, gin.H{"ok": true, "error": "rate_limited"})
+		return
+	}
+
+	// Chat / User 白名单
+	if !telegram.IsAuthorizedActor(state, chatID, userID) {
+		state.Logger.Warn(fmt.Sprintf("拒绝未授权一键下单: chat=%v user=%v", chatID, userID), "telegram")
+		telegram.AnswerCallback(state, cbID, "未授权的会话", true)
+		c.JSON(http.StatusOK, gin.H{"ok": true, "error": "unauthorized"})
+		return
+	}
+
+	var callbackObj map[string]interface{}
+	if strings.HasPrefix(cbData, "b64:") {
+		base64Part := cbData[4:]
+		if missing := len(base64Part) % 4; missing != 0 {
+			base64Part += strings.Repeat("=", 4-missing)
+		}
+		decoded, err := base64.StdEncoding.DecodeString(base64Part)
+		if err != nil {
+			telegram.AnswerCallback(state, cbID, "按钮数据无效", true)
+			c.JSON(http.StatusOK, gin.H{"ok": true, "error": "callback_decode_failed"})
+			return
+		}
+		if err := json.Unmarshal(decoded, &callbackObj); err != nil {
+			telegram.AnswerCallback(state, cbID, "按钮数据无效", true)
+			c.JSON(http.StatusOK, gin.H{"ok": true, "error": "invalid_callback_json"})
+			return
+		}
+	} else {
+		if err := json.Unmarshal([]byte(cbData), &callbackObj); err != nil {
+			telegram.AnswerCallback(state, cbID, "按钮数据无效", true)
+			c.JSON(http.StatusOK, gin.H{"ok": true, "error": "invalid_callback_json"})
+			return
+		}
+	}
+
+	action := ""
+	if v, ok := callbackObj["a"].(string); ok {
+		action = v
+	} else if v, ok := callbackObj["action"].(string); ok {
+		action = v
+	}
+	if action != "add_to_queue" {
+		state.Logger.Warn("未知的action: "+action, "telegram")
+		telegram.AnswerCallback(state, cbID, "未知操作", true)
+		c.JSON(http.StatusOK, gin.H{"ok": true, "error": "unknown_action"})
+		return
+	}
+
+	accountID := telegram.DefaultAccountID(state)
+	if accountID == "" {
+		telegram.AnswerCallback(state, cbID, "未配置 OVH 账户", true)
+		c.JSON(http.StatusOK, gin.H{"ok": true, "error": "no_account"})
+		return
+	}
+
+	messageUUID := ""
+	if v, ok := callbackObj["u"].(string); ok {
+		messageUUID = v
+	} else if v, ok := callbackObj["uuid"].(string); ok {
+		messageUUID = v
+	}
+
+	// 生产：必须带 UUID 一次性 nonce；拒绝旧版 p/d/o 裸参数回调（可伪造/可重放）
+	if messageUUID == "" {
+		state.Logger.Warn("拒绝无 UUID 的一键下单回调", "telegram")
+		telegram.AnswerCallback(state, cbID, "按钮协议已升级，请等待新通知", true)
+		telegram.SendReply(state, chatID,
+			"❌ 该按钮协议过旧或数据无效。\n请等待新的上架通知后使用「一键下单」。",
+			int64(messageID))
+		c.JSON(http.StatusOK, gin.H{"ok": true, "error": "uuid_required"})
+		return
+	}
+
+	// 正确顺序：先取配置 → 受控入队 → 成功后再原子消费 nonce
+	// （若先 consume 再 lookup，会因 used_at>0 把缓存判废，导致一键下单永远失败）
+	var planCode, dc string
+	var options []string
+	claimedFromDB := false
+
+	if state.DB != nil {
+		// 已使用过？
+		if used, exists, _ := state.DB.IsTelegramButtonUsed(messageUUID); exists && used {
+			telegram.AnswerCallback(state, cbID, "该按钮已使用过", true)
+			telegram.SendReply(state, chatID, "⚠️ 该一键下单按钮已使用，请等待新的上架通知。", int64(messageID))
+			c.JSON(http.StatusOK, gin.H{"ok": true, "error": "button_already_used"})
+			return
+		}
+	}
+
+	if cached := mon.MessageUUIDCacheLookup(messageUUID); cached != nil {
+		planCode = cached.PlanCode
+		dc = cached.Datacenter
+		options = cached.Options
+	} else if state.DB != nil {
+		// 内存未命中：尝试直接 claim DB 行（含配置）
+		row, ok, err := state.DB.ClaimTelegramButton(messageUUID)
+		if err != nil {
+			state.Logger.Warn("claim button: "+err.Error(), "telegram")
+		} else if ok {
+			claimedFromDB = true
+			planCode = row.PlanCode
+			dc = row.Datacenter
+			options = dbParseOptions(row.Options)
+		}
+	}
+
+	if planCode == "" || dc == "" {
+		telegram.AnswerCallback(state, cbID, "按钮已失效", true)
+		telegram.SendReply(state, chatID,
+			"❌ 一键下单失败：该通知按钮已过期或无效。\n\n请等待新的上架通知后重试。",
+			int64(messageID))
+		c.JSON(http.StatusOK, gin.H{"ok": true, "error": "button_expired"})
+		return
+	}
+
+	result := telegram.EnqueueSingle(state, accountID, planCode, dc, options, true)
+	if !result.Success {
+		// 入队失败：回滚已 claim 的按钮，允许重试
+		if claimedFromDB && state.DB != nil {
+			_ = state.DB.UnclaimTelegramButton(messageUUID)
+		}
+		telegram.AnswerCallback(state, cbID, "入队失败", true)
+		telegram.SendReply(state, chatID, "❌ "+result.Message, int64(messageID))
+		c.JSON(http.StatusOK, gin.H{"ok": true, "error": "enqueue_failed"})
+		return
+	}
+
+	// 入队成功：原子消费（若尚未 claim）
+	if !claimedFromDB && state.DB != nil {
+		if ok, err := state.DB.TryConsumeTelegramButton(messageUUID); err != nil {
+			state.Logger.Warn("消费按钮失败: "+err.Error(), "telegram")
+		} else if !ok {
+			// 并发下另一请求可能已消费；任务已入队，靠去重挡住重复
+			state.Logger.Warn("按钮消费未命中(可能并发): "+messageUUID, "telegram")
+		}
+	}
+	mon.InvalidateMessageUUID(messageUUID)
+
+	optsStr := strings.Join(options, ", ")
+	if optsStr == "" {
+		optsStr = "无（默认配置）"
+	}
+	confirmMsg := fmt.Sprintf("✅ 已添加到抢购队列！\n\n型号: %s\n机房: %s\n配置: %s\n\n系统将自动尝试下单。",
+		planCode, strings.ToUpper(dc), optsStr)
+	telegram.AnswerCallback(state, cbID, "已添加到队列！", false)
+	telegram.SendReply(state, chatID, confirmMsg, int64(messageID))
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+func dbParseOptions(raw string) []string {
+	if raw == "" {
+		return []string{}
+	}
+	var opts []string
+	if err := json.Unmarshal([]byte(raw), &opts); err != nil || opts == nil {
+		return []string{}
+	}
+	return opts
 }
 
 func getNested(m map[string]interface{}, keys ...string) interface{} {

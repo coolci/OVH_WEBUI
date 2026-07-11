@@ -142,6 +142,8 @@ func main() {
 		api.POST("/telegram/set-webhook", handlers.SetTelegramWebhook(state))
 		api.GET("/telegram/get-webhook-info", handlers.GetTelegramWebhookInfo(state))
 		api.POST("/telegram/webhook", handlers.TelegramWebhook(state, mon))
+		api.POST("/telegram/quick-order", handlers.TelegramQuickOrder(state, mon))
+		api.POST("/telegram/register-commands", handlers.RegisterTelegramCommands(state))
 
 		// Servers / availability / cache
 		api.GET("/servers", handlers.GetServers(state))

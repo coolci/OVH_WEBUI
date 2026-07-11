@@ -578,13 +578,22 @@ export const api = {
       modes: [
         { mode: "stock", description: "查库存", example: "/stock planCode" },
         { mode: "queue", description: "入队", example: "/queue planCode dc" },
+        { mode: "monitor", description: "添加监控", example: "/monitor planCode" },
+        { mode: "price", description: "查价格", example: "/price planCode dc" },
         { mode: "buy", description: "快速下单", example: "/buy planCode dc" },
       ],
     }),
+  /** 网页端执行与 Bot 相同的 /stock /queue /buy /monitor /price 语义 */
   telegramQuickOrder: (order: Record<string, unknown>) =>
-    apiRequest<any>("/api/queue/quick-order", {
+    apiRequest<any>("/api/telegram/quick-order", {
       method: "POST",
       body: JSON.stringify(order),
+    }),
+  /** 向 Telegram 注册 Bot 命令菜单（setMyCommands） */
+  registerTelegramCommands: () =>
+    apiRequest<any>("/api/telegram/register-commands", {
+      method: "POST",
+      body: "{}",
     }),
   batchAddAllVps: (options?: Record<string, unknown>) =>
     apiRequest<any>("/api/vps-monitor/subscriptions", {

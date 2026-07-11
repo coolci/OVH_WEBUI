@@ -149,6 +149,9 @@ func (m *Monitor) MessageUUIDCacheLookup(id string) *CachedMessage {
 	ttlSec := int64(m.messageUUIDCacheTTL.Seconds())
 	now := time.Now().Unix()
 
+	// 注意：lookup 允许读取未消费配置；是否已 used 由 webhook 层单独判断。
+	// 不要在这里因 used_at 返回 nil，否则「先 consume 再 lookup」或并发路径会丢配置。
+
 	m.cacheLock.Lock()
 	if cm, ok := m.messageUUIDCache[id]; ok {
 		if now-int64(cm.Timestamp) < ttlSec {
@@ -195,6 +198,16 @@ func (m *Monitor) MessageUUIDCacheLookup(id string) *CachedMessage {
 	m.cacheLock.Unlock()
 	m.state.Logger.Info("✅ 从 SQLite 恢复 UUID 按钮配置: "+id+" → "+cm.PlanCode+"@"+cm.Datacenter, "telegram")
 	return cm
+}
+
+// InvalidateMessageUUID 入队成功后从内存删除按钮（DB used_at 由 TryConsume 负责）
+func (m *Monitor) InvalidateMessageUUID(id string) {
+	if id == "" {
+		return
+	}
+	m.cacheLock.Lock()
+	delete(m.messageUUIDCache, id)
+	m.cacheLock.Unlock()
 }
 
 // OptionsCacheLookup 兼容旧机制

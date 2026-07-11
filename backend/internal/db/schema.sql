@@ -161,6 +161,16 @@ CREATE TABLE IF NOT EXISTS telegram_order_buttons (
   datacenter  TEXT NOT NULL,
   options     TEXT NOT NULL DEFAULT '[]',  -- JSON []string
   config_info TEXT NOT NULL DEFAULT '{}', -- JSON object
-  created_at  REAL NOT NULL               -- unix seconds
+  created_at  REAL NOT NULL,              -- unix seconds
+  used_at     REAL NOT NULL DEFAULT 0     -- >0 表示已消费（一次性 nonce）
 );
 CREATE INDEX IF NOT EXISTS idx_tg_buttons_created ON telegram_order_buttons(created_at);
+
+-- ===========================================
+-- telegram_updates: webhook update_id 幂等去重
+-- ===========================================
+CREATE TABLE IF NOT EXISTS telegram_updates (
+  update_id    INTEGER PRIMARY KEY,
+  processed_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_tg_updates_processed ON telegram_updates(processed_at);

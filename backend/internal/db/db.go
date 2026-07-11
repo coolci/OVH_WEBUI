@@ -73,6 +73,9 @@ func (db *DB) migrate() error {
 	if err := db.addColumnIfMissing("vps_subscriptions", "auto_order_account_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
+	if err := db.addColumnIfMissing("telegram_order_buttons", "used_at", "REAL NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
 	return nil
 }
 

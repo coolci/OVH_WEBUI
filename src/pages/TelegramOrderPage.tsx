@@ -178,7 +178,7 @@ const TelegramOrderPage = () => {
     try {
       const result = await api.setTelegramWebhook(webhookUrl);
       if (result.success) {
-        toast.success("Webhook 设置成功");
+        toast.success("Webhook 设置成功（已同步注册 Bot 命令菜单）");
         loadWebhookInfo();
         setWebhookUrl('');
       } else {
@@ -188,6 +188,19 @@ const TelegramOrderPage = () => {
       toast.error(`设置失败: ${error.message}`);
     } finally {
       setIsSettingWebhook(false);
+    }
+  };
+
+  const handleRegisterCommands = async () => {
+    try {
+      const result = await api.registerTelegramCommands();
+      if (result.success) {
+        toast.success("Bot 命令菜单已注册（/buy /stock 等）");
+      } else {
+        toast.error(result.error || "注册失败");
+      }
+    } catch (error: any) {
+      toast.error(`注册失败: ${error.message}`);
     }
   };
 
@@ -301,7 +314,7 @@ const TelegramOrderPage = () => {
                   <span className="cursor-blink">_</span>
                 </h1>
                 <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-                  通过 Telegram 消息快速执行下单
+                  通过 Telegram 消息快速执行下单（需先配置 Webhook 并注册命令菜单）
                 </p>
               </div>
               {/* Bot Connection Status */}
@@ -324,6 +337,10 @@ const TelegramOrderPage = () => {
               <Button variant="outline" size="sm" onClick={loadWebhookInfo} disabled={isLoadingWebhook} className="h-8 text-xs">
                 <RefreshCw className={cn("h-3 w-3 sm:h-4 sm:w-4 mr-1", isLoadingWebhook && "animate-spin")} />
                 刷新
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleRegisterCommands} className="h-8 text-xs">
+                <Settings2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
+                注册命令菜单
               </Button>
               
               <Dialog>

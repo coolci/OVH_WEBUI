@@ -10,8 +10,11 @@ type Config struct {
 	Endpoint    string `json:"endpoint"`
 	TgToken     string `json:"tgToken"`
 	TgChatID    string `json:"tgChatId"`
-	IAM         string `json:"iam"`
-	Zone        string `json:"zone"`
+	// TgWebhookSecret 用于 setWebhook(secret_token) + 校验 X-Telegram-Bot-Api-Secret-Token。
+	// 防止任意人伪造 POST /api/telegram/webhook 入队。
+	TgWebhookSecret string `json:"tgWebhookSecret,omitempty"`
+	IAM             string `json:"iam"`
+	Zone            string `json:"zone"`
 }
 
 // DefaultConfig 与 Python 端默认值保持一致

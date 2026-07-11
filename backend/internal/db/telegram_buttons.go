@@ -15,6 +15,7 @@ type TelegramButtonRow struct {
 	Options    string  `db:"options"`     // JSON []string
 	ConfigInfo string  `db:"config_info"` // JSON object
 	CreatedAt  float64 `db:"created_at"`  // unix seconds
+	UsedAt     float64 `db:"used_at"`     // >0 已消费
 }
 
 // UpsertTelegramButton 写入/更新一键下单按钮缓存
@@ -37,14 +38,15 @@ func (db *DB) UpsertTelegramButton(id, planCode, datacenter string, options []st
 		createdAt = float64(time.Now().Unix())
 	}
 	_, err = db.Exec(
-		`INSERT INTO telegram_order_buttons (id, plan_code, datacenter, options, config_info, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?)
+		`INSERT INTO telegram_order_buttons (id, plan_code, datacenter, options, config_info, created_at, used_at)
+		 VALUES (?, ?, ?, ?, ?, ?, 0)
 		 ON CONFLICT(id) DO UPDATE SET
 		   plan_code=excluded.plan_code,
 		   datacenter=excluded.datacenter,
 		   options=excluded.options,
 		   config_info=excluded.config_info,
-		   created_at=excluded.created_at`,
+		   created_at=excluded.created_at,
+		   used_at=0`,
 		id, planCode, datacenter, string(optsRaw), string(cfgRaw), createdAt,
 	)
 	if err != nil {
@@ -55,7 +57,7 @@ func (db *DB) UpsertTelegramButton(id, planCode, datacenter string, options []st
 
 // GetTelegramButton 按 UUID 取按钮配置；不存在返回 ok=false
 func (db *DB) GetTelegramButton(id string) (row TelegramButtonRow, ok bool, err error) {
-	err = db.Get(&row, `SELECT id, plan_code, datacenter, options, config_info, created_at
+	err = db.Get(&row, `SELECT id, plan_code, datacenter, options, config_info, created_at, COALESCE(used_at,0) AS used_at
 		FROM telegram_order_buttons WHERE id = ?`, id)
 	if err == sql.ErrNoRows {
 		return row, false, nil
@@ -70,8 +72,8 @@ func (db *DB) GetTelegramButton(id string) (row TelegramButtonRow, ok bool, err 
 func (db *DB) ListTelegramButtonsSince(sinceUnix float64) ([]TelegramButtonRow, error) {
 	var rows []TelegramButtonRow
 	err := db.Select(&rows,
-		`SELECT id, plan_code, datacenter, options, config_info, created_at
-		 FROM telegram_order_buttons WHERE created_at >= ?`, sinceUnix)
+		`SELECT id, plan_code, datacenter, options, config_info, created_at, COALESCE(used_at,0) AS used_at
+		 FROM telegram_order_buttons WHERE created_at >= ? AND (used_at IS NULL OR used_at = 0)`, sinceUnix)
 	if err != nil {
 		return nil, fmt.Errorf("list telegram buttons: %w", err)
 	}

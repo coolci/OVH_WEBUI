@@ -138,6 +138,7 @@ func ProcessQueueLoop(state *app.State) {
 				current.RetryCount++
 				current.UpdatedAt = types.NowISO()
 				finalRetry := current.RetryCount
+				maxRetries := current.MaxRetries
 				snapshot := *current
 				state.QueueMu.Unlock()
 
@@ -167,7 +168,22 @@ func ProcessQueueLoop(state *app.State) {
 						state.Logger.Info("重试购买成功: "+it.PlanCode, "queue")
 					}
 				} else {
-					if finalRetry == 1 {
+					// MaxRetries>0 时达到上限则终止任务（0 = 无限抢购，不终止）
+					if maxRetries > 0 && finalRetry >= maxRetries {
+						state.QueueMu.Lock()
+						for i := range state.Queue {
+							if state.Queue[i].ID == it.ID {
+								state.Queue[i].Status = "failed"
+								state.Queue[i].UpdatedAt = types.NowISO()
+								break
+							}
+						}
+						state.QueueMu.Unlock()
+						procMu.Lock()
+						processedIDs = append(processedIDs, it.ID)
+						procMu.Unlock()
+						state.Logger.Info("任务达到 MaxRetries 上限已终止: "+it.PlanCode+" ("+it.ID+")", "queue")
+					} else if finalRetry == 1 {
 						state.Logger.Info("首次尝试购买失败或服务器暂无货: "+it.PlanCode, "queue")
 					} else {
 						state.Logger.Info("重试购买失败或服务器仍无货: "+it.PlanCode, "queue")

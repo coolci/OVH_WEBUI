@@ -118,7 +118,7 @@ func SendMessage(state *app.State, message string, replyMarkup map[string]interf
 	return false
 }
 
-// SetWebhook 调用 Telegram setWebhook
+// SetWebhook 调用 Telegram setWebhook（含 secret_token，防伪造 webhook 请求）
 func SetWebhook(state *app.State, webhookURL string) (bool, string, map[string]interface{}) {
 	cfg := state.Config.Get()
 	if cfg.TgToken == "" {
@@ -130,10 +130,25 @@ func SetWebhook(state *app.State, webhookURL string) (bool, string, map[string]i
 	if !strings.HasSuffix(webhookURL, "/api/telegram/webhook") {
 		webhookURL = strings.TrimSuffix(webhookURL, "/") + "/api/telegram/webhook"
 	}
-	state.Logger.Info("正在设置 Telegram Webhook: "+webhookURL, "telegram")
+	secret, err := EnsureWebhookSecret(state)
+	if err != nil {
+		return false, "生成 webhook secret 失败: " + err.Error(), nil
+	}
+	state.Logger.Info("正在设置 Telegram Webhook: "+webhookURL+" (with secret_token)", "telegram")
 
+	// POST JSON body：url + secret_token（比 query 更安全）
+	payload, _ := json.Marshal(map[string]interface{}{
+		"url":          webhookURL,
+		"secret_token": secret,
+		// 只接收消息与回调查询，减小攻击面
+		"allowed_updates": []string{"message", "callback_query"},
+	})
 	setURL := "https://api.telegram.org/bot" + cfg.TgToken + "/setWebhook"
-	req, _ := http.NewRequest(http.MethodPost, setURL+"?url="+webhookURL, nil)
+	req, err := http.NewRequest(http.MethodPost, setURL, bytes.NewReader(payload))
+	if err != nil {
+		return false, err.Error(), nil
+	}
+	req.Header.Set("Content-Type", "application/json")
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -146,6 +161,10 @@ func SetWebhook(state *app.State, webhookURL string) (bool, string, map[string]i
 	_ = json.Unmarshal(body, &result)
 	if ok, _ := result["ok"].(bool); ok {
 		state.Logger.Info("✅ Telegram Webhook 设置成功: "+webhookURL, "telegram")
+		// 同步注册 Bot 命令菜单，避免客户端提示「找不到命令」
+		if errMsg := SetMyCommands(state); errMsg != "" {
+			state.Logger.Warn("setMyCommands 失败（Webhook 已成功）: "+errMsg, "telegram")
+		}
 		// 获取 webhook info
 		var info map[string]interface{}
 		infoResp, err := client.Get("https://api.telegram.org/bot" + cfg.TgToken + "/getWebhookInfo")
@@ -163,6 +182,54 @@ func SetWebhook(state *app.State, webhookURL string) (bool, string, map[string]i
 	desc, _ := result["description"].(string)
 	state.Logger.Error("Telegram Webhook 设置失败: "+desc, "telegram")
 	return false, desc, nil
+}
+
+// SetMyCommands 向 Telegram 注册 Bot 命令菜单（/buy /stock 等）。
+// 成功返回空串；失败返回错误描述。
+func SetMyCommands(state *app.State) string {
+	cfg := state.Config.Get()
+	if strings.TrimSpace(cfg.TgToken) == "" {
+		return "未配置 Telegram Bot Token"
+	}
+	// 固定顺序，与前端 Telegram 下单页一致
+	type botCmd struct {
+		Command     string `json:"command"`
+		Description string `json:"description"`
+	}
+	commands := []botCmd{
+		{Command: "start", Description: "显示帮助"},
+		{Command: "help", Description: "命令帮助"},
+		{Command: "stock", Description: "查询库存 planCode"},
+		{Command: "queue", Description: "加入队列 planCode [dc]"},
+		{Command: "buy", Description: "快速下单 planCode [dc]"},
+		{Command: "monitor", Description: "添加监控 planCode"},
+		{Command: "price", Description: "查询价格 planCode dc"},
+	}
+	payload, _ := json.Marshal(map[string]interface{}{"commands": commands})
+	url := "https://api.telegram.org/bot" + cfg.TgToken + "/setMyCommands"
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(payload))
+	if err != nil {
+		return err.Error()
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		return err.Error()
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	var result map[string]interface{}
+	_ = json.Unmarshal(body, &result)
+	if ok, _ := result["ok"].(bool); ok {
+		state.Logger.Info("✅ Telegram setMyCommands 成功", "telegram")
+		return ""
+	}
+	desc, _ := result["description"].(string)
+	if desc == "" {
+		desc = string(body)
+	}
+	return desc
 }
 
 // GetWebhookInfo
@@ -220,20 +287,36 @@ func SendReply(state *app.State, chatID interface{}, text string, replyToMessage
 	if cfg.TgToken == "" {
 		return
 	}
+	// Telegram 单条消息上限 4096；过长时截断并标注
+	if len(text) > 4000 {
+		text = text[:4000] + "\n…(消息过长已截断)"
+	}
 	payload := map[string]interface{}{
-		"chat_id":             chatID,
-		"text":                text,
-		"reply_to_message_id": replyToMessageID,
+		"chat_id": chatID,
+		"text":    text,
+	}
+	if replyToMessageID > 0 {
+		payload["reply_to_message_id"] = replyToMessageID
 	}
 	body, _ := json.Marshal(payload)
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, _ := http.NewRequest(http.MethodPost,
+	req, err := http.NewRequest(http.MethodPost,
 		"https://api.telegram.org/bot"+cfg.TgToken+"/sendMessage",
 		bytes.NewReader(body))
+	if err != nil {
+		state.Logger.Error("SendReply 构造请求失败: "+err.Error(), "telegram")
+		return
+	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := client.Do(req)
-	if err == nil {
-		resp.Body.Close()
+	if err != nil {
+		state.Logger.Error("SendReply 网络错误: "+err.Error(), "telegram")
+		return
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		state.Logger.Error(fmt.Sprintf("SendReply 失败: status=%d body=%s", resp.StatusCode, string(respBody)), "telegram")
 	}
 }
 
