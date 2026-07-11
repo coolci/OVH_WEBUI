@@ -79,8 +79,9 @@ const SelectContent = React.forwardRef<
       <SelectPrimitive.Viewport
         className={cn(
           "p-1",
+          // 宽度对齐触发器即可；高度勿锁成 trigger 高度，否则列表被压扁/文字叠影
           position === "popper" &&
-            "h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)]",
+            "w-full min-w-[var(--radix-select-trigger-width)] max-h-[min(20rem,60vh)]",
         )}
       >
         {children}

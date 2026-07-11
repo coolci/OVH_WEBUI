@@ -58,7 +58,7 @@ export function AccountSelect({
           const label = `${a.name} · ${a.zone}${a.isDefault ? " (默认)" : ""}`;
           return (
             <SelectItem key={a.id} value={a.id} title={label}>
-              <span className="block max-w-full truncate">{label}</span>
+              {label}
             </SelectItem>
           );
         })}

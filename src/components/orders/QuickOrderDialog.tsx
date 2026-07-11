@@ -71,11 +71,22 @@ export function QuickOrderDialog({ open, onOpenChange }: QuickOrderDialogProps) 
     return (servers || []).find((s) => s.planCode === planCode) || null;
   }, [servers, planCode]);
 
+  // 去重 + 规范化：catalog 可能对同机房多配置重复列出，避免下拉出现重复文字
   const availableDatacenters = useMemo(() => {
     const dcs = selectedServer?.datacenters || [];
-    return dcs
-      .filter((dc: any) => dc.availability !== "unavailable" && dc.availability !== "unknown")
-      .map((dc: any) => dc.datacenter);
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const dc of dcs as { datacenter?: string; availability?: string }[]) {
+      const code = String(dc?.datacenter || "")
+        .trim()
+        .toLowerCase();
+      if (!code || seen.has(code)) continue;
+      const st = String(dc?.availability || "").toLowerCase();
+      if (st === "unavailable" || st === "unknown") continue;
+      seen.add(code);
+      out.push(code);
+    }
+    return out.sort();
   }, [selectedServer]);
 
   const availableOptions = useMemo(() => {
@@ -235,11 +246,12 @@ export function QuickOrderDialog({ open, onOpenChange }: QuickOrderDialogProps) 
               >
                 {(servers || []).map((s) => {
                   const name = s.name || s.planCode;
+                  // 纯文本：嵌套 span 在 Radix SelectValue 回填时易出现重复/截断异常
                   const label =
                     name === s.planCode ? s.planCode : `${name} (${s.planCode})`;
                   return (
                     <SelectItem key={s.planCode} value={s.planCode} title={label}>
-                      <span className="block max-w-full truncate">{label}</span>
+                      {label}
                     </SelectItem>
                   );
                 })}
@@ -250,14 +262,17 @@ export function QuickOrderDialog({ open, onOpenChange }: QuickOrderDialogProps) 
           <div className="space-y-2 min-w-0">
             <Label>目标机房</Label>
             <Select value={datacenter} onValueChange={setDatacenter} disabled={!planCode}>
-              <SelectTrigger className="w-full min-w-0">
+              <SelectTrigger className="w-full min-w-0 font-mono uppercase">
                 <SelectValue placeholder={!planCode ? "请先选择型号" : "选择机房"} />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent
+                position="popper"
+                className="w-[var(--radix-select-trigger-width)]"
+              >
                 {availableDatacenters.length > 0 ? (
                   availableDatacenters.map((dc) => (
-                    <SelectItem key={dc} value={dc}>
-                      <span className="uppercase font-mono">{dc}</span>
+                    <SelectItem key={dc} value={dc} className="font-mono uppercase">
+                      {dc.toUpperCase()}
                     </SelectItem>
                   ))
                 ) : (
