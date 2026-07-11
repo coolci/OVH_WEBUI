@@ -209,6 +209,7 @@ export function useVpsReboot(svc: string) {
       qc.invalidateQueries({ queryKey: qk.vpsControl.tasks(svc) });
     },
   });
+}
 
 export function useVpsConsoleUrl(svc: string) {
   return useMutation({
