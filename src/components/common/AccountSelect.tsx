@@ -1,5 +1,6 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAccounts, useDefaultAccount } from "@/hooks/use-accounts";
+import { cn } from "@/lib/utils";
 import { useEffect } from "react";
 
 /** 账户下拉选择器。
@@ -41,21 +42,26 @@ export function AccountSelect({
       onValueChange={(v) => onChange(v === "__none__" ? "" : v)}
       disabled={isPending || empty}
     >
-      <SelectTrigger className={className}>
+      <SelectTrigger className={cn("w-full min-w-0", className)}>
         <SelectValue placeholder={placeholder || (empty ? "没有可用账户,先去添加" : "选择 OVH 账户")} />
       </SelectTrigger>
-      <SelectContent>
+      <SelectContent
+        position="popper"
+        className="w-[var(--radix-select-trigger-width)] max-w-[min(100vw-2rem,32rem)]"
+      >
         {allowEmpty && (
           <SelectItem value="__none__">
             <span className="text-muted-foreground">— 不自动下单 —</span>
           </SelectItem>
         )}
-        {accounts?.map((a) => (
-          <SelectItem key={a.id} value={a.id}>
-            {a.name} · <span className="text-muted-foreground">{a.zone}</span>
-            {a.isDefault && <span className="ml-2 text-[10px] text-muted-foreground">(默认)</span>}
-          </SelectItem>
-        ))}
+        {accounts?.map((a) => {
+          const label = `${a.name} · ${a.zone}${a.isDefault ? " (默认)" : ""}`;
+          return (
+            <SelectItem key={a.id} value={a.id} title={label}>
+              <span className="block max-w-full truncate">{label}</span>
+            </SelectItem>
+          );
+        })}
       </SelectContent>
     </Select>
   );
