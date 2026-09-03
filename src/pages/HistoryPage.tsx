@@ -218,7 +218,10 @@ function HistoryRow({ item, now }: { item: PurchaseHistory; now: number }) {
       </td>
       <td className="px-4 py-3 whitespace-nowrap">
         {showCountdown ? (
-          <Chip tone={isExpired ? "danger" : isUrgent ? "warning" : "info"}>
+          <Chip
+            tone={isExpired ? "danger" : isUrgent ? "warning" : "info"}
+            title={`到期截止时间: ${new Date(getExpirationMs(item)).toLocaleString("zh-CN")}`}
+          >
             <Hourglass className="w-3 h-3" />
             {formatCountdown(remainingMs)}
           </Chip>
@@ -291,7 +294,10 @@ function HistoryCard({ item, now }: { item: PurchaseHistory; now: number }) {
         </div>
         <div className="flex items-center justify-between gap-2">
           {showCountdown ? (
-            <Chip tone={isExpired ? "danger" : isUrgent ? "warning" : "info"}>
+            <Chip
+              tone={isExpired ? "danger" : isUrgent ? "warning" : "info"}
+              title={`到期截止时间: ${new Date(getExpirationMs(item)).toLocaleString("zh-CN")}`}
+            >
               <Hourglass className="w-3 h-3" />
               {formatCountdown(remainingMs)}
             </Chip>

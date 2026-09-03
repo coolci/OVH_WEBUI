@@ -6,7 +6,7 @@ const toneClasses: Record<Tone, string> = {
   success: "bg-success",
   warning: "bg-warning",
   danger: "bg-destructive",
-  info: "bg-info",
+  info: "bg-sky-400",
   muted: "bg-muted-foreground/50",
 };
 

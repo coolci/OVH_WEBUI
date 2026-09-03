@@ -1,4 +1,4 @@
-import { MapPin } from "lucide-react";
+import { MapPin, Check } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { StatusDot } from "@/components/common/StatusDot";
@@ -132,57 +132,53 @@ export function DatacenterPicker({
                 type="button"
                 onClick={() => toggle(dc.code)}
                 className={cn(
-                  "flex items-center justify-between rounded-xl border px-3 py-2 text-left transition-colors select-none",
+                  "flex items-center justify-between rounded-xl border px-3 py-2 text-left transition-all select-none",
                   isSelected
-                    ? "border-foreground bg-foreground text-background shadow-sm"
-                    : "border-border/70 bg-card/40 hover:bg-secondary/50 hover:border-border text-foreground"
+                    ? "border-border bg-secondary/80 text-foreground shadow-sm ring-1 ring-border/80"
+                    : "border-border/50 bg-card/40 hover:bg-secondary/40 hover:border-border text-muted-foreground"
                 )}
               >
                 <div className="min-w-0 pr-1">
                   <div className="flex items-center gap-1.5">
-                    <span className="font-mono text-[12px] font-bold tracking-tight">{dc.code.toUpperCase()}</span>
+                    <span
+                      className={cn(
+                        "font-mono text-[12px] font-bold tracking-tight",
+                        isSelected ? "text-foreground" : "text-foreground/80"
+                      )}
+                    >
+                      {dc.code.toUpperCase()}
+                    </span>
                     {isOk ? (
-                      <span
-                        className={cn(
-                          "text-[10px] font-medium",
-                          isSelected ? "text-emerald-700 dark:text-emerald-300 font-bold" : "text-emerald-500"
-                        )}
-                      >
+                      <span className="text-[10px] font-medium text-emerald-500">
                         有货
                       </span>
                     ) : (
-                      <span
-                        className={cn(
-                          "text-[10px] font-normal",
-                          isSelected ? "text-background/60" : "text-muted-foreground/60"
-                        )}
-                      >
+                      <span className="text-[10px] font-normal text-muted-foreground/50">
                         缺货
                       </span>
                     )}
                   </div>
-                  <div
-                    className={cn(
-                      "truncate text-[10px]",
-                      isSelected ? "text-background/75" : "text-muted-foreground"
-                    )}
-                  >
+                  <div className="truncate text-[10px] text-muted-foreground">
                     {dc.region} · {dc.name}
                   </div>
                 </div>
-                <div className="flex-shrink-0">
+                <div className="flex items-center gap-1.5 flex-shrink-0">
                   <span
                     className={cn(
-                      "inline-block w-2 h-2 rounded-full",
-                      isOk
-                        ? isSelected
-                          ? "bg-emerald-600 dark:bg-emerald-400"
-                          : "bg-emerald-500"
-                        : isSelected
-                          ? "bg-red-500/80 dark:bg-red-400"
-                          : "bg-muted-foreground/30"
+                      "inline-block w-1.5 h-1.5 rounded-full",
+                      isOk ? "bg-emerald-500" : "bg-muted-foreground/30"
                     )}
                   />
+                  <div
+                    className={cn(
+                      "w-4 h-4 rounded-sm flex items-center justify-center transition-colors border",
+                      isSelected
+                        ? "bg-primary border-primary text-primary-foreground"
+                        : "border-border/80 bg-background/50"
+                    )}
+                  >
+                    {isSelected && <Check className="w-3 h-3 stroke-[2.5]" />}
+                  </div>
                 </div>
               </button>
             );
