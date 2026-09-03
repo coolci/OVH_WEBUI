@@ -46,9 +46,9 @@
     --muted: 224 18% 10%;
     --muted-foreground: 220 12% 58%;
 
-    /* Cyan accent for secondary actions / charts */
-    --accent: 192 75% 48%;
-    --accent-foreground: 200 40% 6%;
+    /* Subtle slate accent for dropdown / menu item hover */
+    --accent: 224 16% 16%;
+    --accent-foreground: 210 25% 96%;
 
     --destructive: 0 72% 55%;
     --destructive-foreground: 0 0% 100%;
@@ -61,7 +61,7 @@
 
     --border: 224 16% 14%;
     --input: 224 18% 11%;
-    --ring: 158 64% 44%;
+    --ring: 224 16% 35%;
 
     --radius: 0.75rem;
 
@@ -69,10 +69,10 @@
     --sidebar-foreground: 210 18% 78%;
     --sidebar-primary: 158 64% 44%;
     --sidebar-primary-foreground: 160 40% 6%;
-    --sidebar-accent: 192 75% 48%;
-    --sidebar-accent-foreground: 200 40% 6%;
+    --sidebar-accent: 224 16% 14%;
+    --sidebar-accent-foreground: 210 25% 96%;
     --sidebar-border: 224 18% 10%;
-    --sidebar-ring: 158 64% 44%;
+    --sidebar-ring: 224 16% 35%;
 
     --terminal-green: 158 64% 44%;
     --terminal-cyan: 192 75% 48%;
@@ -98,13 +98,13 @@
     --secondary-foreground: 158 25% 84%;
     --muted: 224 18% 10%;
     --muted-foreground: 220 12% 58%;
-    --accent: 192 75% 48%;
-    --accent-foreground: 200 40% 6%;
+    --accent: 224 16% 16%;
+    --accent-foreground: 210 25% 96%;
     --destructive: 0 72% 55%;
     --destructive-foreground: 0 0% 100%;
     --border: 224 16% 14%;
     --input: 224 18% 11%;
-    --ring: 158 64% 44%;
+    --ring: 224 16% 35%;
   }
 }
 

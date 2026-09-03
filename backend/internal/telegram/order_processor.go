@@ -2,10 +2,8 @@ package telegram
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -17,10 +15,11 @@ import (
 
 // OrderResult Telegram 下单结果
 type OrderResult struct {
-	Success       bool   `json:"success"`
-	Message       string `json:"message"`
-	TotalOrders   int    `json:"total_orders"`
-	CreatedOrders int    `json:"created_orders"`
+	Success       bool     `json:"success"`
+	Message       string   `json:"message"`
+	TotalOrders   int      `json:"total_orders"`
+	CreatedOrders int      `json:"created_orders"`
+	ItemIDs       []string `json:"item_ids,omitempty"`
 }
 
 // accountRegionLabel 给用户看的账户归属描述:"名字(子公司 US / US 区)"。
@@ -105,56 +104,57 @@ func ProcessOrder(state *app.State, planCode, datacenter string, quantity int, o
 		return OrderResult{Success: false, Message: fmt.Sprintf("未找到匹配的配置（指定选项: %v）", options)}
 	}
 
+	// 如果未指定具体选项，默认使用第 1 个配置，避免把所有内存/硬盘组合都同时建一遍单
+	if len(options) == 0 && len(configsToOrder) > 1 {
+		configsToOrder = configsToOrder[:1]
+	}
+
+	allKnownDCs := map[string]struct{}{}
 	availableDCs := map[string]struct{}{}
 	for _, e := range configsToOrder {
 		for dc, status := range e.data.Datacenters {
-			// comingSoon 也会走到这里,但它下不了单;用白名单避免为永远买不到的机型建单
+			allKnownDCs[dc] = struct{}{}
 			if catalog.IsAvailableForOrder(status) {
 				availableDCs[dc] = struct{}{}
 			}
 		}
 	}
-	if len(availableDCs) == 0 {
-		return OrderResult{Success: false, Message: fmt.Sprintf("%s 在账户 %s 可见的所有机房都无货", planCode, accLabel)}
-	}
+
 	dcsToOrder := []string{}
+	targetInStock := false
 	if datacenter != "" {
-		// 用户在 TG 里打的是展示名(比如孟买 mum),OVH 可用性/购物车认的是 API 名(ynm)。
-		// 不转换的话 availableDCs 里永远查不到 mum,回一句"指定机房无货"——
-		// 而 purchase 那边是转换过的,等于同一台机器在两个环节用了两个名字。
 		apiDC := ovh.ConvertDisplayDCToAPIDC(datacenter)
-		if _, ok := availableDCs[apiDC]; !ok {
-			dcs := make([]string, 0, len(availableDCs))
-			for dc := range availableDCs {
-				dcs = append(dcs, dc)
-			}
-			sort.Strings(dcs)
-			return OrderResult{Success: false, Message: fmt.Sprintf(
-				"指定机房 %s 无货(账户 %s 当前有货的机房: %s)",
-				strings.ToUpper(datacenter), accLabel, strings.Join(dcs, ", "))}
-		}
 		dcsToOrder = append(dcsToOrder, apiDC)
+		if _, ok := availableDCs[apiDC]; ok {
+			targetInStock = true
+		}
 	} else {
-		for dc := range availableDCs {
-			dcsToOrder = append(dcsToOrder, dc)
+		// 未显式指定机房：优先取有现货的机房；若全区缺货，则将已知机房加入抢购队列
+		if len(availableDCs) > 0 {
+			targetInStock = true
+			for dc := range availableDCs {
+				dcsToOrder = append(dcsToOrder, dc)
+			}
+		} else {
+			for dc := range allKnownDCs {
+				dcsToOrder = append(dcsToOrder, dc)
+			}
+			if len(dcsToOrder) == 0 {
+				for _, d := range StandardDCs {
+					dcsToOrder = append(dcsToOrder, ovh.ConvertDisplayDCToAPIDC(d))
+				}
+			}
 		}
 	}
 
 	totalOrders := len(configsToOrder) * len(dcsToOrder) * quantity
 	ordersToCreate := []types.QueueItem{}
-	state.Logger.Info(fmt.Sprintf("[Telegram下单] 账户=%s, 子公司=%s, planCode=%s", accLabel, sub, planCode), "telegram")
+	state.Logger.Info(fmt.Sprintf("[Telegram下单] 账户=%s, 子公司=%s, planCode=%s, 机房=%v, 现货状态=%v",
+		accLabel, sub, planCode, dcsToOrder, targetInStock), "telegram")
+
 	for _, ce := range configsToOrder {
 		configOptions := append([]string{}, ce.data.Options...)
-		state.Logger.Info(fmt.Sprintf("[Telegram下单] 处理配置: memory=%s, storage=%s, options=%v (数量: %d)",
-			ce.data.Memory, ce.data.Storage, configOptions, len(configOptions)), "telegram")
-		if len(configOptions) == 0 {
-			state.Logger.Warn(fmt.Sprintf("[Telegram下单] ⚠️ 配置选项为空！memory=%s, storage=%s",
-				ce.data.Memory, ce.data.Storage), "telegram")
-		}
 		for _, dc := range dcsToOrder {
-			if status, ok := ce.data.Datacenters[dc]; ok && !catalog.IsAvailableForOrder(status) {
-				continue
-			}
 			for i := 0; i < quantity; i++ {
 				now := types.NowISO()
 				item := types.QueueItem{
@@ -172,8 +172,6 @@ func ProcessOrder(state *app.State, planCode, datacenter string, quantity int, o
 					FromTelegram:  true,
 				}
 				ordersToCreate = append(ordersToCreate, item)
-				state.Logger.Debug(fmt.Sprintf("[Telegram下单] 创建订单项: planCode=%s, datacenter=%s, options=%v (ID: %s)",
-					planCode, dc, item.Options, item.ID[:8]), "telegram")
 			}
 		}
 	}
@@ -211,10 +209,13 @@ func ProcessOrder(state *app.State, planCode, datacenter string, quantity int, o
 		_ = state.SaveQueue()
 		state.Logger.Info(fmt.Sprintf("并发创建订单完成: 共创建 %d/%d 个订单", created, totalOrders), "telegram")
 	}
-	_ = time.Second
+	msgSuffix := "（当前有现货，系统将立即尝试结账）"
+	if !targetInStock {
+		msgSuffix = "（目标机房当前缺货，已加入抢购队列挂机，放货瞬间秒级开抢）"
+	}
 	return OrderResult{
 		Success:       true,
-		Message:       fmt.Sprintf("已创建 %d/%d 个订单(账户 %s)", created, totalOrders, accLabel),
+		Message:       fmt.Sprintf("已创建 %d/%d 个任务(账户 %s)%s", created, totalOrders, accLabel, msgSuffix),
 		TotalOrders:   totalOrders,
 		CreatedOrders: created,
 	}

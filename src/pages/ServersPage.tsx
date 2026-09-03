@@ -2,9 +2,10 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Helmet } from "react-helmet-async";
 import {
   Server, RefreshCw, Search, Bell, ShoppingCart, Cpu, MemoryStick, HardDrive, Wifi,
-  Filter, MapPin,
+  Filter,
 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,7 +15,9 @@ import { StatusDot } from "@/components/common/StatusDot";
 import { Skeleton } from "@/components/common/Skeleton";
 import { EmptyState } from "@/components/common/EmptyState";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { useServers, useAddToMonitor, type ServerPlan } from "@/hooks/use-servers";
+import { useServers, type ServerPlan } from "@/hooks/use-servers";
+import { useMonitorList } from "@/hooks/use-monitor";
+import { MonitorSubscribeDialog } from "@/components/monitor/MonitorSubscribeDialog";
 import { useAccountInfo } from "@/hooks/use-account";
 import { useCreateQueueItem } from "@/hooks/use-queue";
 import { useCacheInfo } from "@/hooks/use-settings";
@@ -38,7 +41,8 @@ import {
 } from "@/hooks/use-availability";
 import { groupOptions, type OptionGroupKey } from "@/lib/option-groups";
 import { OptionGroupSection } from "@/components/common/OptionGroupSection";
-import { OVH_DATACENTERS, lookupDcStatus } from "@/lib/datacenters";
+import { OVH_DATACENTERS, isDcInStock, lookupDcStatus, mergeDcAvailability } from "@/lib/datacenters";
+import { DatacenterPicker } from "@/components/common/DatacenterPicker";
 import { OVH_SUBSIDIARIES } from "@/lib/ovh-subsidiaries";
 
 /** 服务器列表：卡片网格 + 详情弹窗 */
@@ -109,7 +113,21 @@ function ServersPage() {
 
   const [search, setSearch] = useState("");
   const [onlyAvailable, setOnlyAvailable] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [detailPlanCode, setDetailPlanCode] = useState<string | null>(null);
+  const monitorList = useMonitorList();
+  const monitoredCodes = useMemo(
+    () => new Set((monitorList.data || []).map((s) => s.planCode)),
+    [monitorList.data]
+  );
+  const [monitorTarget, setMonitorTarget] = useState<{
+    planCode: string;
+    serverName?: string;
+    datacenters: string[];
+  } | null>(null);
+  const existingMonitor = monitorTarget
+    ? monitorList.data?.find((s) => s.planCode === monitorTarget.planCode)
+    : undefined;
 
   const list = q.data || [];
   const filtered = useMemo(() => {
@@ -119,6 +137,27 @@ function ServersPage() {
       out = out.filter((srv) =>
         `${srv.planCode} ${srv.name} ${srv.cpu} ${srv.memory} ${srv.storage}`.toLowerCase().includes(s)
       );
+    }
+    if (selectedCategory !== "all") {
+      out = out.filter((srv) => {
+        const code = srv.planCode.toLowerCase();
+        if (selectedCategory === "ks") {
+          return code.startsWith("24sk") || code.startsWith("ks-") || code.includes("kimsufi");
+        }
+        if (selectedCategory === "rise") {
+          return code.startsWith("24rise") || code.startsWith("rise-");
+        }
+        if (selectedCategory === "adv") {
+          return code.startsWith("24adv") || code.startsWith("adv-") || code.startsWith("advance-") || code.startsWith("scale-") || code.startsWith("hgr-");
+        }
+        if (selectedCategory === "sys") {
+          return code.startsWith("24stor") || code.startsWith("stor-") || code.startsWith("sys-") || code.startsWith("game-");
+        }
+        if (selectedCategory === "mon") {
+          return monitoredCodes.has(srv.planCode);
+        }
+        return true;
+      });
     }
     if (onlyAvailable) {
       out = out.filter((srv) => {
@@ -132,7 +171,7 @@ function ServersPage() {
       });
     }
     return out;
-  }, [list, search, onlyAvailable, availMap]);
+  }, [list, search, onlyAvailable, selectedCategory, monitoredCodes, availMap]);
 
   const detailServer = detailPlanCode ? list.find((s) => s.planCode === detailPlanCode) || null : null;
 
@@ -180,8 +219,18 @@ function ServersPage() {
               placeholder="搜索 planCode / 型号 / CPU / 内存..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 rounded-full"
+              className="pl-9 pr-9 rounded-full"
             />
+            {search && (
+              <button
+                type="button"
+                className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-muted-foreground hover:text-foreground transition-colors"
+                onClick={() => setSearch("")}
+                aria-label="清空搜索"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
           <Button
             variant={onlyAvailable ? "default" : "outline"}
@@ -197,7 +246,7 @@ function ServersPage() {
             <select
               value={subsidiary}
               onChange={(e) => changeSubsidiary(e.target.value)}
-              className="h-9 rounded-full border border-border bg-background px-3 text-[12px] font-medium focus:outline-none focus:ring-2 focus:ring-ring w-full sm:max-w-[260px]"
+              className="h-9 rounded-full border border-border bg-background px-3 text-[12px] font-medium focus:outline-none focus:ring-1 focus:ring-primary/40 focus:border-primary/60 transition-colors w-full sm:max-w-[260px]"
               title={
                 accountSub
                   ? `价格地区。账户当前绑定 ${accountSub}，实际下单按账户结算`
@@ -227,6 +276,37 @@ function ServersPage() {
             {q.isPending ? "加载中..." : `共 ${filtered.length} 款`}
           </span>
         </CardContent>
+        {/* 系列分类胶囊选择 */}
+        <div className="px-4 pb-3 flex items-center gap-1.5 overflow-x-auto border-t border-border/40 pt-2.5 scrollbar-none">
+          {[
+            { id: "all", label: "全部型号", count: list.length },
+            { id: "ks", label: "Kimsufi / KS", count: list.filter(s => s.planCode.toLowerCase().startsWith("24sk") || s.planCode.toLowerCase().startsWith("ks-")).length },
+            { id: "rise", label: "Rise", count: list.filter(s => s.planCode.toLowerCase().startsWith("24rise") || s.planCode.toLowerCase().startsWith("rise-")).length },
+            { id: "adv", label: "Advance", count: list.filter(s => s.planCode.toLowerCase().startsWith("24adv") || s.planCode.toLowerCase().startsWith("adv-") || s.planCode.toLowerCase().startsWith("scale-") || s.planCode.toLowerCase().startsWith("hgr-")).length },
+            { id: "sys", label: "SYS / 存储", count: list.filter(s => s.planCode.toLowerCase().startsWith("24stor") || s.planCode.toLowerCase().startsWith("sys-") || s.planCode.toLowerCase().startsWith("stor-")).length },
+            { id: "mon", label: "已监控", count: list.filter(s => monitoredCodes.has(s.planCode)).length },
+          ].map((cat) => (
+            <button
+              key={cat.id}
+              type="button"
+              onClick={() => setSelectedCategory(cat.id)}
+              className={cn(
+                "px-3 py-1 text-xs font-medium rounded-lg transition-colors whitespace-nowrap flex items-center gap-1.5 border",
+                selectedCategory === cat.id
+                  ? "bg-secondary text-foreground border-border font-semibold shadow-none"
+                  : "bg-transparent text-muted-foreground border-transparent hover:bg-secondary/50 hover:text-foreground"
+              )}
+            >
+              <span>{cat.label}</span>
+              <span className={cn(
+                "text-[10px] px-1.5 py-0.2 rounded-full",
+                selectedCategory === cat.id ? "bg-background/80 text-foreground" : "bg-secondary text-muted-foreground"
+              )}>
+                {cat.count}
+              </span>
+            </button>
+          ))}
+        </div>
       </Card>
 
       {/* 网格 */}
@@ -252,7 +332,15 @@ function ServersPage() {
               server={srv}
               realtimeDcMap={availMap[srv.planCode]}
               price={priceMap[srv.planCode]}
+              isMonitored={monitoredCodes.has(srv.planCode)}
               onView={() => setDetailPlanCode(srv.planCode)}
+              onMonitor={() =>
+                setMonitorTarget({
+                  planCode: srv.planCode,
+                  serverName: srv.name,
+                  datacenters: OVH_DATACENTERS.map((dc) => dc.code),
+                })
+              }
             />
           ))}
         </div>
@@ -269,11 +357,37 @@ function ServersPage() {
               defaultPrice={priceMap[detailServer.planCode]}
               catalogIdx={catalogIdx}
               subsidiary={subsidiary}
+              isMonitored={monitoredCodes.has(detailServer.planCode)}
               onClose={() => setDetailPlanCode(null)}
+              onMonitor={(datacenters) => {
+                setDetailPlanCode(null);
+                setMonitorTarget({
+                  planCode: detailServer.planCode,
+                  serverName: detailServer.name,
+                  datacenters:
+                    datacenters.length > 0 ? datacenters : OVH_DATACENTERS.map((dc) => dc.code),
+                });
+              }}
             />
           ) : null}
         </DialogContent>
       </Dialog>
+
+      <MonitorSubscribeDialog
+        key={`${existingMonitor ? "edit" : "create"}:${monitorTarget?.planCode || ""}`}
+        open={!!monitorTarget}
+        onOpenChange={(v) => !v && setMonitorTarget(null)}
+        mode={existingMonitor ? "edit" : "create"}
+        lockPlanCode
+        planCode={monitorTarget?.planCode}
+        serverName={monitorTarget?.serverName || existingMonitor?.serverName}
+        initial={
+          existingMonitor ??
+          (monitorTarget
+            ? { planCode: monitorTarget.planCode, datacenters: monitorTarget.datacenters }
+            : null)
+        }
+      />
     </div>
   );
 }
@@ -283,33 +397,27 @@ function ServerCard({
   server,
   realtimeDcMap,
   price,
+  isMonitored,
   onView,
+  onMonitor,
 }: {
   server: ServerPlan;
   realtimeDcMap?: Record<string, string>;
   price?: PriceInfo;
+  isMonitored?: boolean;
   onView: () => void;
+  onMonitor: () => void;
 }) {
-  const addMon = useAddToMonitor();
 
-  // 静态可用性兜底（首次渲染、实时还没回来时也有数据）
-  const staticDcMap = useMemo(() => {
-    const m: Record<string, string> = {};
-    for (const d of server.datacenters || []) {
-      m[d.datacenter.toLowerCase()] = d.availability;
-    }
-    return m;
-  }, [server.datacenters]);
+  const dcMap = useMemo(
+    () => mergeDcAvailability(server.datacenters, realtimeDcMap),
+    [server.datacenters, realtimeDcMap]
+  );
 
-  // 实时覆盖静态：页面级单次 OVH 接口拿到的状态优先生效
-  const dcMap = useMemo(() => ({ ...staticDcMap, ...(realtimeDcMap || {}) }), [staticDcMap, realtimeDcMap]);
-
-  // 只有两态：明确可用 → 绿；其它一律视为缺货（红）
-  const dcStatuses = OVH_DATACENTERS.map((dc) => {
-    const status = lookupDcStatus(dcMap, dc);
-    const isOk = !!status && status !== "unavailable" && status !== "unknown";
-    return { dc, isOk };
-  });
+  const dcStatuses = OVH_DATACENTERS.map((dc) => ({
+    dc,
+    isOk: isDcInStock(lookupDcStatus(dcMap, dc)),
+  }));
   const total = dcStatuses.length;
   const okCount = dcStatuses.filter((s) => s.isOk).length;
 
@@ -370,17 +478,10 @@ function ServerCard({
             variant="outline"
             size="sm"
             className="flex-1"
-            disabled={addMon.isPending}
-            onClick={() =>
-              addMon.mutate({
-                planCode: server.planCode,
-                datacenters: OVH_DATACENTERS.map((dc) => dc.code),
-                serverName: server.name,
-              })
-            }
+            onClick={onMonitor}
           >
             <Bell className="w-3.5 h-3.5" />
-            监控
+            {isMonitored ? "监控设置" : "监控"}
           </Button>
           <Button size="sm" className="flex-1" onClick={onView}>
             <ShoppingCart className="w-3.5 h-3.5" />
@@ -410,7 +511,9 @@ function DetailContent({
   defaultPrice,
   catalogIdx,
   subsidiary,
+  isMonitored,
   onClose,
+  onMonitor,
 }: {
   server: ServerPlan;
   realtimeDcMap?: Record<string, string>;
@@ -422,9 +525,10 @@ function DetailContent({
   catalogIdx: CatalogIndex;
   /** 仅用于价格展示的 subsidiary（顶部下拉决定）。实际下单 subsidiary 由后端 cfg.Zone 决定，在设置页改 */
   subsidiary: string;
+  isMonitored?: boolean;
   onClose: () => void;
+  onMonitor: (datacenters: string[]) => void;
 }) {
-  const addMon = useAddToMonitor();
   const create = useCreateQueueItem();
   const defaultAcc = useDefaultAccount();
 
@@ -436,19 +540,12 @@ function DetailContent({
   const [selectedDCs, setSelectedDCs] = useState<string[]>([]);
   const [quantity, setQuantity] = useState("1");
   const [retryInterval, setRetryInterval] = useState("60");
-  const toggleDC = (code: string) =>
-    setSelectedDCs((prev) => (prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]));
   const qty = Math.max(1, Number(quantity) || 1);
   const totalTasks = selectedDCs.length * qty;
-  // 静态可用性兜底：实时还没返回时也能看到目录里的初始数据
-  const staticDcMap = useMemo(() => {
-    const m: Record<string, string> = {};
-    for (const d of server.datacenters || []) m[d.datacenter.toLowerCase()] = d.availability;
-    return m;
-  }, [server.datacenters]);
-  // 实时覆盖静态:plan 级聚合,无 variants 数据时兜底
-  const aggregateDcMap = useMemo(() => ({ ...staticDcMap, ...(realtimeDcMap || {}) }), [staticDcMap, realtimeDcMap]);
-  const total = OVH_DATACENTERS.length;
+  const dcMap = useMemo(
+    () => mergeDcAvailability(server.datacenters, realtimeDcMap),
+    [server.datacenters, realtimeDcMap]
+  );
 
   // 按组拆分可选配置 + 默认值集合
   const grouped = useMemo(() => groupOptions(server.availableOptions), [server.availableOptions]);
@@ -472,16 +569,7 @@ function DetailContent({
   }, [grouped, defaultValueSet]);
   const [picked, setPicked] = useState<Partial<Record<OptionGroupKey, string>>>(initialPicked);
 
-  // DC 红绿:看"该 DC 在任何 FQN 里有货否",跟卡片外面口径一致。
-  // 用户看 DC 红绿决定去哪个机房,看 option chip 红绿决定换什么配置。
-  // 当前完整选配 vs 实际可下单的精确校验放到提交按钮那一步处理(待加)。
-  const dcMap = aggregateDcMap;
-
-  const ok = OVH_DATACENTERS.filter((dc) => {
-    const status = lookupDcStatus(dcMap, dc);
-    return !!status && status !== "unavailable" && status !== "unknown";
-  }).length;
-  const ratio = total > 0 ? ok / total : 0;
+  const ok = OVH_DATACENTERS.filter((dc) => isDcInStock(lookupDcStatus(dcMap, dc))).length;
 
   // option chip 上的有货预判。
   // OVH availability FQN 只包含 planCode.memory.storage[.systemStorage] 三段,
@@ -570,66 +658,7 @@ function DetailContent({
             />
           ))}
 
-        {/* DC 多选（点击切换） + 全选/反选 */}
-        <div>
-          <div className="flex items-center justify-between mb-2.5 gap-2 flex-wrap">
-            <h3 className="text-[13px] font-semibold flex items-center gap-1.5">
-              <MapPin className="w-3.5 h-3.5 text-muted-foreground" />
-              数据中心 · 选 {selectedDCs.length} / {OVH_DATACENTERS.length}
-            </h3>
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] text-muted-foreground">
-                {`${ok}/${total} 可用 · ${Math.round(ratio * 100)}%`}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 text-[11px]"
-                onClick={() => {
-                  // 全选可用的；都满了就清空
-                  const okCodes = OVH_DATACENTERS
-                    .filter((dc) => {
-                      const s = lookupDcStatus(dcMap, dc);
-                      return !!s && s !== "unavailable" && s !== "unknown";
-                    })
-                    .map((dc) => dc.code);
-                  setSelectedDCs(selectedDCs.length === okCodes.length ? [] : okCodes);
-                }}
-                title="一键选中所有可用 DC，再点一次清空"
-              >
-                {selectedDCs.length > 0 ? "清空" : "选可用"}
-              </Button>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1.5 sm:gap-2">
-            {OVH_DATACENTERS.map((dc) => {
-              const status = lookupDcStatus(dcMap, dc);
-              const isOk = !!status && status !== "unavailable" && status !== "unknown";
-              const isSelected = selectedDCs.includes(dc.code);
-              return (
-                <button
-                  key={dc.code}
-                  type="button"
-                  onClick={() => toggleDC(dc.code)}
-                  className={
-                    "text-left border rounded-xl px-3 py-2 flex items-center justify-between transition-colors " +
-                    (isSelected
-                      ? "border-foreground bg-foreground text-background"
-                      : "border-border hover:bg-secondary/50")
-                  }
-                >
-                  <div className="min-w-0">
-                    <div className="text-[12px] font-bold font-mono">{dc.code.toUpperCase()}</div>
-                    <div className={"text-[10px] truncate " + (isSelected ? "text-background/70" : "text-muted-foreground")}>
-                      {dc.region} · {dc.name}
-                    </div>
-                  </div>
-                  <StatusDot tone={isOk ? "success" : "danger"} size="sm" pulse={isOk && !isSelected} />
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        <DatacenterPicker value={selectedDCs} onChange={setSelectedDCs} availability={dcMap} />
 
         {/* 抢购参数：账户 / 数量 / 重试间隔 */}
         <div className="border-t border-border pt-4">
@@ -677,17 +706,11 @@ function DetailContent({
         </Button>
         <Button
           variant="outline"
-          disabled={addMon.isPending || create.isPending}
-          onClick={() =>
-            addMon.mutate({
-              planCode: server.planCode,
-              datacenters: OVH_DATACENTERS.map((dc) => dc.code),
-              serverName: server.name,
-            })
-          }
+          disabled={create.isPending}
+          onClick={() => onMonitor(selectedDCs)}
         >
           <Bell className="w-4 h-4" />
-          加入监控
+          {isMonitored ? "监控设置" : "加入监控"}
         </Button>
         <Button
           disabled={selectedDCs.length === 0 || create.isPending}

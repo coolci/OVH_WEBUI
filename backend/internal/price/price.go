@@ -272,7 +272,15 @@ func GetInternal(state *app.State, accountID, planCode, datacenter string, optio
 	// 之前 Go 静默忽略会导致瞬断时 success:true 但价格全 nil，前端误以为有效价格 0
 	var cartSummary map[string]interface{}
 	if err := client.Get("/order/cart/"+cartID+"/summary", &cartSummary); err != nil {
-		return Result{Success: false, Error: err.Error()}
+		msg := err.Error()
+		if strings.Contains(msg, "is not available in") {
+			state.Logger.Warn(fmt.Sprintf("%s 在 %s 不可用: %s", planCode, datacenter, msg), "price")
+			return Result{
+				Success: false,
+				Error: fmt.Sprintf("该配置在机房 %s 不可用（该机型/配置未在该机房提供或未开放订购）。请尝试更换为该机型支持的机房。", strings.ToUpper(datacenter)),
+			}
+		}
+		return Result{Success: false, Error: msg}
 	}
 
 	priceInfo := &PriceInfo{

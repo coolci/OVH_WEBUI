@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Bell, Loader2, MapPin, ShoppingCart, Zap } from "lucide-react";
+import { Bell, Loader2, ShoppingCart, Zap } from "lucide-react";
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
@@ -9,8 +9,11 @@ import { OptionGroupSection } from "@/components/common/OptionGroupSection";
 import { StatusDot } from "@/components/common/StatusDot";
 import { Chip } from "@/components/common/Chip";
 import { groupOptions, type OptionGroupKey } from "@/lib/option-groups";
-import { OVH_DATACENTERS, lookupDcStatus } from "@/lib/datacenters";
-import { useServers, useAddToMonitor } from "@/hooks/use-servers";
+import { OVH_DATACENTERS, isDcInStock, lookupDcStatus, mergeDcAvailability } from "@/lib/datacenters";
+import { DatacenterPicker } from "@/components/common/DatacenterPicker";
+import { useServers } from "@/hooks/use-servers";
+import { useMonitorList } from "@/hooks/use-monitor";
+import { MonitorSubscribeDialog } from "@/components/monitor/MonitorSubscribeDialog";
 import { useCreateQueueItem } from "@/hooks/use-queue";
 import { useDefaultAccount, useAccounts } from "@/hooks/use-accounts";
 import {
@@ -52,18 +55,15 @@ const OPTION_GROUP_ORDER: OptionGroupKey[] = [
   "other",
 ];
 
-function isInStock(status: string | undefined) {
-  return !!status && status !== "unavailable" && status !== "unknown";
-}
-
 /** 侧栏快速下单：与服务器列表「抢购 / 监控」同一套机房、选配、入队逻辑。 */
 export function QuickOrderDialog({ open, onOpenChange }: QuickOrderDialogProps) {
   const serversQ = useServers();
   const availQ = useAvailability();
   const create = useCreateQueueItem();
-  const addMon = useAddToMonitor();
+  const monitorList = useMonitorList();
   const defaultAcc = useDefaultAccount();
   const { data: accounts } = useAccounts();
+  const [monitorOpen, setMonitorOpen] = useState(false);
 
   const [accountId, setAccountId] = useState("");
   const [planCode, setPlanCode] = useState("");
@@ -97,26 +97,15 @@ export function QuickOrderDialog({ open, onOpenChange }: QuickOrderDialogProps) 
     [server]
   );
 
-  const staticDcMap = useMemo(() => {
-    const m: Record<string, string> = {};
-    for (const d of server?.datacenters || []) {
-      const code = String(d.datacenter || "").toLowerCase();
-      if (code) m[code] = d.availability;
-    }
-    return m;
-  }, [server]);
-
   const dcMap = useMemo(
-    () => ({ ...staticDcMap, ...(server ? availMap[server.planCode] : undefined) }),
-    [staticDcMap, availMap, server]
+    () => mergeDcAvailability(server?.datacenters, server ? availMap[server.planCode] : undefined),
+    [server, availMap]
   );
 
-  const inStockCodes = useMemo(
-    () =>
-      OVH_DATACENTERS.filter((dc) => isInStock(lookupDcStatus(dcMap, dc))).map((dc) => dc.code),
+  const okCount = useMemo(
+    () => OVH_DATACENTERS.filter((dc) => isDcInStock(lookupDcStatus(dcMap, dc))).length,
     [dcMap]
   );
-  const okCount = inStockCodes.length;
 
   const selectedValues = useMemo(
     () => (Object.values(picked).filter(Boolean) as string[]),
@@ -165,13 +154,13 @@ export function QuickOrderDialog({ open, onOpenChange }: QuickOrderDialogProps) 
     return hasStockWithOption(variants, picked as Record<string, string>, groupKey, value);
   };
 
-  const toggleDC = (code: string) =>
-    setSelectedDCs((prev) => (prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]));
-
   const qty = Math.max(1, Number(quantity) || 1);
   const totalTasks = selectedDCs.length * qty;
-  const busy = create.isPending || addMon.isPending;
-  const canSubmit = Boolean(accountId && planCode && selectedDCs.length > 0) && !busy;
+  const busy = create.isPending;
+  const canSubmit = Boolean(accountId && planCode.trim() && selectedDCs.length > 0) && !busy;
+  const existingMonitor = planCode
+    ? monitorList.data?.find((s) => s.planCode === planCode)
+    : undefined;
 
   const handleClose = (next: boolean) => {
     if (busy && !next) return;
@@ -183,45 +172,51 @@ export function QuickOrderDialog({ open, onOpenChange }: QuickOrderDialogProps) 
       toast.error("请选择 OVH 账户");
       return;
     }
-    if (!planCode) {
-      toast.error("请选择服务器型号");
+    if (!planCode.trim()) {
+      toast.error("请输入服务器型号");
       return;
     }
     if (selectedDCs.length === 0) {
       toast.error("请至少选择一个数据中心");
       return;
     }
+    const isCustomPlan = Boolean(
+      planCode.trim() && !servers.some((s) => s.planCode.toLowerCase() === planCode.trim().toLowerCase())
+    );
     const result = await create.mutateAsync({
       account_id: accountId,
-      planCode,
+      planCode: planCode.trim(),
       datacenters: selectedDCs,
       quantity: qty,
       retryInterval: Number(retryInterval) || DEFAULT_RETRY_INTERVAL,
       options: selectedValues,
       autoPay,
+      force: isCustomPlan,
     });
     if (result.success > 0) {
       toast.success(`已创建 ${result.success}/${result.total} 个抢购任务`);
       onOpenChange(false);
     }
     if (result.failed > 0) {
-      toast.error(`${result.failed} 个任务创建失败`);
+      toast.error(result.error || `${result.failed} 个任务创建失败`);
     }
   };
 
   const handleMonitor = () => {
-    if (!planCode) {
-      toast.error("请先选择服务器型号");
+    if (!planCode.trim()) {
+      toast.error("请先输入服务器型号");
       return;
     }
-    addMon.mutate({
-      planCode,
-      datacenters: OVH_DATACENTERS.map((dc) => dc.code),
-      serverName: server?.name,
-    });
+    setMonitorOpen(true);
+    onOpenChange(false);
   };
 
+  const isCustomPlan = Boolean(
+    planCode.trim() && !servers.some((s) => s.planCode.toLowerCase() === planCode.trim().toLowerCase())
+  );
+
   return (
+    <>
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent
         className={cn(
@@ -254,12 +249,20 @@ export function QuickOrderDialog({ open, onOpenChange }: QuickOrderDialogProps) 
               value={planCode}
               onChange={setPlanCode}
               servers={servers}
-              placeholder={serversQ.isPending ? "型号加载中…" : "选择或搜索服务器型号"}
+              placeholder={serversQ.isPending ? "型号加载中…" : "输入或搜索型号，例如 24ska01"}
             />
             {server && (
               <p className="truncate text-[11px] text-muted-foreground">
                 {[server.cpu, server.memory, server.storage, server.bandwidth].filter(Boolean).join(" · ")}
               </p>
+            )}
+            {isCustomPlan && (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-200/90 flex items-start gap-2">
+                <span className="text-amber-400 font-bold shrink-0">自定义型号:</span>
+                <span className="text-muted-foreground text-[11px] leading-relaxed">
+                  当前型号未在已知官方目录中收录，已启用强制创建模式。若为您自拟的新款或未公开型号，有货后会自动提交；若为拼写错误（如想买 24sk20），建议更正型号。
+                </span>
+              </div>
             )}
           </div>
 
@@ -294,75 +297,12 @@ export function QuickOrderDialog({ open, onOpenChange }: QuickOrderDialogProps) 
             </div>
           )}
 
-          <div>
-            <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
-              <h3 className="flex items-center gap-1.5 text-[13px] font-semibold">
-                <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
-                数据中心 · 选 {selectedDCs.length} / {OVH_DATACENTERS.length}
-              </h3>
-              {planCode && (
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-muted-foreground">
-                    {okCount}/{OVH_DATACENTERS.length} 可用
-                  </span>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-[11px]"
-                    onClick={() => {
-                      if (selectedDCs.length === inStockCodes.length && inStockCodes.length > 0) {
-                        setSelectedDCs([]);
-                        return;
-                      }
-                      setSelectedDCs(inStockCodes.length > 0 ? inStockCodes : OVH_DATACENTERS.map((d) => d.code));
-                    }}
-                  >
-                    {selectedDCs.length > 0 ? "清空" : okCount > 0 ? "选可用" : "全选"}
-                  </Button>
-                </div>
-              )}
-            </div>
-
-            {!planCode ? (
-              <div className="rounded-2xl border border-dashed border-border px-3 py-6 text-center text-[13px] text-muted-foreground">
-                请先选择型号，再点选机房。缺货机房也可加入抢购队列。
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-4 sm:gap-2">
-                {OVH_DATACENTERS.map((dc) => {
-                  const isOk = isInStock(lookupDcStatus(dcMap, dc));
-                  const isSelected = selectedDCs.includes(dc.code);
-                  return (
-                    <button
-                      key={dc.code}
-                      type="button"
-                      onClick={() => toggleDC(dc.code)}
-                      className={cn(
-                        "flex items-center justify-between rounded-xl border px-3 py-2 text-left transition-colors",
-                        isSelected
-                          ? "border-foreground bg-foreground text-background"
-                          : "border-border hover:bg-secondary/50"
-                      )}
-                    >
-                      <div className="min-w-0">
-                        <div className="font-mono text-[12px] font-bold">{dc.code.toUpperCase()}</div>
-                        <div
-                          className={cn(
-                            "truncate text-[10px]",
-                            isSelected ? "text-background/70" : "text-muted-foreground"
-                          )}
-                        >
-                          {dc.region} · {dc.name}
-                        </div>
-                      </div>
-                      <StatusDot tone={isOk ? "success" : "danger"} size="sm" pulse={isOk && !isSelected} />
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          <DatacenterPicker
+            value={selectedDCs}
+            onChange={setSelectedDCs}
+            availability={dcMap}
+            disabled={!planCode.trim()}
+          />
 
           {grouped &&
             OPTION_GROUP_ORDER.filter((g) => grouped[g].length > 0).map((g) => (
@@ -425,8 +365,8 @@ export function QuickOrderDialog({ open, onOpenChange }: QuickOrderDialogProps) 
               disabled={!planCode || busy}
               onClick={handleMonitor}
             >
-              {addMon.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bell className="h-4 w-4" />}
-              加入监控
+              <Bell className="h-4 w-4" />
+              {existingMonitor ? "监控设置" : "加入监控"}
             </Button>
             <Button type="button" disabled={!canSubmit} onClick={() => void handleCreate()}>
               {create.isPending ? (
@@ -440,5 +380,21 @@ export function QuickOrderDialog({ open, onOpenChange }: QuickOrderDialogProps) 
         </div>
       </DialogContent>
     </Dialog>
+    <MonitorSubscribeDialog
+      open={monitorOpen}
+      onOpenChange={setMonitorOpen}
+      mode={existingMonitor ? "edit" : "create"}
+      lockPlanCode
+      planCode={planCode.trim()}
+      serverName={server?.name}
+      initial={
+        existingMonitor ?? {
+          planCode: planCode.trim(),
+          datacenters:
+            selectedDCs.length > 0 ? selectedDCs : OVH_DATACENTERS.map((dc) => dc.code),
+        }
+      }
+    />
+    </>
   );
 }

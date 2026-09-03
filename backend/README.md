@@ -9,7 +9,7 @@ Go (Gin) 实现的后端服务，配套 `../web/` 前端使用。
 - 监控：服务器补货 / VPS 补货 / 配置绑定狙击
 - 已购服务器管理（数十个 OVH 端点：BIOS / 启动模式 / 重装 / 任务 / 网络 / 维护 / 高级选项 等）
 - 账户管理 + 联系人变更
-- Telegram webhook 通知
+- Telegram 通知与 Bot 命令（getUpdates 长轮询入站）
 
 ## 目录结构
 
@@ -106,9 +106,11 @@ PUT    /api/server-control/:serviceName/{boot-mode|burst|firewall|monitoring}
 GET    /api/ovh/account/{info|refunds|email-history|bills|...}
 GET    /api/ovh/contact-change-requests
 
-# Telegram
-GET    /api/telegram/get-webhook-info
-POST   /api/telegram/webhook              (OVH bot 回调，白名单)
+# Telegram（入站为 getUpdates 长轮询，无需公网 Webhook）
+GET    /api/telegram/status
+GET    /api/telegram/verify
+POST   /api/telegram/quick-order
+POST   /api/telegram/register-commands
 ```
 
 ## OVH 下单流程

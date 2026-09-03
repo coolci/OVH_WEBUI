@@ -23,31 +23,19 @@ import {
   Trash2,
   Play,
   Settings2,
-  Link as LinkIcon
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { useTelegramPollerStatus } from "@/hooks/use-settings";
 import { toast } from "sonner";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useServers } from "@/hooks/useApi";
 import { Badge } from "@/components/ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogFooter,
-  DialogClose,
-} from "@/components/ui/dialog";
+import { DatacenterPicker } from "@/components/common/DatacenterPicker";
+import { PlanCodeCombobox } from "@/components/common/PlanCodeCombobox";
+import { useAvailability, buildAvailabilityMap } from "@/hooks/use-availability";
+import { mergeDcAvailability } from "@/lib/datacenters";
+
 
 interface OrderMode {
   mode: 'stock' | 'queue' | 'monitor' | 'price' | 'buy';
@@ -116,6 +104,8 @@ const MAX_HISTORY_ITEMS = 20;
 
 const TelegramOrderPage = () => {
   const { data: servers } = useServers();
+  const availQ = useAvailability();
+  const availMap = useMemo(() => buildAvailabilityMap(availQ.data), [availQ.data]);
   const [selectedMode, setSelectedMode] = useState<OrderMode['mode']>('stock');
   const [planCode, setPlanCode] = useState('');
   const [datacenter, setDatacenter] = useState('');
@@ -124,16 +114,23 @@ const TelegramOrderPage = () => {
   const [lastResult, setLastResult] = useState<any>(null);
   const [copied, setCopied] = useState(false);
   
-  // Webhook status
-  const [webhookInfo, setWebhookInfo] = useState<any>(null);
-  const [isLoadingWebhook, setIsLoadingWebhook] = useState(false);
-  const [webhookUrl, setWebhookUrl] = useState('');
-  const [isSettingWebhook, setIsSettingWebhook] = useState(false);
-  
+  const poller = useTelegramPollerStatus();
+
   // Command history
   const [commandHistory, setCommandHistory] = useState<CommandHistory[]>([]);
 
-  const datacenterOptions = ["gra", "rbx", "sbg", "bhs", "waw", "lon", "fra", "par"];
+  const matchedServer = useMemo(
+    () => (servers || []).find((s) => s.planCode === planCode),
+    [servers, planCode]
+  );
+  const dcAvailability = useMemo(
+    () =>
+      mergeDcAvailability(
+        matchedServer?.datacenters,
+        matchedServer ? availMap[matchedServer.planCode] : undefined
+      ),
+    [matchedServer, availMap]
+  );
 
   const currentMode = orderModes.find(m => m.mode === selectedMode)!;
 
@@ -148,48 +145,6 @@ const TelegramOrderPage = () => {
       }
     }
   }, []);
-
-  // Load webhook info on mount
-  useEffect(() => {
-    loadWebhookInfo();
-  }, []);
-
-  const loadWebhookInfo = async () => {
-    setIsLoadingWebhook(true);
-    try {
-      const result = await api.getTelegramWebhookInfo();
-      if (result.success) {
-        setWebhookInfo(result.webhook_info);
-      }
-    } catch (error) {
-      console.error('Failed to load webhook info:', error);
-    } finally {
-      setIsLoadingWebhook(false);
-    }
-  };
-
-  const handleSetWebhook = async () => {
-    if (!webhookUrl.trim()) {
-      toast.error("请输入 Webhook URL");
-      return;
-    }
-    
-    setIsSettingWebhook(true);
-    try {
-      const result = await api.setTelegramWebhook(webhookUrl);
-      if (result.success) {
-        toast.success("Webhook 设置成功（已同步注册 Bot 命令菜单）");
-        loadWebhookInfo();
-        setWebhookUrl('');
-      } else {
-        toast.error(result.error || "设置失败");
-      }
-    } catch (error: any) {
-      toast.error(`设置失败: ${error.message}`);
-    } finally {
-      setIsSettingWebhook(false);
-    }
-  };
 
   const handleRegisterCommands = async () => {
     try {
@@ -293,7 +248,7 @@ const TelegramOrderPage = () => {
   };
 
   const needsDatacenter = selectedMode === 'queue' || selectedMode === 'price' || selectedMode === 'buy';
-  const isWebhookConnected = webhookInfo?.url && webhookInfo?.url.length > 0;
+  const isPollerConnected = !!poller.data?.running;
 
   return (
     <>
@@ -314,17 +269,17 @@ const TelegramOrderPage = () => {
                   <span className="cursor-blink">_</span>
                 </h1>
                 <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-                  通过 Telegram 消息快速执行下单（需先配置 Webhook 并注册命令菜单）
+                  网页演练与 Bot 相同的命令。收消息走后端轮询，只需设置里填写 Token 和 Chat ID。
                 </p>
               </div>
               {/* Bot Connection Status */}
-              {isLoadingWebhook ? (
+              {poller.isFetching && !poller.data ? (
                 <span className="flex items-center gap-1 text-xs text-muted-foreground bg-muted px-2 py-1 rounded w-fit">
                   <Loader2 className="h-3 w-3 animate-spin" /> 检查中
                 </span>
-              ) : isWebhookConnected ? (
+              ) : isPollerConnected ? (
                 <span className="flex items-center gap-1 text-xs text-primary bg-primary/10 px-2 py-1 rounded w-fit">
-                  <Wifi className="h-3 w-3" /> 已连接
+                  <Wifi className="h-3 w-3" /> 轮询中{poller.data?.botUsername ? ` @${poller.data.botUsername}` : ""}
                 </span>
               ) : (
                 <span className="flex items-center gap-1 text-xs text-destructive bg-destructive/10 px-2 py-1 rounded w-fit">
@@ -334,74 +289,14 @@ const TelegramOrderPage = () => {
             </div>
             
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" onClick={loadWebhookInfo} disabled={isLoadingWebhook} className="h-8 text-xs">
-                <RefreshCw className={cn("h-3 w-3 sm:h-4 sm:w-4 mr-1", isLoadingWebhook && "animate-spin")} />
+              <Button variant="outline" size="sm" onClick={() => void poller.refetch()} disabled={poller.isFetching} className="h-8 text-xs">
+                <RefreshCw className={cn("h-3 w-3 sm:h-4 sm:w-4 mr-1", poller.isFetching && "animate-spin")} />
                 刷新
               </Button>
               <Button variant="outline" size="sm" onClick={handleRegisterCommands} className="h-8 text-xs">
                 <Settings2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
                 注册命令菜单
               </Button>
-              
-              <Dialog>
-                <DialogTrigger asChild>
-                  <Button variant="terminal" size="sm" className="h-8 text-xs">
-                    <Settings2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
-                    Webhook
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="terminal-card border-primary/30 max-w-[90vw] sm:max-w-lg">
-                  <DialogHeader>
-                    <DialogTitle className="text-primary">Telegram Webhook 配置</DialogTitle>
-                    <DialogDescription>
-                      配置 Telegram Bot 的 Webhook URL
-                    </DialogDescription>
-                  </DialogHeader>
-                  
-                  <div className="space-y-4 py-4">
-                    {/* Current Status */}
-                    <div className="p-3 bg-muted/50 rounded-sm border border-border">
-                      <div className="flex items-center gap-2 mb-2">
-                        {isWebhookConnected ? (
-                          <Wifi className="h-4 w-4 text-primary" />
-                        ) : (
-                          <WifiOff className="h-4 w-4 text-destructive" />
-                        )}
-                        <span className="font-medium text-sm">
-                          {isWebhookConnected ? "已配置" : "未配置"}
-                        </span>
-                      </div>
-                      {webhookInfo?.url && (
-                        <p className="text-xs text-muted-foreground font-mono break-all">
-                          {webhookInfo.url}
-                        </p>
-                      )}
-                    </div>
-                    
-                    {/* Set New Webhook */}
-                    <div className="space-y-2">
-                      <Label className="text-sm">新的 Webhook URL</Label>
-                      <Input
-                        value={webhookUrl}
-                        onChange={(e) => setWebhookUrl(e.target.value)}
-                        placeholder="https://your-domain.com/webhook"
-                        className="text-sm"
-                      />
-                    </div>
-                  </div>
-                  
-                  <DialogFooter className="flex-col sm:flex-row gap-2">
-                    <DialogClose asChild>
-                      <Button variant="outline" size="sm">取消</Button>
-                    </DialogClose>
-                    <Button onClick={handleSetWebhook} disabled={isSettingWebhook} size="sm">
-                      {isSettingWebhook && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                      <LinkIcon className="h-4 w-4 mr-2" />
-                      设置
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
             </div>
           </div>
 
@@ -449,40 +344,25 @@ const TelegramOrderPage = () => {
                   </div>
                 </div>
 
-                {/* Server Selection */}
                 <div className="space-y-2">
                   <Label>服务器型号 *</Label>
-                  <Select value={planCode} onValueChange={setPlanCode}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="选择服务器型号" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {servers?.map(server => (
-                        <SelectItem key={server.planCode} value={server.planCode}>
-                          {server.name} ({server.planCode})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <PlanCodeCombobox
+                    value={planCode}
+                    onChange={setPlanCode}
+                    servers={servers || []}
+                    placeholder="输入或搜索型号，例如 24ska01"
+                  />
                 </div>
 
-                {/* Datacenter Selection */}
                 {needsDatacenter && (
-                  <div className="space-y-2">
-                    <Label>目标机房 *</Label>
-                    <Select value={datacenter} onValueChange={setDatacenter}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="选择机房" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {datacenterOptions.map(dc => (
-                          <SelectItem key={dc} value={dc}>
-                            {dc.toUpperCase()}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  <DatacenterPicker
+                    multiple={false}
+                    value={datacenter ? [datacenter] : []}
+                    onChange={(codes) => setDatacenter(codes[0] || "")}
+                    availability={dcAvailability}
+                    disabled={!planCode.trim()}
+                    placeholder="请先选择服务器型号，再点选机房。"
+                  />
                 )}
 
                 {/* Quantity (only for buy mode) */}

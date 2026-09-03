@@ -25,7 +25,7 @@
 | **抢购队列** | 任务入队、重试、历史；后台循环尝试下单 |
 | **快速下单** | 页面一键入队；监控 auto-order 走同一路径 |
 | **独服补货监控** | 订阅 planCode + 机房；上架/下架 TG 推送 |
-| **一键下单按钮** | 上架通知内嵌机房按钮 → Webhook 入队 |
+| **一键下单按钮** | 上架通知内嵌机房按钮 → 轮询入站后入队 |
 | **VPS 监控** | 独立 VPS 订阅与通知 |
 | **Telegram 文本下单** | 向 Bot 发 `plancode [dc] [qty] [options]` |
 
@@ -45,7 +45,7 @@
 |------|------|
 | **多 OVH 账户** | 切换默认账户；监控/下单可指定账户 |
 | **网关鉴权** | `API_SECRET_KEY` / `X-API-Key` 登录 |
-| **设置** | Endpoint / Zone / Telegram Token·ChatID / Webhook 注册 |
+| **设置** | Endpoint / Zone / Telegram Token·ChatID（保存后自动轮询收消息） |
 | **日志与仪表盘** | 运行日志、队列预览、可用性与统计 |
 
 ### 典型业务流
@@ -55,7 +55,7 @@
     → 发现上架
     → Telegram 推送 +「机房 一键下单」按钮（UUID 已落库）
     → 用户点击按钮
-    → POST /api/telegram/webhook（免 API Key）
+    → 后端 getUpdates 轮询收到 callback_query
     → 恢复 plan/dc/options → 写入抢购队列
     → ProcessQueueLoop 调 OVH 下单
 ```
@@ -189,7 +189,7 @@ python scripts/smoke_test.py
 | 公网 | 仅 **80 / 443**（后端不暴露 19998） |
 | 域名示例 | `ovh.example.com`（A 记录 → 服务器公网 IP） |
 | 登录 | `.env` 中 `API_SECRET_KEY` |
-| Webhook | `https://<DOMAIN>/api/telegram/webhook`（鉴权白名单） |
+| Telegram | 设置页 Token + Chat ID；后端 `getUpdates` 轮询，无需公网 Webhook |
 
 环境变量见根目录 [`.env.example`](./.env.example)。**更新代码时务必保留服务器上已有 `.env`**，勿被空模板覆盖。
 
@@ -239,20 +239,17 @@ curl -sS https://你的域名/api/health
 
 # 浏览器打开 https://你的域名 → 用脚本打印的 API Key 登录
 # 设置 → 添加 OVH 账户
-# 设置 → Telegram：填 Token + Chat ID →「保存 Token 并注册 Webhook」
-# 或：
-./scripts/linux-oneclick-deploy.sh --webhook
+# 设置 → Telegram：填 Token + Chat ID 并保存（自动开始轮询）
 ```
 
-**Webhook 校验**
+**Telegram 校验**
 
 ```bash
 source <(grep -E '^(API_SECRET_KEY|DOMAIN)=' .env | sed 's/^/export /')
 
-curl -sS "https://${DOMAIN}/api/telegram/get-webhook-info" \
+curl -sS "https://${DOMAIN}/api/telegram/status" \
   -H "X-API-Key: ${API_SECRET_KEY}"
-# url 应为 https://域名/api/telegram/webhook
-# last_error_message 应为空或可忽略的历史错误
+# polling.running 应为 true
 ```
 
 ---
@@ -296,12 +293,11 @@ curl -sS https://你的域名/api/health
 
 ### 完整流程 C：Telegram 一键下单从 0 到可用
 
-1. 域名 HTTPS 正常（Caddy healthy）  
-2. 设置中配置 **Bot Token + Chat ID**  
-3. 注册 Webhook：`https://域名`（后端自动补全 `/api/telegram/webhook`）  
-4. **监控页添加订阅**，并确保监控在运行（有订阅时启动会自动 Start）  
-5. 上架推送后点击「一键下单」  
-6. 队列页应出现 `fromTelegram: true` 的任务  
+1. 设置中配置 **Bot Token + Chat ID** 并保存（无需公网 HTTPS）  
+2. 设置页「轮询入站状态」显示运行中，或 `GET /api/telegram/status`  
+3. **监控页添加订阅**，并确保监控在运行（有订阅时启动会自动 Start）  
+4. 上架推送后点击「一键下单」  
+5. 队列页应出现 `fromTelegram: true` 的任务  
 
 按钮配置会写入 SQLite 表 `telegram_order_buttons`（约 24h TTL），**重启后仍可点**（在有效期内）。
 
@@ -339,8 +335,7 @@ docker run --rm -v ovh_webui_data:/data -v "$PWD":/b alpine \
 ### 1. Telegram 一键下单：重启后按钮全废
 
 **现象**  
-点「一键下单」无反应或失败；`getWebhookInfo` 出现  
-`Wrong response from the webhook: 400 Bad Request`；日志 `UUID未找到 in cache`。
+点「一键下单」无反应或失败；日志 `UUID未找到 in cache`。
 
 **原因**  
 回调 `callback_data` 受 Telegram **64 字节**限制，只存 UUID；完整 plan/dc/options 原先只在 **内存 map**。Docker 重建 / 进程重启后缓存清空，降级路径又缺 planCode → 返回 **400** → Telegram 重试堆积。
@@ -355,20 +350,7 @@ docker run --rm -v ovh_webui_data:/data -v "$PWD":/b alpine \
 
 ---
 
-### 2. 设置页「保存 Token」不注册 Webhook
-
-**现象**  
-设置里填了 Token，Telegram 下单页能 setWebhook，设置页保存后 webhook 仍空。
-
-**原因**  
-设置保存只写配置，**没有**调用 `/api/telegram/set-webhook`。
-
-**修复**  
-设置页 Telegram 区：保存 Token 后串联 `useSetTelegramWebhook`；可一键「保存并注册 Webhook」。
-
----
-
-### 3. 启动时 `SaveToDB()` 可能清空监控订阅
+### 2. 启动时 `SaveToDB()` 可能清空监控订阅
 
 **现象**  
 部署/重启后 `subscriptions_count: 0`，监控不再推送。
@@ -490,7 +472,7 @@ WAL 模式：变更可能在 `sniper.db-wal`。
 | 真实 OVH AK/AS/CK、服务器 root 密码 | 仅环境变量或密钥管理 |
 | 临时 `_remote_deploy_*.py` 含密码脚本 | 用完即删 |
 
-鉴权：除 `/api/health`、`/api/telegram/webhook` 等白名单外，均需 `X-API-Key`。
+鉴权：除 `/api/health` 等白名单外，均需 `X-API-Key`。
 
 详见 [docs/SECURITY.md](./docs/SECURITY.md)。
 
@@ -503,7 +485,7 @@ WAL 模式：变更可能在 `sniper.db-wal`。
 | `backend/` | Go API |
 | `src/` | React UI |
 | `docker-compose.https.yml` | **生产 HTTPS 全栈** |
-| `scripts/linux-oneclick-deploy.sh` | Linux 一键部署 / 日志 / Webhook |
+| `scripts/linux-oneclick-deploy.sh` | Linux 一键部署 / 日志 |
 | `scripts/init-first-run.ps1` | Windows 首次初始化 |
 | `scripts/start-backend.ps1` | Windows 稳定起后端 |
 | `scripts/smoke_test.py` | API 烟测 |
@@ -521,8 +503,8 @@ WAL 模式：变更可能在 `sniper.db-wal`。
   1. `/api/health`  
   2. 登录  
   3. 监控订阅数量  
-  4. `get-webhook-info`  
-  5. 日志中无持续 `UUID未找到` / webhook 400  
+  4. `/api/telegram/status` 轮询 running  
+  5. 日志中无持续 `UUID未找到`  
 
 ---
 

@@ -13,6 +13,7 @@ import (
 	"github.com/ovh-webui/server/internal/notify"
 	"github.com/ovh-webui/server/internal/numconv"
 	"github.com/ovh-webui/server/internal/ovh"
+	"github.com/ovh-webui/server/internal/telegram"
 	"github.com/ovh-webui/server/internal/types"
 )
 
@@ -80,10 +81,12 @@ func PurchaseServer(state *app.State, item *types.QueueItem) Outcome {
 	// 日志里只有一句"当前无货",用户永远看不出是自己选错了区的机型。
 	// classifyPlan 给出确定性结论时直接判 Fatal:这类任务重试到天荒地老也不会变。
 	if len(availabilities) == 0 {
-		if verdict, msg := catalog.ClassifyPlan(state, item.AccountID, item.PlanCode, "purchase"); msg != "" {
-			state.Logger.Error(fmt.Sprintf("%s（判定 %d）", msg, verdict), "purchase")
-			recordFailure(state, item, msg)
-			return Outcome{Fatal: true, Reason: msg}
+		if !item.Force {
+			if verdict, msg := catalog.ClassifyPlan(state, item.AccountID, item.PlanCode, "purchase"); msg != "" {
+				state.Logger.Error(fmt.Sprintf("%s（判定 %d）", msg, verdict), "purchase")
+				recordFailure(state, item, msg)
+				return Outcome{Fatal: true, Reason: msg}
+			}
 		}
 	}
 
@@ -169,6 +172,10 @@ func PurchaseServer(state *app.State, item *types.QueueItem) Outcome {
 	// 多账户:购物车 subsidiary 跟着账户走,不再读全局 cfg
 	acc, _ := state.FindAccount(item.AccountID)
 	subsidiary := orderSubsidiary(state, acc, "purchase")
+
+	if item.TelegramMessageID != 0 {
+		telegram.NotifyTaskProgress(state, item, "submitting", nil)
+	}
 
 	// 创建购物车
 	state.Logger.Info(fmt.Sprintf("为区域 %s 创建购物车 (账户 %s)", subsidiary, acc.Name), "purchase")
@@ -464,6 +471,16 @@ func PurchaseServer(state *app.State, item *types.QueueItem) Outcome {
 		recordTiming(timingKey, tl, "failed")
 		state.Logger.Error(fmt.Sprintf("购买 %s 时发生 OVH API 错误: %s (%s)", item.PlanCode, errMsg, tl.String()), "purchase")
 		recordFailure(state, item, errMsg)
+		tgCfg := state.Config.Get()
+		if tgCfg.TgToken != "" && tgCfg.TgChatID != "" {
+			if item.TelegramMessageID != 0 {
+				telegram.NotifyTaskProgress(state, item, "failed", map[string]string{"reason": errMsg})
+			} else if item.FromTelegram {
+				failMsg := fmt.Sprintf("❌ 抢购任务结账失败\n\n📦 型号: %s\n📍 机房: %s\n⚠️ 原因: %s",
+					item.PlanCode, telegram.DisplayDCFull(item.Datacenter), errMsg)
+				notify.Broadcast(state, failMsg, nil)
+			}
+		}
 		return Outcome{Attempted: true}
 	}
 	tl.mark("下单")
@@ -491,24 +508,46 @@ func PurchaseServer(state *app.State, item *types.QueueItem) Outcome {
 	// 发送 Telegram 成功通知。TG token / chat id 仍然走全局 state.Config(Telegram 是平台级配置,跨账户共享)
 	tgCfg := state.Config.Get()
 	if tgCfg.TgToken != "" && tgCfg.TgChatID != "" {
-		// checkout 用的是 autoPayWithPreferredPaymentMethod:false ——
-		// "成功"的真实语义是「订单已创建、**还没付款**、逾期作废」。
-		// 通知里必须把这句说出来,否则用户看到🎉就睡了,订单过期机器就没了。
-		payNote := "⚠️ 订单尚未付款：请尽快打开订单链接完成付款,逾期未付订单会自动作废。\n" +
-			"(下单时已按惯例放弃 14 天撤销期,付款即开通)\n"
-		if item.AutoPay {
-			// 只承诺我们真正知道的:已请求自动付款 ≠ 扣款一定成功
-			// (默认支付方式失效/余额不足时 OVH 不会扣成),让用户去核对
-			payNote = "💳 已请求用账户默认支付方式自动付款,请打开订单链接核对扣款是否成功。\n" +
-				"(下单时已按惯例放弃 14 天撤销期)\n"
+		if item.TelegramMessageID != 0 {
+			telegram.NotifyTaskProgress(state, item, "success", map[string]string{
+				"orderId":  orderID,
+				"orderUrl": orderURL,
+			})
+		} else {
+			dcName := telegram.DisplayDCFull(item.Datacenter)
+			var b strings.Builder
+			b.WriteString("✅ 锁单成功！\n\n")
+			b.WriteString("📦 型号: " + item.PlanCode + "\n")
+			b.WriteString("📍 机房: " + dcName + "\n")
+			if orderID != "" {
+				b.WriteString("🧾 订单号: " + orderID + "\n")
+			}
+			if len(item.Options) > 0 {
+				b.WriteString("⚙️ 选配: " + strings.Join(item.Options, ", ") + "\n")
+			}
+			b.WriteString("\n")
+			if item.AutoPay {
+				b.WriteString("💳 已请求默认支付方式自动扣款，请点击下方按钮核对支付状态。\n")
+			} else {
+				b.WriteString("⚠️ 订单尚未付款，请点击下方按钮完成支付，逾期将自动作废。\n")
+			}
+			b.WriteString("💡 点击下方按钮直达 OVH 支付账单：")
+			var replyMarkup map[string]interface{}
+			if orderURL != "" {
+				btnText := "💳 前往 OVH 支付订单"
+				if orderID != "" {
+					btnText = "💳 前往 OVH 支付订单 (" + orderID + ")"
+				}
+				replyMarkup = map[string]interface{}{
+					"inline_keyboard": [][]map[string]string{
+						{
+							{"text": btnText, "url": orderURL},
+						},
+					},
+				}
+			}
+			notify.Broadcast(state, b.String(), replyMarkup)
 		}
-		msg := fmt.Sprintf("🎉 OVH 服务器下单成功！\n\n服务器型号 (Plan Code): %s\n数据中心: %s\n订单 ID: %s\n订单链接: %s\n\n%s",
-			item.PlanCode, item.Datacenter, orderID, orderURL, payNote)
-		if len(item.Options) > 0 {
-			msg += "自定义配置: " + strings.Join(item.Options, ", ") + "\n"
-		}
-		msg += "\n抢购任务ID: " + item.ID
-		notify.Broadcast(state, msg, nil)
 		state.Logger.Info("已为订单 "+orderID+" 发送 Telegram 成功通知。", "purchase")
 	} else {
 		state.Logger.Info("未配置 Telegram Token 或 Chat ID，跳过成功通知发送。", "purchase")

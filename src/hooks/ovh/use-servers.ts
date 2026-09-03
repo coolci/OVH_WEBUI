@@ -69,12 +69,30 @@ export function useServers(showApiServers: boolean = true) {
   });
 }
 
-/** 添加到监控订阅 */
+/** 添加到监控订阅。通知/自动下单/自动付款由调用方显式传入，不再写死成仅有货提醒。 */
 export function useAddToMonitor() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (payload: { planCode: string; datacenters: string[]; serverName?: string }) =>
-      (await api.post("/monitor/subscriptions", { ...payload, notifyAvailable: true, notifyUnavailable: false })).data,
+    mutationFn: async (payload: {
+      planCode: string;
+      datacenters: string[];
+      serverName?: string;
+      notifyAvailable?: boolean;
+      notifyUnavailable?: boolean;
+      autoOrder?: boolean;
+      quantity?: number;
+      autoOrderAccountId?: string;
+      autoPay?: boolean;
+    }) =>
+      (
+        await api.post("/monitor/subscriptions", {
+          notifyAvailable: true,
+          notifyUnavailable: false,
+          autoOrder: false,
+          autoPay: false,
+          ...payload,
+        })
+      ).data,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.monitor.list() });
       toast.success("已加入监控");

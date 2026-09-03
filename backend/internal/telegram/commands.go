@@ -18,13 +18,15 @@ type BotCommand struct {
 
 // KnownCommands 已注册/支持的命令名（不含斜杠）。
 var KnownCommands = map[string]string{
-	"start":   "显示帮助与可用命令",
-	"help":    "显示帮助与可用命令",
-	"stock":   "查询库存: /stock <planCode>",
-	"queue":   "加入队列: /queue <planCode> [dc] [qty] [options]",
-	"buy":     "快速下单: /buy <planCode> [dc] [qty] [options]",
-	"monitor": "添加监控: /monitor <planCode> [dc...]",
-	"price":   "查询价格: /price <planCode> <dc>",
+	"start":    "显示帮助与可用命令",
+	"help":     "显示帮助与可用命令",
+	"stock":    "查询库存: /stock <planCode>",
+	"queue":    "加入队列: /queue <planCode> [dc] [qty] [options]",
+	"buy":      "快速下单: /buy <planCode> [dc] [qty] [options]",
+	"tasks":    "查看抢购任务队列: /tasks",
+	"accounts": "查看与切换 OVH 账户: /accounts",
+	"monitor":  "添加监控: /monitor <planCode> [dc...]",
+	"price":    "查询价格: /price <planCode> <dc>",
 }
 
 // ParseBotCommand 解析以 / 开头的 Bot 命令。
@@ -74,16 +76,18 @@ func HelpMessage() string {
 
 📦 库存查询
   /stock <planCode>
-  例: /stock 24ska01
+  例: /stock 24ska01（查完可直接点击按钮开抢）
 
-🛒 加入抢购队列
-  /queue <planCode> [datacenter] [quantity] [options逗号分隔]
-  例: /queue 24ska01 gra
-  例: /queue 24ska01 gra 1 ram-32g,softraid-2x512nvme
+⚡ 快速下单 & 抢购排队
+  /buy                   → 点选型号和机房
+  /buy <planCode>        → 点选机房
+  /buy <planCode> gra    → 直接入队（有货秒冲/缺货挂机）
 
-⚡ 快速下单（同入队，有货即抢）
-  /buy <planCode> [datacenter] [quantity] [options]
-  例: /buy 24ska01 gra
+📋 任务管理
+  /tasks                 → 查看当前抢购队列，支持一键取消
+
+👤 账户管理
+  /accounts              → 查看各区 OVH 账户与切换默认
 
 👁 添加监控（有货推送）
   /monitor <planCode> [datacenter...]
@@ -98,7 +102,7 @@ func HelpMessage() string {
   planCode [datacenter] [quantity] [options]
   例: 24ska01 gra 1
 
-说明: 仅配置的 Chat ID 可下单；机房代码小写 3–4 位（gra/rbx/bhs…）。
+说明: 仅配置的 Chat ID 可下单；机房代码支持 gra/rbx/bhs…（不区分大小写）。
 `) + "\n"
 }
 

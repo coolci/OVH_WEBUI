@@ -272,7 +272,11 @@ func StartMonitor(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 func VerifyTelegram(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ok, reason := telegram.VerifyConfig(state)
-		c.JSON(http.StatusOK, gin.H{"ok": ok, "reason": reason})
+		c.JSON(http.StatusOK, gin.H{
+			"ok":      ok,
+			"reason":  reason,
+			"polling": telegram.SnapshotPoller(),
+		})
 	}
 }
 

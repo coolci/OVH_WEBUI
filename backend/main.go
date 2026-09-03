@@ -232,9 +232,7 @@ func main() {
 		api.GET("/telegram/verify", handlers.VerifyTelegram(state))
 
 		// Telegram
-		api.POST("/telegram/set-webhook", handlers.SetTelegramWebhook(state))
-		api.GET("/telegram/get-webhook-info", handlers.GetTelegramWebhookInfo(state))
-		api.POST("/telegram/webhook", handlers.TelegramWebhook(state, mon))
+		api.GET("/telegram/status", handlers.TelegramStatus(state))
 		api.POST("/telegram/quick-order", handlers.TelegramQuickOrder(state, mon))
 		api.POST("/telegram/register-commands", handlers.RegisterTelegramCommands(state))
 
@@ -496,9 +494,9 @@ func main() {
 	// 预热各账户子公司的区域配置:region 的合法取值要从 10MB 的公开目录里解析,
 	// 首次解析放在抢购链路上会白白慢 2-7 秒
 	go catalog.WarmRegionCache(state)
-	// Telegram webhook secret 自愈：老部署注册过的 webhook 不带 secret_token，
-	// 启动时用同一 URL 重注册一次，把强校验补上（未配置 TG 时无操作）。
-	go telegram.AutoUpgradeWebhookSecret(state)
+	go telegram.StartPoller(state, func(u map[string]interface{}) {
+		handlers.ProcessTelegramUpdate(state, mon, u)
+	})
 	// 服务器目录走懒加载：访问到且缓存过期时才打 OVH，无后台定时刷新
 
 	// 自动启动监控（如果有订阅）

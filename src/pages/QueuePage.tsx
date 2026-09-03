@@ -10,10 +10,12 @@ import {
   Clock,
   Plus,
   Loader2,
+  Search,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -40,7 +42,8 @@ import {
   type QueueItem,
 } from "@/hooks/use-queue";
 import { useServers } from "@/hooks/use-servers";
-import { OVH_DATACENTERS as OVH_DC_LIST } from "@/lib/datacenters";
+import { mergeDcAvailability } from "@/lib/datacenters";
+import { DatacenterPicker } from "@/components/common/DatacenterPicker";
 import { AccountSelect } from "@/components/common/AccountSelect";
 import { AccountChip } from "@/components/common/AccountChip";
 import { PlanCodeCombobox } from "@/components/common/PlanCodeCombobox";
@@ -48,14 +51,12 @@ import { OptionGroupSection } from "@/components/common/OptionGroupSection";
 import { groupOptions, type OptionGroupKey } from "@/lib/option-groups";
 import {
   useAvailability,
+  buildAvailabilityMap,
   buildVariantIndex,
   hasStockWithOption,
 } from "@/hooks/use-availability";
 
 /** 抢购队列：列表 + 暂停/恢复/删除/清空 + 新建抢购任务 */
-/** OVH 数据中心列表：复用 lib/datacenters.ts 的共享常量 */
-const OVH_DATACENTERS = OVH_DC_LIST;
-
 /** 任务重试间隔默认值（秒），与后端 TASK_RETRY_INTERVAL 保持一致 */
 const DEFAULT_RETRY_INTERVAL = 60;
 
@@ -82,7 +83,48 @@ function QueuePage() {
     }
   }, [createPlanCode, createOptions]);
 
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+
   const items = queue.data || [];
+  const runningCount = items.filter((it) => it.status === "running").length;
+  const pausedCount = items.filter((it) => it.status === "paused").length;
+  const failedCount = items.filter((it) => it.status === "failed").length;
+
+  const handlePauseAll = async () => {
+    const runningItems = items.filter((it) => it.status === "running");
+    if (runningItems.length === 0) return;
+    for (const it of runningItems) {
+      await toggle.mutateAsync({ id: it.id, action: "pause" });
+    }
+    toast.success(`已暂停 ${runningItems.length} 个任务`);
+  };
+
+  const handleResumeAll = async () => {
+    const pausedItems = items.filter((it) => it.status === "paused");
+    if (pausedItems.length === 0) return;
+    for (const it of pausedItems) {
+      await toggle.mutateAsync({ id: it.id, action: "resume" });
+    }
+    toast.success(`已恢复 ${pausedItems.length} 个任务`);
+  };
+
+  const filteredItems = useMemo(() => {
+    let out = items;
+    const s = search.trim().toLowerCase();
+    if (s) {
+      out = out.filter(
+        (it) =>
+          it.planCode.toLowerCase().includes(s) ||
+          it.datacenter.toLowerCase().includes(s) ||
+          it.accountId.toLowerCase().includes(s)
+      );
+    }
+    if (statusFilter !== "all") {
+      out = out.filter((it) => it.status === statusFilter);
+    }
+    return out;
+  }, [items, search, statusFilter]);
 
   return (
     <div className="space-y-6">
@@ -91,7 +133,29 @@ function QueuePage() {
         title="抢购队列"
         description="管理自动抢购服务器的队列"
         action={
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
+            {runningCount > 0 && (
+              <Button
+                variant="outline"
+                onClick={handlePauseAll}
+                disabled={toggle.isPending}
+                title="暂停所有运行中的任务"
+              >
+                <PauseCircle className="w-4 h-4" />
+                全部暂停 ({runningCount})
+              </Button>
+            )}
+            {pausedCount > 0 && (
+              <Button
+                variant="outline"
+                onClick={handleResumeAll}
+                disabled={toggle.isPending}
+                title="恢复所有已暂停的任务"
+              >
+                <PlayCircle className="w-4 h-4" />
+                全部恢复 ({pausedCount})
+              </Button>
+            )}
             <Button onClick={() => setShowCreateDialog(true)}>
               <Plus className="w-4 h-4" />
               新建抢购任务
@@ -112,6 +176,64 @@ function QueuePage() {
         }
       />
 
+      {items.length > 0 && (
+        <Card>
+          <CardContent className="p-3 sm:p-4 flex flex-col sm:flex-row items-center gap-3">
+            <div className="relative flex-1 w-full min-w-0">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+              <Input
+                placeholder="搜索型号 / 机房 / 账户..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9 pr-9 rounded-full h-8 text-xs"
+              />
+              {search && (
+                <button
+                  type="button"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-muted-foreground hover:text-foreground transition-colors"
+                  onClick={() => setSearch("")}
+                  aria-label="清空搜索"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto scrollbar-none">
+              {[
+                { id: "all", label: "全部", count: items.length },
+                { id: "running", label: "运行中", count: runningCount },
+                { id: "paused", label: "已暂停", count: pausedCount },
+                { id: "failed", label: "失败", count: failedCount },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setStatusFilter(tab.id)}
+                  className={cn(
+                    "px-2.5 py-1 text-xs font-medium rounded-lg transition-colors whitespace-nowrap flex items-center gap-1.5 border",
+                    statusFilter === tab.id
+                      ? "bg-secondary text-foreground border-border font-semibold shadow-none"
+                      : "bg-transparent text-muted-foreground border-transparent hover:bg-secondary/50 hover:text-foreground"
+                  )}
+                >
+                  <span>{tab.label}</span>
+                  <span
+                    className={cn(
+                      "text-[10px] px-1.5 py-0.2 rounded-full",
+                      statusFilter === tab.id
+                        ? "bg-background/80 text-foreground"
+                        : "bg-secondary text-muted-foreground"
+                    )}
+                  >
+                    {tab.count}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {queue.isPending ? (
         <div className="space-y-3">
           {Array.from({ length: 4 }).map((_, i) => (
@@ -126,9 +248,17 @@ function QueuePage() {
             description="点击右上角“新建抢购任务”开始抢购"
           />
         </Card>
+      ) : filteredItems.length === 0 ? (
+        <Card>
+          <EmptyState
+            icon={Search}
+            title="未找到匹配的任务"
+            description="尝试调整搜索关键词或状态筛选"
+          />
+        </Card>
       ) : (
         <div className="space-y-3">
-          {items.map((q) => (
+          {filteredItems.map((q) => (
             <QueueRow
               key={q.id}
               item={q}
@@ -200,6 +330,7 @@ function CreateQueueDialog({
   const servers = useServers();
   const availQ = useAvailability();
   const variantIndex = useMemo(() => buildVariantIndex(availQ.data), [availQ.data]);
+  const availMap = useMemo(() => buildAvailabilityMap(availQ.data), [availQ.data]);
   const create = useCreateQueueItem();
   const [accountId, setAccountId] = useState("");
   const [planCode, setPlanCode] = useState(initialPlanCode || "");
@@ -315,20 +446,23 @@ function CreateQueueDialog({
     onOpenChange(false);
   };
 
-  const toggleDC = (code: string) => {
-    setDatacenters((prev) =>
-      prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]
-    );
-  };
-
-  const selectAllDC = () => setDatacenters(OVH_DATACENTERS.map((d) => d.code));
-  const clearAllDC = () => setDatacenters([]);
+  const dcAvailability = useMemo(
+    () =>
+      mergeDcAvailability(
+        matchedServer?.datacenters,
+        matchedServer ? availMap[matchedServer.planCode] : undefined
+      ),
+    [matchedServer, availMap]
+  );
 
   const handleSubmit = async () => {
     if (!canSubmit) {
       toast.error("请填写计划代码并至少选择一个数据中心");
       return;
     }
+    const isCustomPlan = Boolean(
+      planCode.trim() && !servers.data?.some((s) => s.planCode.toLowerCase() === planCode.trim().toLowerCase())
+    );
     const result = await create.mutateAsync({
       account_id: accountId,
       planCode: planCode.trim(),
@@ -337,18 +471,23 @@ function CreateQueueDialog({
       retryInterval: Number(retryInterval) || DEFAULT_RETRY_INTERVAL,
       options: parsedOptions,
       autoPay,
+      force: isCustomPlan,
     });
     if (result.success > 0) {
       toast.success(`已创建 ${result.success}/${result.total} 个抢购任务`);
     }
     if (result.failed > 0) {
-      toast.error(`${result.failed} 个任务创建失败`);
+      toast.error(result.error || `${result.failed} 个任务创建失败`);
     }
     if (result.success > 0) {
       reset();
       onOpenChange(false);
     }
   };
+
+  const isCustomPlan = Boolean(
+    planCode.trim() && !servers.data?.some((s) => s.planCode.toLowerCase() === planCode.trim().toLowerCase())
+  );
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -375,65 +514,28 @@ function CreateQueueDialog({
               value={planCode}
               onChange={setPlanCode}
               servers={servers.data || []}
-              placeholder="选择或搜索服务器型号"
+              placeholder="输入或搜索型号，例如 24ska01"
             />
             {matchedServer && (
               <p className="text-[11px] text-muted-foreground mt-1 truncate">
                 {matchedServer.cpu} · {matchedServer.memory} · {matchedServer.storage}
               </p>
             )}
+            {isCustomPlan && (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-200/90 flex items-start gap-2 mt-1.5">
+                <span className="text-amber-400 font-bold shrink-0">自定义型号:</span>
+                <span className="text-muted-foreground text-[11px] leading-relaxed">
+                  当前型号未在已知官方目录中收录，已启用强制创建模式。若为您自拟的新款或未公开型号，有货后会自动提交；若为拼写错误（如想买 24sk20），建议更正型号。
+                </span>
+              </div>
+            )}
           </div>
 
-          {/* 数据中心多选 */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-[13px] font-medium">
-                选择数据中心
-                {datacenters.length > 0 && (
-                  <span className="text-muted-foreground ml-2 font-normal">
-                    （已选 {datacenters.length}）
-                  </span>
-                )}
-              </label>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={selectAllDC}
-                  className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  全选
-                </button>
-                <span className="text-muted-foreground text-[11px]">/</span>
-                <button
-                  type="button"
-                  onClick={clearAllDC}
-                  className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  清空
-                </button>
-              </div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 border border-border rounded-2xl p-3 max-h-56 overflow-y-auto">
-              {OVH_DATACENTERS.map((dc) => {
-                const checked = datacenters.includes(dc.code);
-                return (
-                  <label
-                    key={dc.code}
-                    className="flex items-center gap-2 cursor-pointer text-[13px] py-1"
-                  >
-                    <Checkbox
-                      checked={checked}
-                      onCheckedChange={() => toggleDC(dc.code)}
-                    />
-                    <span className="truncate" title={`${dc.name} (${dc.code})`}>
-                      <span className="font-mono uppercase">{dc.code}</span>
-                      <span className="text-muted-foreground ml-1">{dc.name}</span>
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
-          </div>
+          <DatacenterPicker
+            value={datacenters}
+            onChange={setDatacenters}
+            availability={dcAvailability}
+          />
 
           {/* 数量 + 重试间隔 */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -619,6 +721,15 @@ function QueueRow({
             <span className="font-mono font-semibold text-sm">{item.planCode}</span>
             <AccountChip accountId={item.accountId} />
             <Chip tone="default">DC {item.datacenter.toUpperCase()}</Chip>
+            {item.fromTelegram && (
+              <Chip tone="default">TG 任务</Chip>
+            )}
+            {item.quickOrder && (
+              <Chip tone="default">极速抢购</Chip>
+            )}
+            {item.autoPay && (
+              <Chip tone="default">自动扣款</Chip>
+            )}
             {item.options && item.options.length > 0 && (
               <Chip tone="default">含 {item.options.length} 个可选配置</Chip>
             )}

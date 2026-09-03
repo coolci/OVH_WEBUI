@@ -44,7 +44,7 @@ type webhookPayload struct {
 // Broadcast 把一条消息发到所有已配置的通道。
 // 返回成功送达的通道数 —— 调用方据此判断"这条通知到底有没有发出去"。
 //
-// 注意 replyMarkup 只有 Telegram 支持(一键下单按钮),webhook 那边只能收到纯文本。
+// 注意 replyMarkup 只有 Telegram 支持(一键下单按钮),自定义 HTTP 通知只能收到纯文本。
 // 这是有意的:让按钮在 TG 上继续可用,同时保证 TG 挂掉时消息本身还能到达。
 func Broadcast(state *app.State, message string, replyMarkup map[string]interface{}) int {
 	delivered := 0
@@ -55,8 +55,26 @@ func Broadcast(state *app.State, message string, replyMarkup map[string]interfac
 			delivered++
 		}
 	}
+	webhookMsg := message
+	if replyMarkup != nil {
+		if ik, ok := replyMarkup["inline_keyboard"].([][]map[string]string); ok {
+			for _, row := range ik {
+				for _, btn := range row {
+					if u, hasURL := btn["url"]; hasURL && u != "" {
+						if !strings.Contains(webhookMsg, u) {
+							label := btn["text"]
+							if label == "" {
+								label = "支付与操作链接"
+							}
+							webhookMsg += fmt.Sprintf("\n\n🔗 %s: %s", label, u)
+						}
+					}
+				}
+			}
+		}
+	}
 	if url := strings.TrimSpace(cfg.NotifyWebhookURL); url != "" {
-		if err := sendWebhook(url, message); err != nil {
+		if err := sendWebhook(url, webhookMsg); err != nil {
 			state.Logger.Warn("Webhook 通知发送失败: "+err.Error(), "notify")
 		} else {
 			delivered++

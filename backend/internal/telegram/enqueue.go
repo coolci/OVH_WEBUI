@@ -7,16 +7,26 @@ import (
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/catalog"
 	"github.com/ovh-webui/server/internal/price"
+	"github.com/ovh-webui/server/internal/types"
 )
 
 // EnqueueSingle 受控入队：账户绑定 + 去重 + 可选询价 + 队列硬顶。
 // 用于按钮一键下单与 /buy 单配置路径。
 func EnqueueSingle(state *app.State, accountID, planCode, datacenter string, options []string, requirePrice bool) OrderResult {
-	planCode = strings.TrimSpace(planCode)
-	datacenter = strings.ToLower(strings.TrimSpace(datacenter))
-	if accountID == "" {
-		accountID = DefaultAccountID(state)
+	item := NewTelegramQueueItem(accountID, planCode, datacenter, options)
+	return enqueuePrepared(state, item, requirePrice)
+}
+
+func enqueuePrepared(state *app.State, item types.QueueItem, requirePrice bool) OrderResult {
+	if item.AccountID == "" {
+		item.AccountID = DefaultAccountID(state)
 	}
+	item.PlanCode = strings.TrimSpace(item.PlanCode)
+	item.Datacenter = strings.ToLower(strings.TrimSpace(item.Datacenter))
+	accountID := item.AccountID
+	planCode := item.PlanCode
+	datacenter := item.Datacenter
+	options := item.Options
 	if accountID == "" {
 		return OrderResult{Success: false, Message: "未配置任何 OVH 账户"}
 	}
@@ -32,18 +42,16 @@ func EnqueueSingle(state *app.State, accountID, planCode, datacenter string, opt
 	if RecentSuccessDuplicate(state, planCode, datacenter, options) {
 		return OrderResult{Success: false, Message: "刚刚已成功下过同配置订单，稍后再试"}
 	}
-
-	// 无 options 时尝试从可用性补全
 	if len(options) == 0 {
 		avail := catalog.CheckServerAvailabilityWithConfigs(state, planCode, accountID)
 		for _, cfg := range avail {
 			if st, ok := cfg.Datacenters[datacenter]; ok && st != "" && st != "unavailable" && st != "unknown" && len(cfg.Options) > 0 {
 				options = append([]string{}, cfg.Options...)
+				item.Options = options
 				break
 			}
 		}
 	}
-
 	if requirePrice {
 		pr := price.GetInternal(state, accountID, planCode, datacenter, options)
 		if !pr.Success {
@@ -54,8 +62,9 @@ func EnqueueSingle(state *app.State, accountID, planCode, datacenter string, opt
 			return OrderResult{Success: false, Message: "价格校验失败：" + err}
 		}
 	}
-
-	item := NewTelegramQueueItem(accountID, planCode, datacenter, options)
+	if item.ID == "" {
+		item = NewTelegramQueueItem(accountID, planCode, datacenter, options)
+	}
 	state.QueueMu.Lock()
 	state.Queue = append(state.Queue, item)
 	state.QueueMu.Unlock()
@@ -80,5 +89,25 @@ func EnqueueSingle(state *app.State, accountID, planCode, datacenter string, opt
 		Message:       fmt.Sprintf("已加入队列: %s @ %s", planCode, strings.ToUpper(datacenter)),
 		TotalOrders:   1,
 		CreatedOrders: 1,
+		ItemIDs:       []string{item.ID},
 	}
+}
+
+// EnqueueTelegram 带进度绑定 / 极速抢 参数的入队。
+func EnqueueTelegram(state *app.State, item types.QueueItem, requirePrice bool) OrderResult {
+	if item.AccountID == "" {
+		item.AccountID = DefaultAccountID(state)
+	}
+	item.PlanCode = strings.TrimSpace(item.PlanCode)
+	item.Datacenter = strings.ToLower(strings.TrimSpace(item.Datacenter))
+	if item.QuickOrder && item.RetryInterval == 0 {
+		item.RetryInterval = 2
+	}
+	if item.QuickOrder && item.Priority == 0 {
+		item.Priority = 100
+	}
+	if item.QuickOrder && item.MaxRetries == 0 {
+		item.MaxRetries = 20
+	}
+	return enqueuePrepared(state, item, requirePrice)
 }

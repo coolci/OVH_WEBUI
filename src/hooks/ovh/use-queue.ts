@@ -73,11 +73,14 @@ export function useCreateQueueItem() {
       retryInterval?: number;
       quantity?: number;
       autoPay?: boolean;
+      force?: boolean;
     }) => {
       const qty = Math.max(1, payload.quantity ?? 1);
       const dcs = payload.datacenters;
       let success = 0;
       let failed = 0;
+      let lastError = "";
+      let canForce = false;
       for (const dc of dcs) {
         for (let i = 0; i < qty; i++) {
           try {
@@ -88,14 +91,19 @@ export function useCreateQueueItem() {
               retryInterval: payload.retryInterval,
               options: payload.options || [],
               autoPay: payload.autoPay ?? false,
+              force: payload.force ?? false,
             });
             success++;
-          } catch (e) {
+          } catch (e: any) {
             failed++;
+            lastError = e?.response?.data?.error || e?.message || "任务创建失败";
+            if (e?.response?.data?.can_force) {
+              canForce = true;
+            }
           }
         }
       }
-      return { success, failed, total: dcs.length * qty };
+      return { success, failed, total: dcs.length * qty, error: lastError, canForce };
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.queue.list() });

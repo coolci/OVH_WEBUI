@@ -90,6 +90,8 @@ func SaveSettings(state *app.State) gin.HandlerFunc {
 			state.Logger.Info("未配置 Telegram Token 或 Chat ID，跳过测试消息。", "")
 		}
 
+		telegram.NotifyPollerConfigChanged()
+
 		c.JSON(http.StatusOK, gin.H{"status": "success"})
 	}
 }

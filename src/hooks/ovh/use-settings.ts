@@ -12,21 +12,17 @@ export interface SettingsConfig {
   iam?: string;
   tgToken?: string;
   tgChatId?: string;
-  webhookUrl?: string;
-  /** 自定义通知地址：补货/下单结果由本程序 POST 到这里（出）。和 Telegram webhook 方向相反 */
+  /** 自定义通知地址：补货/下单结果由本程序 POST 到这里（出站 HTTP，不是 Telegram 入站） */
   notifyWebhookUrl?: string;
 }
 
-export interface TelegramWebhookInfo {
-  url?: string;
-  has_custom_certificate?: boolean;
-  pending_update_count?: number;
-  ip_address?: string;
-  last_error_date?: number;
-  last_error_message?: string;
-  last_synchronization_error_date?: number;
-  max_connections?: number;
-  allowed_updates?: string[];
+export interface TelegramPollerStatus {
+  running?: boolean;
+  configured?: boolean;
+  botUsername?: string;
+  lastError?: string;
+  lastUpdateAt?: string;
+  offset?: number;
 }
 
 /** 读取后端 config */
@@ -42,13 +38,12 @@ export function useSaveSettings() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (payload: SettingsConfig) => {
-      // webhookUrl 不由 /settings 持久化，避免用户误以为已注册到 Telegram
-      const { webhookUrl: _w, ...body } = payload;
-      return (await api.post("/settings", body)).data;
+      return (await api.post("/settings", payload)).data;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.settings.config() });
       qc.invalidateQueries({ queryKey: ["telegram", "verify"] });
+      qc.invalidateQueries({ queryKey: qk.settings.telegramPoller() });
       toast.success("设置已保存");
     },
     onError: (e: any) =>
@@ -56,34 +51,34 @@ export function useSaveSettings() {
   });
 }
 
-/** 向 Telegram 注册 Webhook（与「Telegram 下单」页同一接口） */
-export function useSetTelegramWebhook() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (webhookUrl: string) => {
-      const res = await api.post<{
-        success?: boolean;
-        error?: string;
-        message?: string;
-        webhook_url?: string;
-        webhook_info?: TelegramWebhookInfo;
-      }>("/telegram/set-webhook", { webhook_url: webhookUrl.trim() });
-      if (res.data?.success === false) {
-        throw new Error(res.data?.error || res.data?.message || "Webhook 设置失败");
+/** Telegram 轮询入站状态（走已有 /telegram/verify，避免独立 status 接口 404） */
+export function useTelegramPollerStatus(enabled = true) {
+  return useQuery({
+    queryKey: qk.settings.telegramPoller(),
+    queryFn: async (): Promise<TelegramPollerStatus> => {
+      try {
+        const res = await api.get<{
+          ok?: boolean;
+          reason?: string;
+          polling?: TelegramPollerStatus;
+        }>("/telegram/verify");
+        const p = { ...(res.data?.polling || {}) };
+        if (p.running == null && res.data?.ok) {
+          p.running = true;
+          p.configured = true;
+        }
+        if (p.configured == null) p.configured = !!res.data?.ok;
+        if (!p.running && res.data?.ok === false && res.data.reason) {
+          p.lastError = res.data.reason;
+        }
+        return p;
+      } catch {
+        return { configured: false, lastError: "暂时无法读取（请确认后端已启动）" };
       }
-      return res.data;
     },
-    onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: qk.settings.telegramWebhookInfo() });
-      toast.success(data?.message || `Webhook 已注册：${data?.webhook_url || ""}`);
-    },
-    onError: (e: any) =>
-      toast.error(
-        e?.response?.data?.error ||
-          e?.response?.data?.message ||
-          e?.message ||
-          "Webhook 设置失败"
-      ),
+    enabled,
+    refetchInterval: 8000,
+    retry: false,
   });
 }
 
@@ -95,21 +90,7 @@ export function useCacheInfo() {
   });
 }
 
-/** Telegram Webhook 信息（按需触发，避免无 token 时报错） */
-export function useTelegramWebhookInfo() {
-  return useQuery({
-    queryKey: qk.settings.telegramWebhookInfo(),
-    queryFn: async () => {
-      const res = await api.get<{ success: boolean; webhook_info?: TelegramWebhookInfo; error?: string }>(
-        "/telegram/get-webhook-info"
-      );
-      if (!res.data?.success) throw new Error(res.data?.error || "获取 webhook 信息失败");
-      return res.data.webhook_info || {};
-    },
-    enabled: false,
-    retry: false,
-  });
-}
+
 
 /** 清除缓存 */
 export function useClearCache() {

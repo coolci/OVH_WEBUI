@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ovh-webui/server/internal/app"
+	"github.com/ovh-webui/server/internal/telegram"
 	"github.com/ovh-webui/server/internal/types"
 )
 
@@ -211,6 +212,9 @@ func ProcessQueueLoop(state *app.State) {
 				}
 				if stopReason == "" {
 					return
+				}
+				if snapshot.TelegramMessageID != 0 {
+					telegram.NotifyTaskProgress(state, &snapshot, "failed", map[string]string{"reason": stopReason})
 				}
 				if !outcome.Fatal {
 					// 确定性失败的原因 PurchaseServer 已经写进 history 了;

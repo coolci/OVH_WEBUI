@@ -532,26 +532,7 @@ export const api = {
     ),
 
   // ==================== Telegram ====================
-  setTelegramWebhook: (webhookUrl: string) =>
-    apiRequest<any>("/api/telegram/set-webhook", {
-      method: "POST",
-      body: JSON.stringify({ webhook_url: webhookUrl }),
-    }),
-  getTelegramWebhookInfo: async (): Promise<{
-    success: boolean;
-    webhook_info?: unknown;
-    error?: string;
-  }> => {
-    try {
-      const raw = await apiRequest<unknown>("/api/telegram/get-webhook-info");
-      if (raw && typeof raw === "object" && "success" in (raw as object)) {
-        return raw as { success: boolean; webhook_info?: unknown; error?: string };
-      }
-      return { success: true, webhook_info: raw };
-    } catch (e) {
-      return { success: false, error: e instanceof Error ? e.message : String(e) };
-    }
-  },
+  getTelegramStatus: () => apiRequest<any>("/api/telegram/status"),
   verifyTelegram: () => apiRequest("/api/telegram/verify"),
 
   getOvhBalance: async () => {

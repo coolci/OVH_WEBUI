@@ -11,6 +11,7 @@ import {
   History as HistoryIcon,
   ChevronUp,
   Plus,
+  Pencil,
   AlertTriangle,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -48,6 +49,7 @@ import {
   useRemoveVPSSubscription,
   useClearVPSMonitor,
   useCreateVPSMonitorSubscription,
+  useUpdateVPSSubscription,
   useVPSMonitorHistory,
   useVPSModels,
   type VPSSubscription,
@@ -81,6 +83,7 @@ function VPSMonitorPage() {
   const [confirmClear, setConfirmClear] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState<VPSSubscription | null>(null);
   const [openAdd, setOpenAdd] = useState(false);
+  const [editSub, setEditSub] = useState<VPSSubscription | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const subs = list.data || [];
@@ -169,14 +172,19 @@ function VPSMonitorPage() {
               sub={s}
               expanded={expanded === s.id}
               onToggleExpand={() => setExpanded((c) => (c === s.id ? null : s.id))}
+              onEdit={() => setEditSub(s)}
               onDelete={() => setConfirmRemove(s)}
             />
           ))}
         </div>
       )}
 
-      {/* 添加订阅 Dialog */}
       <AddVPSDialog open={openAdd} onOpenChange={setOpenAdd} />
+      <AddVPSDialog
+        open={!!editSub}
+        onOpenChange={(v) => !v && setEditSub(null)}
+        initial={editSub}
+      />
 
       {/* 删除确认 */}
       <Dialog open={!!confirmRemove} onOpenChange={(v) => !v && setConfirmRemove(null)}>
@@ -239,11 +247,13 @@ function VPSRow({
   sub,
   expanded,
   onToggleExpand,
+  onEdit,
   onDelete,
 }: {
   sub: VPSSubscription;
   expanded: boolean;
   onToggleExpand: () => void;
+  onEdit: () => void;
   onDelete: () => void;
 }) {
   return (
@@ -283,6 +293,9 @@ function VPSRow({
             </div>
           </div>
           <div className="flex items-center gap-1 flex-shrink-0">
+            <Button variant="ghost" size="icon" onClick={onEdit} aria-label="编辑订阅设置">
+              <Pencil className="w-4 h-4" />
+            </Button>
             <Button
               variant="ghost"
               size="icon"
@@ -377,11 +390,15 @@ function formatTime(ts: string): string {
 function AddVPSDialog({
   open,
   onOpenChange,
+  initial,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  initial?: VPSSubscription | null;
 }) {
   const create = useCreateVPSMonitorSubscription();
+  const update = useUpdateVPSSubscription();
+  const isEdit = !!initial;
   const tgVerify = useTelegramVerify();
   const tgBlocked = tgVerify.data ? !tgVerify.data.ok : false;
   const [ovhSubsidiary, setOvhSubsidiary] = useState("IE");
@@ -399,11 +416,12 @@ function AddVPSDialog({
   const [autoPay, setAutoPay] = useState(false);
 
   useEffect(() => {
+    if (isEdit) return;
     if (models.length === 0) return;
     if (!vpsModel || !models.some((m) => m.planCode === vpsModel)) {
       setVpsModel(models[0].planCode);
     }
-  }, [models, vpsModel]);
+  }, [models, vpsModel, isEdit]);
 
   const reset = () => {
     setVpsModel(models[0]?.planCode || "");
@@ -419,6 +437,26 @@ function AddVPSDialog({
     setAutoPay(false);
   };
 
+  useEffect(() => {
+    if (!open) return;
+    if (initial) {
+      setVpsModel(initial.planCode);
+      setOvhSubsidiary(initial.ovhSubsidiary || "IE");
+      setDatacenters((initial.datacenters || []).join(","));
+      setMonitorLinux(initial.monitorLinux);
+      setMonitorWindows(initial.monitorWindows);
+      setNotifyAvailable(initial.notifyAvailable);
+      setNotifyUnavailable(initial.notifyUnavailable);
+      setAutoOrder(!!initial.autoOrder);
+      setQuantity(initial.quantity && initial.quantity > 0 ? initial.quantity : 1);
+      setAutoOrderAccountId(initial.autoOrderAccountId || "");
+      setAutoPay(!!initial.autoPay);
+      return;
+    }
+    reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initial?.id]);
+
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     const dcs = datacenters
@@ -430,28 +468,30 @@ function AddVPSDialog({
       toast.error("开启自动下单时必须选 OVH 账户");
       return;
     }
-    create.mutate(
-      {
-        planCode: vpsModel,
-        ovhSubsidiary,
-        datacenters: dcs,
-        monitorLinux,
-        monitorWindows,
-        notifyAvailable,
-        notifyUnavailable,
-        autoOrder,
-        quantity: autoOrder ? quantity : undefined,
-        autoOrderAccountId: autoOrder ? autoOrderAccountId : "",
-        autoPay: autoOrder ? autoPay : false,
-      },
-      {
-        onSuccess: () => {
-          reset();
-          onOpenChange(false);
-        },
-      }
-    );
+    const payload = {
+      ovhSubsidiary,
+      datacenters: dcs,
+      monitorLinux,
+      monitorWindows,
+      notifyAvailable,
+      notifyUnavailable,
+      autoOrder,
+      quantity: autoOrder ? quantity : undefined,
+      autoOrderAccountId: autoOrder ? autoOrderAccountId : "",
+      autoPay: autoOrder ? autoPay : false,
+    };
+    const onSuccess = () => {
+      reset();
+      onOpenChange(false);
+    };
+    if (isEdit && initial) {
+      update.mutate({ id: initial.id, ...payload }, { onSuccess });
+      return;
+    }
+    create.mutate({ planCode: vpsModel, ...payload }, { onSuccess });
   };
+
+  const pending = create.isPending || update.isPending;
 
   return (
     <Dialog
@@ -463,12 +503,14 @@ function AddVPSDialog({
     >
       <DialogContent className="w-[95vw] sm:w-full sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>添加 VPS 订阅</DialogTitle>
-          <DialogDescription>选择 VPS 型号与可选条件</DialogDescription>
+          <DialogTitle>{isEdit ? "编辑 VPS 订阅" : "添加 VPS 订阅"}</DialogTitle>
+          <DialogDescription>
+            {isEdit ? "修改提醒与下单方式，不会重置当前库存状态。" : "选择 VPS 型号与可选条件"}
+          </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={submit} className="space-y-4">
-          {tgBlocked && (
+          {!isEdit && tgBlocked && (
             <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3.5 py-2.5">
               <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
               <div className="text-xs flex-1 min-w-0">
@@ -496,12 +538,15 @@ function AddVPSDialog({
               <Select
                 value={vpsModel}
                 onValueChange={setVpsModel}
-                disabled={modelsQ.isPending || models.length === 0}
+                disabled={isEdit || modelsQ.isPending || models.length === 0}
               >
                 <SelectTrigger>
                   <SelectValue placeholder={modelsQ.isPending ? "加载型号…" : "选择在售型号"} />
                 </SelectTrigger>
                 <SelectContent>
+                  {isEdit && vpsModel && !models.some((m) => m.planCode === vpsModel) && (
+                    <SelectItem value={vpsModel}>{vpsModel}（当前订阅）</SelectItem>
+                  )}
                   {models.map((m) => (
                     <SelectItem key={m.planCode} value={m.planCode}>
                       {m.name} ({m.planCode})
@@ -633,10 +678,16 @@ function AddVPSDialog({
             </Button>
             <Button
               type="submit"
-              disabled={create.isPending || tgBlocked || tgVerify.isPending}
-              title={tgBlocked ? "Telegram 通知无效,无法添加订阅" : undefined}
+              disabled={pending || (!isEdit && (tgBlocked || tgVerify.isPending))}
+              title={!isEdit && tgBlocked ? "Telegram 通知无效,无法添加订阅" : undefined}
             >
-              {create.isPending ? "提交中…" : tgVerify.isPending ? "校验通知…" : "确认添加"}
+              {pending
+                ? "提交中…"
+                : !isEdit && tgVerify.isPending
+                  ? "校验通知…"
+                  : isEdit
+                    ? "保存设置"
+                    : "确认添加"}
             </Button>
           </DialogFooter>
         </form>

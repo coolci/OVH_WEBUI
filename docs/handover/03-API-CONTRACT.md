@@ -4,7 +4,7 @@
 
 - Header：`X-API-Key: <API_SECRET_KEY>`
 - 可选：`X-Request-Time`（毫秒时间戳，偏差 >5 分钟拒绝）
-- 白名单免鉴权：`/health`, `/api/health`, `/api/version`, `/api/telegram/webhook` 等
+- 白名单免鉴权：`/health`, `/api/health`, `/api/version` 等（Telegram 入站改为后端 getUpdates 轮询，不再开放 webhook）
 
 ## 多账户
 

@@ -1,4 +1,4 @@
-# Linux Docker 部署（一键 + SSL + Telegram Webhook）
+# Linux Docker 部署（一键 + SSL）
 
 ## 一键部署（推荐）
 
@@ -50,52 +50,22 @@ Internet
        └─ /* ───────────────► frontend:80   (nginx 静态)
 ```
 
-**Telegram Webhook 公网 URL（必须 HTTPS）：**
-
-```text
-https://你的域名/api/telegram/webhook
-```
-
-后端已将此路径加入鉴权白名单（Telegram 无需 X-API-Key）。
+**Telegram：** 设置页填写 Bot Token + Chat ID 即可。后端用 `getUpdates` 长轮询收消息，**不需要**公网 HTTPS Webhook。
 
 ---
 
-## 部署后配置 Webhook
+## 部署后配置 Telegram
 
-### 1. WebUI
+1. 打开 WebUI，用脚本打印的 **API Key** 登录  
+2. **设置 → Telegram** → 填写 Bot Token + Chat ID 并保存  
+3. 保存后后端会清除 Bot 上旧的 Webhook、注册命令菜单并开始轮询  
+4. 在 Telegram 给 Bot 发 `/start` 或 `/help` 验证双向是否通
 
-1. 打开 `https://域名`，用脚本打印的 **API Key** 登录  
-2. **设置** → 填写 Telegram Bot Token + Chat ID  
-3. **Telegram 下单** 页 → 设置 Webhook URL 为：`https://域名`  
-   （后端会自动补全 `/api/telegram/webhook`）
-
-### 2. 命令行
+查看轮询状态：
 
 ```bash
-# 读取密钥
-source <(grep -E '^(API_SECRET_KEY|DOMAIN)=' .env | sed 's/^/export /')
-
-curl -sS -X POST "https://${DOMAIN}/api/telegram/set-webhook" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ${API_SECRET_KEY}" \
-  -d "{\"webhook_url\":\"https://${DOMAIN}\"}"
-
-# 查看状态
-curl -sS "https://${DOMAIN}/api/telegram/get-webhook-info" \
+curl -sS "https://${DOMAIN}/api/telegram/status" \
   -H "X-API-Key: ${API_SECRET_KEY}"
-```
-
-或：
-
-```bash
-./scripts/linux-oneclick-deploy.sh --webhook
-```
-
-### 3. 直接调 Telegram API（调试）
-
-```bash
-curl "https://api.telegram.org/bot<Token>/setWebhook?url=https://你的域名/api/telegram/webhook"
-curl "https://api.telegram.org/bot<Token>/getWebhookInfo"
 ```
 
 ---

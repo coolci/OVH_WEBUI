@@ -13,6 +13,7 @@ import (
 	"github.com/ovh-webui/server/internal/notify"
 	"github.com/ovh-webui/server/internal/numconv"
 	"github.com/ovh-webui/server/internal/ovh"
+	"github.com/ovh-webui/server/internal/telegram"
 	"github.com/ovh-webui/server/internal/types"
 )
 
@@ -344,23 +345,41 @@ func autoOrderOnRestock(state *app.State, sub types.VPSSubscription, dcs []map[s
 		recordVPSPurchase(state, sub, code, out)
 
 		if out.Success {
-			// 同独服:checkout 是 autoPayWithPreferredPaymentMethod:false,
-			// "成功"= 订单已创建、未付款、逾期作废。通知里必须说清楚。
-			payNote := "⚠️ 订单尚未付款：请尽快打开订单链接完成付款,逾期未付订单会自动作废。\n" +
-				"(下单时已按惯例放弃 14 天撤销期,付款即开通)"
-			if sub.AutoPay {
-				payNote = "💳 已请求用账户默认支付方式自动付款,请打开订单链接核对扣款是否成功。\n" +
-					"(下单时已按惯例放弃 14 天撤销期)"
+			var b strings.Builder
+			b.WriteString("✅ VPS 锁单成功！\n\n")
+			b.WriteString("📦 型号: " + sub.PlanCode + "\n")
+			b.WriteString("📍 机房: " + telegram.DisplayDCFull(code) + "\n")
+			if out.OrderID != "" {
+				b.WriteString("🧾 订单号: " + out.OrderID + "\n")
 			}
-			msg := fmt.Sprintf("🎉 VPS 下单成功\n\n型号: %s\n机房: %s\n订单: %s\n%s\n\n%s",
-				sub.PlanCode, code, out.OrderID, out.OrderURL, payNote)
-			notify.Broadcast(state, msg, nil)
+			b.WriteString("\n")
+			if sub.AutoPay {
+				b.WriteString("💳 已请求默认支付方式自动扣款，请点击下方按钮核对支付状态。\n")
+			} else {
+				b.WriteString("⚠️ 订单尚未付款，请点击下方按钮完成支付，逾期将自动作废。\n")
+			}
+			b.WriteString("💡 点击下方按钮直达 OVH 支付账单：")
+			var replyMarkup map[string]interface{}
+			if out.OrderURL != "" {
+				btnText := "💳 前往 OVH 支付订单"
+				if out.OrderID != "" {
+					btnText = "💳 前往 OVH 支付订单 (" + out.OrderID + ")"
+				}
+				replyMarkup = map[string]interface{}{
+					"inline_keyboard": [][]map[string]string{
+						{
+							{"text": btnText, "url": out.OrderURL},
+						},
+					},
+				}
+			}
+			notify.Broadcast(state, b.String(), replyMarkup)
 			// 抢到就停:订阅是"盯着补货",不是"把所有机房都买一遍"
 			return
 		}
 		state.Logger.Error(fmt.Sprintf("[VPS下单] %s @ %s 失败: %s", sub.PlanCode, code, out.Reason), "vps_purchase")
-		notify.Broadcast(state, fmt.Sprintf("⚠️ VPS 自动下单失败\n\n型号: %s\n机房: %s\n原因: %s",
-			sub.PlanCode, code, out.Reason), nil)
+		notify.Broadcast(state, fmt.Sprintf("⚠️ VPS 自动下单未成功\n\n📦 型号: %s\n📍 机房: %s\n⚠️ 原因: %s",
+			sub.PlanCode, telegram.DisplayDCFull(code), out.Reason), nil)
 		if out.Fatal {
 			// 确定性失败:换个机房也是同样结果,别再刷了
 			return

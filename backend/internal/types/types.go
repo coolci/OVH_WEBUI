@@ -92,8 +92,13 @@ type QueueItem struct {
 	// (checkout 的 autoPayWithPreferredPaymentMethod,schema 描述:
 	// "order will be automatically paid with preferred payment method")。
 	// 默认 false:自动扣钱必须是用户显式打开的开关,不能是隐含行为。
-	AutoPay            bool   `json:"autoPay,omitempty"`
+	AutoPay bool `json:"autoPay,omitempty"`
+	// Force 用户强制允许自定义或未收录型号入队
+	Force              bool   `json:"force,omitempty"`
 	ConfigSniperTaskID string `json:"configSniperTaskId,omitempty"`
+	// Telegram 进度回写：入队时记下原消息，抢购过程用 editMessageText 更新。
+	TelegramChatID    string `json:"telegramChatId,omitempty"`
+	TelegramMessageID int64  `json:"telegramMessageId,omitempty"`
 }
 
 // PriceInfo 价格信息

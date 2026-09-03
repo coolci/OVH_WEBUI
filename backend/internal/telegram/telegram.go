@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -67,147 +66,130 @@ func VerifyConfig(state *app.State) (bool, string) {
 }
 
 func SendMessage(state *app.State, message string, replyMarkup map[string]interface{}) bool {
+	_, ok := SendToChat(state, state.Config.Get().TgChatID, message, replyMarkup)
+	return ok
+}
+
+// SendToChat 发到指定 chat，返回 Telegram message_id（用于随后 EditMessage）。
+func SendToChat(state *app.State, chatID interface{}, message string, replyMarkup map[string]interface{}) (int64, bool) {
 	cfg := state.Config.Get()
 	if cfg.TgToken == "" {
 		state.Logger.Warn("Telegram消息未发送: Bot Token未在config中设置", "")
-		return false
+		return 0, false
 	}
-	if cfg.TgChatID == "" {
-		state.Logger.Warn("Telegram消息未发送: Chat ID未在config中设置", "")
-		return false
+	cid := strings.TrimSpace(idToString(chatID))
+	if cid == "" {
+		state.Logger.Warn("Telegram消息未发送: Chat ID 为空", "")
+		return 0, false
 	}
-
-	state.Logger.Info(fmt.Sprintf("准备发送Telegram消息，ChatID: %s, TokenLength: %d", cfg.TgChatID, len(cfg.TgToken)), "")
-
-	url := "https://api.telegram.org/bot" + cfg.TgToken + "/sendMessage"
 	payload := map[string]interface{}{
-		"chat_id": cfg.TgChatID,
+		"chat_id": cid,
 		"text":    message,
 	}
 	if replyMarkup != nil {
 		payload["reply_markup"] = replyMarkup
 	}
-
 	body, _ := json.Marshal(payload)
-
-	state.Logger.Info("发送HTTP请求到Telegram API: "+url[:min(45, len(url))]+"...", "")
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, "https://api.telegram.org/bot"+cfg.TgToken+"/sendMessage", bytes.NewReader(body))
 	if err != nil {
 		state.Logger.Error("发送Telegram消息时发生未预期错误: "+err.Error(), "")
-		return false
+		return 0, false
 	}
 	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		state.Logger.Error("发送Telegram消息时发生网络错误: "+err.Error(), "")
-		return false
+		return 0, false
 	}
 	defer resp.Body.Close()
-
-	state.Logger.Info(fmt.Sprintf("Telegram API响应: 状态码=%d", resp.StatusCode), "")
-
 	respBody, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode == http.StatusOK {
-		state.Logger.Info("Telegram响应数据: "+string(respBody), "")
-		state.Logger.Info("成功发送消息到Telegram", "")
-		return true
+	if resp.StatusCode != http.StatusOK {
+		state.Logger.Error(fmt.Sprintf("发送消息到Telegram失败: 状态码=%d, 响应=%s", resp.StatusCode, string(respBody)), "")
+		return 0, false
 	}
-	state.Logger.Error(fmt.Sprintf("发送消息到Telegram失败: 状态码=%d, 响应=%s", resp.StatusCode, string(respBody)), "")
-	return false
+	var parsed struct {
+		OK     bool `json:"ok"`
+		Result struct {
+			MessageID int64 `json:"message_id"`
+		} `json:"result"`
+	}
+	_ = json.Unmarshal(respBody, &parsed)
+	return parsed.Result.MessageID, parsed.OK || resp.StatusCode == http.StatusOK
 }
 
-// SetWebhook 调用 Telegram setWebhook
-func SetWebhook(state *app.State, webhookURL string) (bool, string, map[string]interface{}) {
+// EditMessage 原地更新一条 Bot 消息（进度闭环）。
+func EditMessage(state *app.State, chatID interface{}, messageID int64, text string, replyMarkup map[string]interface{}) bool {
 	cfg := state.Config.Get()
-	if cfg.TgToken == "" {
-		return false, "未配置 Telegram Bot Token", nil
+	if cfg.TgToken == "" || messageID == 0 {
+		return false
 	}
-	if !strings.HasPrefix(webhookURL, "http://") && !strings.HasPrefix(webhookURL, "https://") {
-		return false, "Webhook URL 必须以 http:// 或 https:// 开头", nil
+	cid := strings.TrimSpace(idToString(chatID))
+	if cid == "" {
+		return false
 	}
-	if !strings.HasSuffix(webhookURL, "/api/telegram/webhook") {
-		webhookURL = strings.TrimSuffix(webhookURL, "/") + "/api/telegram/webhook"
+	payload := map[string]interface{}{
+		"chat_id":    cid,
+		"message_id": messageID,
+		"text":       text,
 	}
-	state.Logger.Info("正在设置 Telegram Webhook: "+webhookURL, "telegram")
-
-	// 带上 secret_token：之后 Telegram 每次回调都会带 X-Telegram-Bot-Api-Secret-Token 头，
-	// webhook handler 用它区分「真的来自 Telegram」和「别人拿 URL 伪造」。
-	secret, secErr := EnsureWebhookSecret(state)
-	if secErr != nil {
-		state.Logger.Warn("生成 webhook secret 失败，本次将不带 secret_token 注册: "+secErr.Error(), "telegram")
+	if replyMarkup != nil {
+		payload["reply_markup"] = replyMarkup
 	}
-
-	setURL := "https://api.telegram.org/bot" + cfg.TgToken + "/setWebhook"
-	q := url.Values{}
-	q.Set("url", webhookURL)
-	if secret != "" {
-		q.Set("secret_token", secret)
+	body, _ := json.Marshal(payload)
+	req, err := http.NewRequest(http.MethodPost, "https://api.telegram.org/bot"+cfg.TgToken+"/editMessageText", bytes.NewReader(body))
+	if err != nil {
+		return false
 	}
-	req, _ := http.NewRequest(http.MethodPost, setURL+"?"+q.Encode(), nil)
+	req.Header.Set("Content-Type", "application/json")
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		state.Logger.Error("请求 Telegram API 失败: "+err.Error(), "telegram")
-		return false, err.Error(), nil
+		state.Logger.Warn("editMessageText 网络错误: "+err.Error(), "telegram")
+		return false
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	var result map[string]interface{}
-	_ = json.Unmarshal(body, &result)
-	if ok, _ := result["ok"].(bool); ok {
-		state.Logger.Info("✅ Telegram Webhook 设置成功: "+webhookURL, "telegram")
-		if secret != "" {
-			// secret 已经推给 Telegram，从此刻起 webhook 强制校验
-			MarkWebhookSecretRegistered(state)
-		}
-		if errMsg := SetMyCommands(state); errMsg != "" {
-			state.Logger.Warn("注册 Bot 命令菜单失败: "+errMsg, "telegram")
-		}
-		// 获取 webhook info
-		var info map[string]interface{}
-		infoResp, err := client.Get("https://api.telegram.org/bot" + cfg.TgToken + "/getWebhookInfo")
-		if err == nil {
-			infoBody, _ := io.ReadAll(infoResp.Body)
-			infoResp.Body.Close()
-			var infoResult map[string]interface{}
-			_ = json.Unmarshal(infoBody, &infoResult)
-			if r, ok := infoResult["result"].(map[string]interface{}); ok {
-				info = r
-			}
-		}
-		return true, webhookURL, info
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		state.Logger.Debug("editMessageText 失败: "+string(respBody), "telegram")
+		return false
 	}
-	desc, _ := result["description"].(string)
-	state.Logger.Error("Telegram Webhook 设置失败: "+desc, "telegram")
-	return false, desc, nil
+	return true
 }
 
-// GetWebhookInfo
-func GetWebhookInfo(state *app.State) (bool, map[string]interface{}, string) {
-	cfg := state.Config.Get()
-	if cfg.TgToken == "" {
-		return false, nil, "未配置 Telegram Bot Token"
+func EmptyInlineKeyboard() map[string]interface{} {
+	return map[string]interface{}{"inline_keyboard": [][]map[string]string{}}
+}
+
+// DeleteWebhook 去掉 Bot 上已注册的 Webhook，否则 getUpdates 会 409。
+func DeleteWebhook(token string) error {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return nil
 	}
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Get("https://api.telegram.org/bot" + cfg.TgToken + "/getWebhookInfo")
+	payload, _ := json.Marshal(map[string]any{"drop_pending_updates": false})
+	req, err := http.NewRequest(http.MethodPost, "https://api.telegram.org/bot"+token+"/deleteWebhook", bytes.NewReader(payload))
 	if err != nil {
-		state.Logger.Error("请求 Telegram API 失败: "+err.Error(), "telegram")
-		return false, nil, err.Error()
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	var result map[string]interface{}
 	_ = json.Unmarshal(body, &result)
 	if ok, _ := result["ok"].(bool); ok {
-		if r, ok := result["result"].(map[string]interface{}); ok {
-			return true, r, ""
-		}
-		return true, nil, ""
+		return nil
 	}
 	desc, _ := result["description"].(string)
-	return false, nil, desc
+	if desc == "" {
+		desc = string(body)
+	}
+	return fmt.Errorf("%s", desc)
 }
 
 // AnswerCallback 应答 callback_query
@@ -309,20 +291,20 @@ func ParseOrderMessage(text string) *OrderInfo {
 		p := remaining[0]
 		if n, ok := parsePositiveInt(p); ok {
 			result.Quantity = n
-		} else if len(p) >= 3 && len(p) <= 4 && isAllLowerAlpha(p) {
-			result.Datacenter = p
+		} else if len(p) >= 3 && len(p) <= 4 && isAlpha(p) {
+			result.Datacenter = strings.ToLower(p)
 		}
 	case 2:
 		p1, p2 := remaining[0], remaining[1]
-		if len(p1) >= 3 && len(p1) <= 4 && isAllLowerAlpha(p1) {
-			result.Datacenter = p1
+		if len(p1) >= 3 && len(p1) <= 4 && isAlpha(p1) {
+			result.Datacenter = strings.ToLower(p1)
 			if n, ok := parsePositiveInt(p2); ok {
 				result.Quantity = n
 			}
 		} else if n, ok := parsePositiveInt(p1); ok {
 			result.Quantity = n
-			if len(p2) >= 3 && len(p2) <= 4 && isAllLowerAlpha(p2) {
-				result.Datacenter = p2
+			if len(p2) >= 3 && len(p2) <= 4 && isAlpha(p2) {
+				result.Datacenter = strings.ToLower(p2)
 			}
 		}
 	}
@@ -347,9 +329,9 @@ func parsePositiveInt(s string) (int, bool) {
 	return n, true
 }
 
-func isAllLowerAlpha(s string) bool {
+func isAlpha(s string) bool {
 	for _, r := range s {
-		if !unicode.IsLetter(r) || !unicode.IsLower(r) {
+		if !unicode.IsLetter(r) {
 			return false
 		}
 	}
@@ -363,7 +345,7 @@ func min(a, b int) int {
 	return b
 }
 
-// SetMyCommands 向 Telegram 注册 Bot 命令菜单（/buy /stock 等）。
+// SetMyCommands 向 Telegram 注册 Bot 命令菜单（/buy /stock /tasks 等）。
 // 成功返回空串；失败返回错误描述。
 func SetMyCommands(state *app.State) string {
 	cfg := state.Config.Get()
@@ -375,13 +357,15 @@ func SetMyCommands(state *app.State) string {
 		Description string `json:"description"`
 	}
 	commands := []botCmd{
-		{Command: "start", Description: "显示帮助"},
+		{Command: "start", Description: "显示帮助与可用操作"},
 		{Command: "help", Description: "命令帮助"},
-		{Command: "stock", Description: "查询库存 planCode"},
-		{Command: "queue", Description: "加入队列 planCode [dc]"},
-		{Command: "buy", Description: "快速下单 planCode [dc]"},
-		{Command: "monitor", Description: "添加监控 planCode"},
-		{Command: "price", Description: "查询价格 planCode dc"},
+		{Command: "buy", Description: "快速下单或抢购 [planCode] [dc]"},
+		{Command: "stock", Description: "查询库存并开抢: /stock <planCode>"},
+		{Command: "tasks", Description: "查看当前抢购任务队列"},
+		{Command: "accounts", Description: "查看与切换 OVH 账号"},
+		{Command: "queue", Description: "加入排队队列: /queue <planCode> [dc]"},
+		{Command: "monitor", Description: "添加库存监控: /monitor <planCode>"},
+		{Command: "price", Description: "查询价格: /price <planCode> <dc>"},
 	}
 	payload, _ := json.Marshal(map[string]interface{}{"commands": commands})
 	apiURL := "https://api.telegram.org/bot" + cfg.TgToken + "/setMyCommands"

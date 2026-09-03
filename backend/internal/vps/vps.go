@@ -15,6 +15,7 @@ import (
 	"github.com/ovh-webui/server/internal/notify"
 	"github.com/ovh-webui/server/internal/numconv"
 	"github.com/ovh-webui/server/internal/ovh"
+	"github.com/ovh-webui/server/internal/telegram"
 	"github.com/ovh-webui/server/internal/types"
 )
 
@@ -294,35 +295,39 @@ func SendSummaryNotification(state *app.State, planCode, ovhSubsidiary string, d
 	var emoji, title string
 	switch changeType {
 	case "initial":
-		emoji, title = "📊", "VPS初始状态"
+		emoji, title = "📊", "VPS 状态概览"
 	case "available":
-		emoji, title = "🎉", "VPS补货通知"
+		emoji, title = "🎉", "发现 VPS 有货！"
 	default:
-		emoji, title = "📦", "VPS下架通知"
+		emoji, title = "📦", "VPS 已下架"
 	}
 	var sb strings.Builder
 	sb.WriteString(emoji + " " + title + "\n\n")
-	sb.WriteString("套餐: " + planDisplay + "\n")
+	sb.WriteString("📦 套餐: " + planDisplay + "\n")
+	sb.WriteString("📦 型号: " + planCode + "\n")
 	if sub := NormalizeSubsidiary(ovhSubsidiary); sub != "" {
-		sb.WriteString("子公司: " + sub + " / " + RegionLabel(ovh.SubsidiaryRegion(sub)) + "\n")
+		sb.WriteString("🌐 区域: " + sub + " (" + RegionLabel(ovh.SubsidiaryRegion(sub)) + ")\n")
 	}
-	sb.WriteString("时间: " + time.Now().Format("2006-01-02 15:04:05") + "\n\n")
-	for idx, dc := range dcs {
+
+	sb.WriteString(fmt.Sprintf("\n📍 机房列表 (%d个):\n", len(dcs)))
+	for _, dc := range dcs {
 		st, _ := dc["status"].(string)
 		statusCN, ok := statusMap[st]
 		if !ok {
 			statusCN = st
 		}
-		name, _ := dc["name"].(string)
 		code, _ := dc["code"].(string)
-		sb.WriteString(fmt.Sprintf("%d. %s (%s)\n   状态: %s", idx+1, name, code, statusCN))
+		dcName := telegram.DisplayDCFull(code)
+		line := "• " + dcName + " · " + statusCN
 		if days, ok := numconv.ToInt64(dc["days"]); ok && days > 0 {
-			sb.WriteString(fmt.Sprintf(" | 预计交付: %d天", days))
+			line += fmt.Sprintf(" (预计 %d天内交付)", days)
 		}
-		sb.WriteString("\n")
+		sb.WriteString(line + "\n")
 	}
+
+	sb.WriteString("\n⏱️ " + time.Now().Format("15:04:05"))
 	if changeType == "available" {
-		sb.WriteString("\n💡 快去抢购吧！")
+		sb.WriteString("\n💡 请前往网页控制台或使用 /buy 极速下单")
 	}
 	result := notify.Broadcast(state, sb.String(), nil) > 0
 	if result {

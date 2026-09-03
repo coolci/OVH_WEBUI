@@ -1,6 +1,5 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Helmet } from "react-helmet-async";
-import { Link } from "react-router-dom";
 import {
   Bell,
   BellOff,
@@ -10,20 +9,18 @@ import {
   History as HistoryIcon,
   ChevronUp,
   Plus,
-  AlertTriangle,
+  Pencil,
 } from "lucide-react";
 import { useState } from "react";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Chip } from "@/components/common/Chip";
-import { AccountSelect } from "@/components/common/AccountSelect";
 import { AccountChip } from "@/components/common/AccountChip";
 import { StatusDot } from "@/components/common/StatusDot";
 import { EmptyState } from "@/components/common/EmptyState";
 import { Skeleton } from "@/components/common/Skeleton";
+import { MonitorSubscribeDialog } from "@/components/monitor/MonitorSubscribeDialog";
 import {
   Dialog,
   DialogContent,
@@ -37,12 +34,9 @@ import {
   useMonitorStatus,
   useRemoveMonitorSubscription,
   useClearMonitor,
-  useCreateMonitorSubscription,
   useMonitorHistory,
   type MonitorSubscription,
 } from "@/hooks/use-monitor";
-import { useTelegramVerify } from "@/hooks/use-telegram";
-import { toast } from "sonner";
 
 /** 服务器监控订阅 */
 function MonitorPage() {
@@ -53,6 +47,7 @@ function MonitorPage() {
   const [confirmClear, setConfirmClear] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [openAdd, setOpenAdd] = useState(false);
+  const [editSub, setEditSub] = useState<MonitorSubscription | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const subs = list.data || [];
@@ -141,14 +136,23 @@ function MonitorPage() {
               onToggleExpand={() =>
                 setExpanded((curr) => (curr === s.planCode ? null : s.planCode))
               }
+              onEdit={() => setEditSub(s)}
               onDelete={() => setConfirmRemove(s.planCode)}
             />
           ))}
         </div>
       )}
 
-      {/* 添加订阅 Dialog */}
-      <AddSubscriptionDialog open={openAdd} onOpenChange={setOpenAdd} />
+      <MonitorSubscribeDialog open={openAdd} onOpenChange={setOpenAdd} mode="create" />
+      <MonitorSubscribeDialog
+        open={!!editSub}
+        onOpenChange={(v) => !v && setEditSub(null)}
+        mode="edit"
+        lockPlanCode
+        planCode={editSub?.planCode}
+        serverName={editSub?.serverName}
+        initial={editSub}
+      />
 
       {/* 删除确认 */}
       <Dialog open={!!confirmRemove} onOpenChange={(v) => !v && setConfirmRemove(null)}>
@@ -209,11 +213,13 @@ function SubRow({
   sub,
   expanded,
   onToggleExpand,
+  onEdit,
   onDelete,
 }: {
   sub: MonitorSubscription;
   expanded: boolean;
   onToggleExpand: () => void;
+  onEdit: () => void;
   onDelete: () => void;
 }) {
   return (
@@ -247,9 +253,16 @@ function SubRow({
               ) : sub.autoOrder ? (
                 <Chip tone="warning">已勾自动下单但未选账户(只通知)</Chip>
               ) : null}
+              {sub.autoPay && <Chip tone="success">自动付款</Chip>}
+              {!sub.notifyAvailable && !sub.notifyUnavailable && !sub.autoOrder && (
+                <Chip tone="default">仅跟踪库存</Chip>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-1 flex-shrink-0">
+            <Button variant="ghost" size="icon" aria-label="编辑订阅设置" onClick={onEdit}>
+              <Pencil className="w-4 h-4" />
+            </Button>
             <Button
               variant="ghost"
               size="icon"
@@ -342,215 +355,6 @@ function formatTime(ts: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(
     d.getHours()
   )}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-}
-
-/* ----------------------------- 添加订阅 Dialog ----------------------------- */
-
-function AddSubscriptionDialog({
-  open,
-  onOpenChange,
-}: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-}) {
-  const create = useCreateMonitorSubscription();
-  const tgVerify = useTelegramVerify();
-  const tgBlocked = tgVerify.data ? !tgVerify.data.ok : false;
-  const [planCode, setPlanCode] = useState("");
-  const [datacenters, setDatacenters] = useState("");
-  const [notifyAvailable, setNotifyAvailable] = useState(true);
-  const [notifyUnavailable, setNotifyUnavailable] = useState(false);
-  const [autoOrder, setAutoOrder] = useState(false);
-  const [quantity, setQuantity] = useState(1);
-  const [autoOrderAccountId, setAutoOrderAccountId] = useState("");
-  const [autoPay, setAutoPay] = useState(false);
-
-  const reset = () => {
-    setPlanCode("");
-    setDatacenters("");
-    setNotifyAvailable(true);
-    setNotifyUnavailable(false);
-    setAutoOrder(false);
-    setQuantity(1);
-    setAutoOrderAccountId("");
-    setAutoPay(false);
-  };
-
-  const submit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const code = planCode.trim();
-    if (!code) {
-      toast.error("请输入服务器型号");
-      return;
-    }
-    const dcs = datacenters
-      .split(",")
-      .map((d) => d.trim())
-      .filter(Boolean);
-
-    if (autoOrder && !autoOrderAccountId) {
-      toast.error("开启自动下单时必须选择 OVH 账户(否则只通知不下单)");
-      return;
-    }
-    create.mutate(
-      {
-        planCode: code,
-        datacenters: dcs,
-        notifyAvailable,
-        notifyUnavailable,
-        autoOrder,
-        quantity: autoOrder ? quantity : undefined,
-        autoOrderAccountId: autoOrder ? autoOrderAccountId : "",
-        autoPay: autoOrder ? autoPay : false,
-      },
-      {
-        onSuccess: () => {
-          reset();
-          onOpenChange(false);
-        },
-      }
-    );
-  };
-
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(v) => {
-        if (!v) reset();
-        onOpenChange(v);
-      }}
-    >
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>添加订阅</DialogTitle>
-          <DialogDescription>填写需要监控的服务器型号与可选条件</DialogDescription>
-        </DialogHeader>
-
-        <form onSubmit={submit} className="space-y-4">
-          {tgBlocked && (
-            <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3.5 py-2.5">
-              <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
-              <div className="text-xs flex-1 min-w-0">
-                <div className="font-medium text-amber-900 dark:text-amber-200">
-                  Telegram 通知未配置或无效
-                </div>
-                <div className="text-amber-800/80 dark:text-amber-200/80 mt-0.5 break-words">
-                  {tgVerify.data?.reason || "请先在设置页配置可用的 Telegram Bot Token 和 Chat ID"}
-                </div>
-                <Link
-                  to="/settings"
-                  className="inline-block mt-1 text-amber-900 dark:text-amber-200 underline underline-offset-2"
-                >
-                  去配置 →
-                </Link>
-              </div>
-            </div>
-          )}
-
-          <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-1.5">
-              服务器型号 <span className="text-destructive">*</span>
-            </label>
-            <Input
-              value={planCode}
-              onChange={(e) => setPlanCode(e.target.value)}
-              placeholder="例如: 24ska01"
-              autoFocus
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-1.5">
-              数据中心（可选，多个用逗号分隔）
-            </label>
-            <Input
-              value={datacenters}
-              onChange={(e) => setDatacenters(e.target.value)}
-              placeholder="例如: gra,rbx,sbg 或留空监控所有"
-            />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label className="flex items-center gap-2.5 cursor-pointer rounded-xl border border-border px-3.5 py-2.5 hover:bg-muted/40 transition-colors">
-              <Checkbox
-                checked={notifyAvailable}
-                onCheckedChange={(v) => setNotifyAvailable(!!v)}
-              />
-              <span className="text-sm">有货时提醒</span>
-            </label>
-            <label className="flex items-center gap-2.5 cursor-pointer rounded-xl border border-border px-3.5 py-2.5 hover:bg-muted/40 transition-colors">
-              <Checkbox
-                checked={notifyUnavailable}
-                onCheckedChange={(v) => setNotifyUnavailable(!!v)}
-              />
-              <span className="text-sm">无货时提醒</span>
-            </label>
-            <label className="flex items-center gap-2.5 cursor-pointer rounded-xl border border-border px-3.5 py-2.5 hover:bg-muted/40 transition-colors sm:col-span-2">
-              <Checkbox checked={autoOrder} onCheckedChange={(v) => setAutoOrder(!!v)} />
-              <span className="text-sm">有货时自动下单</span>
-            </label>
-          </div>
-
-          {autoOrder && (
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1.5">
-                  下单账户 <span className="text-destructive">*</span>
-                </label>
-                <AccountSelect value={autoOrderAccountId} onChange={setAutoOrderAccountId} />
-                <p className="text-[11px] text-muted-foreground mt-1">不选账户 = 只通知不下单</p>
-              </div>
-              <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1.5">
-                下单数量
-              </label>
-              <label className="flex items-center gap-2.5 cursor-pointer rounded-xl border border-border px-3.5 py-2.5 hover:bg-muted/40 transition-colors">
-                <Checkbox checked={autoPay} onCheckedChange={(v) => setAutoPay(!!v)} />
-                <span className="text-sm">抢到后自动付款</span>
-              </label>
-              <Input
-                type="number"
-                min={1}
-                max={100}
-                value={quantity}
-                onChange={(e) => {
-                  const v = Number(e.target.value);
-                  if (Number.isFinite(v)) {
-                    setQuantity(Math.max(1, Math.min(100, Math.floor(v))));
-                  }
-                }}
-                placeholder="默认 1"
-              />
-              <p className="text-[11px] text-muted-foreground mt-1.5">
-                总下单量 = 检测出的配置数 × 可用数据中心数 × 数量
-              </p>
-            </div>
-            </div>
-          )}
-
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                reset();
-                onOpenChange(false);
-              }}
-            >
-              取消
-            </Button>
-            <Button
-              type="submit"
-              disabled={create.isPending || tgBlocked || tgVerify.isPending}
-              title={tgBlocked ? "Telegram 通知无效,无法添加订阅" : undefined}
-            >
-              {create.isPending ? "提交中…" : tgVerify.isPending ? "校验通知…" : "确认添加"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
 }
 
 function Stat({ label, value }: { label: string; value: number | string }) {

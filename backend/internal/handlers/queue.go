@@ -11,6 +11,7 @@ import (
 
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/catalog"
+	"github.com/ovh-webui/server/internal/telegram"
 	"github.com/ovh-webui/server/internal/types"
 )
 
@@ -26,6 +27,8 @@ func AddQueueItem(state *app.State) gin.HandlerFunc {
 			RetryInterval int      `json:"retryInterval"`
 			// AutoPay 下单成功后用默认支付方式自动付款(显式开关,默认关)
 			AutoPay bool `json:"autoPay"`
+			// Force 强制添加自定义或未在当前目录收录的型号入队
+			Force bool `json:"force"`
 		}
 		_ = c.ShouldBindJSON(&body)
 		if body.AccountID == "" {
@@ -42,17 +45,14 @@ func AddQueueItem(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "缺少 planCode 或 datacenter"})
 			return
 		}
-		// 入队前挡住"这个账户根本买不到这台机器"的任务(跨区 / 非 Eco / planCode 不存在)。
-		// 前端的下单对话框有独立的账户选择器(web/src/routes/servers.tsx:646),
-		// 机型列表却是按另一个账户拉的 —— 拿欧区机型配美区账户是一键就能做出来的组合。
-		// 而这种任务进了队列后:availabilities 返回 200 + 空数组 → PurchaseServer 判"无货"
-		// → 按 retryInterval 永远重试,日志里永远只有一句"当前无货",用户看不出错在哪。
-		// 所以在这里就说清楚,而不是让它在后台空转到天荒地老。
-		// 探测失败(catalog.PlanVerdictUnknown)不拦 —— 一次网络瞬断不该让用户下不了单。
+		// 入队前检查型号归属。若用户明确指定 Force（例如新品或自定义型号），则记日志并放行入队。
 		if verdict, hint := catalog.ClassifyPlan(state, body.AccountID, body.PlanCode, "queue"); hint != "" {
-			state.Logger.Warn(fmt.Sprintf("[queue] 拒绝任务(判定 %d): %s", verdict, hint), "queue")
-			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": hint})
-			return
+			if !body.Force {
+				state.Logger.Warn(fmt.Sprintf("[queue] 拒绝任务(判定 %d): %s", verdict, hint), "queue")
+				c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": hint, "can_force": true})
+				return
+			}
+			state.Logger.Warn(fmt.Sprintf("[queue] 用户强制添加自定义型号任务(判定 %d): %s 在 %s: %s", verdict, body.PlanCode, body.Datacenter, hint), "queue")
 		}
 		if body.RetryInterval == 0 {
 			body.RetryInterval = 30
@@ -70,6 +70,7 @@ func AddQueueItem(state *app.State) gin.HandlerFunc {
 			RetryCount:    0,
 			LastCheckTime: 0,
 			AutoPay:       body.AutoPay,
+			Force:         body.Force,
 		}
 		state.QueueMu.Lock()
 		state.Queue = append(state.Queue, item)
@@ -107,6 +108,11 @@ func RemoveQueueItem(state *app.State) gin.HandlerFunc {
 		_ = state.SaveQueue()
 		if removed != nil {
 			state.Logger.Info("Removed "+removed.PlanCode+" from queue (ID: "+id+")", "system")
+			if removed.TelegramMessageID != 0 && strings.TrimSpace(removed.TelegramChatID) != "" {
+				telegram.NotifyTaskProgress(state, removed, "cancelled", map[string]string{
+					"reason": "已在网页控制台删除此任务",
+				})
+			}
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "success"})
 	}
@@ -117,6 +123,7 @@ func ClearQueue(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		state.QueueMu.Lock()
 		count := len(state.Queue)
+		oldQueue := append([]types.QueueItem{}, state.Queue...)
 		state.DeletedTaskIDsMu.Lock()
 		for _, it := range state.Queue {
 			state.DeletedTaskIDs[it.ID] = struct{}{}
@@ -125,6 +132,16 @@ func ClearQueue(state *app.State) gin.HandlerFunc {
 		state.Queue = []types.QueueItem{}
 		state.QueueMu.Unlock()
 		_ = state.SaveQueue()
+
+		for _, it := range oldQueue {
+			if it.TelegramMessageID != 0 && strings.TrimSpace(it.TelegramChatID) != "" {
+				itCopy := it
+				telegram.NotifyTaskProgress(state, &itCopy, "cancelled", map[string]string{
+					"reason": "已在网页控制台清空抢购队列",
+				})
+			}
+		}
+
 		state.Logger.Info("Cleared all queue items ("+strconv.Itoa(count)+" items removed)", "")
 		c.JSON(http.StatusOK, gin.H{"status": "success", "count": count})
 	}
@@ -142,16 +159,28 @@ func UpdateQueueStatus(state *app.State) gin.HandlerFunc {
 			body.Status = "pending"
 		}
 		state.QueueMu.Lock()
+		var target *types.QueueItem
 		for i := range state.Queue {
 			if state.Queue[i].ID == id {
 				state.Queue[i].Status = body.Status
 				state.Queue[i].UpdatedAt = types.NowISO()
+				cp := state.Queue[i]
+				target = &cp
 				state.Logger.Info("Updated "+state.Queue[i].PlanCode+" status to "+body.Status, "")
 				break
 			}
 		}
 		state.QueueMu.Unlock()
 		_ = state.SaveQueue()
+
+		if target != nil && target.TelegramMessageID != 0 && strings.TrimSpace(target.TelegramChatID) != "" {
+			if body.Status == "paused" {
+				telegram.NotifyTaskProgress(state, target, "paused", nil)
+			} else if body.Status == "running" {
+				telegram.NotifyTaskProgress(state, target, "queued", nil)
+			}
+		}
+
 		c.JSON(http.StatusOK, gin.H{"status": "success"})
 	}
 }

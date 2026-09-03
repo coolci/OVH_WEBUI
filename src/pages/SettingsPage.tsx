@@ -1,6 +1,6 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Helmet } from "react-helmet-async";
-import { Settings as SettingsIcon, KeyRound, Globe, Send, Database, Save, Webhook, AlertTriangle, CheckCircle2, Plus, Star, RotateCw, Trash2, Pencil } from "lucide-react";
+import { Settings as SettingsIcon, KeyRound, Globe, Send, Database, Save, AlertTriangle, CheckCircle2, Plus, Star, RotateCw, Trash2, Pencil } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -16,8 +16,7 @@ import {
   useSaveSettings,
   useCacheInfo,
   useClearCache,
-  useTelegramWebhookInfo,
-  useSetTelegramWebhook,
+  useTelegramPollerStatus,
   type SettingsConfig,
 } from "@/hooks/use-settings";
 import { getApiSecretKey, setApiSecretKey } from "@/lib/api";
@@ -71,9 +70,7 @@ function SettingsPage() {
       toast.error("配置尚未加载完成，请稍后再保存");
       return;
     }
-    // 与服务端已有配置合并；webhookUrl 不走 /settings
-    const { webhookUrl: _w, ...formRest } = form;
-    const base = { ...cfg.data, ...formRest };
+    const base = { ...cfg.data, ...form };
     const zone = (base.zone || cfg.data.zone || "IE").trim();
     try {
       await save.mutateAsync({
@@ -145,7 +142,7 @@ function SettingsPage() {
             ) : active === "accounts" ? (
               <AccountsSection />
             ) : active === "telegram" ? (
-              <TelegramSection form={form} set={set} onSaveToken={onSave} saving={save.isPending} />
+              <TelegramSection form={form} set={set} />
             ) : (
               <CacheSection />
             )}
@@ -178,71 +175,19 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 function TelegramSection({
   form,
   set,
-  onSaveToken,
-  saving,
 }: {
   form: SettingsConfig;
   set: (k: keyof SettingsConfig, v: string) => void;
-  onSaveToken: () => Promise<void>;
-  saving: boolean;
 }) {
-  const webhook = useTelegramWebhookInfo();
-  const setWebhook = useSetTelegramWebhook();
-
-  // 默认填当前站点源（HTTPS 部署时通常就是正确公网域名）
-  useEffect(() => {
-    if (form.webhookUrl) return;
-    try {
-      const origin = window.location.origin;
-      if (origin.startsWith("https://")) {
-        set("webhookUrl", origin);
-      }
-    } catch {
-      /* ignore */
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // 从 Telegram 拉回已注册 URL 时回填
-  useEffect(() => {
-    if (webhook.data?.url && !form.webhookUrl) {
-      // 展示完整 URL；设置时后端也会自动补全 /api/telegram/webhook
-      set("webhookUrl", webhook.data.url.replace(/\/api\/telegram\/webhook\/?$/, "") || webhook.data.url);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [webhook.data?.url]);
-
-  const onFetch = () => {
-    if (!form.tgToken) {
-      toast.error("请先填写并保存 Bot Token");
-      return;
-    }
-    void webhook.refetch();
-  };
-
-  const onApplyWebhook = async () => {
-    const url = (form.webhookUrl || "").trim();
-    if (!url) {
-      toast.error("请填写 Webhook 公网地址（如 https://ovh.example.com）");
-      return;
-    }
-    if (!form.tgToken?.trim()) {
-      toast.error("请先填写 Bot Token");
-      return;
-    }
-    // 先落库 Token，再调 Telegram setWebhook（与「Telegram 下单」同一链路）
-    try {
-      await onSaveToken();
-      await setWebhook.mutateAsync(url);
-      void webhook.refetch();
-    } catch {
-      /* toast 已处理 */
-    }
-  };
+  const poller = useTelegramPollerStatus();
+  const p = poller.data;
 
   return (
     <Section title="Telegram 通知">
-      <Field label="Bot Token" hint="保存设置后写入后端；Webhook 需再点下方「注册 Webhook」才会生效">
+      <Field
+        label="Bot Token"
+        hint="保存后后端自动开始轮询收消息，无需公网 HTTPS / Webhook。请先给 Bot 发一条消息。"
+      >
         <Input
           type="password"
           value={form.tgToken || ""}
@@ -250,7 +195,10 @@ function TelegramSection({
           placeholder="123456:ABCdef..."
         />
       </Field>
-      <Field label="Chat ID">
+      <Field
+        label="Chat ID"
+        hint="私聊填用户数字 ID；群填负数 ID。只处理这个会话的命令和一键下单。"
+      >
         <Input
           value={form.tgChatId || ""}
           onChange={(e) => set("tgChatId", e.target.value)}
@@ -259,7 +207,7 @@ function TelegramSection({
       </Field>
       <Field
         label="通知 Webhook（可选）"
-        hint="补货/下单结果 POST 到这个地址。和上面 Telegram 回调方向相反，留空则只用 Telegram。"
+        hint="补货/下单结果额外 POST 到这个地址（钉钉/飞书/自建）。留空则只用 Telegram 发消息。"
       >
         <Input
           value={form.notifyWebhookUrl || ""}
@@ -270,118 +218,59 @@ function TelegramSection({
       </Field>
 
       <div className="rounded-2xl border border-border/80 bg-muted/20 p-4 space-y-3">
-        <div>
-          <h3 className="text-[13px] font-semibold flex items-center gap-1.5">
-            <Webhook className="w-4 h-4 text-primary" />
-            Telegram Webhook（公网 HTTPS）
-          </h3>
-          <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
-            Webhook 注册在 Telegram 服务器，不会只存在本地表单。填写域名根即可，后端会自动补全{" "}
-            <code className="font-mono text-[10px]">/api/telegram/webhook</code>。
-          </p>
-        </div>
-        <Field label="公网 URL">
-          <Input
-            value={form.webhookUrl || ""}
-            onChange={(e) => set("webhookUrl", e.target.value)}
-            placeholder="https://ovh.example.com"
-            className="font-mono text-[13px]"
-          />
-        </Field>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            onClick={() => void onApplyWebhook()}
-            disabled={setWebhook.isPending || saving}
-          >
-            <Webhook className={cn("w-3.5 h-3.5", setWebhook.isPending && "animate-pulse")} />
-            {setWebhook.isPending ? "注册中…" : "保存 Token 并注册 Webhook"}
-          </Button>
-          <Button type="button" variant="outline" onClick={onFetch} disabled={webhook.isFetching}>
-            {webhook.isFetching ? "查询中…" : "查看当前 Webhook"}
-          </Button>
-        </div>
-      </div>
-
-      <div className="pt-2">
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-[13px] font-medium flex items-center gap-1.5">
-            <Webhook className="w-3.5 h-3.5 text-muted-foreground" />
-            当前 Webhook 状态（来自 Telegram）
-          </h3>
-        </div>
-
-        {webhook.isError ? (
-          <div className="border border-border rounded-2xl p-4 text-[12px] text-destructive flex items-start gap-2">
+        <h3 className="text-[13px] font-semibold">轮询入站状态</h3>
+        {p?.lastError && !p?.running ? (
+          <div className="text-[12px] text-muted-foreground flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-            <span>{(webhook.error as Error)?.message || "获取 webhook 信息失败"}</span>
+            <span>{p.lastError}</span>
           </div>
-        ) : webhook.data ? (
-          <div className="border border-border rounded-2xl p-4 space-y-2 text-[12px]">
+        ) : null}
+        <div className="space-y-2 text-[12px]">
             <InfoRow
-              label="URL"
+              label="Bot"
               value={
-                webhook.data.url ? (
-                  <code className="font-mono break-all text-foreground">{webhook.data.url}</code>
+                p?.botUsername ? (
+                  <code className="font-mono">@{p.botUsername}</code>
                 ) : (
-                  <Chip tone="warning">未设置</Chip>
+                  <span className="text-muted-foreground">未连接</span>
                 )
               }
             />
             <InfoRow
-              label="待处理更新"
+              label="收消息"
               value={
-                <span className="font-mono">
-                  {webhook.data.pending_update_count ?? 0}
-                </span>
-              }
-            />
-            {webhook.data.ip_address && (
-              <InfoRow
-                label="IP 地址"
-                value={<code className="font-mono">{webhook.data.ip_address}</code>}
-              />
-            )}
-            {webhook.data.max_connections != null && (
-              <InfoRow
-                label="最大连接数"
-                value={<span className="font-mono">{webhook.data.max_connections}</span>}
-              />
-            )}
-            {webhook.data.last_error_date ? (
-              <InfoRow
-                label="上次错误"
-                value={
-                  <div className="text-right">
-                    <Chip tone="danger">
-                      <AlertTriangle className="w-3 h-3" />
-                      {new Date(webhook.data.last_error_date * 1000).toLocaleString("zh-CN")}
-                    </Chip>
-                    {webhook.data.last_error_message && (
-                      <p className="mt-1 text-destructive break-words max-w-[280px]">
-                        {webhook.data.last_error_message}
-                      </p>
-                    )}
-                  </div>
-                }
-              />
-            ) : (
-              <InfoRow
-                label="错误状态"
-                value={
+                p?.running ? (
                   <Chip tone="success">
                     <CheckCircle2 className="w-3 h-3" />
-                    正常
+                    轮询运行中
                   </Chip>
+                ) : p?.configured ? (
+                  <Chip tone="warning">
+                    <AlertTriangle className="w-3 h-3" />
+                    已配置，等待连接
+                  </Chip>
+                ) : (
+                  <Chip tone="default">未配置 Token</Chip>
+                )
+              }
+            />
+            {p?.lastError && p?.running && (
+              <InfoRow
+                label="最近错误"
+                value={<span className="text-destructive break-words">{p.lastError}</span>}
+              />
+            )}
+            {p?.lastUpdateAt && (
+              <InfoRow
+                label="最近入站"
+                value={
+                  <span className="font-mono">
+                    {new Date(p.lastUpdateAt).toLocaleString("zh-CN")}
+                  </span>
                 }
               />
             )}
           </div>
-        ) : (
-          <p className="text-[12px] text-muted-foreground">
-            点击「查看当前 Webhook」从 Telegram 拉取实时状态（非本地缓存）
-          </p>
-        )}
       </div>
     </Section>
   );

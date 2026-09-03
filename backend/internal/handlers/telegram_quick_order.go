@@ -112,7 +112,7 @@ func buildTelegramCommandArgs(mode, planCode, dc string, quantity int, options [
 }
 
 // RegisterTelegramCommands POST /api/telegram/register-commands
-// 单独注册 Bot 命令菜单（不改 webhook）。
+// 单独注册 Bot 命令菜单。
 func RegisterTelegramCommands(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if errMsg := telegram.SetMyCommands(state); errMsg != "" {

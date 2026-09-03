@@ -2,7 +2,7 @@
 # ═══════════════════════════════════════════════════════════════
 # OVH_WEBUI · Linux 一键 Docker 部署
 #   · 自动 HTTPS（Caddy + Let's Encrypt）
-#   · Telegram Webhook 就绪：https://域名/api/telegram/webhook
+#   · Telegram 入站为长轮询，无需公网 Webhook
 # ═══════════════════════════════════════════════════════════════
 #
 # 用法：
@@ -13,7 +13,6 @@
 #   sudo -E ./scripts/linux-oneclick-deploy.sh --yes
 #
 #   ./scripts/linux-oneclick-deploy.sh --no-ssl --yes   # 仅 HTTP 内网
-#   ./scripts/linux-oneclick-deploy.sh --webhook        # 注册 TG Webhook
 #   ./scripts/linux-oneclick-deploy.sh --logs | --down
 #
 set -euo pipefail
@@ -24,7 +23,6 @@ cd "$ROOT"
 YES=0
 NO_SSL=0
 ACTION=up
-SET_WEBHOOK=0
 
 for a in "$@"; do
   case "$a" in
@@ -32,7 +30,12 @@ for a in "$@"; do
     --no-ssl) NO_SSL=1 ;;
     --down) ACTION=down ;;
     --logs) ACTION=logs ;;
-    --webhook) SET_WEBHOOK=1 ;;
+    --webhook)
+      ylw() { printf '\033[33m%s\033[0m\n' "$*"; }
+      ylw "Telegram 已改为长轮询入站，不再需要 --webhook / 公网 HTTPS 回调。"
+      ylw "请在 WebUI 设置里填写 Bot Token 和 Chat ID。"
+      exit 0
+      ;;
     -h|--help)
       sed -n '2,25p' "$0"
       exit 0
@@ -134,7 +137,7 @@ USE_SSL=0
 if [[ "$NO_SSL" -eq 0 ]]; then
   if [[ -z "$DOMAIN" && "$YES" -eq 0 ]]; then
     echo ""
-    ylw "Telegram Webhook 需要公网 HTTPS 域名（DNS A 记录 → 本机公网 IP）。"
+    ylw "公网 HTTPS 可选（Telegram 入站已改为长轮询，不依赖域名）。"
     read -r -p "域名 (例 ovh.example.com，直接回车=仅 HTTP): " DOMAIN || true
   fi
   if [[ -n "${DOMAIN:-}" ]]; then
@@ -166,7 +169,7 @@ if [[ "$NO_SSL" -eq 0 ]]; then
     upsert_env PUBLIC_BASE_URL "https://${DOMAIN}"
     export DOMAIN ACME_EMAIL PUBLIC_BASE_URL
   else
-    ylw "    未设置 DOMAIN → HTTP 模式（Webhook 外网不可用）"
+    ylw "    未设置 DOMAIN → HTTP 模式"
   fi
 else
   ylw "    --no-ssl：HTTP 模式"
@@ -210,15 +213,12 @@ done
 API_KEY="$(grep -E '^API_SECRET_KEY=' .env | head -1 | cut -d= -f2- | tr -d '\r' | tr -d '\"' | tr -d \"\'\")"
 HOST_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 HOST_IP="${HOST_IP:-127.0.0.1}"
-WEBHOOK_URL=""
 UI_URL=""
 
 if [[ "$USE_SSL" -eq 1 ]]; then
   UI_URL="https://${DOMAIN}"
-  WEBHOOK_URL="https://${DOMAIN}/api/telegram/webhook"
 else
   UI_URL="http://${HOST_IP}:${FRONTEND_PORT:-8080}"
-  WEBHOOK_URL="(需要 HTTPS 域名)"
 fi
 
 echo ""
@@ -227,7 +227,6 @@ grn "  部署完成"
 grn "════════════════════════════════════════════════════"
 echo "  Web UI:     ${UI_URL}"
 echo "  Health:     ${UI_URL%/}/health  或 容器内 :19998/health"
-echo "  Webhook:    ${WEBHOOK_URL}"
 if [[ "$USE_SSL" -eq 1 ]]; then
   echo "  证书:       Caddy 自动申请（首次 30–90s，看 caddy 日志）"
 fi
@@ -237,49 +236,11 @@ echo "    ${API_KEY}"
 echo ""
 echo "  配置步骤:"
 echo "    1) 浏览器打开 UI，用上面的 Key 登录"
-echo "    2) 设置 → OVH 账户 + Telegram Token / Chat ID"
-if [[ "$USE_SSL" -eq 1 ]]; then
-  echo "    3) 注册 Webhook（任选）:"
-  echo ""
-  echo "       # WebUI「Telegram 下单」填写: https://${DOMAIN}"
-  echo ""
-  echo "       curl -sS -X POST 'https://${DOMAIN}/api/telegram/set-webhook' \\"
-  echo "         -H 'Content-Type: application/json' \\"
-  echo "         -H 'X-API-Key: ${API_KEY}' \\"
-  echo "         -d '{\"webhook_url\":\"https://${DOMAIN}\"}'"
-  echo ""
-  echo "       # 或: $0 --webhook"
-fi
+echo "    2) 设置 → OVH 账户 + Telegram Token / Chat ID（保存后自动轮询收消息）"
 echo ""
 echo "  日志: $0 --logs"
 echo "  停止: $0 --down"
 echo ""
-
-if [[ "$SET_WEBHOOK" -eq 1 ]]; then
-  if [[ "$USE_SSL" -ne 1 ]]; then
-    red "Webhook 需要 SSL 模式（设置 DOMAIN）"
-    exit 1
-  fi
-  cyn "==> 等待 HTTPS 就绪并注册 Webhook …"
-  for i in $(seq 1 40); do
-    if curl -sf "https://${DOMAIN}/health" >/dev/null 2>&1; then
-      grn "    HTTPS OK"
-      break
-    fi
-    sleep 3
-    [[ "$i" -eq 40 ]] && ylw "    HTTPS 仍未就绪，仍尝试 setWebhook…"
-  done
-  RESP="$(curl -sS -X POST "https://${DOMAIN}/api/telegram/set-webhook" \
-    -H "Content-Type: application/json" \
-    -H "X-API-Key: ${API_KEY}" \
-    -d "{\"webhook_url\":\"https://${DOMAIN}\"}" || true)"
-  echo "    ${RESP}"
-  if echo "${RESP}" | grep -q '"success"[[:space:]]*:[[:space:]]*true'; then
-    grn "    Webhook 设置成功 → ${WEBHOOK_URL}"
-  else
-    ylw "    失败：请先在 UI 配置 Telegram Token，再执行 $0 --webhook"
-  fi
-fi
 
 if [[ "$USE_SSL" -eq 1 ]]; then
   compose "${COMPOSE_HTTPS[@]}" ps

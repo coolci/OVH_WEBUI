@@ -35,3 +35,26 @@ export function lookupDcStatus(
   if (!availMap) return undefined;
   return availMap[dc.code] || (dc.apiCode ? availMap[dc.apiCode] : undefined);
 }
+
+/** 明确有货：不是 unavailable / unknown / 空 */
+export function isDcInStock(status: string | undefined): boolean {
+  return !!status && status !== "unavailable" && status !== "unknown";
+}
+
+/** 目录静态可用性 + 实时 availability 覆盖（实时优先） */
+export function mergeDcAvailability(
+  catalog?: { datacenter?: string; availability?: string }[],
+  realtime?: Record<string, string>
+): Record<string, string> {
+  const m: Record<string, string> = {};
+  for (const d of catalog || []) {
+    const code = String(d.datacenter || "").toLowerCase();
+    if (code && d.availability) m[code] = d.availability;
+  }
+  if (realtime) {
+    for (const [k, v] of Object.entries(realtime)) {
+      if (k && v) m[k.toLowerCase()] = v;
+    }
+  }
+  return m;
+}
