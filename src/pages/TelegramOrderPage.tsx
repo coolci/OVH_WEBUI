@@ -414,7 +414,7 @@ const TelegramOrderPage = () => {
                 className={cn(
                   "terminal-card p-2 sm:p-4 text-left transition-all hover:border-primary/50",
                   selectedMode === mode.mode 
-                    ? "border-primary bg-primary/10 shadow-glow-sm" 
+                    ? "border-primary bg-primary/12 text-foreground" 
                     : "border-border"
                 )}
               >

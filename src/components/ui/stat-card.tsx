@@ -14,29 +14,29 @@ interface StatCardProps {
 
 const variantStyles = {
   default: {
-    icon: "text-muted-foreground bg-muted/80",
+    icon: "text-muted-foreground bg-muted/80 border border-border/80",
     value: "text-foreground",
     ring: "hover:border-border",
   },
   primary: {
-    icon: "text-primary bg-primary/10",
+    icon: "text-primary bg-primary/10 border border-primary/20",
     value: "text-primary",
-    ring: "hover:border-primary/35",
+    ring: "hover:border-primary/30",
   },
   accent: {
-    icon: "text-accent bg-accent/10",
+    icon: "text-accent bg-accent/10 border border-accent/20",
     value: "text-accent",
-    ring: "hover:border-accent/35",
+    ring: "hover:border-accent/30",
   },
   warning: {
-    icon: "text-warning bg-warning/10",
+    icon: "text-warning bg-warning/10 border border-warning/20",
     value: "text-warning",
-    ring: "hover:border-warning/35",
+    ring: "hover:border-warning/30",
   },
   danger: {
-    icon: "text-destructive bg-destructive/10",
+    icon: "text-destructive bg-destructive/10 border border-destructive/20",
     value: "text-destructive",
-    ring: "hover:border-destructive/35",
+    ring: "hover:border-destructive/30",
   },
 };
 
@@ -48,7 +48,7 @@ export const StatCard = forwardRef<HTMLDivElement, StatCardProps>(
       <div
         ref={ref}
         className={cn(
-          "terminal-card p-4 transition-all duration-300 hover-glow",
+          "terminal-card p-4 transition-colors",
           styles.ring,
           className
         )}

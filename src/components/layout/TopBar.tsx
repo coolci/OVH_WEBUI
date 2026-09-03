@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import {
   Bell,
-  Wifi,
   WifiOff,
   Loader2,
   CheckCircle2,
@@ -89,9 +88,10 @@ export function TopBar() {
 
   return (
     <div className="flex-1 flex items-center justify-between gap-2 min-w-0">
-      <div className="flex items-center gap-2 text-sm min-w-0">
-        <span className="hidden sm:inline text-[11px] font-mono text-muted-foreground/80">~/</span>
-        <span className="text-foreground font-semibold tracking-tight truncate max-w-[46vw] sm:max-w-none">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="hidden sm:inline text-[11px] text-muted-foreground/65">控制台</span>
+        <span className="hidden sm:inline text-[11px] text-muted-foreground/35">/</span>
+        <span className="truncate text-[13px] font-semibold tracking-tight text-foreground sm:text-[14px]">
           {currentPath}
         </span>
       </div>
@@ -103,15 +103,15 @@ export function TopBar() {
             isChecking
               ? "border-border text-muted-foreground bg-muted/40"
               : isConnected
-                ? "border-primary/25 text-primary bg-primary/10"
-                : "border-destructive/35 text-destructive bg-destructive/10"
+                ? "border-primary/20 text-primary bg-primary/10"
+                : "border-destructive/30 text-destructive bg-destructive/10"
           )}
           title={isConnected ? "后端已连接" : "后端离线"}
         >
           {isChecking ? (
             <Loader2 className="h-3 w-3 animate-spin" />
           ) : isConnected ? (
-            <Wifi className="h-3 w-3" />
+            <span className="h-1.5 w-1.5 rounded-full bg-primary" />
           ) : (
             <WifiOff className="h-3 w-3" />
           )}
@@ -120,8 +120,7 @@ export function TopBar() {
           </span>
         </div>
 
-        {/* 时间：仅 sm+ */}
-        <span className="hidden md:inline text-xs font-mono text-muted-foreground tabular-nums">
+        <span className="hidden md:inline text-[11px] font-mono text-muted-foreground/75 tabular-nums tracking-tight">
           {time.toLocaleTimeString("zh-CN", { hour12: false })}
         </span>
 
@@ -131,12 +130,12 @@ export function TopBar() {
             <Button
               variant="ghost"
               size="icon"
-              className="relative h-9 w-9 min-h-9 min-w-9 touch-manipulation"
+              className="relative h-9 w-9 min-h-9 min-w-9 touch-manipulation rounded-lg hover:bg-muted"
               onClick={() => void refetch()}
             >
-              <Bell className="h-4 w-4" />
+              <Bell className="h-4 w-4 text-foreground/80" />
               {unreadCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-destructive text-[10px] text-destructive-foreground flex items-center justify-center">
+                <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-destructive text-[10px] font-semibold text-destructive-foreground flex items-center justify-center shadow-sm">
                   {unreadCount > 9 ? "9+" : unreadCount}
                 </span>
               )}
@@ -144,7 +143,7 @@ export function TopBar() {
           </PopoverTrigger>
           <PopoverContent
             align="end"
-            className="w-[min(92vw,360px)] p-0 border-border"
+            className="w-[min(92vw,360px)] p-0 border border-border bg-popover shadow-lg rounded-xl"
             sideOffset={8}
           >
             <div className="flex items-center justify-between px-3 py-2 border-b border-border">

@@ -43,8 +43,8 @@ export function MetricRing({
   return (
     <div className="flex items-center justify-between gap-4 px-5 py-4 h-full">
       <div className="min-w-0">
-        <div className="text-[12px] text-muted-foreground">{label}</div>
-        <div className={cn("mt-1 text-[18px] font-semibold tabular-nums", toneText)}>
+        <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground/80">{label}</div>
+        <div className={cn("mt-1.5 text-[17px] font-bold font-mono tracking-tight tabular-nums", toneText)}>
           {subLabel}
         </div>
       </div>
@@ -67,7 +67,7 @@ export function MetricRing({
             fill="none"
             strokeWidth={stroke}
             strokeLinecap="round"
-            className="stroke-border"
+            className="stroke-muted/50"
             strokeDasharray={`${visibleArc} ${c}`}
           />
           {/* 进度 */}
@@ -83,9 +83,9 @@ export function MetricRing({
           />
         </svg>
         <div className="absolute inset-0 flex items-center justify-center">
-          <span className={cn("text-[20px] font-semibold tabular-nums", toneText)}>
+          <span className={cn("text-[20px] font-black font-mono tracking-tight tabular-nums", toneText)}>
             {Math.round(safePct)}
-            <span className="text-[11px] ml-0.5">%</span>
+            <span className="text-[11px] font-normal ml-0.5 opacity-80">%</span>
           </span>
         </div>
       </div>

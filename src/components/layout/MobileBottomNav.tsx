@@ -59,7 +59,7 @@ export function MobileBottomNav() {
 
   return (
     <>
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-sidebar/90 backdrop-blur-xl border-t border-border/80 safe-area-bottom shadow-[0_-8px_32px_-12px_hsl(0_0%_0%/0.45)]">
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-sidebar/95 backdrop-blur-xl border-t border-border safe-area-bottom">
         <div className="flex items-stretch justify-around min-h-[3.5rem]">
           {primaryNav.map((item) => {
             const isActive = location.pathname === item.to;
@@ -73,12 +73,7 @@ export function MobileBottomNav() {
                   isActive ? "text-primary" : "text-muted-foreground"
                 )}
               >
-                <item.icon
-                  className={cn(
-                    "h-5 w-5 transition-all",
-                    isActive && "drop-shadow-[0_0_6px_hsl(var(--primary))]"
-                  )}
-                />
+                <item.icon className="h-5 w-5 transition-colors" />
                 <span className="text-[10px] font-medium truncate max-w-full px-0.5">
                   {item.label}
                 </span>

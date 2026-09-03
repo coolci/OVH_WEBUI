@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -80,10 +80,6 @@
     --terminal-red: 0 72% 55%;
     --terminal-dim: 220 10% 42%;
 
-    --glow-green: 0 0 28px hsl(158 64% 44% / 0.22);
-    --glow-cyan: 0 0 28px hsl(192 75% 48% / 0.22);
-    --glow-red: 0 0 20px hsl(0 72% 55% / 0.25);
-
     --surface-1: 224 30% 5.5%;
     --surface-2: 224 24% 8%;
     --surface-elevated: 224 22% 10%;
@@ -118,17 +114,22 @@
   }
 
   html {
-    font-family: "DM Sans", system-ui, -apple-system, sans-serif;
+    font-family: "DM Sans", "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "Source Han Sans SC", "HarmonyOS Sans SC", "Segoe UI", system-ui, -apple-system, sans-serif;
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   body {
     @apply bg-background text-foreground antialiased;
-    font-feature-settings: "ss01" 1, "cv11" 1;
+    font-feature-settings: "palt" 1, "cv11" 1, "ss01" 1;
+    font-synthesis: none;
     overflow-x: hidden;
     overscroll-behavior-x: none;
-    letter-spacing: -0.01em;
+    letter-spacing: 0;
+    line-height: 1.5;
   }
 
   /* 数据/代码用等宽 */
@@ -137,13 +138,15 @@
   pre,
   .font-mono,
   [data-mono] {
-    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    letter-spacing: -0.02em;
+    font-family: "JetBrains Mono", "SF Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-feature-settings: "zero" 1, "tnum" 1;
+    letter-spacing: -0.015em;
   }
 
-  h1, h2, h3 {
-    letter-spacing: -0.025em;
+  h1, h2, h3, h4 {
+    letter-spacing: -0.01em;
     font-weight: 600;
+    text-wrap: balance;
   }
 
   @media (hover: none) and (pointer: coarse) {
@@ -175,77 +178,35 @@
 }
 
 @layer components {
-  /* Ambient app canvas — soft vignette + brand glow */
+  /* Clean canvas */
   .app-canvas {
     background-color: hsl(var(--background));
-    background-image:
-      radial-gradient(ellipse 90% 55% at 12% -8%, hsl(158 64% 44% / 0.08), transparent 55%),
-      radial-gradient(ellipse 70% 45% at 92% 0%, hsl(192 75% 48% / 0.055), transparent 50%),
-      radial-gradient(ellipse 60% 40% at 50% 110%, hsl(224 40% 10% / 0.9), transparent 55%);
   }
 
-  /* Soft grid (very subtle depth) */
+  /* Subtle background architectural grid */
   .grid-lines {
     background-image:
       linear-gradient(hsl(var(--foreground) / 0.015) 1px, transparent 1px),
       linear-gradient(90deg, hsl(var(--foreground) / 0.015) 1px, transparent 1px);
-    background-size: 56px 56px;
+    background-size: 40px 40px;
   }
 
-  /* Glass panel */
+  /* Clean glass panel */
   .glass-panel {
-    @apply border border-border/70 backdrop-blur-2xl;
-    background: linear-gradient(
-      155deg,
-      hsl(var(--card) / 0.88) 0%,
-      hsl(var(--surface-2) / 0.72) 100%
-    );
-    box-shadow:
-      0 0 0 1px hsl(var(--foreground) / 0.025),
-      0 10px 40px -12px hsl(0 0% 0% / 0.5),
-      inset 0 1px 0 0 hsl(var(--foreground) / 0.05);
+    @apply border border-border/80 backdrop-blur-xl bg-card/85 rounded-xl;
+    box-shadow: 0 4px 16px -4px hsl(0 0% 0% / 0.3);
   }
 
-  /* Content card */
+  /* Clean card surface */
   .terminal-card {
-    @apply border border-border/80 rounded-2xl overflow-hidden;
-    background: linear-gradient(
-      168deg,
-      hsl(224 26% 7.8%) 0%,
-      hsl(224 30% 5.8%) 100%
-    );
-    box-shadow:
-      0 0 0 1px hsl(var(--foreground) / 0.02),
-      0 16px 48px -20px hsl(0 0% 0% / 0.55),
-      inset 0 1px 0 0 hsl(158 64% 44% / 0.05);
-    transition: border-color 0.2s ease, box-shadow 0.25s ease;
+    @apply border border-border/70 rounded-xl overflow-hidden bg-card/75;
+    box-shadow: 0 1px 3px 0 hsl(0 0% 0% / 0.2);
+    transition: border-color 0.2s ease, background-color 0.2s ease;
   }
 
   .terminal-card:hover {
     border-color: hsl(var(--border));
-    box-shadow:
-      0 0 0 1px hsl(var(--foreground) / 0.03),
-      0 18px 52px -18px hsl(0 0% 0% / 0.58),
-      inset 0 1px 0 0 hsl(158 64% 44% / 0.07);
-  }
-
-  /* Scanlines — very subtle, optional */
-  .scanlines {
-    position: relative;
-  }
-  .scanlines::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 3px,
-      hsl(var(--background) / 0.015) 3px,
-      hsl(var(--background) / 0.015) 4px
-    );
-    pointer-events: none;
-    opacity: 0.5;
+    background-color: hsl(var(--card) / 0.95);
   }
 
   .cursor-blink {
@@ -254,18 +215,6 @@
   @keyframes blink {
     0%, 100% { opacity: 1; }
     50% { opacity: 0; }
-  }
-
-  @keyframes pulse-glow {
-    0%, 100% {
-      box-shadow: 0 0 0 0 hsl(var(--primary) / 0.25);
-    }
-    50% {
-      box-shadow: 0 0 0 6px hsl(var(--primary) / 0);
-    }
-  }
-  .glow-pulse {
-    animation: pulse-glow 2.4s ease-in-out infinite;
   }
 
   .status-online {
@@ -288,21 +237,17 @@
   }
 
   .hover-glow {
-    @apply transition-all duration-300 ease-out;
+    @apply transition-all duration-200;
   }
   .hover-glow:hover {
-    box-shadow: 0 0 0 1px hsl(var(--primary) / 0.2), 0 8px 28px -10px hsl(var(--primary) / 0.25);
-    border-color: hsl(var(--primary) / 0.35);
-  }
-
-  .text-glow:hover {
-    text-shadow: 0 0 12px hsl(var(--primary) / 0.45);
+    border-color: hsl(var(--border));
+    box-shadow: 0 4px 12px -2px hsl(0 0% 0% / 0.25);
   }
 
   @keyframes matrix-fade {
     0% {
       opacity: 0;
-      transform: translateY(6px);
+      transform: translateY(4px);
     }
     100% {
       opacity: 1;
@@ -310,14 +255,11 @@
     }
   }
   .matrix-fade-in {
-    animation: matrix-fade 0.35s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    animation: matrix-fade 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   }
 
   .glow-border {
-    @apply border border-primary/25;
-    box-shadow:
-      0 0 0 1px hsl(var(--primary) / 0.06),
-      0 8px 24px -12px hsl(var(--primary) / 0.2);
+    @apply border border-primary/40;
   }
 
   .terminal-progress {
@@ -325,25 +267,16 @@
   }
   .terminal-progress-bar {
     @apply h-full bg-primary transition-all duration-300 rounded-full;
-    box-shadow: 0 0 12px hsl(var(--primary) / 0.45);
   }
 
-  /* Icon well for headers */
+  /* Clean restrained icon well */
   .icon-well {
-    @apply flex items-center justify-center rounded-xl flex-shrink-0;
-    background: linear-gradient(
-      145deg,
-      hsl(var(--primary) / 0.18) 0%,
-      hsl(var(--accent) / 0.08) 100%
-    );
-    box-shadow:
-      inset 0 1px 0 0 hsl(var(--foreground) / 0.06),
-      0 0 0 1px hsl(var(--primary) / 0.12);
+    @apply flex items-center justify-center rounded-lg flex-shrink-0 bg-muted/60 border border-border/80 text-foreground/80;
   }
 
   /* Section label */
   .section-label {
-    @apply text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground;
+    @apply text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground/75;
   }
 }
 

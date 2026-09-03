@@ -22,8 +22,28 @@ export default {
     },
     extend: {
       fontFamily: {
-        sans: ["DM Sans", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
-        mono: ["JetBrains Mono", "ui-monospace", "SFMono-Regular", "Menlo", "Consolas", "monospace"],
+        sans: [
+          "DM Sans",
+          "Noto Sans SC",
+          "PingFang SC",
+          "Hiragino Sans GB",
+          "Microsoft YaHei UI",
+          "Microsoft YaHei",
+          "Source Han Sans SC",
+          "HarmonyOS Sans SC",
+          "Segoe UI",
+          "system-ui",
+          "-apple-system",
+          "sans-serif",
+        ],
+        mono: [
+          "JetBrains Mono",
+          "ui-monospace",
+          "SFMono-Regular",
+          "Menlo",
+          "Consolas",
+          "monospace",
+        ],
       },
       colors: {
         border: "hsl(var(--border))",
@@ -115,12 +135,10 @@ export default {
         "pulse-glow": "pulse-glow 2.4s ease-in-out infinite",
       },
       boxShadow: {
-        glow: "0 0 24px hsl(var(--primary) / 0.28)",
-        "glow-cyan": "0 0 24px hsl(var(--accent) / 0.28)",
-        "glow-sm": "0 0 12px hsl(var(--primary) / 0.22)",
-        soft: "0 8px 32px -12px hsl(0 0% 0% / 0.5)",
-        terminal:
-          "0 0 0 1px hsl(var(--foreground) / 0.03), 0 12px 40px -16px hsl(0 0% 0% / 0.5), inset 0 1px 0 0 hsl(var(--primary) / 0.06)",
+        soft: "0 4px 20px -4px hsl(0 0% 0% / 0.4)",
+        surface: "0 1px 3px 0 hsl(0 0% 0% / 0.3), 0 8px 24px -8px hsl(0 0% 0% / 0.4)",
+        "surface-hover": "0 2px 6px 0 hsl(0 0% 0% / 0.35), 0 12px 28px -8px hsl(0 0% 0% / 0.45)",
+        terminal: "0 0 0 1px hsl(var(--foreground) / 0.04), 0 8px 24px -8px hsl(0 0% 0% / 0.4)",
       },
     },
   },

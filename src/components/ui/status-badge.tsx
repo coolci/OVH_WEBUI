@@ -377,7 +377,6 @@ export function StatusBadge({
           "rounded-full",
           size === "sm" ? "h-1.5 w-1.5" : "h-2 w-2",
           isAnimated && "animate-pulse",
-          config.glow,
           "bg-current"
         )} />
       )}

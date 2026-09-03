@@ -91,10 +91,10 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
                     to={item.to}
                     onClick={onNavigate}
                     className={cn(
-                      "group flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] font-medium transition-all duration-200",
+                      "group flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] font-medium transition-colors",
                       isActive
-                        ? "bg-primary/12 text-primary shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.18)]"
-                        : "text-sidebar-foreground/85 hover:bg-muted/70 hover:text-foreground"
+                        ? "bg-primary/12 text-primary"
+                        : "text-sidebar-foreground/80 hover:bg-muted/60 hover:text-foreground"
                     )}
                   >
                     <item.icon
@@ -102,13 +102,13 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
                         "h-[1.05rem] w-[1.05rem] transition-colors flex-shrink-0",
                         isActive
                           ? "text-primary"
-                          : "text-muted-foreground group-hover:text-foreground"
+                          : "text-muted-foreground/80 group-hover:text-foreground"
                       )}
-                      strokeWidth={isActive ? 2.25 : 1.75}
+                      strokeWidth={isActive ? 2 : 1.75}
                     />
                     <span className="truncate">{item.label}</span>
                     {isActive && (
-                      <span className="ml-auto h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_8px_hsl(var(--primary))]" />
+                      <span className="ml-auto h-1.5 w-1.5 rounded-full bg-primary" />
                     )}
                   </NavLink>
                 );
@@ -118,11 +118,13 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
         ))}
       </nav>
 
-      <div className="shrink-0 border-t border-sidebar-border/80 p-3">
-        <div className="rounded-lg border border-border/50 bg-muted/30 px-3 py-2 font-mono text-[10px] leading-relaxed text-muted-foreground">
-          <span className="text-primary">●</span> 自托管
-          <span className="mx-1.5 text-border">·</span>
-          多账户
+      <div className="shrink-0 border-t border-sidebar-border p-3">
+        <div className="flex items-center justify-between rounded-lg border border-border/70 bg-muted/30 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
+          <div className="flex items-center gap-1.5">
+            <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+            <span className="font-medium text-foreground/85">集群自托管</span>
+          </div>
+          <span className="font-mono text-[10px] text-muted-foreground/70">多账户</span>
         </div>
       </div>
 

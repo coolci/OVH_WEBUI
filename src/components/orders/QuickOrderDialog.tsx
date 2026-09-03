@@ -1,11 +1,28 @@
 import { useEffect, useMemo, useState } from "react";
-import { z } from "zod";
-import { Loader2, Settings2, Zap } from "lucide-react";
+import { Bell, Loader2, MapPin, ShoppingCart, Zap } from "lucide-react";
+import { toast } from "sonner";
 
-import api from "@/lib/api";
-import { useBackendConnection, useServers } from "@/hooks/useApi";
 import { cn } from "@/lib/utils";
 import { AccountSelect } from "@/components/common/AccountSelect";
+import { PlanCodeCombobox } from "@/components/common/PlanCodeCombobox";
+import { OptionGroupSection } from "@/components/common/OptionGroupSection";
+import { StatusDot } from "@/components/common/StatusDot";
+import { Chip } from "@/components/common/Chip";
+import { groupOptions, type OptionGroupKey } from "@/lib/option-groups";
+import { OVH_DATACENTERS, lookupDcStatus } from "@/lib/datacenters";
+import { useServers, useAddToMonitor } from "@/hooks/use-servers";
+import { useCreateQueueItem } from "@/hooks/use-queue";
+import { useDefaultAccount, useAccounts } from "@/hooks/use-accounts";
+import {
+  useAvailability,
+  buildAvailabilityMap,
+  buildVariantIndex,
+  hasStockWithOption,
+  useOvhCatalog,
+  buildCatalogIndex,
+  computePriceFromOptions,
+  formatPrice,
+} from "@/hooks/use-availability";
 
 import {
   Dialog,
@@ -16,402 +33,410 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { StatusBadge } from "@/components/ui/status-badge";
-
-const quickOrderSchema = z.object({
-  planCode: z.string().trim().min(1),
-  datacenter: z.string().trim().min(1),
-  accountId: z.string().trim().min(1, "请选择下单账户"),
-  options: z.array(z.string().trim().min(1)).max(50).optional(),
-});
 
 type QuickOrderDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 };
 
-function formatWithTax(priceInfo: any): string {
-  const raw = priceInfo?.prices?.withTax;
-  if (raw == null) return "N/A";
-  if (typeof raw === "number" && Number.isFinite(raw)) return raw.toFixed(2);
-  if (typeof raw === "string" && raw.trim() !== "") {
-    const n = Number(raw);
-    return Number.isFinite(n) ? n.toFixed(2) : raw;
-  }
-  if (typeof raw === "object" && raw !== null && "value" in raw) {
-    const n = Number((raw as { value: unknown }).value);
-    return Number.isFinite(n) ? n.toFixed(2) : "N/A";
-  }
-  return "N/A";
+const DEFAULT_RETRY_INTERVAL = 60;
+const OPTION_GROUP_ORDER: OptionGroupKey[] = [
+  "cpu",
+  "memory",
+  "systemStorage",
+  "storage",
+  "bandwidth",
+  "vrack",
+  "other",
+];
+
+function isInStock(status: string | undefined) {
+  return !!status && status !== "unavailable" && status !== "unknown";
 }
 
+/** 侧栏快速下单：与服务器列表「抢购 / 监控」同一套机房、选配、入队逻辑。 */
 export function QuickOrderDialog({ open, onOpenChange }: QuickOrderDialogProps) {
-  const { data: servers, isLoading: isServersLoading, refetch: refetchServers } = useServers();
-  const { isConnected, isChecking, checkConnection } = useBackendConnection();
+  const serversQ = useServers();
+  const availQ = useAvailability();
+  const create = useCreateQueueItem();
+  const addMon = useAddToMonitor();
+  const defaultAcc = useDefaultAccount();
+  const { data: accounts } = useAccounts();
 
-  const [planCode, setPlanCode] = useState<string>("");
-  const [datacenter, setDatacenter] = useState<string>("");
-  const [accountId, setAccountId] = useState<string>("");
-  const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isLoadingPrice, setIsLoadingPrice] = useState(false);
-  const [priceInfo, setPriceInfo] = useState<any>(null);
+  const [accountId, setAccountId] = useState("");
+  const [planCode, setPlanCode] = useState("");
+  const [selectedDCs, setSelectedDCs] = useState<string[]>([]);
+  const [quantity, setQuantity] = useState("1");
+  const [retryInterval, setRetryInterval] = useState(String(DEFAULT_RETRY_INTERVAL));
+  const [picked, setPicked] = useState<Partial<Record<OptionGroupKey, string>>>({});
   const [autoPay, setAutoPay] = useState(false);
 
-  const selectedServer = useMemo(() => {
-    return (servers || []).find((s) => s.planCode === planCode) || null;
-  }, [servers, planCode]);
+  const servers = serversQ.data || [];
+  const server = useMemo(
+    () => servers.find((s) => s.planCode === planCode) || null,
+    [servers, planCode]
+  );
 
-  // 去重 + 规范化：catalog 可能对同机房多配置重复列出，避免下拉出现重复文字
-  const availableDatacenters = useMemo(() => {
-    const dcs = selectedServer?.datacenters || [];
-    const seen = new Set<string>();
-    const out: string[] = [];
-    for (const dc of dcs as { datacenter?: string; availability?: string }[]) {
-      const code = String(dc?.datacenter || "")
-        .trim()
-        .toLowerCase();
-      if (!code || seen.has(code)) continue;
-      const st = String(dc?.availability || "").toLowerCase();
-      if (st === "unavailable" || st === "unknown") continue;
-      seen.add(code);
-      out.push(code);
+  const selectedAccount = accounts?.find((a) => a.id === accountId);
+  const subsidiary = selectedAccount?.zone || defaultAcc?.zone || "IE";
+  const catalogQ = useOvhCatalog(subsidiary);
+  const catalogIdx = useMemo(() => buildCatalogIndex(catalogQ.data), [catalogQ.data]);
+
+  const availMap = useMemo(() => buildAvailabilityMap(availQ.data), [availQ.data]);
+  const variantIndex = useMemo(() => buildVariantIndex(availQ.data), [availQ.data]);
+  const variants = server ? variantIndex[server.planCode] : undefined;
+
+  const grouped = useMemo(
+    () => (server ? groupOptions(server.availableOptions) : null),
+    [server]
+  );
+  const defaultValueSet = useMemo(
+    () => new Set((server?.defaultOptions || []).map((o) => o.value)),
+    [server]
+  );
+
+  const staticDcMap = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const d of server?.datacenters || []) {
+      const code = String(d.datacenter || "").toLowerCase();
+      if (code) m[code] = d.availability;
     }
-    return out.sort();
-  }, [selectedServer]);
+    return m;
+  }, [server]);
 
-  const availableOptions = useMemo(() => {
-    return selectedServer?.availableOptions || [];
-  }, [selectedServer]);
+  const dcMap = useMemo(
+    () => ({ ...staticDcMap, ...(server ? availMap[server.planCode] : undefined) }),
+    [staticDcMap, availMap, server]
+  );
+
+  const inStockCodes = useMemo(
+    () =>
+      OVH_DATACENTERS.filter((dc) => isInStock(lookupDcStatus(dcMap, dc))).map((dc) => dc.code),
+    [dcMap]
+  );
+  const okCount = inStockCodes.length;
+
+  const selectedValues = useMemo(
+    () => (Object.values(picked).filter(Boolean) as string[]),
+    [picked]
+  );
+
+  const price = useMemo(() => {
+    if (!server) return null;
+    return computePriceFromOptions(server.planCode, selectedValues, catalogIdx);
+  }, [server, selectedValues, catalogIdx]);
 
   useEffect(() => {
     if (!open) return;
-    checkConnection();
-    refetchServers();
-  }, [open, checkConnection, refetchServers]);
+    setPlanCode("");
+    setSelectedDCs([]);
+    setQuantity("1");
+    setRetryInterval(String(DEFAULT_RETRY_INTERVAL));
+    setPicked({});
+    setAutoPay(false);
+    setAccountId(defaultAcc?.id || "");
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    setDatacenter("");
-    setSelectedOptions([]);
-    setPriceInfo(null);
-  }, [planCode]);
-
-  useEffect(() => {
-    let aborted = false;
-
-    const loadPrice = async () => {
-      if (!planCode || !datacenter) return;
-      setIsLoadingPrice(true);
-      setPriceInfo(null);
-      try {
-        const result = await api.getServerPrice(planCode, datacenter, selectedOptions);
-        if (!aborted && result?.success && result?.price) {
-          setPriceInfo(result.price);
-        }
-      } catch {
-        // 静默失败：价格展示非阻塞
-      } finally {
-        if (!aborted) setIsLoadingPrice(false);
+    if (!server) {
+      setPicked({});
+      setSelectedDCs([]);
+      return;
+    }
+    const next: Partial<Record<OptionGroupKey, string>> = {};
+    if (grouped) {
+      for (const g of OPTION_GROUP_ORDER) {
+        const list = grouped[g];
+        if (!list?.length) continue;
+        const def = list.find((o) => defaultValueSet.has(o.value));
+        if (def) next[g] = def.value;
       }
-    };
+    }
+    setPicked(next);
+    setSelectedDCs([]);
+  }, [server?.planCode]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    loadPrice();
-    return () => {
-      aborted = true;
-    };
-  }, [planCode, datacenter, selectedOptions]);
-
-  const toggleOption = (value: string) => {
-    setSelectedOptions((prev) =>
-      prev.includes(value) ? prev.filter((x) => x !== value) : [...prev, value],
-    );
+  const optionHasStock = (groupKey: OptionGroupKey, value: string): boolean => {
+    if (groupKey === "bandwidth" || groupKey === "vrack" || groupKey === "cpu" || groupKey === "other") {
+      return true;
+    }
+    return hasStockWithOption(variants, picked as Record<string, string>, groupKey, value);
   };
 
-  const handleSubmit = async () => {
-    const parsed = quickOrderSchema.safeParse({
+  const toggleDC = (code: string) =>
+    setSelectedDCs((prev) => (prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]));
+
+  const qty = Math.max(1, Number(quantity) || 1);
+  const totalTasks = selectedDCs.length * qty;
+  const busy = create.isPending || addMon.isPending;
+  const canSubmit = Boolean(accountId && planCode && selectedDCs.length > 0) && !busy;
+
+  const handleClose = (next: boolean) => {
+    if (busy && !next) return;
+    onOpenChange(next);
+  };
+
+  const handleCreate = async () => {
+    if (!accountId) {
+      toast.error("请选择 OVH 账户");
+      return;
+    }
+    if (!planCode) {
+      toast.error("请选择服务器型号");
+      return;
+    }
+    if (selectedDCs.length === 0) {
+      toast.error("请至少选择一个数据中心");
+      return;
+    }
+    const result = await create.mutateAsync({
+      account_id: accountId,
       planCode,
-      datacenter,
-      accountId,
-      options: selectedOptions,
+      datacenters: selectedDCs,
+      quantity: qty,
+      retryInterval: Number(retryInterval) || DEFAULT_RETRY_INTERVAL,
+      options: selectedValues,
+      autoPay,
     });
-
-    if (!parsed.success) {
-      const msg = parsed.error.issues[0]?.message || "请完善下单信息";
-      // eslint-disable-next-line no-alert
-      alert(msg);
-      return;
+    if (result.success > 0) {
+      toast.success(`已创建 ${result.success}/${result.total} 个抢购任务`);
+      onOpenChange(false);
     }
-
-    if (!isConnected) {
-      // eslint-disable-next-line no-alert
-      alert("后端未连接：请先在【系统设置】配置后端地址和 API 密钥，并确保后端可访问。");
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      const payload = {
-        planCode,
-        datacenter,
-        options: selectedOptions,
-        account_id: accountId,
-        autoPay,
-      };
-      const res = await api.quickOrder(payload);
-      if (res?.success) {
-        // eslint-disable-next-line no-alert
-        alert(res.message || "下单成功（如需支付请前往订单链接）");
-        onOpenChange(false);
-      } else {
-        // eslint-disable-next-line no-alert
-        alert(res?.message || res?.error || "下单失败");
-      }
-    } catch (err: any) {
-      const msg = err?.message?.includes("Failed to fetch")
-        ? "无法连接到后端服务，请检查后端是否运行且跨域已允许"
-        : err?.message || "下单请求失败";
-      // eslint-disable-next-line no-alert
-      alert(msg);
-    } finally {
-      setIsSubmitting(false);
+    if (result.failed > 0) {
+      toast.error(`${result.failed} 个任务创建失败`);
     }
   };
 
-  const connectionLabel = isChecking ? "检测中" : isConnected ? "已连接" : "未连接";
-  const connectionStatus = isChecking ? "processing" : isConnected ? "connected" : "disconnected";
-  const canSubmit = Boolean(accountId && planCode && datacenter) && !isSubmitting && isConnected;
+  const handleMonitor = () => {
+    if (!planCode) {
+      toast.error("请先选择服务器型号");
+      return;
+    }
+    addMon.mutate({
+      planCode,
+      datacenters: OVH_DATACENTERS.map((dc) => dc.code),
+      serverName: server?.name,
+    });
+  };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent
         className={cn(
-          "terminal-card border-primary/30",
-          // 覆盖默认 grid：用 flex 列布局，正文滚动、底栏固定，避免内容撑破视口
-          "flex flex-col gap-0 p-0 overflow-hidden",
-          "w-[calc(100vw-1.25rem)] max-w-md sm:max-w-lg",
-          "max-h-[min(92dvh,720px)]",
+          "!flex h-[min(92dvh,860px)] max-h-[min(92dvh,860px)] !flex-col gap-0 !overflow-hidden p-0",
+          "w-[calc(100vw-1.25rem)] max-w-3xl"
         )}
       >
-        {/* Header */}
-        <DialogHeader className="shrink-0 space-y-2 px-4 pt-4 pb-3 pr-12 sm:px-6 sm:pt-5 border-b border-border/60">
-          <DialogTitle className="text-primary flex items-center gap-2 min-w-0">
-            <Zap className="h-5 w-5 shrink-0" />
+        <DialogHeader className="shrink-0 space-y-1.5 border-b border-border/60 px-4 pb-3 pt-4 pr-12 sm:px-6 sm:pt-5">
+          <DialogTitle className="flex min-w-0 items-center gap-2">
+            <Zap className="h-5 w-5 shrink-0 text-primary" />
             <span className="truncate">快速下单</span>
           </DialogTitle>
-          <DialogDescription asChild>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3 text-left">
-              <span className="text-sm text-muted-foreground leading-snug min-w-0">
-                选择账户、型号与机房后加入抢购队列。
-              </span>
-              <StatusBadge
-                status={connectionStatus as any}
-                label={connectionLabel}
-                size="sm"
-                showDot
-                className="self-start sm:self-auto shrink-0"
-              />
-            </div>
+          <DialogDescription className="text-left text-sm leading-snug">
+            与服务器列表相同：选型号、机房（缺货也可抢）、选配后加入抢购队列，或订阅监控。
           </DialogDescription>
         </DialogHeader>
 
-        {/* Scrollable body */}
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 space-y-4">
-          <div className="space-y-2 min-w-0">
-            <Label>下单账户</Label>
-            <AccountSelect
-              value={accountId}
-              onChange={setAccountId}
-              placeholder="选择 OVH 账户"
-              className="w-full min-w-0"
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6">
+          <div className="space-y-1.5">
+            <label className="block text-[13px] font-medium">OVH 账户 *</label>
+            <AccountSelect value={accountId} onChange={setAccountId} placeholder="选择 OVH 账户" />
+            <p className="text-[11px] text-muted-foreground">
+              下单走该账户凭据，价格地区跟随账户 {subsidiary}
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="block text-[13px] font-medium">服务器型号 *</label>
+            <PlanCodeCombobox
+              value={planCode}
+              onChange={setPlanCode}
+              servers={servers}
+              placeholder={serversQ.isPending ? "型号加载中…" : "选择或搜索服务器型号"}
             />
-            <label className="flex items-center gap-2 text-sm pt-1">
-              <Checkbox checked={autoPay} onCheckedChange={(v) => setAutoPay(!!v)} />
-              抢到后自动付款
-            </label>
+            {server && (
+              <p className="truncate text-[11px] text-muted-foreground">
+                {[server.cpu, server.memory, server.storage, server.bandwidth].filter(Boolean).join(" · ")}
+              </p>
+            )}
           </div>
 
-          <div className="space-y-2 min-w-0">
-            <Label>服务器型号</Label>
-            <Select value={planCode} onValueChange={setPlanCode}>
-              <SelectTrigger className="w-full min-w-0">
-                <SelectValue placeholder={isServersLoading ? "加载中..." : "选择型号"} />
-              </SelectTrigger>
-              <SelectContent
-                position="popper"
-                className="w-[var(--radix-select-trigger-width)] max-w-[min(100vw-2rem,32rem)]"
-              >
-                {(servers || []).map((s) => {
-                  const name = s.name || s.planCode;
-                  // 纯文本：嵌套 span 在 Radix SelectValue 回填时易出现重复/截断异常
-                  const label =
-                    name === s.planCode ? s.planCode : `${name} (${s.planCode})`;
-                  return (
-                    <SelectItem key={s.planCode} value={s.planCode} title={label}>
-                      {label}
-                    </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2 min-w-0">
-            <Label>目标机房</Label>
-            <Select value={datacenter} onValueChange={setDatacenter} disabled={!planCode}>
-              <SelectTrigger className="w-full min-w-0 font-mono uppercase">
-                <SelectValue placeholder={!planCode ? "请先选择型号" : "选择机房"} />
-              </SelectTrigger>
-              <SelectContent
-                position="popper"
-                className="w-[var(--radix-select-trigger-width)]"
-              >
-                {availableDatacenters.length > 0 ? (
-                  availableDatacenters.map((dc) => (
-                    <SelectItem key={dc} value={dc} className="font-mono uppercase">
-                      {dc.toUpperCase()}
-                    </SelectItem>
-                  ))
-                ) : (
-                  <SelectItem value="__none" disabled>
-                    暂无可下单机房
-                  </SelectItem>
-                )}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2 min-w-0">
-            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
-              <Label className="shrink-0">附加选项</Label>
-              <div className="flex items-center gap-2 min-w-0 text-xs text-muted-foreground">
-                {isLoadingPrice ? (
-                  <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin text-primary shrink-0" />
-                    <span>询价中…</span>
-                  </>
-                ) : priceInfo ? (
-                  <span className="truncate">
-                    预估价：€{formatWithTax(priceInfo)}
-                  </span>
-                ) : (
-                  <span className="truncate">选择机房后显示价格</span>
-                )}
+          {server && (
+            <div className="flex flex-wrap items-end justify-between gap-3 rounded-2xl border border-border bg-secondary/30 p-4">
+              <div>
+                <div className="text-[11px] text-muted-foreground">
+                  月费 · {subsidiary}
+                  {selectedValues.length > 0 ? "（随当前选配）" : "（默认配置）"}
+                </div>
+                <div className="mt-0.5 text-2xl font-bold tabular-nums">
+                  {price ? (
+                    formatPrice(price)
+                  ) : (
+                    <span className="text-base font-normal text-muted-foreground">
+                      {catalogQ.isPending ? "价格加载中" : "—"}
+                    </span>
+                  )}
+                </div>
               </div>
+              {okCount > 0 ? (
+                <Chip tone="success">
+                  <StatusDot tone="success" pulse size="xs" />
+                  {okCount}/{OVH_DATACENTERS.length} 可用
+                </Chip>
+              ) : (
+                <Chip tone="danger">
+                  <StatusDot tone="danger" size="xs" />
+                  暂时缺货 · 仍可抢购
+                </Chip>
+              )}
+            </div>
+          )}
+
+          <div>
+            <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
+              <h3 className="flex items-center gap-1.5 text-[13px] font-semibold">
+                <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
+                数据中心 · 选 {selectedDCs.length} / {OVH_DATACENTERS.length}
+              </h3>
+              {planCode && (
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-muted-foreground">
+                    {okCount}/{OVH_DATACENTERS.length} 可用
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-[11px]"
+                    onClick={() => {
+                      if (selectedDCs.length === inStockCodes.length && inStockCodes.length > 0) {
+                        setSelectedDCs([]);
+                        return;
+                      }
+                      setSelectedDCs(inStockCodes.length > 0 ? inStockCodes : OVH_DATACENTERS.map((d) => d.code));
+                    }}
+                  >
+                    {selectedDCs.length > 0 ? "清空" : okCount > 0 ? "选可用" : "全选"}
+                  </Button>
+                </div>
+              )}
             </div>
 
-            {availableOptions.length > 0 ? (
-              <ScrollArea className="h-[min(11rem,28vh)] w-full min-w-0 rounded-md border border-border">
-                <div className="p-2 space-y-2 pr-3">
-                  {availableOptions.map((opt: any) => {
-                    const checked = selectedOptions.includes(opt.value);
-                    return (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => toggleOption(opt.value)}
-                        className={cn(
-                          "w-full max-w-full flex items-start gap-2 rounded-md border px-2.5 py-2 text-left transition-colors min-w-0",
-                          checked
-                            ? "border-primary/30 bg-primary/10"
-                            : "border-border/50 hover:bg-muted/40",
-                        )}
-                      >
-                        <Checkbox
-                          checked={checked}
-                          onCheckedChange={() => toggleOption(opt.value)}
-                          className="mt-0.5 shrink-0"
-                        />
-                        <div className="min-w-0 flex-1 overflow-hidden">
-                          <div className="text-sm leading-snug break-words">
-                            {opt.label || opt.value}
-                          </div>
-                          {opt.label && opt.value && opt.label !== opt.value && (
-                            <div className="text-[11px] text-muted-foreground font-mono break-all mt-0.5">
-                              {opt.value}
-                            </div>
-                          )}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </ScrollArea>
+            {!planCode ? (
+              <div className="rounded-2xl border border-dashed border-border px-3 py-6 text-center text-[13px] text-muted-foreground">
+                请先选择型号，再点选机房。缺货机房也可加入抢购队列。
+              </div>
             ) : (
-              <div className="rounded-md border border-border px-3 py-2.5 text-sm text-muted-foreground">
-                {planCode ? "该型号暂无可选附加项" : "请选择型号后查看可选附加项"}
+              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-4 sm:gap-2">
+                {OVH_DATACENTERS.map((dc) => {
+                  const isOk = isInStock(lookupDcStatus(dcMap, dc));
+                  const isSelected = selectedDCs.includes(dc.code);
+                  return (
+                    <button
+                      key={dc.code}
+                      type="button"
+                      onClick={() => toggleDC(dc.code)}
+                      className={cn(
+                        "flex items-center justify-between rounded-xl border px-3 py-2 text-left transition-colors",
+                        isSelected
+                          ? "border-foreground bg-foreground text-background"
+                          : "border-border hover:bg-secondary/50"
+                      )}
+                    >
+                      <div className="min-w-0">
+                        <div className="font-mono text-[12px] font-bold">{dc.code.toUpperCase()}</div>
+                        <div
+                          className={cn(
+                            "truncate text-[10px]",
+                            isSelected ? "text-background/70" : "text-muted-foreground"
+                          )}
+                        >
+                          {dc.region} · {dc.name}
+                        </div>
+                      </div>
+                      <StatusDot tone={isOk ? "success" : "danger"} size="sm" pulse={isOk && !isSelected} />
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
 
-          {!isConnected && !isChecking && (
-            <div className="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm min-w-0">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-                <span className="text-warning leading-snug min-w-0">
-                  后端未连接：请到【系统设置】配置后端地址与 API 密钥。
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0 self-start sm:self-auto"
-                  onClick={checkConnection}
-                >
-                  重试连接
-                </Button>
-              </div>
+          {grouped &&
+            OPTION_GROUP_ORDER.filter((g) => grouped[g].length > 0).map((g) => (
+              <OptionGroupSection
+                key={g}
+                groupKey={g}
+                options={grouped[g]}
+                picked={picked[g] || ""}
+                defaultValueSet={defaultValueSet}
+                hasStock={variants && variants.length > 0 ? (value) => optionHasStock(g, value) : undefined}
+                onPick={(value) => setPicked((p) => ({ ...p, [g]: value }))}
+              />
+            ))}
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-[11px] text-muted-foreground">每个数据中心数量</label>
+              <Input
+                type="number"
+                min={1}
+                value={quantity}
+                onChange={(e) => setQuantity(e.target.value)}
+              />
             </div>
-          )}
+            <div>
+              <label className="mb-1 block text-[11px] text-muted-foreground">重试间隔（秒）</label>
+              <Input
+                type="number"
+                min={10}
+                value={retryInterval}
+                onChange={(e) => setRetryInterval(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <label className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-border px-3.5 py-2.5 transition-colors hover:bg-muted/40">
+            <Checkbox checked={autoPay} onCheckedChange={(v) => setAutoPay(!!v)} />
+            <div>
+              <div className="text-sm">抢到后自动付款</div>
+              <p className="text-[11px] text-muted-foreground">默认关闭。开启后用 OVH 账户默认支付方式扣款。</p>
+            </div>
+          </label>
         </div>
 
-        {/* Footer */}
-        <div className="shrink-0 border-t border-border/60 bg-background/95 px-4 py-3 sm:px-6 space-y-2">
-          <DialogFooter className="gap-2 sm:gap-2 flex-col-reverse sm:flex-row sm:justify-end">
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full sm:w-auto"
-              onClick={() => onOpenChange(false)}
-            >
+        <div className="relative z-10 shrink-0 space-y-2 border-t border-border/60 bg-card px-4 py-3 sm:px-6">
+          <div className="text-[12px] text-muted-foreground">
+            {selectedDCs.length > 0
+              ? `将创建 ${totalTasks} 个任务（${selectedDCs.length} DC × ${qty}）${
+                  selectedValues.length > 0 ? ` · ${selectedValues.length} 项选配` : ""
+                }`
+              : "请选数据中心后再创建抢购任务"}
+          </div>
+          <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="outline" onClick={() => handleClose(false)} disabled={busy}>
               取消
             </Button>
             <Button
               type="button"
-              className="w-full sm:w-auto"
-              onClick={handleSubmit}
-              disabled={!canSubmit}
+              variant="outline"
+              disabled={!planCode || busy}
+              onClick={handleMonitor}
             >
-              {isSubmitting ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2 shrink-0" />
+              {addMon.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bell className="h-4 w-4" />}
+              加入监控
+            </Button>
+            <Button type="button" disabled={!canSubmit} onClick={() => void handleCreate()}>
+              {create.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                <Zap className="h-4 w-4 mr-2 shrink-0" />
+                <ShoppingCart className="h-4 w-4" />
               )}
-              立即下单
+              {selectedDCs.length > 0 ? `创建 ${totalTasks} 个任务` : "创建抢购任务"}
             </Button>
           </DialogFooter>
-          <div className="flex justify-center sm:justify-end">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="text-xs h-8 text-muted-foreground"
-              onClick={() => {
-                onOpenChange(false);
-                window.location.href = "/settings";
-              }}
-            >
-              <Settings2 className="h-3 w-3 mr-1 shrink-0" />
-              去系统设置
-            </Button>
-          </div>
         </div>
       </DialogContent>
     </Dialog>

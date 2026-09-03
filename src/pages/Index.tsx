@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Helmet } from "react-helmet-async";
 import { Link } from "react-router-dom";
@@ -15,6 +16,7 @@ import {
   Info,
   CheckCheck,
   Calendar,
+  Zap,
   type LucideIcon,
 } from "lucide-react";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -23,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/common/Chip";
 import { StatusDot } from "@/components/common/StatusDot";
 import { EmptyState } from "@/components/common/EmptyState";
+import { QuickOrderDialog } from "@/components/orders/QuickOrderDialog";
 import { Skeleton } from "@/components/common/Skeleton";
 import { MetricRing } from "@/components/common/MetricRing";
 import { useStats } from "@/hooks/use-stats";
@@ -42,9 +45,25 @@ function DashboardPage() {
     .filter((i) => ["running", "pending", "paused"].includes(i.status))
     .slice(0, 4);
 
+  const [quickOrderOpen, setQuickOrderOpen] = useState(false);
+
   return (
     <div className="space-y-6">
-      <PageHeader icon={BarChart3} title="仪表盘" description="OVH 服务器抢购平台状态概览" />
+      <PageHeader
+        icon={BarChart3}
+        title="仪表盘"
+        description="OVH 服务器抢购平台状态概览"
+        action={
+          <Button
+            onClick={() => setQuickOrderOpen(true)}
+            size="sm"
+            className="h-8 gap-1.5 text-xs font-medium"
+          >
+            <Zap className="h-3.5 w-3.5" />
+            快速下单
+          </Button>
+        }
+      />
 
       {/* 顶部 KPI */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -234,7 +253,7 @@ function DashboardPage() {
           </CardContent>
         </Card>
       </div>
-
+      <QuickOrderDialog open={quickOrderOpen} onOpenChange={setQuickOrderOpen} />
     </div>
   );
 }
@@ -272,19 +291,19 @@ function KpiCard({
   loading?: boolean;
 }) {
   return (
-    <Card className="hover-glow transition-all duration-300">
-      <CardContent className="p-5">
-        <div className="flex items-center justify-between mb-4">
+    <Card className="group hover:border-border transition-colors">
+      <CardContent className="p-4 sm:p-5">
+        <div className="flex items-center justify-between mb-3">
           <span className="section-label">{label}</span>
-          <div className="icon-well w-10 h-10">
-            <Icon className="w-5 h-5 text-primary" strokeWidth={1.75} />
+          <div className="icon-well w-9 h-9 sm:w-10 sm:h-10 rounded-lg">
+            <Icon className="w-4 h-4 sm:w-5 sm:h-5 text-primary" strokeWidth={1.8} />
           </div>
         </div>
         <div className="flex items-baseline">
           {loading ? (
-            <Skeleton className="w-16 h-10 rounded-md" />
+            <Skeleton className="w-16 h-8 sm:h-9 rounded-md" />
           ) : (
-            <span className="text-[32px] font-bold font-mono leading-none tracking-tight text-foreground">
+            <span className="text-[28px] sm:text-[32px] font-bold font-mono leading-none tracking-tight text-foreground">
               {value ?? 0}
             </span>
           )}
@@ -292,7 +311,7 @@ function KpiCard({
         </div>
         <Link
           to={linkTo}
-          className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-primary transition-colors"
+          className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground/80 hover:text-primary transition-colors"
         >
           {linkText}
           <ChevronRight className="w-3 h-3" />
@@ -344,14 +363,14 @@ function SystemRow({
 }) {
   const dotTone = ok ? "success" : warnOff ? "warning" : neutralOff ? "muted" : "danger";
   return (
-    <div className="flex justify-between items-center px-3 py-2.5 rounded-lg hover:bg-secondary transition-colors">
-      <div className="inline-flex items-center gap-2 text-[13px]">
-        <span className="text-muted-foreground">{icon}</span>
+    <div className="flex justify-between items-center px-3 py-2.5 rounded-lg hover:bg-white/[0.04] transition-colors">
+      <div className="inline-flex items-center gap-2 text-[13px] font-medium text-foreground/90">
+        <span className="text-muted-foreground/80">{icon}</span>
         <span>{label}</span>
       </div>
       <div className="inline-flex items-center gap-1.5">
         <StatusDot tone={dotTone as any} pulse={ok} size="xs" />
-        <span className={`text-xs ${ok ? "font-medium" : "text-muted-foreground"}`}>{ok ? onText : offText}</span>
+        <span className={`text-xs ${ok ? "font-semibold text-foreground/90" : "text-muted-foreground/70"}`}>{ok ? onText : offText}</span>
       </div>
     </div>
   );
@@ -362,7 +381,7 @@ function SystemRow({
 const Page = () => (
   <>
     <Helmet>
-      <title>仪表盘 | OVH WebUI</title>
+      <title>仪表盘 | OVH 统御</title>
     </Helmet>
     <AppLayout>
       <DashboardPage />

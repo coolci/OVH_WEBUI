@@ -84,7 +84,7 @@ export function PlanCodeCombobox({
         </Button>
       </PopoverTrigger>
       <PopoverContent
-        className="w-[var(--radix-popover-trigger-width)] p-0"
+        className="z-[250] w-[var(--radix-popover-trigger-width)] p-0"
         sideOffset={4}
         // Combobox 嵌在 Radix Dialog 里时,Dialog 会拦 pointerdown / wheel 事件,
         // 导致列表无法用鼠标滚轮 / 触摸板下滑。stopPropagation 让事件留在 Popover 里。

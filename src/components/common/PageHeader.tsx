@@ -2,17 +2,16 @@ import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface PageHeaderProps {
-  icon: LucideIcon;
+  /** Kept optional so existing call sites compile; not rendered. */
+  icon?: LucideIcon;
   title: string;
   description?: string;
   action?: React.ReactNode;
   className?: string;
 }
 
-/**
- * 统一页面顶栏：渐变图标井 + 标题层次 + 操作区
- */
-export function PageHeader({ icon: Icon, title, description, action, className }: PageHeaderProps) {
+/** Page title: type-only, emerald hairline, matches console chrome. */
+export function PageHeader({ title, description, action, className }: PageHeaderProps) {
   return (
     <div
       className={cn(
@@ -20,20 +19,19 @@ export function PageHeader({ icon: Icon, title, description, action, className }
         className
       )}
     >
-      <div className="flex min-w-0 items-center gap-3.5 sm:gap-4">
-        <div className="icon-well h-12 w-12 sm:h-[3.25rem] sm:w-[3.25rem]">
-          <Icon className="h-5 w-5 text-primary sm:h-[1.4rem] sm:w-[1.4rem]" strokeWidth={1.7} />
-        </div>
-        <div className="min-w-0">
-          <h1 className="text-[1.35rem] font-semibold leading-tight tracking-tight text-foreground sm:text-2xl">
-            {title}
-          </h1>
-          {description && (
-            <p className="mt-1 line-clamp-2 text-[12px] leading-relaxed text-muted-foreground sm:line-clamp-1 sm:text-[13px]">
-              {description}
-            </p>
-          )}
-        </div>
+      <div className="relative min-w-0 pl-3.5">
+        <span
+          aria-hidden
+          className="absolute left-0 top-[0.15rem] bottom-[0.15rem] w-0.5 rounded-full bg-primary"
+        />
+        <h1 className="text-[1.22rem] font-semibold leading-tight tracking-tight text-foreground sm:text-[1.38rem]">
+          {title}
+        </h1>
+        {description && (
+          <p className="mt-1 max-w-2xl line-clamp-2 text-[12.5px] leading-relaxed text-muted-foreground sm:line-clamp-1">
+            {description}
+          </p>
+        )}
       </div>
       {action && (
         <div className="flex flex-wrap items-center gap-2 sm:flex-shrink-0 sm:justify-end">
