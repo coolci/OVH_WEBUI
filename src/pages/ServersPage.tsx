@@ -2,7 +2,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Helmet } from "react-helmet-async";
 import {
   Server, RefreshCw, Search, Bell, ShoppingCart, Cpu, MemoryStick, HardDrive, Wifi,
-  Filter, X, Layers, Zap, TrendingUp, ShieldCheck, Database, Eye,
+  Filter, X,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
@@ -15,6 +15,7 @@ import { StatusDot } from "@/components/common/StatusDot";
 import { Skeleton } from "@/components/common/Skeleton";
 import { EmptyState } from "@/components/common/EmptyState";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useServers, type ServerPlan } from "@/hooks/use-servers";
 import { useMonitorList } from "@/hooks/use-monitor";
 import { MonitorSubscribeDialog } from "@/components/monitor/MonitorSubscribeDialog";
@@ -49,6 +50,7 @@ import { OVH_SUBSIDIARIES } from "@/lib/ovh-subsidiaries";
 /** localStorage key：用户手动选过的 subsidiary（持久化跨刷新） */
 const SUB_LS_KEY = "ovh_sniper_price_subsidiary";
 const SUB_MANUAL_LS_KEY = "ovh_sniper_price_subsidiary_manual";
+
 
 function ServersPage() {
   const q = useServers();
@@ -113,7 +115,7 @@ function ServersPage() {
 
   const [search, setSearch] = useState("");
   const [onlyAvailable, setOnlyAvailable] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState<string>("all");
+
   const [detailPlanCode, setDetailPlanCode] = useState<string | null>(null);
   const monitorList = useMonitorList();
   const monitoredCodes = useMemo(
@@ -138,40 +140,17 @@ function ServersPage() {
         `${srv.planCode} ${srv.name} ${srv.cpu} ${srv.memory} ${srv.storage}`.toLowerCase().includes(s)
       );
     }
-    if (selectedCategory !== "all") {
-      out = out.filter((srv) => {
-        const code = srv.planCode.toLowerCase();
-        if (selectedCategory === "ks") {
-          return code.startsWith("24sk") || code.startsWith("ks-") || code.includes("kimsufi");
-        }
-        if (selectedCategory === "rise") {
-          return code.startsWith("24rise") || code.startsWith("rise-");
-        }
-        if (selectedCategory === "adv") {
-          return code.startsWith("24adv") || code.startsWith("adv-") || code.startsWith("advance-") || code.startsWith("scale-") || code.startsWith("hgr-");
-        }
-        if (selectedCategory === "sys") {
-          return code.startsWith("24stor") || code.startsWith("stor-") || code.startsWith("sys-") || code.startsWith("game-");
-        }
-        if (selectedCategory === "mon") {
-          return monitoredCodes.has(srv.planCode);
-        }
-        return true;
-      });
-    }
     if (onlyAvailable) {
       out = out.filter((srv) => {
         const map = availMap[srv.planCode];
         if (map) {
-          // 实时数据：任一 DC 可用即视为可用
           return Object.values(map).some((v) => v && v !== "unavailable" && v !== "unknown");
         }
-        // 实时还没到：用目录里的静态字段兜底
         return srv.datacenters.some((dc) => dc.availability && dc.availability !== "unavailable" && dc.availability !== "unknown");
       });
     }
     return out;
-  }, [list, search, onlyAvailable, selectedCategory, monitoredCodes, availMap]);
+  }, [list, search, onlyAvailable, availMap]);
 
   const detailServer = detailPlanCode ? list.find((s) => s.planCode === detailPlanCode) || null : null;
 
@@ -212,8 +191,9 @@ function ServersPage() {
 
       {/* 工具条 */}
       <Card>
-        <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center gap-3">
-          <div className="relative flex-1 min-w-0">
+        <CardContent className="p-3 flex flex-col gap-2">
+          {/* 搜索栏 */}
+          <div className="relative">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
             <Input
               placeholder="搜索 planCode / 型号 / CPU / 内存..."
@@ -232,160 +212,59 @@ function ServersPage() {
               </button>
             )}
           </div>
-          <Button
-            variant={onlyAvailable ? "default" : "outline"}
-            size="sm"
-            className="rounded-full"
-            onClick={() => setOnlyAvailable((v) => !v)}
-          >
-            <Filter className="w-3.5 h-3.5" />
-            仅显示可用
-          </Button>
-          {/* 价格地区：每个 subsidiary 独立目录、独立币种、独立税率 */}
-          <div className="flex items-center gap-1.5">
-            <select
-              value={subsidiary}
-              onChange={(e) => changeSubsidiary(e.target.value)}
-              className="h-9 rounded-full border border-border bg-background px-3 text-[12px] font-medium focus:outline-none focus:ring-1 focus:ring-primary/40 focus:border-primary/60 transition-colors w-full sm:max-w-[260px]"
-              title={
-                accountSub
-                  ? `价格地区。账户当前绑定 ${accountSub}，实际下单按账户结算`
-                  : "切换价格地区（subsidiary 决定货币 / 税率 / 实际价格）"
-              }
+          {/* 第二行：筛选 + 地区 + 数量 */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              variant={onlyAvailable ? "default" : "outline"}
+              size="sm"
+              className="rounded-full h-8 text-xs"
+              onClick={() => setOnlyAvailable((v) => !v)}
             >
-              {OVH_SUBSIDIARIES.map((s) => (
-                <option key={s.code} value={s.code}>
-                  {s.code} · {s.label}
-                  {accountSub === s.code ? " · 我的账户" : ""}
-                </option>
-              ))}
-            </select>
-            {accountSub && subsidiary !== accountSub && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-9 rounded-full text-[11px]"
-                onClick={resetSubsidiaryToAccount}
-                title={`回到账户绑定的子公司 ${accountSub}`}
+              <Filter className="w-3 h-3" />
+              仅显示可用
+            </Button>
+            {/* 价格地区 */}
+            <div className="flex items-center gap-1.5">
+              <Select
+                value={subsidiary}
+                onValueChange={changeSubsidiary}
               >
-                回到 {accountSub}
-              </Button>
-            )}
-          </div>
-          <span className="text-[12px] text-muted-foreground whitespace-nowrap">
-            {q.isPending ? "加载中..." : `共 ${filtered.length} 款`}
-          </span>
-        </CardContent>
-        {/* 系列分类胶囊选择 */}
-        <div className="px-4 py-2.5 bg-muted/20 border-t border-border/50 flex items-center gap-1.5 overflow-x-auto scrollbar-none">
-          {[
-            {
-              id: "all",
-              label: "全部型号",
-              icon: Layers,
-              count: list.length,
-            },
-            {
-              id: "ks",
-              label: "Kimsufi / KS",
-              icon: Zap,
-              count: list.filter(
-                (s) =>
-                  s.planCode.toLowerCase().startsWith("24sk") ||
-                  s.planCode.toLowerCase().startsWith("ks-") ||
-                  s.planCode.toLowerCase().includes("kimsufi")
-              ).length,
-            },
-            {
-              id: "rise",
-              label: "Rise",
-              icon: TrendingUp,
-              count: list.filter(
-                (s) =>
-                  s.planCode.toLowerCase().startsWith("24rise") ||
-                  s.planCode.toLowerCase().startsWith("rise-")
-              ).length,
-            },
-            {
-              id: "adv",
-              label: "Advance",
-              icon: ShieldCheck,
-              count: list.filter(
-                (s) =>
-                  s.planCode.toLowerCase().startsWith("24adv") ||
-                  s.planCode.toLowerCase().startsWith("adv-") ||
-                  s.planCode.toLowerCase().startsWith("scale-") ||
-                  s.planCode.toLowerCase().startsWith("hgr-")
-              ).length,
-            },
-            {
-              id: "sys",
-              label: "SYS / 存储",
-              icon: Database,
-              count: list.filter(
-                (s) =>
-                  s.planCode.toLowerCase().startsWith("24stor") ||
-                  s.planCode.toLowerCase().startsWith("sys-") ||
-                  s.planCode.toLowerCase().startsWith("stor-") ||
-                  s.planCode.toLowerCase().startsWith("game-")
-              ).length,
-            },
-            {
-              id: "mon",
-              label: "已监控",
-              icon: Eye,
-              count: list.filter((s) => monitoredCodes.has(s.planCode)).length,
-            },
-          ].map((cat) => {
-            const Icon = cat.icon;
-            const isSelected = selectedCategory === cat.id;
-            const isMon = cat.id === "mon";
-
-            return (
-              <button
-                key={cat.id}
-                type="button"
-                onClick={() => setSelectedCategory(cat.id)}
-                className={cn(
-                  "group relative inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 select-none whitespace-nowrap border",
-                  isSelected
-                    ? "bg-background text-foreground shadow-sm border-border/80 font-semibold ring-1 ring-border/50"
-                    : "bg-transparent text-muted-foreground/85 border-transparent hover:text-foreground hover:bg-background/60"
-                )}
-              >
-                <Icon
-                  className={cn(
-                    "w-3.5 h-3.5 transition-colors",
-                    isSelected
-                      ? isMon
-                        ? "text-emerald-500 dark:text-emerald-400"
-                        : "text-foreground"
-                      : isMon && cat.count > 0
-                      ? "text-emerald-500/80 dark:text-emerald-400/80"
-                      : "text-muted-foreground/70 group-hover:text-foreground"
-                  )}
-                />
-                <span>{cat.label}</span>
-                <span
-                  className={cn(
-                    "inline-flex items-center justify-center min-w-[20px] h-[18px] px-1.5 rounded-full text-[11px] tabular-nums font-medium border transition-colors",
-                    isSelected
-                      ? isMon
-                        ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 font-bold"
-                        : "bg-secondary text-foreground border-border font-bold"
-                      : isMon && cat.count > 0
-                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 font-semibold"
-                      : cat.count === 0
-                      ? "bg-transparent text-muted-foreground/40 border-transparent"
-                      : "bg-secondary/60 text-muted-foreground border-border/40"
-                  )}
+                <SelectTrigger
+                  className="h-8 rounded-full text-xs border-border bg-background focus:ring-1 focus:ring-primary/40 w-auto min-w-[140px] max-w-[220px]"
+                  title={
+                    accountSub
+                      ? `价格地区。账户当前绑定 ${accountSub}，实际下单按账户结算`
+                      : "切换价格地区"
+                  }
                 >
-                  {cat.count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {OVH_SUBSIDIARIES.map((s) => (
+                    <SelectItem key={s.code} value={s.code}>
+                      <span className="font-medium">{s.code}</span>
+                      <span className="text-muted-foreground ml-1">· {s.label}{accountSub === s.code ? " · 我的账户" : ""}</span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {accountSub && subsidiary !== accountSub && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 rounded-full text-xs text-muted-foreground hover:text-foreground px-2"
+                  onClick={resetSubsidiaryToAccount}
+                  title={`回到账户绑定的子公司 ${accountSub}`}
+                >
+                  ↩ {accountSub}
+                </Button>
+              )}
+            </div>
+            <span className="ml-auto text-[12px] text-muted-foreground whitespace-nowrap">
+              {q.isPending ? "加载中..." : `共 ${filtered.length} 款`}
+            </span>
+          </div>
+        </CardContent>
       </Card>
 
       {/* 网格 */}
