@@ -822,6 +822,9 @@ func HardwareReplace(state *app.State) gin.HandlerFunc {
 		var body map[string]interface{}
 		_ = c.ShouldBindJSON(&body)
 		componentType, _ := body["componentType"].(string)
+		if componentType == "" {
+			componentType, _ = body["type"].(string)
+		}
 		comment, _ := body["comment"].(string)
 		if componentType == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少 componentType 参数"})

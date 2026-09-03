@@ -9,18 +9,16 @@ import {
   MonitorDot,
   Settings,
   ScrollText,
-  Terminal,
   Cpu,
   User,
   UserCog,
   BarChart3,
   MessageSquare,
   Cloud,
-  Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { QuickOrderDialog } from "@/components/orders/QuickOrderDialog";
-import { Button } from "@/components/ui/button";
+import { BrandBar } from "./BrandBar";
 
 interface AppSidebarProps {
   onNavigate?: () => void;
@@ -73,35 +71,8 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
   const [quickOrderOpen, setQuickOrderOpen] = useState(false);
 
   return (
-    <div className="h-full flex flex-col bg-sidebar">
-      {/* Brand */}
-      <div className="flex h-14 items-center border-b border-sidebar-border/70 px-4">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <div className="icon-well h-9 w-9 shadow-[0_0_20px_-4px_hsl(var(--primary)/0.45)]">
-            <Terminal className="h-4 w-4 text-primary" strokeWidth={1.85} />
-          </div>
-          <div className="min-w-0 leading-tight">
-            <div className="truncate text-sm font-semibold tracking-tight text-foreground">
-              OVH WebUI
-            </div>
-            <div className="font-mono text-[10px] tracking-wide text-muted-foreground">
-              ops · control plane
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Quick order */}
-      <div className="px-3 pt-3">
-        <Button
-          variant="terminal"
-          className="w-full justify-center gap-2 h-9 rounded-lg"
-          onClick={() => setQuickOrderOpen(true)}
-        >
-          <Zap className="h-3.5 w-3.5" />
-          快速下单
-        </Button>
-      </div>
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-sidebar">
+      <BrandBar onQuickOrder={() => setQuickOrderOpen(true)} />
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto py-3 px-2.5">
@@ -147,11 +118,11 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
         ))}
       </nav>
 
-      <div className="p-3 border-t border-sidebar-border/80">
-        <div className="rounded-lg bg-muted/40 border border-border/50 px-3 py-2 text-[10px] text-muted-foreground font-mono leading-relaxed">
-          <span className="text-primary">●</span> 本地控制台
-          <br />
-          <span className="opacity-70">安全操作 · 多账户</span>
+      <div className="shrink-0 border-t border-sidebar-border/80 p-3">
+        <div className="rounded-lg border border-border/50 bg-muted/30 px-3 py-2 font-mono text-[10px] leading-relaxed text-muted-foreground">
+          <span className="text-primary">●</span> 自托管
+          <span className="mx-1.5 text-border">·</span>
+          多账户
         </div>
       </div>
 

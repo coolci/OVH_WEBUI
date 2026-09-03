@@ -23,7 +23,7 @@ export const AppLayout = forwardRef<HTMLDivElement, AppLayoutProps>(({ children 
       <div className="fixed inset-0 pointer-events-none z-[1] scanlines opacity-30" aria-hidden />
 
       <div className="flex min-h-[100dvh] h-[100dvh]">
-        <aside className="hidden lg:flex w-[260px] flex-col border-r border-sidebar-border/90 bg-sidebar/95 backdrop-blur-xl flex-shrink-0 shadow-[4px_0_24px_-12px_hsl(0_0%_0%/0.4)]">
+        <aside className="hidden lg:flex w-[260px] flex-col overflow-hidden border-r border-sidebar-border/90 bg-sidebar/95 backdrop-blur-xl flex-shrink-0 shadow-[4px_0_24px_-12px_hsl(0_0%_0%/0.4)]">
           <AppSidebar />
         </aside>
 

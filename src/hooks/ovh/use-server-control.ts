@@ -884,16 +884,41 @@ export function useServerNetworkSpecs(serviceName: string | null, enabled = true
 
 // ───────────────────────────────── Interventions（创建工单） ─────────────────────────────────
 
-/** 创建硬件干预工单（硬盘 / 内存 / 散热 等）—— 旧前端 POST /interventions */
+/** 故障硬盘。disk_serial 是 OVH schema(dedicated.server.SupportReplaceHddInfo) 的必填字段，
+ *  slot_id 可选。字段名保持 snake_case 与官方一致。 */
+export interface FaultyDisk {
+  disk_serial: string;
+  slot_id?: number;
+}
+
+/** 创建硬件更换工单（硬盘 / 内存 / 散热）。
+ *  端点是 POST /server-control/:svc/hardware/replace —— 对应 OVH
+ *  POST /dedicated/server/{serviceName}/support/replace/{hardDiskDrive|memory|cooling}。
+ *  旧代码发 POST /interventions，后端从未注册（只有 GET），所以此前一直 404。
+ *
+ *  硬盘必须给出故障盘序列号：OVH 的 inverse 语义是「更换所有未列出的盘」，
+ *  空列表 + inverse=true 等于申请更换整机每一块硬盘，后端会直接拒绝。 */
 export function useCreateIntervention() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (args: { serviceName: string; type: string; details?: string; comment?: string }) => {
-      const res = await api.post(`/server-control/${args.serviceName}/interventions`, {
-        type: args.type,
+    mutationFn: async (args: {
+      serviceName: string;
+      type: string;
+      details?: string;
+      comment?: string;
+      disks?: FaultyDisk[];
+      slots?: string[];
+    }) => {
+      const res = await api.post(`/server-control/${args.serviceName}/hardware/replace`, {
+        componentType: args.type,
         details: args.details,
         comment: args.comment,
+        ...(args.disks?.length ? { disks: args.disks } : {}),
+        ...(args.slots?.length ? { slots: args.slots } : {}),
       });
+      if (res.data?.success === false) {
+        throw new Error(res.data?.error || "提交失败");
+      }
       return res.data;
     },
     onSuccess: (_, vars) => {
