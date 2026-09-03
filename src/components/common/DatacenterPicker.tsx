@@ -132,22 +132,41 @@ export function DatacenterPicker({
                 type="button"
                 onClick={() => toggle(dc.code)}
                 className={cn(
-                  "flex items-center justify-between rounded-xl border px-3 py-2 text-left transition-all",
+                  "flex items-center justify-between rounded-xl border px-3 py-2 text-left transition-colors select-none",
                   isSelected
-                    ? "border-primary/70 bg-primary/10 text-foreground ring-1 ring-primary/40 shadow-sm"
-                    : "border-border/60 bg-card/50 hover:bg-secondary/40 hover:border-border text-foreground"
+                    ? "border-foreground bg-foreground text-background shadow-sm"
+                    : "border-border/70 bg-card/40 hover:bg-secondary/50 hover:border-border text-foreground"
                 )}
               >
                 <div className="min-w-0 pr-1">
                   <div className="flex items-center gap-1.5">
                     <span className="font-mono text-[12px] font-bold tracking-tight">{dc.code.toUpperCase()}</span>
                     {isOk ? (
-                      <span className="text-[10px] text-emerald-500 font-medium">有货</span>
+                      <span
+                        className={cn(
+                          "text-[10px] font-medium",
+                          isSelected ? "text-emerald-700 dark:text-emerald-300 font-bold" : "text-emerald-500"
+                        )}
+                      >
+                        有货
+                      </span>
                     ) : (
-                      <span className="text-[10px] text-muted-foreground/60 font-normal">缺货</span>
+                      <span
+                        className={cn(
+                          "text-[10px] font-normal",
+                          isSelected ? "text-background/60" : "text-muted-foreground/60"
+                        )}
+                      >
+                        缺货
+                      </span>
                     )}
                   </div>
-                  <div className="truncate text-[10px] text-muted-foreground">
+                  <div
+                    className={cn(
+                      "truncate text-[10px]",
+                      isSelected ? "text-background/75" : "text-muted-foreground"
+                    )}
+                  >
                     {dc.region} · {dc.name}
                   </div>
                 </div>
@@ -155,7 +174,13 @@ export function DatacenterPicker({
                   <span
                     className={cn(
                       "inline-block w-2 h-2 rounded-full",
-                      isOk ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.35)]" : "bg-muted-foreground/30"
+                      isOk
+                        ? isSelected
+                          ? "bg-emerald-600 dark:bg-emerald-400"
+                          : "bg-emerald-500"
+                        : isSelected
+                          ? "bg-red-500/80 dark:bg-red-400"
+                          : "bg-muted-foreground/30"
                     )}
                   />
                 </div>

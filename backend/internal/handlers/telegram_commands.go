@@ -83,23 +83,27 @@ func cmdStock(state *app.State, args []string) string {
 	outStock := []string{}
 	for dc, st := range dcStatus {
 		if st != "" && st != "unavailable" && st != "unknown" {
-			inStock = append(inStock, strings.ToUpper(dc)+"("+st+")")
+			inStock = append(inStock, telegram.DisplayDCFull(dc)+" ("+st+")")
 		} else {
-			outStock = append(outStock, strings.ToUpper(dc))
+			outStock = append(outStock, telegram.DisplayDCFull(dc))
 		}
 	}
 
 	var b strings.Builder
-	b.WriteString("📦 库存查询: " + planCode + "\n\n")
+	b.WriteString("📦 库存查询结果\n\n")
+	b.WriteString("📦 型号: " + planCode + "\n\n")
 	if len(inStock) > 0 {
-		b.WriteString("✅ 有货机房: " + strings.Join(inStock, ", ") + "\n")
+		b.WriteString(fmt.Sprintf("✅ 有货机房 (%d个):\n", len(inStock)))
+		for _, s := range inStock {
+			b.WriteString("  • " + s + "\n")
+		}
 	} else {
-		b.WriteString("❌ 当前所有机房无货\n")
+		b.WriteString("❌ 当前所有机房均缺货（支持无货挂机抢购）\n")
 	}
 	if len(configLines) > 0 {
-		b.WriteString("\n配置明细:\n")
-		// 最多展示 12 行，避免 Telegram 消息过长
-		limit := 12
+		b.WriteString("\n⚙️ 配置概览:\n")
+		// 最多展示 8 行，避免 Telegram 消息过长
+		limit := 8
 		for i, line := range configLines {
 			if i >= limit {
 				b.WriteString(fmt.Sprintf("…另有 %d 条配置省略\n", len(configLines)-limit))
@@ -108,7 +112,7 @@ func cmdStock(state *app.State, args []string) string {
 			b.WriteString(line + "\n")
 		}
 	}
-	b.WriteString("\n有货时可: /buy " + planCode + " <dc>")
+	b.WriteString("\n💡 立即下单: /buy " + planCode + " <机房代码>")
 	return b.String()
 }
 

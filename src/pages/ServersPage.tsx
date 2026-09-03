@@ -2,7 +2,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Helmet } from "react-helmet-async";
 import {
   Server, RefreshCw, Search, Bell, ShoppingCart, Cpu, MemoryStick, HardDrive, Wifi,
-  Filter,
+  Filter, X, Layers, Zap, TrendingUp, ShieldCheck, Database, Eye,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
@@ -277,35 +277,114 @@ function ServersPage() {
           </span>
         </CardContent>
         {/* 系列分类胶囊选择 */}
-        <div className="px-4 pb-3 flex items-center gap-1.5 overflow-x-auto border-t border-border/40 pt-2.5 scrollbar-none">
+        <div className="px-4 py-2.5 bg-muted/20 border-t border-border/50 flex items-center gap-1.5 overflow-x-auto scrollbar-none">
           {[
-            { id: "all", label: "全部型号", count: list.length },
-            { id: "ks", label: "Kimsufi / KS", count: list.filter(s => s.planCode.toLowerCase().startsWith("24sk") || s.planCode.toLowerCase().startsWith("ks-")).length },
-            { id: "rise", label: "Rise", count: list.filter(s => s.planCode.toLowerCase().startsWith("24rise") || s.planCode.toLowerCase().startsWith("rise-")).length },
-            { id: "adv", label: "Advance", count: list.filter(s => s.planCode.toLowerCase().startsWith("24adv") || s.planCode.toLowerCase().startsWith("adv-") || s.planCode.toLowerCase().startsWith("scale-") || s.planCode.toLowerCase().startsWith("hgr-")).length },
-            { id: "sys", label: "SYS / 存储", count: list.filter(s => s.planCode.toLowerCase().startsWith("24stor") || s.planCode.toLowerCase().startsWith("sys-") || s.planCode.toLowerCase().startsWith("stor-")).length },
-            { id: "mon", label: "已监控", count: list.filter(s => monitoredCodes.has(s.planCode)).length },
-          ].map((cat) => (
-            <button
-              key={cat.id}
-              type="button"
-              onClick={() => setSelectedCategory(cat.id)}
-              className={cn(
-                "px-3 py-1 text-xs font-medium rounded-lg transition-colors whitespace-nowrap flex items-center gap-1.5 border",
-                selectedCategory === cat.id
-                  ? "bg-secondary text-foreground border-border font-semibold shadow-none"
-                  : "bg-transparent text-muted-foreground border-transparent hover:bg-secondary/50 hover:text-foreground"
-              )}
-            >
-              <span>{cat.label}</span>
-              <span className={cn(
-                "text-[10px] px-1.5 py-0.2 rounded-full",
-                selectedCategory === cat.id ? "bg-background/80 text-foreground" : "bg-secondary text-muted-foreground"
-              )}>
-                {cat.count}
-              </span>
-            </button>
-          ))}
+            {
+              id: "all",
+              label: "全部型号",
+              icon: Layers,
+              count: list.length,
+            },
+            {
+              id: "ks",
+              label: "Kimsufi / KS",
+              icon: Zap,
+              count: list.filter(
+                (s) =>
+                  s.planCode.toLowerCase().startsWith("24sk") ||
+                  s.planCode.toLowerCase().startsWith("ks-") ||
+                  s.planCode.toLowerCase().includes("kimsufi")
+              ).length,
+            },
+            {
+              id: "rise",
+              label: "Rise",
+              icon: TrendingUp,
+              count: list.filter(
+                (s) =>
+                  s.planCode.toLowerCase().startsWith("24rise") ||
+                  s.planCode.toLowerCase().startsWith("rise-")
+              ).length,
+            },
+            {
+              id: "adv",
+              label: "Advance",
+              icon: ShieldCheck,
+              count: list.filter(
+                (s) =>
+                  s.planCode.toLowerCase().startsWith("24adv") ||
+                  s.planCode.toLowerCase().startsWith("adv-") ||
+                  s.planCode.toLowerCase().startsWith("scale-") ||
+                  s.planCode.toLowerCase().startsWith("hgr-")
+              ).length,
+            },
+            {
+              id: "sys",
+              label: "SYS / 存储",
+              icon: Database,
+              count: list.filter(
+                (s) =>
+                  s.planCode.toLowerCase().startsWith("24stor") ||
+                  s.planCode.toLowerCase().startsWith("sys-") ||
+                  s.planCode.toLowerCase().startsWith("stor-") ||
+                  s.planCode.toLowerCase().startsWith("game-")
+              ).length,
+            },
+            {
+              id: "mon",
+              label: "已监控",
+              icon: Eye,
+              count: list.filter((s) => monitoredCodes.has(s.planCode)).length,
+            },
+          ].map((cat) => {
+            const Icon = cat.icon;
+            const isSelected = selectedCategory === cat.id;
+            const isMon = cat.id === "mon";
+
+            return (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => setSelectedCategory(cat.id)}
+                className={cn(
+                  "group relative inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 select-none whitespace-nowrap border",
+                  isSelected
+                    ? "bg-background text-foreground shadow-sm border-border/80 font-semibold ring-1 ring-border/50"
+                    : "bg-transparent text-muted-foreground/85 border-transparent hover:text-foreground hover:bg-background/60"
+                )}
+              >
+                <Icon
+                  className={cn(
+                    "w-3.5 h-3.5 transition-colors",
+                    isSelected
+                      ? isMon
+                        ? "text-emerald-500 dark:text-emerald-400"
+                        : "text-foreground"
+                      : isMon && cat.count > 0
+                      ? "text-emerald-500/80 dark:text-emerald-400/80"
+                      : "text-muted-foreground/70 group-hover:text-foreground"
+                  )}
+                />
+                <span>{cat.label}</span>
+                <span
+                  className={cn(
+                    "inline-flex items-center justify-center min-w-[20px] h-[18px] px-1.5 rounded-full text-[11px] tabular-nums font-medium border transition-colors",
+                    isSelected
+                      ? isMon
+                        ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 font-bold"
+                        : "bg-secondary text-foreground border-border font-bold"
+                      : isMon && cat.count > 0
+                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 font-semibold"
+                      : cat.count === 0
+                      ? "bg-transparent text-muted-foreground/40 border-transparent"
+                      : "bg-secondary/60 text-muted-foreground border-border/40"
+                  )}
+                >
+                  {cat.count}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </Card>
 

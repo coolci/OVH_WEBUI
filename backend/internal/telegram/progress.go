@@ -33,6 +33,60 @@ func NotifyTaskProgress(state *app.State, item *types.QueueItem, phase string, e
 	if item == nil || item.TelegramMessageID == 0 || strings.TrimSpace(item.TelegramChatID) == "" {
 		return
 	}
+
+	// 检查该 Telegram 消息关联的任务是否还有其他处于排队中的兄弟机房
+	var remaining []types.QueueItem
+	state.QueueMu.Lock()
+	for _, q := range state.Queue {
+		if q.TelegramMessageID == item.TelegramMessageID && q.ID != item.ID {
+			if q.Status == "running" || q.Status == "pending" || q.Status == "paused" {
+				remaining = append(remaining, q)
+			}
+		}
+	}
+	state.QueueMu.Unlock()
+
+	// 如果当前任务被取消（例如在网页端被删除），但同批次还有其他机房正在排队：
+	// 不要把整张卡片改成“已终止”，而是更新卡片为：该机房已取消，其余机房继续排队，并保留剩余机房取消按键！
+	if phase == "cancelled" && len(remaining) > 0 {
+		reason := extra["reason"]
+		if reason == "" {
+			reason = "已取消"
+		}
+		var b strings.Builder
+		kind := "抢购挂机排队中"
+		if item.QuickOrder {
+			kind = "极速下单排队中"
+		}
+		b.WriteString(fmt.Sprintf("⏳ %s…\n\n", kind))
+		b.WriteString("📦 型号: " + item.PlanCode + "\n")
+		b.WriteString("📍 正在排队:\n")
+		for _, rem := range remaining {
+			b.WriteString("  • " + DisplayDCFull(rem.Datacenter) + "\n")
+		}
+		b.WriteString(fmt.Sprintf("\n🛑 已取消机房: %s (%s)\n", DisplayDCFull(item.Datacenter), reason))
+		b.WriteString(fmt.Sprintf("📊 任务状态: %d 个运行中\n", len(remaining)))
+		b.WriteString("\n💡 官方放货后将自动秒级提交，进度会实时更新本条消息。")
+
+		var cancelBtns []map[string]string
+		for _, rem := range remaining {
+			short := shortID(rem.ID)
+			cancelBtns = append(cancelBtns, CallbackButton("⏹ 取消 "+strings.ToUpper(rem.Datacenter), "i:T:one:"+short))
+		}
+		var btnRows [][]map[string]string
+		if len(cancelBtns) > 0 {
+			btnRows = append(btnRows, ChunkButtons(cancelBtns, 3)...)
+		}
+		if len(remaining) > 1 {
+			btnRows = append(btnRows, []map[string]string{
+				CallbackButton(fmt.Sprintf("🛑 取消剩余全部 (%d个)", len(remaining)), fmt.Sprintf("i:T:m:%d", item.TelegramMessageID)),
+			})
+		}
+		markup := InlineKeyboard(btnRows)
+		_ = EditMessage(state, item.TelegramChatID, item.TelegramMessageID, b.String(), markup)
+		return
+	}
+
 	text := FormatTaskProgress(item, phase, extra)
 	var markup map[string]interface{}
 	if phase == "success" && extra["orderUrl"] != "" {
@@ -40,19 +94,22 @@ func NotifyTaskProgress(state *app.State, item *types.QueueItem, phase string, e
 		if extra["orderId"] != "" {
 			btnText = "💳 前往 OVH 支付订单 (" + extra["orderId"] + ")"
 		}
-		markup = map[string]interface{}{
-			"inline_keyboard": [][]map[string]string{
-				{
-					{"text": btnText, "url": extra["orderUrl"]},
-				},
-			},
+		var rows [][]map[string]string
+		rows = append(rows, []map[string]string{
+			{"text": btnText, "url": extra["orderUrl"]},
+		})
+		if len(remaining) > 0 {
+			rows = append(rows, []map[string]string{
+				CallbackButton(fmt.Sprintf("🛑 取消其余机房任务 (%d个)", len(remaining)), fmt.Sprintf("i:T:m:%d", item.TelegramMessageID)),
+			})
 		}
+		markup = InlineKeyboard(rows)
 	} else if phase == "queued" && item.ID != "" {
 		short := shortID(item.ID)
 		markup = map[string]interface{}{
 			"inline_keyboard": [][]map[string]string{
 				{
-					{"text": "⏹ 取消此抢购任务", "callback_data": "i:T:" + short},
+					{"text": "⏹ 取消此抢购任务", "callback_data": "i:T:one:" + short},
 				},
 			},
 		}

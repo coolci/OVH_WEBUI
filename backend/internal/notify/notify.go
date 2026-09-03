@@ -55,26 +55,8 @@ func Broadcast(state *app.State, message string, replyMarkup map[string]interfac
 			delivered++
 		}
 	}
-	webhookMsg := message
-	if replyMarkup != nil {
-		if ik, ok := replyMarkup["inline_keyboard"].([][]map[string]string); ok {
-			for _, row := range ik {
-				for _, btn := range row {
-					if u, hasURL := btn["url"]; hasURL && u != "" {
-						if !strings.Contains(webhookMsg, u) {
-							label := btn["text"]
-							if label == "" {
-								label = "支付与操作链接"
-							}
-							webhookMsg += fmt.Sprintf("\n\n🔗 %s: %s", label, u)
-						}
-					}
-				}
-			}
-		}
-	}
 	if url := strings.TrimSpace(cfg.NotifyWebhookURL); url != "" {
-		if err := sendWebhook(url, webhookMsg); err != nil {
+		if err := sendWebhook(url, message); err != nil {
 			state.Logger.Warn("Webhook 通知发送失败: "+err.Error(), "notify")
 		} else {
 			delivered++

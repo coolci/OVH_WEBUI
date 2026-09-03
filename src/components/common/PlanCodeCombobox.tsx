@@ -122,16 +122,21 @@ export function PlanCodeCombobox({
             "disabled:cursor-not-allowed disabled:opacity-50",
             className
           )}
-          onFocus={() => {
-            setOpen(true);
-            inputRef.current?.select();
+          onClick={() => {
+            if (!disabled && !open) {
+              setOpen(true);
+              inputRef.current?.select();
+            }
           }}
           onChange={(e) => {
             setSearchQuery(e.target.value);
             if (!open) setOpen(true);
           }}
           onKeyDown={(e) => {
-            if (e.key === "Escape") {
+            if (e.key === "ArrowDown" && !open) {
+              e.preventDefault();
+              setOpen(true);
+            } else if (e.key === "Escape") {
               setOpen(false);
               setSearchQuery("");
             } else if (e.key === "Enter") {
