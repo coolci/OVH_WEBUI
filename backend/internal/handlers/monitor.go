@@ -1,14 +1,17 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/monitor"
+	"github.com/ovh-webui/server/internal/notify"
 	"github.com/ovh-webui/server/internal/telegram"
 	"github.com/ovh-webui/server/internal/types"
 )
@@ -24,8 +27,8 @@ func GetSubscriptions(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 func AddSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 监控订阅必须有可用的 Telegram 通知,否则没意义
-		if ok, reason := telegram.VerifyConfig(state); !ok {
-			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "Telegram 通知未配置或无效:" + reason})
+		if ok, reason := notify.AnyAvailable(state, true); !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "没有可用的通知通道(Telegram / Webhook 至少配一个):" + reason})
 			return
 		}
 		var body struct {
@@ -36,6 +39,9 @@ func AddSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 			AutoOrder          bool     `json:"autoOrder"`
 			Quantity           int      `json:"quantity"`
 			AutoOrderAccountID string   `json:"autoOrderAccountId"` // 空 = 触发时只通知不下单
+			// AutoPay 下单成功后用默认支付方式自动付款。默认 false ——
+			// 自动扣钱必须是显式打开的开关
+			AutoPay bool `json:"autoPay"`
 		}
 		_ = c.ShouldBindJSON(&body)
 		if body.PlanCode == "" {
@@ -75,8 +81,13 @@ func AddSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 			state.Logger.Warn("未找到服务器 "+body.PlanCode+" 的名称信息", "monitor")
 		}
 
+		// 区域预检:OVH 的 EU / US / CA 是三套独立系统,拿错站点查 planCode 返回的是
+		// 200 + 空数组而不是报错。订阅一个没人能查的机型会静默失效,所以下单前就告诉用户。
+		// 只提示不拦截 —— 目录有 2 小时缓存、OVH 也会抖动,不能凭一次探测把人挡在门外。
+		region, subsidiary, regionWarning := mon.PreflightRegion(body.PlanCode, body.AutoOrderAccountID)
+
 		mon.AddSubscription(body.PlanCode, body.Datacenters, notifyAvailable, notifyUnavailable,
-			serverName, nil, nil, body.AutoOrder, body.Quantity, body.AutoOrderAccountID)
+			serverName, nil, nil, body.AutoOrder, body.Quantity, body.AutoOrderAccountID, body.AutoPay)
 		mon.SaveToDB()
 
 		if !mon.Running() {
@@ -88,7 +99,18 @@ func AddSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 			nameDisplay = "未知名称"
 		}
 		state.Logger.Info("添加服务器订阅: "+body.PlanCode+" ("+nameDisplay+")", "")
-		c.JSON(http.StatusOK, gin.H{"status": "success", "message": "已订阅 " + body.PlanCode})
+		resp := gin.H{"status": "success", "message": "已订阅 " + body.PlanCode}
+		if region != "" {
+			resp["region"] = region
+			resp["subsidiary"] = subsidiary
+			resp["message"] = "已订阅 " + body.PlanCode + "（由 " + region + " 站点账户监控）"
+		}
+		if regionWarning != "" {
+			state.Logger.Warn("订阅区域预检告警: "+body.PlanCode+" - "+regionWarning, "monitor")
+			resp["status"] = "warning"
+			resp["regionWarning"] = regionWarning
+		}
+		c.JSON(http.StatusOK, resp)
 	}
 }
 
@@ -96,8 +118,8 @@ func AddSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 func BatchAddAll(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 同 AddSubscription:批量添加也要求 TG 有效
-		if ok, reason := telegram.VerifyConfig(state); !ok {
-			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "Telegram 通知未配置或无效:" + reason})
+		if ok, reason := notify.AnyAvailable(state, true); !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "没有可用的通知通道(Telegram / Webhook 至少配一个):" + reason})
 			return
 		}
 		state.ServerPlansMu.RLock()
@@ -153,7 +175,7 @@ func BatchAddAll(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 				continue
 			}
 			mon.AddSubscription(pc, []string{}, notifyAvailable, notifyUnavailable,
-				server.Name, nil, nil, body.AutoOrder, 1, body.AutoOrderAccountID)
+				server.Name, nil, nil, body.AutoOrder, 1, body.AutoOrderAccountID, false)
 			added++
 			state.Logger.Debug("批量添加订阅: "+pc+" ("+server.Name+")", "monitor")
 		}
@@ -205,71 +227,6 @@ func ClearSubscriptions(state *app.State, mon *monitor.Monitor) gin.HandlerFunc 
 	}
 }
 
-// UpdateSubscription PUT /api/monitor/subscriptions/:planCode
-// 原地更新已有订阅（通知开关 / 机房 / 自动下单 / 数量 / 账户），不重置 lastStatus 与 history。
-func UpdateSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		planCode := c.Param("planCode")
-		if planCode == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "缺少 planCode"})
-			return
-		}
-		sub := mon.FindSubscription(planCode)
-		if sub == nil {
-			c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "订阅不存在"})
-			return
-		}
-		var body struct {
-			Datacenters        *[]string `json:"datacenters"`
-			NotifyAvailable    *bool     `json:"notifyAvailable"`
-			NotifyUnavailable  *bool     `json:"notifyUnavailable"`
-			AutoOrder          *bool     `json:"autoOrder"`
-			Quantity           *int      `json:"quantity"`
-			AutoOrderAccountID *string   `json:"autoOrderAccountId"`
-		}
-		if err := c.ShouldBindJSON(&body); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": err.Error()})
-			return
-		}
-		if body.AutoOrderAccountID != nil && *body.AutoOrderAccountID != "" {
-			if _, ok := state.FindAccount(*body.AutoOrderAccountID); !ok {
-				c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "autoOrderAccountId 不存在"})
-				return
-			}
-		}
-
-		// AddSubscription 对已存在项会更新配置且不重置状态
-		dcs := sub.Datacenters
-		if body.Datacenters != nil {
-			dcs = *body.Datacenters
-		}
-		notifyA := sub.NotifyAvailable
-		if body.NotifyAvailable != nil {
-			notifyA = *body.NotifyAvailable
-		}
-		notifyU := sub.NotifyUnavailable
-		if body.NotifyUnavailable != nil {
-			notifyU = *body.NotifyUnavailable
-		}
-		autoOrder := sub.AutoOrder
-		if body.AutoOrder != nil {
-			autoOrder = *body.AutoOrder
-		}
-		qty := sub.Quantity
-		if body.Quantity != nil {
-			qty = *body.Quantity
-		}
-		accID := sub.AutoOrderAccountID
-		if body.AutoOrderAccountID != nil {
-			accID = *body.AutoOrderAccountID
-		}
-		mon.AddSubscription(planCode, dcs, notifyA, notifyU, sub.ServerName, nil, nil, autoOrder, qty, accID)
-		mon.SaveToDB()
-		state.Logger.Info("更新服务器订阅: "+planCode, "monitor")
-		c.JSON(http.StatusOK, gin.H{"status": "success", "message": "订阅已更新", "planCode": planCode})
-	}
-}
-
 // GetSubscriptionHistory GET /api/monitor/subscriptions/:planCode/history
 // 返回该订阅的历史记录数组（倒序，最新在前）。
 func GetSubscriptionHistory(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
@@ -296,7 +253,7 @@ func GetSubscriptionHistory(state *app.State, mon *monitor.Monitor) gin.HandlerF
 func StartMonitor(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 启动前先验 TG,broken TG 不让起,免得起来一圈检查发不出去白跑
-		if ok, reason := telegram.VerifyConfig(state); !ok {
+		if ok, reason := notify.AnyAvailable(state, true); !ok {
 			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "Telegram 通知未配置或无效,无法启动监控:" + reason})
 			return
 		}
@@ -341,20 +298,68 @@ func GetMonitorStatus(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 // SetMonitorInterval PUT /api/monitor/interval
 func SetMonitorInterval(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "info", "message": "检查间隔已全局固定为5秒，无法修改"})
+		var body struct {
+			Interval      *int `json:"interval"`
+			CheckInterval *int `json:"check_interval"` // 前端历史字段名,一并收
+		}
+		if err := c.ShouldBindJSON(&body); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "请求体格式错误"})
+			return
+		}
+		v := body.Interval
+		if v == nil {
+			v = body.CheckInterval
+		}
+		if v == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "缺少 interval 参数"})
+			return
+		}
+		applied := mon.SetCheckInterval(*v)
+		mon.SaveToDB()
+		msg := fmt.Sprintf("检查间隔已设置为 %d 秒", applied)
+		if applied != *v {
+			msg = fmt.Sprintf("检查间隔已调整为 %d 秒(合法范围 %d-%d 秒)", applied, monitor.MinCheckInterval, monitor.MaxCheckInterval)
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "success", "message": msg, "check_interval": applied})
 	}
 }
 
 // TestNotification POST /api/monitor/test-notification
+// 逐条通道发测试消息并返回结果 —— 只说"发送失败"没用,用户需要知道是哪条挂了。
 func TestNotification(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		msg := "🔔 服务器监控测试通知\n\n时间: " + time.Now().Format("2006-01-02 15:04:05") + "\n\n✅ Telegram通知配置正常！"
-		if telegram.SendMessage(state, msg, nil) {
-			state.Logger.Info("Telegram测试通知发送成功", "monitor")
-			c.JSON(http.StatusOK, gin.H{"status": "success", "message": "测试通知已发送，请检查Telegram"})
-		} else {
-			state.Logger.Warn("Telegram测试通知发送失败", "monitor")
-			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "发送失败，请检查Telegram配置和日志"})
+		msg := "🔔 OVH 控制台通知测试\n\n时间: " + time.Now().Format("2006-01-02 15:04:05") +
+			"\n\n收到这条说明该通道可用。"
+		delivered := notify.Broadcast(state, msg, nil)
+		chans := notify.Status(state, false)
+		if delivered > 0 {
+			state.Logger.Info(fmt.Sprintf("测试通知已送达 %d 个通道", delivered), "monitor")
+			c.JSON(http.StatusOK, gin.H{
+				"status": "success", "delivered": delivered, "channels": chans,
+				"message": fmt.Sprintf("已发往 %d 个通道，请检查是否收到", delivered),
+			})
+			return
 		}
+		state.Logger.Warn("测试通知一个通道都没送达", "monitor")
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status": "error", "delivered": 0, "channels": chans,
+			"message": "没有任何通道送达。请在设置页配置 Telegram 或 Webhook",
+		})
+	}
+}
+
+// GetNotifyChannels GET /api/notify/channels
+// 通知通道体检。?verify=true 会真的去调远端(Telegram getMe / 向 webhook 发一条测试)
+func GetNotifyChannels(state *app.State) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		verify := strings.EqualFold(c.Query("verify"), "true")
+		chans := notify.Status(state, verify)
+		any := false
+		for _, ch := range chans {
+			if ch.Configured && ch.OK {
+				any = true
+			}
+		}
+		c.JSON(http.StatusOK, gin.H{"channels": chans, "anyAvailable": any, "verified": verify})
 	}
 }

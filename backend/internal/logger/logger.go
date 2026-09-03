@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
@@ -20,7 +19,7 @@ const (
 	writeThreshold = 10
 )
 
-// Logger 与 Python add_log 行为一致：内存累积 + 批量刷盘 + 控制台输出
+// Logger 内存累积 + 批量刷盘 + 控制台输出
 type Logger struct {
 	mu           sync.Mutex
 	entries      []types.LogEntry
@@ -135,71 +134,6 @@ func (l *Logger) Snapshot() []types.LogEntry {
 	cp := make([]types.LogEntry, len(l.entries))
 	copy(cp, l.entries)
 	return cp
-}
-
-// QueryOpts 查询裁剪参数（避免一次吐满 1000 条拖垮前端）
-type QueryOpts struct {
-	Limit  int    // 返回条数上限；0 = 默认
-	Level  string // INFO/WARNING/ERROR/DEBUG，空 = 全部
-	Source string // 子串匹配 source，空 = 全部
-	// Order: "desc"(默认，最新在前) | "asc"(旧→新，兼容旧 UI)
-	Order string
-}
-
-const (
-	defaultQueryLimit = 200
-	maxQueryLimit     = 500
-)
-
-// Query 按条件过滤后返回裁剪结果；total 为过滤后总数（未截断）。
-func (l *Logger) Query(opts QueryOpts) (items []types.LogEntry, total int) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	level := strings.ToUpper(strings.TrimSpace(opts.Level))
-	if level == "WARN" {
-		level = "WARNING"
-	}
-	srcNeedle := strings.ToLower(strings.TrimSpace(opts.Source))
-
-	// 先按条件收集（entries 按时间从旧到新）
-	filtered := make([]types.LogEntry, 0, len(l.entries))
-	for _, e := range l.entries {
-		if level != "" && strings.ToUpper(e.Level) != level {
-			continue
-		}
-		if srcNeedle != "" && !strings.Contains(strings.ToLower(e.Source), srcNeedle) {
-			continue
-		}
-		filtered = append(filtered, e)
-	}
-	total = len(filtered)
-
-	limit := opts.Limit
-	if limit <= 0 {
-		limit = defaultQueryLimit
-	}
-	if limit > maxQueryLimit {
-		limit = maxQueryLimit
-	}
-
-	// 取尾部 limit 条（最新）
-	if len(filtered) > limit {
-		filtered = filtered[len(filtered)-limit:]
-	}
-
-	order := strings.ToLower(strings.TrimSpace(opts.Order))
-	if order == "" || order == "desc" {
-		// 最新在前
-		for i, j := 0, len(filtered)-1; i < j; i, j = i+1, j-1 {
-			filtered[i], filtered[j] = filtered[j], filtered[i]
-		}
-	}
-
-	// 返回独立副本
-	items = make([]types.LogEntry, len(filtered))
-	copy(items, filtered)
-	return items, total
 }
 
 // Clear 清空所有日志（含文件）

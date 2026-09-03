@@ -5,7 +5,11 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useUpdateRenewal, type ServiceInfo } from "@/hooks/use-server-control";
+import {
+  useUpdateRenewal,
+  useUpdateTerminationPolicy,
+  type ServiceInfo,
+} from "@/hooks/use-server-control";
 import { toast } from "sonner";
 
 type RenewMode = "auto" | "manual" | "delete";
@@ -13,13 +17,20 @@ type RenewMode = "auto" | "manual" | "delete";
 const MODE_OPTIONS: Array<{ value: RenewMode; label: string; desc: string }> = [
   { value: "auto", label: "自动续费", desc: "到期前 OVH 自动扣款续费" },
   { value: "manual", label: "手动续费", desc: "到期前需手动付款,不付则服务终止" },
-  { value: "delete", label: "到期注销", desc: "到期不续费,自动销毁服务器" },
+  { value: "delete", label: "到期终止", desc: "到期日之前照常使用,到期后才销毁" },
 ];
 
 /** 用 VPS / dedicated 各自的 update hook 都行,Dialog 只关心 mutation 接口形状 */
 export type RenewalMutation = {
   mutateAsync: (vars: { mode: RenewMode; period?: number }) => Promise<any>;
   isPending: boolean;
+};
+
+export type TerminationMutations = {
+  policy: {
+    mutateAsync: (vars: { policy: string }) => Promise<any>;
+    isPending: boolean;
+  };
 };
 
 /** 续费策略修改对话框:三选一 + 周期选择;forced 套餐禁用全部操作。
@@ -30,6 +41,7 @@ export function RenewalDialog({
   open,
   onOpenChange,
   mutation,
+  termination,
 }: {
   serviceName: string;
   info: ServiceInfo | (Omit<ServiceInfo, "possibleRenewPeriod"> & { possibleRenewPeriod?: number[] });
@@ -37,8 +49,11 @@ export function RenewalDialog({
   onOpenChange: (v: boolean) => void;
   /** 可选:不传则用 dedicated 的 useUpdateRenewal(serviceName) */
   mutation?: RenewalMutation;
+  /** 可选:不传则用 dedicated 的终止端点。VPS 必须传自己的 */
+  termination?: TerminationMutations;
 }) {
-  const currentMode: RenewMode = info.renewalDeleteAtExpiration
+  const terminationOn = info.terminationScheduled ?? info.renewalDeleteAtExpiration;
+  const currentMode: RenewMode = terminationOn
     ? "delete"
     : info.renewalType
       ? "auto"
@@ -47,6 +62,8 @@ export function RenewalDialog({
   const [period, setPeriod] = useState<number>(info.renewalPeriod || 1);
   const defaultUpdate = useUpdateRenewal(serviceName);
   const update = mutation ?? defaultUpdate;
+  const defaultPolicy = useUpdateTerminationPolicy(serviceName);
+  const policyMut = termination?.policy ?? defaultPolicy;
 
   // 弹窗每次打开同步当前状态
   useEffect(() => {
@@ -61,19 +78,33 @@ export function RenewalDialog({
     ? info.possibleRenewPeriod
     : [1, 3, 6, 12];
 
+  const errText = (e: any, fallback: string) =>
+    e?.response?.data?.error || e?.response?.data?.message || e?.message || fallback;
+
   const handleSubmit = async () => {
+    if (mode === "delete") {
+      try {
+        const res = await policyMut.mutateAsync({ policy: "terminateAtExpirationDate" });
+        toast.success(res?.message || "已设为到期终止", { duration: 6000 });
+        onOpenChange(false);
+      } catch (e: any) {
+        toast.error(errText(e, "设置失败"), { duration: 8000 });
+      }
+      return;
+    }
     try {
-      await update.mutateAsync({
-        mode,
-        period: mode === "delete" ? undefined : period,
-      });
-      toast.success("续费策略已更新");
+      if (currentMode === "delete") {
+        await policyMut.mutateAsync({ policy: "empty" });
+      }
+      await update.mutateAsync({ mode, period });
+      toast.success(currentMode === "delete" ? "已取消终止并更新续费策略" : "续费策略已更新");
       onOpenChange(false);
     } catch (e: any) {
-      const msg = e?.response?.data?.error || e?.message || "更新失败";
-      toast.error(msg, { duration: 6000 });
+      toast.error(errText(e, "更新失败"), { duration: 6000 });
     }
   };
+
+  const busy = update.isPending || policyMut.isPending;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -159,7 +190,7 @@ export function RenewalDialog({
               <div className="border border-destructive/40 bg-destructive/5 rounded-xl p-2.5 flex gap-2">
                 <AlertCircle className="w-3.5 h-3.5 text-destructive flex-shrink-0 mt-0.5" />
                 <p className="text-[11px] text-muted-foreground">
-                  设为「到期注销」后,服务器在到期日 ({info.expiration ? new Date(info.expiration).toLocaleDateString("zh-CN") : "—"}) 自动销毁,数据无法恢复。
+                  设为「到期终止」后,服务器在到期日 ({info.expiration ? new Date(info.expiration).toLocaleDateString("zh-CN") : "—"}) 才会销毁。这不是立即关机。可再改回自动/手动续费来撤销。
                 </p>
               </div>
             )}
@@ -173,10 +204,10 @@ export function RenewalDialog({
           {!info.renewalForced && (
             <Button
               onClick={handleSubmit}
-              disabled={update.isPending || (mode === currentMode && period === info.renewalPeriod)}
+              disabled={busy || (mode === currentMode && period === info.renewalPeriod)}
               variant={mode === "delete" ? "destructive" : "default"}
             >
-              {update.isPending ? "提交中…" : "保存"}
+              {busy ? "提交中…" : "保存"}
             </Button>
           )}
         </DialogFooter>

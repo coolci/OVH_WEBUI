@@ -114,11 +114,6 @@ func IsAuthorizedChat(state *app.State, chatID interface{}) bool {
 	return got != "" && got == want
 }
 
-// ChatIDString 将 chat/user id 规范为字符串（供 handlers 频率限制等使用）。
-func ChatIDString(chatID interface{}) string {
-	return chatIDToString(chatID)
-}
-
 func chatIDToString(chatID interface{}) string {
 	switch v := chatID.(type) {
 	case nil:

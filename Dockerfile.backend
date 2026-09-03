@@ -14,7 +14,7 @@ RUN go mod download
 COPY backend/ ./
 # CGO_ENABLED=0 → 使用 modernc.org/sqlite（driver_purego.go）
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-    go build -trimpath -ldflags="-s -w" -o /out/ovh-webui .
+    go build -trimpath -ldflags="-s -w -X github.com/ovh-webui/server/internal/handlers.Version=0.1.10" -o /out/ovh-webui .
 
 # 运行时：alpine 便于 HEALTHCHECK + CA 证书
 FROM alpine:3.20

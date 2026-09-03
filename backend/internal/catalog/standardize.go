@@ -29,13 +29,11 @@ var modelPatterns = []*regexp.Regexp{
 }
 
 var (
-	reEcc = regexp.MustCompile(`-(no)?ecc-\d+`)
-	// sas 必须在 sa 前，避免 -sas 被当成 -sa
-	reStorSfx   = regexp.MustCompile(`-(sas|ssd|nvme|hdd|sa)$`)
+	reEcc       = regexp.MustCompile(`-(no)?ecc-\d+`)
+	reStorSfx   = regexp.MustCompile(`-(sas|sa|ssd|nvme)$`)
 	reSpecDigit = regexp.MustCompile(`-\d{4,5}$`)
 )
 
-// StandardizeConfig 对应 Python: standardize_config
 func StandardizeConfig(config string) string {
 	if config == "" {
 		return ""
@@ -50,7 +48,6 @@ func StandardizeConfig(config string) string {
 	return normalized
 }
 
-// FormatMemoryDisplay 对应 Python: format_memory_display
 func FormatMemoryDisplay(memoryCode string) string {
 	if m := regexp.MustCompile(`(?i)(\d+)g`).FindStringSubmatch(memoryCode); m != nil {
 		return m[1] + "GB RAM"
@@ -58,14 +55,12 @@ func FormatMemoryDisplay(memoryCode string) string {
 	return memoryCode
 }
 
-// FormatStorageDisplay 短码 / addon → 可读存储
 func FormatStorageDisplay(storageCode string) string {
 	if storageCode == "" {
 		return ""
 	}
-	// 完整 addon
+	// 完整 addon：SAS 优先于 SA；hybrid 任意介质顺序；0disk
 	if disp := ParseStorageAddonDisplay(storageCode); disp != "" {
-		// 短码 2x480ssd：Parse 会加 SOFTRAID 前缀，短码场景只返回 segment
 		if !strings.Contains(strings.ToLower(storageCode), "raid") &&
 			!strings.Contains(strings.ToLower(storageCode), "disk") {
 			if m := reStorageSegment.FindStringSubmatch(storageCode); m != nil {
@@ -80,7 +75,6 @@ func FormatStorageDisplay(storageCode string) string {
 	return storageCode
 }
 
-// FormatConfigDisplay 对应 Python: format_config_display
 func FormatConfigDisplay(memoryCode, storageCode string) string {
 	mem := "默认内存"
 	if memoryCode != "" {
@@ -93,7 +87,6 @@ func FormatConfigDisplay(memoryCode, storageCode string) string {
 	return mem + " + " + stor
 }
 
-// MatchConfig 对应 Python: match_config
 func MatchConfig(userMemory, userStorage, ovhMemory, ovhStorage string) bool {
 	memoryMatch := true
 	if userMemory != "" && ovhMemory != "" {

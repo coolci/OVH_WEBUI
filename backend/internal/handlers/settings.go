@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -14,63 +15,49 @@ import (
 // GetSettings GET /api/settings
 func GetSettings(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, state.Config.Get())
+		cfg := state.Config.Get()
+		// webhook secret 不下发前端：它只在后端和 Telegram 之间使用，
+		// 前端拿到也没用，暴露面反而变大。
+		cfg.TgWebhookSecret = ""
+		c.JSON(http.StatusOK, cfg)
 	}
 }
 
 // SaveSettings POST /api/settings
-// 合并更新：前端可不传敏感/内部字段；空值保留服务端已有配置，避免抹掉 TgWebhookSecret 等。
 func SaveSettings(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var patch types.Config
-		if err := c.ShouldBindJSON(&patch); err != nil {
+		var newCfg types.Config
+		if err := c.ShouldBindJSON(&newCfg); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": err.Error()})
 			return
 		}
 
 		prev := state.Config.Get()
-		newCfg := prev
 
 		// 凭据去空白（前端粘贴时常带空格/换行，会导致 OVH 签名失败 "Invalid signature"）
-		patch.AppKey = strings.TrimSpace(patch.AppKey)
-		patch.AppSecret = strings.TrimSpace(patch.AppSecret)
-		patch.ConsumerKey = strings.TrimSpace(patch.ConsumerKey)
-		patch.TgToken = strings.TrimSpace(patch.TgToken)
-		patch.TgChatID = strings.TrimSpace(patch.TgChatID)
-		patch.TgWebhookSecret = strings.TrimSpace(patch.TgWebhookSecret)
-		patch.Endpoint = strings.TrimSpace(patch.Endpoint)
-		patch.Zone = strings.TrimSpace(patch.Zone)
-		patch.IAM = strings.TrimSpace(patch.IAM)
+		newCfg.AppKey = strings.TrimSpace(newCfg.AppKey)
+		newCfg.AppSecret = strings.TrimSpace(newCfg.AppSecret)
+		newCfg.ConsumerKey = strings.TrimSpace(newCfg.ConsumerKey)
+		newCfg.TgToken = strings.TrimSpace(newCfg.TgToken)
+		newCfg.TgChatID = strings.TrimSpace(newCfg.TgChatID)
+		// 同样去空白:webhook 地址末尾带个换行,POST 出去就是 DNS 解析失败
+		newCfg.NotifyWebhookURL = strings.TrimSpace(newCfg.NotifyWebhookURL)
+		// 在保存这一步就把地址挡下来。放过去的话,用户要等到真有货那一刻
+		// 才会发现通知发不出去 —— 而那正是唯一不能出错的时刻。
+		if newCfg.NotifyWebhookURL != "" {
+			u, err := url.Parse(newCfg.NotifyWebhookURL)
+			if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+				c.JSON(http.StatusBadRequest, gin.H{"status": "error",
+					"message": "通知 Webhook 地址不合法,必须是完整的 http:// 或 https:// 地址"})
+				return
+			}
+		}
 
-		// 非空才覆盖（合并语义）；Webhook secret 绝不用空串覆盖
-		if patch.AppKey != "" {
-			newCfg.AppKey = patch.AppKey
-		}
-		if patch.AppSecret != "" {
-			newCfg.AppSecret = patch.AppSecret
-		}
-		if patch.ConsumerKey != "" {
-			newCfg.ConsumerKey = patch.ConsumerKey
-		}
-		if patch.TgToken != "" {
-			newCfg.TgToken = patch.TgToken
-		}
-		// ChatID 允许显式清空？一般不允许空覆盖已有，避免误清通知
-		if patch.TgChatID != "" {
-			newCfg.TgChatID = patch.TgChatID
-		}
-		if patch.TgWebhookSecret != "" {
-			newCfg.TgWebhookSecret = patch.TgWebhookSecret
-		}
-		if patch.Endpoint != "" {
-			newCfg.Endpoint = patch.Endpoint
-		}
-		if patch.Zone != "" {
-			newCfg.Zone = patch.Zone
-		}
-		if patch.IAM != "" {
-			newCfg.IAM = patch.IAM
-		}
+		// webhook secret 前端不可见也不可改（GetSettings 已抹掉），
+		// 这里必须从旧配置继承回来，否则前端保存一次设置就把 secret 清了，
+		// Telegram 那边仍在校验旧 secret → 所有回调直接 401。
+		newCfg.TgWebhookSecret = prev.TgWebhookSecret
+		newCfg.TgWebhookSecretRegistered = prev.TgWebhookSecretRegistered
 
 		// 默认值兜底
 		if newCfg.Endpoint == "" {
@@ -86,7 +73,7 @@ func SaveSettings(state *app.State) gin.HandlerFunc {
 		}
 		state.Logger.Info("API settings updated in config.json", "system")
 
-		// TG 配置变更 → 同步发测试消息（1:1 对应 Python save_settings 2450-2463）
+		// TG 配置变更 → 同步发一条测试消息
 		if newCfg.TgToken != "" && newCfg.TgChatID != "" {
 			changed := newCfg.TgToken != prev.TgToken || newCfg.TgChatID != prev.TgChatID
 			if changed || prev.TgToken == "" || prev.TgChatID == "" {

@@ -7,14 +7,23 @@ import (
 	"github.com/ovh-webui/server/internal/types"
 )
 
+// kvMonitorInterval 检查间隔在 kv 表里的键
+const kvMonitorInterval = "monitor_check_interval"
+
 // monitor 包内部用 Subscription / HistoryEntry，
 // 而 SQLite 层用 types.Subscription / types.SubscriptionHistoryEntry。
 // 字段一一对应，下面提供双向转换。
 
+// toDBSub 读 s 的可变字段,所以必须持 s.mu ——
+// SaveToDB 是在自己的 goroutine 里跑的(定时落盘 / 退出前落盘),
+// 此刻检查 goroutine 很可能正在 append History,不加锁就是竞争 + 可能读到撕裂的 slice header。
+// 锁顺序:调用方(SaveToDB)先拿 subsMu 再进这里拿 s.mu,与 Snapshot/Status 一致,不会死锁。
 func toDBSub(s *Subscription) types.Subscription {
 	if s == nil {
 		return types.Subscription{}
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	hist := make([]types.SubscriptionHistoryEntry, 0, len(s.History))
 	for _, h := range s.History {
 		hist = append(hist, types.SubscriptionHistoryEntry{
@@ -46,6 +55,7 @@ func toDBSub(s *Subscription) types.Subscription {
 		AutoOrder:          s.AutoOrder,
 		Quantity:           s.Quantity,
 		AutoOrderAccountID: s.AutoOrderAccountID,
+		AutoPay:            s.AutoPay,
 	}
 }
 
@@ -81,6 +91,7 @@ func fromDBSub(s types.Subscription) *Subscription {
 		AutoOrder:          s.AutoOrder,
 		Quantity:           s.Quantity,
 		AutoOrderAccountID: s.AutoOrderAccountID,
+		AutoPay:            s.AutoPay,
 	}
 }
 
@@ -88,9 +99,7 @@ func fromDBSub(s types.Subscription) *Subscription {
 func (m *Monitor) LoadFromDB() {
 	subs, err := m.state.DB.ListMonitorSubscriptions()
 	if err != nil {
-		// 失败时保留空列表，但绝不能随后 SaveToDB 全表覆盖（会抹掉库里的真实订阅）
-		m.state.Logger.Error("加载监控订阅失败（不会写回空列表）: "+err.Error(), "monitor")
-		subs = nil
+		m.state.Logger.Warn("加载监控订阅失败: "+err.Error(), "monitor")
 	}
 	known := []string{}
 	if _, err := m.state.DB.GetKV("monitor_known_servers", &known); err != nil {
@@ -108,11 +117,15 @@ func (m *Monitor) LoadFromDB() {
 		knownSet[k] = struct{}{}
 	}
 	m.knownServers = knownSet
-	// 全局强制 5 秒
-	m.checkInterval = 5
-	m.state.Logger.Info("检查间隔已强制设置为: 5秒（全局固定值）", "monitor")
-	m.state.Logger.Info(fmt.Sprintf("已加载订阅: %d 条", len(m.subscriptions)), "monitor")
-	// TG 一键下单 UUID 在 LoadFromDB 返回后由调用方 LoadMessageUUIDCacheFromDB()
+	// 检查间隔从 kv 恢复;没存过或超出合法区间时夹回默认 5 秒
+	interval := MinCheckInterval
+	var saved int
+	if ok, _ := m.state.DB.GetKV(kvMonitorInterval, &saved); ok && saved > 0 {
+		interval = ClampCheckInterval(saved)
+	}
+	m.checkInterval = interval
+	m.state.Logger.Info(fmt.Sprintf("监控检查间隔: %d 秒", interval), "monitor")
+	m.state.Logger.Info("已加载订阅", "monitor")
 }
 
 // SaveToDB 把订阅 + known_servers 写回 SQLite
@@ -126,14 +139,9 @@ func (m *Monitor) SaveToDB() {
 	for k := range m.knownServers {
 		known = append(known, k)
 	}
-	m.checkInterval = 5
-	n := len(subs)
+	interval := m.checkInterval
 	m.subsMu.Unlock()
 
-	// Replace 会先清空表再写入；允许空列表（用户主动 clear），但打醒目日志便于排查
-	if n == 0 {
-		m.state.Logger.Warn("保存监控订阅: 当前内存列表为空，将清空 SQLite 订阅表", "monitor")
-	}
 	if err := m.state.DB.ReplaceMonitorSubscriptions(subs); err != nil {
 		m.state.Logger.Error("保存监控订阅失败: "+err.Error(), "monitor")
 		return
@@ -142,7 +150,10 @@ func (m *Monitor) SaveToDB() {
 		m.state.Logger.Error("保存已知服务器失败: "+err.Error(), "monitor")
 		return
 	}
-	m.state.Logger.Info(fmt.Sprintf("订阅数据已保存: %d 条（检查间隔固定为5秒）", n), "monitor")
+	if err := m.state.DB.SetKV(kvMonitorInterval, interval); err != nil {
+		m.state.Logger.Warn("保存检查间隔失败: "+err.Error(), "monitor")
+	}
+	m.state.Logger.Info(fmt.Sprintf("订阅数据已保存(检查间隔 %d 秒)", interval), "monitor")
 }
 
 // SubscriptionAsJSON 帮助 handler 返回订阅

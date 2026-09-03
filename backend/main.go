@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -17,17 +19,25 @@ import (
 
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/auth"
+	"github.com/ovh-webui/server/internal/catalog"
 	"github.com/ovh-webui/server/internal/config"
 	"github.com/ovh-webui/server/internal/db"
 	"github.com/ovh-webui/server/internal/handlers"
 	"github.com/ovh-webui/server/internal/logger"
 	"github.com/ovh-webui/server/internal/monitor"
 	"github.com/ovh-webui/server/internal/purchase"
+	"github.com/ovh-webui/server/internal/secret"
 	"github.com/ovh-webui/server/internal/storage"
+	"github.com/ovh-webui/server/internal/telegram"
+	"github.com/ovh-webui/server/internal/updater"
 )
 
 func main() {
-	_ = godotenv.Load()
+	// envPath 就是 godotenv 读的那个文件。密钥自动生成时会追加到这里,
+	// 所以路径必须和 Load() 用的完全一致 —— 分叉了就会出现
+	// "写进了 A、下次从 B 读"的情况,而那意味着重新生成一把新密钥。
+	envPath := envFilePath()
+	_ = godotenv.Load(envPath)
 
 	level := slog.LevelInfo
 	if strings.EqualFold(os.Getenv("DEBUG"), "true") {
@@ -41,12 +51,47 @@ func main() {
 		os.Exit(1)
 	}
 
+	// 落盘加密:必须在打开数据库**之前**初始化,否则第一次读账户时解不开。
+	// 拿不到密钥不致命 —— 退化成明文(与升级前一致),但要明确告警,
+	// 不能让用户以为自己开了加密其实没开。
+	if err := secret.Init(paths.DataDir, envPath); err != nil {
+		console.Warn("凭据加密未启用，数据库里的 OVH 密钥与 Telegram Token 将以明文存储", "err", err)
+	} else if secret.KeyWasGenerated() {
+		console.Info("已自动生成数据库加密密钥并写入 " + secret.KeySource())
+		console.Info("请把它连同配置文件一起备份 —— 丢了这把钥匙，已保存的 OVH 凭据和 Telegram Token 就再也解不开了")
+	} else {
+		console.Info("凭据加密已启用（密钥来自 " + secret.KeySource() + "）")
+	}
+
 	sqliteDB, err := db.Open(paths.DataDir)
 	if err != nil {
 		console.Error("open sqlite", "err", err)
 		os.Exit(1)
 	}
+
+	// 密钥是刚生成的、库里却已经有密文 —— 说明原来那把钥匙丢了。
+	// 直接起来的话程序看着一切正常，只是每次调 OVH 都报签名错误，
+	// 没人猜得到是密钥问题；更糟的是用户会重新录入凭据把旧密文覆盖掉，
+	// 最后一点恢复余地也没了。所以这里宁可不起来，把话说清楚。
+	if secret.KeyWasGenerated() && !isTrue(os.Getenv("OVH_DB_KEY_RESET")) {
+		if has, herr := sqliteDB.HasEncryptedSecrets(); herr == nil && has {
+			console.Error("数据库里有加密过的凭据，但找不到对应的密钥，已停止启动")
+			console.Error("这通常是配置文件被覆盖/重置了，或者换机器时只拷了数据库没拷配置")
+			console.Error("怎么办：把原来的 " + secret.KeyEnv + " 那一行放回 " + envPath +
+				"（或用环境变量传进来）；确实找不回来就设 OVH_DB_KEY_RESET=1 启动，" +
+				"那些账户需要重新录入 OVH 凭据")
+			sqliteDB.Close()
+			os.Exit(1)
+		}
+	}
 	defer sqliteDB.Close()
+
+	// 老库升级:把已有的明文凭据就地加密。幂等,不迁移也能跑(读的时候兼容明文)
+	if n, merr := sqliteDB.EncryptExistingSecrets(); merr != nil {
+		console.Warn("迁移明文凭据时出错（不影响启动）", "err", merr)
+	} else if n > 0 {
+		console.Info("已把数据库里的明文凭据加密", "账户数", n)
+	}
 
 	lg := logger.New(paths.LogFile("app.log.json"), console)
 	cfgStore := config.New(sqliteDB)
@@ -70,14 +115,46 @@ func main() {
 	}
 	state.LoadAll()
 
+	// 密钥对不上时凭据会全部解成空串。只静默显示"空账户"的话,用户看到的现象是
+	// "账户还在、但连不上 OVH",完全猜不到根因。这里大声说清楚,并给出可执行的下一步。
+	if n := secret.DecryptFailures(); n > 0 {
+		console.Error("有 " + fmt.Sprintf("%d", n) + " 个加密字段解不开 —— 密钥与数据库对不上。" +
+			"常见原因:只恢复了 sniper.db 却没恢复 .dbkey,或换过 " + secret.KeyEnv + "。" +
+			"把原来的密钥放回去即可;找不回来的话需要在设置页重新录入 OVH 凭据。")
+		state.Logger.Error(fmt.Sprintf("[加密] %d 个字段解密失败:密钥与数据库不匹配", n), "system")
+	} else if secret.KeyWasGenerated() && len(state.Accounts) > 0 {
+		console.Warn("新生成了加密密钥,但库里已有账户 —— 如果这些账户的凭据是空的,说明原密钥丢了")
+	}
+
+	// 上一次更新留下的残骸(中断的临时文件)在这里清掉
+	updater.CleanupStale()
+
+	// 上一次更新之后没能正常启动?换回更新前的版本再跑。
+	// 判据是"有备份 + 有待验证标记":新版本活到对外服务那一刻会把标记删掉,
+	// 标记还在说明它没撑到那一步(配置不兼容、平台问题、启动即崩)。
+	// 抢购服务停机就是错过补货,不能让一次坏更新把机器撂在那儿。
+	if updater.RollbackIfStale(state) {
+		if exe, err := os.Executable(); err == nil {
+			console.Warn("已回滚到更新前的版本，正在用它重启")
+			_ = sqliteDB.Close()
+			if err := updater.Restart(exe); err != nil {
+				console.Error("回滚后重启失败", "err", err)
+				os.Exit(1)
+			}
+		}
+	}
+
+	// gracefulRestart 由 SelfUpdate 在替换完二进制后调用。
+	// 必须先关监听端口和 SQLite 再 exec:端口不放新进程会撞 "address already in use",
+	// SQLite 不干净关闭会留下 -wal / -shm。
+	var gracefulRestart = func(exe string) {}
+
 	// 监控器
 	mon := monitor.New(state)
+	// 删账户的级联清理需要摸到监控内存(SQL 清了、内存不清会被 SaveToDB 写回)
+	handlers.SetMonitorRef(mon)
 	mon.LoadFromDB()
-	mon.LoadMessageUUIDCacheFromDB()
-	mon.SetCheckInterval(5)
-	// 注意：启动时不要 SaveToDB()。
-	// ReplaceMonitorSubscriptions 会先 DELETE 全表；若加载失败/空读却再写回，会把线上订阅抹掉。
-	console.Info("监控检查间隔已强制设置为: 5秒（全局固定值）")
+	console.Info("监控就绪", "checkInterval", mon.CheckInterval())
 
 	// Gin
 	if mode := os.Getenv("GIN_MODE"); mode != "" {
@@ -90,10 +167,12 @@ func main() {
 	_ = r.SetTrustedProxies(nil)
 	r.Use(gin.Recovery())
 	r.Use(cors.New(cors.Config{
-		AllowAllOrigins:  true,
-		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
-		AllowHeaders:     []string{"Content-Type", "Authorization", "X-API-Key", "X-Request-Time"},
-		ExposeHeaders:    []string{"X-Cache-Warning"},
+		AllowAllOrigins: true,
+		AllowMethods:    []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
+		AllowHeaders:    []string{"Content-Type", "Authorization", "X-API-Key", "X-Request-Time"},
+		// X-Partial-Failures:部分明细拉取失败的计数(账单/退款/邮件等走响应头下发),
+		// 跨源部署时不列进 ExposeHeaders 浏览器就读不到,前端的"部分失败"提示会恒不显示
+		ExposeHeaders:    []string{"X-Cache-Warning", "X-Partial-Failures", "X-Cache-Age-Seconds"},
 		AllowCredentials: false,
 	}))
 
@@ -125,6 +204,7 @@ func main() {
 
 		// Queue
 		api.GET("/queue", handlers.GetQueue(state))
+		api.GET("/queue/timings", handlers.GetPurchaseTimings(state))
 		api.POST("/queue", handlers.AddQueueItem(state))
 		api.DELETE("/queue/clear", handlers.ClearQueue(state))
 		api.DELETE("/queue/:id", handlers.RemoveQueueItem(state))
@@ -137,9 +217,9 @@ func main() {
 		// Monitor
 		api.GET("/monitor/subscriptions", handlers.GetSubscriptions(state, mon))
 		api.POST("/monitor/subscriptions", handlers.AddSubscription(state, mon))
+		api.PUT("/monitor/subscriptions/:planCode", handlers.UpdateSubscription(state, mon))
 		api.POST("/monitor/subscriptions/batch-add-all", handlers.BatchAddAll(state, mon))
 		api.DELETE("/monitor/subscriptions/clear", handlers.ClearSubscriptions(state, mon))
-		api.PUT("/monitor/subscriptions/:planCode", handlers.UpdateSubscription(state, mon))
 		api.DELETE("/monitor/subscriptions/:planCode", handlers.RemoveSubscription(state, mon))
 		api.GET("/monitor/subscriptions/:planCode/history", handlers.GetSubscriptionHistory(state, mon))
 		api.POST("/monitor/start", handlers.StartMonitor(state, mon))
@@ -147,6 +227,8 @@ func main() {
 		api.GET("/monitor/status", handlers.GetMonitorStatus(state, mon))
 		api.PUT("/monitor/interval", handlers.SetMonitorInterval(state, mon))
 		api.POST("/monitor/test-notification", handlers.TestNotification(state))
+		// 通知通道体检:哪条配了、哪条能用。?verify=true 会真的去调远端
+		api.GET("/notify/channels", handlers.GetNotifyChannels(state))
 		api.GET("/telegram/verify", handlers.VerifyTelegram(state))
 
 		// Telegram
@@ -158,23 +240,27 @@ func main() {
 
 		// Servers / availability / cache
 		api.GET("/servers", handlers.GetServers(state))
-		api.POST("/servers/:planCode/price", handlers.GetServerPrice(state))
 		api.GET("/availability/*planCode", availabilityHandler(handlers.GetAvailability(state)))
 		api.POST("/availability/*planCode", availabilityHandler(handlers.GetAvailability(state)))
 		api.POST("/internal/monitor/price", handlers.MonitorPrice(state))
+		api.POST("/servers/:planCode/price", handlers.ServerPrice(state))
 		api.GET("/cache/info", handlers.CacheInfo(state))
 		api.POST("/cache/clear", handlers.ClearCache(state))
 		api.GET("/catalog", handlers.GetCatalog(state))
 		api.GET("/system/metrics", handlers.GetSystemMetrics(state))
 		api.GET("/version", handlers.GetVersion(state))
 		api.GET("/version/check-update", handlers.CheckUpdate(state))
+		// 在线更新:下载 → 校验 → 替换自己 → 自动重启。gracefulRestart 在下面赋值,
+		// 这里用闭包间接引用,避免"路由要在 server 之前注册、server 又要在路由之后创建"的鸡生蛋
+		api.POST("/version/update", handlers.SelfUpdate(state, func(exe string) { gracefulRestart(exe) }))
+		api.GET("/version/update/status", handlers.GetUpdateStatus(state))
 
 		// Accounts (多账户管理)
 		api.GET("/accounts", handlers.ListAccounts(state))
 		api.GET("/accounts/:id", handlers.GetAccountByID(state))
 		api.POST("/accounts", handlers.CreateAccount(state))
 		api.PUT("/accounts/:id", handlers.UpdateAccount(state))
-		api.DELETE("/accounts/:id", handlers.DeleteAccountByID(state, mon))
+		api.DELETE("/accounts/:id", handlers.DeleteAccountByID(state))
 		api.POST("/accounts/:id/set-default", handlers.SetDefaultAccountByID(state))
 		api.POST("/accounts/:id/verify", handlers.VerifyAccount(state))
 
@@ -246,6 +332,8 @@ func main() {
 			sc.POST("/:service_name/ola/group", handlers.OLAGroup(state))
 			sc.POST("/:service_name/ola/ungroup", handlers.OLAUngroup(state))
 			sc.GET("/:service_name/console", handlers.GetIPMIConsole(state))
+			// 只查支持哪几种控制台类型(HTML5 / Java KVM / SOL),不申请会话
+			sc.GET("/:service_name/ipmi-types", handlers.GetIPMIAccessTypes(state))
 			sc.GET("/:service_name/statistics", handlers.GetTrafficStatistics(state))
 			sc.GET("/:service_name/network-stats", handlers.GetNetworkInterfaceStats(state))
 
@@ -259,11 +347,20 @@ func main() {
 			sc.DELETE("/:service_name/backup-ftp", handlers.DeleteBackupFTP(state))
 			sc.GET("/:service_name/backup-ftp/access", handlers.GetBackupFTPAccess(state))
 			sc.POST("/:service_name/backup-ftp/access", handlers.AddBackupFTPAccess(state))
+			// ipBlock 是带掩码的 CIDR(如 37.59.1.0/28)。gin 默认 UseRawPath=false,%2F 会被还原成 "/",
+			// 把 URL 撑成多一段,:ip_block 永远匹配不上(实测编码与否都 404)。
+			// 所以主用 query 形式 ?ipBlock=...,旧的路径形式保留做兼容(handler 三级兜底取值)。
+			sc.DELETE("/:service_name/backup-ftp/access", handlers.DeleteBackupFTPAccess(state))
 			sc.DELETE("/:service_name/backup-ftp/access/:ip_block", handlers.DeleteBackupFTPAccess(state))
 			sc.POST("/:service_name/backup-ftp/password", handlers.ChangeBackupFTPPassword(state))
 			sc.GET("/:service_name/backup-ftp/authorizable-blocks", handlers.GetBackupFTPAuthorizableBlocks(state))
 			sc.GET("/:service_name/backup-cloud", handlers.GetBackupCloud(state))
 			sc.GET("/:service_name/backup-cloud/offer-details", handlers.GetBackupCloudOfferDetails(state))
+			// 云备份的写操作(官方 /features/backupCloud POST/DELETE 与 /password POST),
+			// 原来只实现了只读,用户无法在控制台激活/停用/重置密码
+			sc.POST("/:service_name/backup-cloud", handlers.ActivateBackupCloud(state))
+			sc.DELETE("/:service_name/backup-cloud", handlers.DeleteBackupCloud(state))
+			sc.POST("/:service_name/backup-cloud/password", handlers.ChangeBackupCloudPassword(state))
 
 			// misc
 			sc.GET("/:service_name/secondary-dns", handlers.GetSecondaryDNS(state))
@@ -287,6 +384,9 @@ func main() {
 			sc.GET("/:service_name/ongoing", handlers.GetOngoingTasks(state))
 			sc.GET("/:service_name/license/windows/compliant", handlers.GetCompliantWindowsVersions(state))
 			sc.GET("/:service_name/license/windows-sql/compliant", handlers.GetCompliantWindowsSqlVersions(state))
+			// 到期终止走 terminationPolicy,不是 /terminate ——
+			// 后者是立即终止,提交即暂停服务器
+			sc.PUT("/:service_name/termination-policy", handlers.UpdateTerminationPolicy(state))
 			sc.POST("/:service_name/terminate", handlers.TerminateService(state))
 			sc.POST("/:service_name/confirm-termination", handlers.ConfirmTermination(state))
 			sc.GET("/:service_name/spla", handlers.GetSPLAList(state))
@@ -334,6 +434,7 @@ func main() {
 
 			// 杂项
 			vc.POST("/:service_name/change-contact", handlers.ChangeVpsContact(state))
+			vc.PUT("/:service_name/termination-policy", handlers.UpdateVpsTerminationPolicy(state))
 			vc.POST("/:service_name/terminate", handlers.TerminateVps(state))
 			vc.POST("/:service_name/confirm-termination", handlers.ConfirmVpsTermination(state))
 			vc.GET("/:service_name/secondary-dns", handlers.GetVpsSecondaryDns(state))
@@ -358,10 +459,12 @@ func main() {
 		}
 
 		// VPS monitor
+		// 在售型号来自 OVH 实时目录 —— 写死过的那份已经整代停售了
+		api.GET("/vps-monitor/models", handlers.GetVPSModels(state))
 		api.GET("/vps-monitor/subscriptions", handlers.GetVPSSubscriptions(state))
 		api.POST("/vps-monitor/subscriptions", handlers.AddVPSSubscription(state))
-		api.DELETE("/vps-monitor/subscriptions/clear", handlers.ClearVPSSubscriptions(state))
 		api.PUT("/vps-monitor/subscriptions/:subscription_id", handlers.UpdateVPSSubscription(state))
+		api.DELETE("/vps-monitor/subscriptions/clear", handlers.ClearVPSSubscriptions(state))
 		api.DELETE("/vps-monitor/subscriptions/:subscription_id", handlers.RemoveVPSSubscription(state))
 		api.GET("/vps-monitor/subscriptions/:subscription_id/history", handlers.GetVPSSubscriptionHistory(state))
 		api.POST("/vps-monitor/start", handlers.StartVPSMonitor(state))
@@ -390,6 +493,12 @@ func main() {
 
 	// 后台线程
 	go purchase.ProcessQueueLoop(state)
+	// 预热各账户子公司的区域配置:region 的合法取值要从 10MB 的公开目录里解析,
+	// 首次解析放在抢购链路上会白白慢 2-7 秒
+	go catalog.WarmRegionCache(state)
+	// Telegram webhook secret 自愈：老部署注册过的 webhook 不带 secret_token，
+	// 启动时用同一 URL 重注册一次，把强校验补上（未配置 TG 时无操作）。
+	go telegram.AutoUpgradeWebhookSecret(state)
 	// 服务器目录走懒加载：访问到且缓存过期时才打 OVH，无后台定时刷新
 
 	// 自动启动监控（如果有订阅）
@@ -399,13 +508,13 @@ func main() {
 	}
 
 	state.Logger.Info("Server started", "system")
-	// 默认监听所有网卡（双栈 IPv4+IPv6）。容器 / Linux 生产请保持 LISTEN_HOST 为空。
-	// 仅本机调试可设 LISTEN_HOST=127.0.0.1
+	// 默认监听所有网卡（双栈 IPv4+IPv6），这样 localhost / 127.0.0.1 / 局域网 IP 都能访问。
+	// Windows 上 localhost 常先解析到 ::1，单绑 127.0.0.1 会被浏览器拒连。
+	// 如果只想锁本机回环，设 LISTEN_HOST=127.0.0.1
 	host := os.Getenv("LISTEN_HOST")
 	addr := host + ":" + state.Port
 	console.Info("Listening", "addr", addr, "auth", enableAuth, "ui", hasUI(), "dataDir", paths.DataDir)
 
-	// http.Server + 优雅退出：Docker/systemd 发 SIGTERM 时先停接新连接、刷日志，再退出
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           r,
@@ -415,9 +524,42 @@ func main() {
 		IdleTimeout:       90 * time.Second,
 	}
 
+	// 端口真正 Listen 成功之后才标记"这一版能跑" —— 此时数据库已打开、路由已注册、
+	// 端口也占上了。太早标记等于没验证:启动就 panic、端口被占、数据库损坏,
+	// 恰恰是最需要回滚的几种情况。
+	//
+	// 自己 Listen 而不是用 ListenAndServe + sleep:后者只能靠"睡几秒应该起来了"猜,
+	// 猜早了端口还没占上就宣布健康,猜晚了这几秒里被重启一次就会被误判成启动失败。
+	// 拿到 listener 就是确凿的成功信号,没有窗口。
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		console.Error("listen", "err", err)
+		os.Exit(1)
+	}
+	updater.MarkHealthy(state)
+
+	// 自更新完成后走这里:先停止接受新请求并等在途请求收尾,再关数据库,最后换进程映像。
+	// 顺序不能反 —— 先 exec 的话,新进程会发现端口还被自己占着。
+	gracefulRestart = func(exe string) {
+		state.Logger.Info("[更新] 正在优雅关闭以完成重启", "version")
+		state.Logger.Flush()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(ctx); err != nil {
+			console.Warn("shutdown", "err", err)
+		}
+		if err := sqliteDB.Close(); err != nil {
+			console.Warn("close sqlite", "err", err)
+		}
+		if err := updater.Restart(exe); err != nil {
+			console.Error("restart", "err", err)
+			os.Exit(1)
+		}
+	}
+
 	errCh := make(chan error, 1)
 	go func() {
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
 			errCh <- err
 		}
 	}()
@@ -434,13 +576,10 @@ func main() {
 		state.Logger.Info("收到退出信号，正在优雅关闭…", "system")
 	}
 
-	// 停监控循环（若实现了 Stop）
 	if mon != nil {
 		mon.Stop()
 	}
-	// 刷日志到盘
 	state.Logger.Flush()
-
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
@@ -506,4 +645,23 @@ func availabilityHandler(h gin.HandlerFunc) gin.HandlerFunc {
 		c.Params = append(c.Params[:0], gin.Param{Key: "planCode", Value: pc})
 		h(c)
 	}
+}
+
+// envFilePath 配置文件的位置。
+// 默认是工作目录下的 .env（godotenv 的默认行为），允许用 OVH_ENV_FILE 覆盖 ——
+// systemd / docker 里工作目录未必是程序所在目录，把路径写死会让密钥"下次启动就找不到"。
+func envFilePath() string {
+	if p := strings.TrimSpace(os.Getenv("OVH_ENV_FILE")); p != "" {
+		return p
+	}
+	return ".env"
+}
+
+// isTrue 环境变量的宽松真值判断
+func isTrue(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
 }

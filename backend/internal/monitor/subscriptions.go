@@ -3,15 +3,12 @@ package monitor
 import (
 	"fmt"
 	"time"
-
-	"github.com/ovh-webui/server/internal/db"
 )
 
-// AddSubscription 对应 Python: add_subscription
 // autoOrderAccountID:auto_order 触发时用哪个账户下单;空 = 只通知不下单
 func (m *Monitor) AddSubscription(planCode string, datacenters []string, notifyAvailable, notifyUnavailable bool,
 	serverName string, lastStatus map[string]string, history []HistoryEntry, autoOrder bool, quantity int,
-	autoOrderAccountID string) {
+	autoOrderAccountID string, autoPay bool) {
 
 	m.subsMu.Lock()
 	defer m.subsMu.Unlock()
@@ -22,6 +19,9 @@ func (m *Monitor) AddSubscription(planCode string, datacenters []string, notifyA
 			if datacenters == nil {
 				datacenters = []string{}
 			}
+			// 必须持订阅自己的锁改:subsMu 只保护切片,而这条订阅此刻很可能
+			// 正被检查 goroutine 读着(它拿的是同一个指针)。
+			s.mu.Lock()
 			s.Datacenters = datacenters
 			s.NotifyAvailable = notifyAvailable
 			s.NotifyUnavailable = notifyUnavailable
@@ -36,9 +36,12 @@ func (m *Monitor) AddSubscription(planCode string, datacenters []string, notifyA
 			}
 			s.ServerName = serverName
 			s.AutoOrderAccountID = autoOrderAccountID
+			// 自动付款依附于自动下单:不下单就谈不上付款
+			s.AutoPay = autoPay && autoOrder
 			if s.History == nil {
 				s.History = []HistoryEntry{}
 			}
+			s.mu.Unlock()
 			return
 		}
 	}
@@ -61,6 +64,7 @@ func (m *Monitor) AddSubscription(planCode string, datacenters []string, notifyA
 		CreatedAt:          time.Now().Format(time.RFC3339Nano),
 		History:            history,
 		AutoOrderAccountID: autoOrderAccountID,
+		AutoPay:            autoPay && autoOrder,
 	}
 	if autoOrder {
 		if quantity < 1 {
@@ -84,7 +88,6 @@ func (m *Monitor) AddSubscription(planCode string, datacenters []string, notifyA
 	m.state.Logger.Info(fmt.Sprintf("添加订阅: %s, 数据中心: %s", displayName, dcsStr), "monitor")
 }
 
-// RemoveSubscription 对应 Python: remove_subscription
 func (m *Monitor) RemoveSubscription(planCode string) bool {
 	m.subsMu.Lock()
 	defer m.subsMu.Unlock()
@@ -103,7 +106,6 @@ func (m *Monitor) RemoveSubscription(planCode string) bool {
 	return false
 }
 
-// ClearSubscriptions 对应 Python: clear_subscriptions
 func (m *Monitor) ClearSubscriptions() int {
 	m.subsMu.Lock()
 	defer m.subsMu.Unlock()
@@ -113,13 +115,16 @@ func (m *Monitor) ClearSubscriptions() int {
 	return count
 }
 
-// FindSubscription 按 planCode 查找
+// FindSubscription 按 planCode 查找,返回的是**深拷贝**(与 Snapshot 同口径)。
+// 不返回真身:调用方(handler 读 History、SubscriptionAsJSON 做 Marshal)都在 HTTP goroutine 里,
+// 而检查 goroutine 正并发地往同一条订阅上 append History —— 直接把指针递出去就是数据竞争。
+// 需要改订阅请走 AddSubscription / RemoveSubscription。
 func (m *Monitor) FindSubscription(planCode string) *Subscription {
 	m.subsMu.Lock()
 	defer m.subsMu.Unlock()
 	for _, s := range m.subscriptions {
 		if s.PlanCode == planCode {
-			return s
+			return s.snapshot()
 		}
 	}
 	return nil
@@ -143,71 +148,18 @@ func (m *Monitor) KnownServers() []string {
 	return out
 }
 
-// MessageUUIDCacheLookup 用于 webhook 回调时取回完整配置。
-// 先查内存，再查 SQLite（进程重启后按钮仍可用）。
+// MessageUUIDCacheLookup 用于 webhook 回调时取回完整配置
 func (m *Monitor) MessageUUIDCacheLookup(id string) *CachedMessage {
-	ttlSec := int64(m.messageUUIDCacheTTL.Seconds())
-	now := time.Now().Unix()
-
-	// 注意：lookup 允许读取未消费配置；是否已 used 由 webhook 层单独判断。
-	// 不要在这里因 used_at 返回 nil，否则「先 consume 再 lookup」或并发路径会丢配置。
-
 	m.cacheLock.Lock()
+	defer m.cacheLock.Unlock()
 	if cm, ok := m.messageUUIDCache[id]; ok {
-		if now-int64(cm.Timestamp) < ttlSec {
-			m.cacheLock.Unlock()
+		if time.Now().Unix()-int64(cm.Timestamp) < int64(m.messageUUIDCacheTTL.Seconds()) {
 			return cm
 		}
 		delete(m.messageUUIDCache, id)
-		m.cacheLock.Unlock()
 		m.state.Logger.Warn("UUID缓存已过期: "+id, "telegram")
-		if m.state.DB != nil {
-			_ = m.state.DB.DeleteTelegramButton(id)
-		}
-		return nil
 	}
-	m.cacheLock.Unlock()
-
-	// 内存未命中 → SQLite（部署/重启后恢复）
-	if m.state.DB == nil {
-		return nil
-	}
-	row, ok, err := m.state.DB.GetTelegramButton(id)
-	if err != nil {
-		m.state.Logger.Warn("读取 UUID 持久化缓存失败: "+err.Error(), "telegram")
-		return nil
-	}
-	if !ok {
-		return nil
-	}
-	if now-int64(row.CreatedAt) >= ttlSec {
-		m.state.Logger.Warn("UUID持久化缓存已过期: "+id, "telegram")
-		_ = m.state.DB.DeleteTelegramButton(id)
-		return nil
-	}
-	cm := &CachedMessage{
-		PlanCode:   row.PlanCode,
-		Datacenter: row.Datacenter,
-		Options:    db.ParseTelegramButtonOptions(row.Options),
-		ConfigInfo: db.ParseTelegramButtonConfigInfo(row.ConfigInfo),
-		Timestamp:  row.CreatedAt,
-	}
-	// 回灌内存，避免每次点按钮都查库
-	m.cacheLock.Lock()
-	m.messageUUIDCache[id] = cm
-	m.cacheLock.Unlock()
-	m.state.Logger.Info("✅ 从 SQLite 恢复 UUID 按钮配置: "+id+" → "+cm.PlanCode+"@"+cm.Datacenter, "telegram")
-	return cm
-}
-
-// InvalidateMessageUUID 入队成功后从内存删除按钮（DB used_at 由 TryConsume 负责）
-func (m *Monitor) InvalidateMessageUUID(id string) {
-	if id == "" {
-		return
-	}
-	m.cacheLock.Lock()
-	delete(m.messageUUIDCache, id)
-	m.cacheLock.Unlock()
+	return nil
 }
 
 // OptionsCacheLookup 兼容旧机制
@@ -224,15 +176,22 @@ func (m *Monitor) OptionsCacheLookup(key string) []string {
 	return nil
 }
 
-// cleanupExpiredCaches 对应 Python: _cleanup_expired_caches
 func (m *Monitor) cleanupExpiredCaches() {
 	now := time.Now().Unix()
-	ttlUUID := int64(m.messageUUIDCacheTTL.Seconds())
-	ttlOpts := int64(m.optionsCacheTTL.Seconds())
+	// 顺带清理 SQLite 里过期的一键下单按钮，防止表无限增长
+	if m.state.DB != nil {
+		before := float64(time.Now().Add(-m.messageUUIDCacheTTL).Unix())
+		if n, err := m.state.DB.DeleteExpiredTelegramButtons(before); err != nil {
+			m.state.Logger.Debug("清理过期一键下单按钮失败: "+err.Error(), "telegram")
+		} else if n > 0 {
+			m.state.Logger.Debug(fmt.Sprintf("已清理 %d 个过期一键下单按钮", n), "telegram")
+		}
+	}
 	m.cacheLock.Lock()
+	defer m.cacheLock.Unlock()
 	expUUIDs := []string{}
 	for k, v := range m.messageUUIDCache {
-		if now-int64(v.Timestamp) >= ttlUUID {
+		if now-int64(v.Timestamp) >= int64(m.messageUUIDCacheTTL.Seconds()) {
 			expUUIDs = append(expUUIDs, k)
 		}
 	}
@@ -241,75 +200,118 @@ func (m *Monitor) cleanupExpiredCaches() {
 	}
 	expOpts := []string{}
 	for k, v := range m.optionsCache {
-		if now-int64(v.Timestamp) >= ttlOpts {
+		if now-int64(v.Timestamp) >= int64(m.optionsCacheTTL.Seconds()) {
 			expOpts = append(expOpts, k)
 		}
 	}
 	for _, k := range expOpts {
 		delete(m.optionsCache, k)
 	}
-	m.cacheLock.Unlock()
-
-	// 同步清理 SQLite 过期按钮
-	if m.state.DB != nil {
-		if n, err := m.state.DB.DeleteExpiredTelegramButtons(float64(now - ttlUUID)); err != nil {
-			m.state.Logger.Warn("清理过期 TG 按钮失败: "+err.Error(), "monitor")
-		} else if n > 0 {
-			m.state.Logger.Debug(fmt.Sprintf("清理过期 TG 按钮: %d 条", n), "monitor")
+	// 顺带扫掉 resolveQueryAccount 的过期条目:它的 key 里带账户指纹,
+	// 每改一次账户就换一批 key,旧 key 再也不会被读到 —— 不清就是只涨不降的内存。
+	queryAccountMu.Lock()
+	expChoices := 0
+	for k, c := range queryAccountCache {
+		if time.Since(c.at) >= c.effectiveTTL() {
+			delete(queryAccountCache, k)
+			expChoices++
 		}
+	}
+	queryAccountMu.Unlock()
+	if expChoices > 0 {
+		m.state.Logger.Debug(fmt.Sprintf("清理过期查询账户选取缓存: %d 条", expChoices), "monitor")
 	}
 	if len(expUUIDs) > 0 || len(expOpts) > 0 {
 		m.state.Logger.Debug(fmt.Sprintf("清理过期缓存: UUID=%d个, Options=%d个", len(expUUIDs), len(expOpts)), "monitor")
 	}
 }
 
-// AddMessageUUID 缓存按钮对应的配置（内存 + SQLite 双写）
+// AddMessageUUID 缓存按钮对应的配置
 func (m *Monitor) AddMessageUUID(id, planCode, datacenter string, options []string, configInfo map[string]interface{}) {
-	ts := float64(time.Now().Unix())
-	if options == nil {
-		options = []string{}
-	}
+	now := float64(time.Now().Unix())
 	m.cacheLock.Lock()
 	m.messageUUIDCache[id] = &CachedMessage{
 		PlanCode:   planCode,
 		Datacenter: datacenter,
-		Options:    append([]string{}, options...),
+		Options:    options,
 		ConfigInfo: configInfo,
-		Timestamp:  ts,
+		Timestamp:  now,
 	}
 	m.cacheLock.Unlock()
 
+	// 同时落库：内存缓存进程重启就没了，按钮一点击就 400；
+	// 落库后按钮跨重启可用，并且 used_at 让它只能被消费一次。
 	if m.state.DB != nil {
-		if err := m.state.DB.UpsertTelegramButton(id, planCode, datacenter, options, configInfo, ts); err != nil {
-			m.state.Logger.Warn("持久化 TG 一键下单按钮失败: "+err.Error(), "monitor")
+		if err := m.state.DB.UpsertTelegramButton(id, planCode, datacenter, options, configInfo, now); err != nil {
+			m.state.Logger.Warn("一键下单按钮落库失败（仍可用内存缓存）: "+err.Error(), "telegram")
 		}
 	}
 }
 
-// LoadMessageUUIDCacheFromDB 启动时回灌近 TTL 内的按钮配置
-func (m *Monitor) LoadMessageUUIDCacheFromDB() {
-	if m.state.DB == nil {
-		return
-	}
-	since := float64(time.Now().Add(-m.messageUUIDCacheTTL).Unix())
-	rows, err := m.state.DB.ListTelegramButtonsSince(since)
-	if err != nil {
-		m.state.Logger.Warn("加载 TG 一键下单按钮缓存失败: "+err.Error(), "monitor")
-		return
-	}
-	m.cacheLock.Lock()
-	for _, row := range rows {
-		m.messageUUIDCache[row.ID] = &CachedMessage{
-			PlanCode:   row.PlanCode,
-			Datacenter: row.Datacenter,
-			Options:    db.ParseTelegramButtonOptions(row.Options),
-			ConfigInfo: db.ParseTelegramButtonConfigInfo(row.ConfigInfo),
-			Timestamp:  row.CreatedAt,
+// SubscriptionConfig 取一份订阅配置的只读快照。
+// 为什么不直接把 *Subscription 交出去让调用方读字段:那些字段被检查 goroutine
+// 并发改着,裸读是数据竞争。这里在订阅自己的锁里拷一份出去。
+// 只拷配置字段 —— LastStatus / History 是状态,编辑接口不该碰。
+func (m *Monitor) SubscriptionConfig(planCode string) SubscriptionConfig {
+	m.subsMu.Lock()
+	defer m.subsMu.Unlock()
+	for _, s := range m.subscriptions {
+		if s.PlanCode != planCode {
+			continue
 		}
+		s.mu.Lock()
+		cfg := SubscriptionConfig{
+			PlanCode:           s.PlanCode,
+			Datacenters:        append([]string(nil), s.Datacenters...),
+			NotifyAvailable:    s.NotifyAvailable,
+			NotifyUnavailable:  s.NotifyUnavailable,
+			ServerName:         s.ServerName,
+			AutoOrder:          s.AutoOrder,
+			Quantity:           s.Quantity,
+			AutoOrderAccountID: s.AutoOrderAccountID,
+			AutoPay:            s.AutoPay,
+		}
+		s.mu.Unlock()
+		return cfg
 	}
-	n := len(rows)
-	m.cacheLock.Unlock()
-	if n > 0 {
-		m.state.Logger.Info(fmt.Sprintf("已从 SQLite 回灌 %d 个 TG 一键下单按钮", n), "monitor")
+	return SubscriptionConfig{}
+}
+
+// SubscriptionConfig 订阅里「用户可改的那部分」
+type SubscriptionConfig struct {
+	PlanCode           string
+	Datacenters        []string
+	NotifyAvailable    bool
+	NotifyUnavailable  bool
+	ServerName         string
+	AutoOrder          bool
+	Quantity           int
+	AutoOrderAccountID string
+	AutoPay            bool
+}
+
+// ClearAccountRefs 把内存订阅里对某账户的引用清掉。
+//
+// 删账户时 SQL 已经把 auto_order_account_id 清空,但 Monitor 内存里还是旧值 ——
+// 而 SaveToDB 是拿内存整表 Replace 回写的,任何一次订阅增删改都会把已删的
+// 账户 ID 复活回数据库,SQL 的级联清理等于白做。所以内存必须同步清。
+// 返回清了几条,给日志用。
+func (m *Monitor) ClearAccountRefs(accountID string) int {
+	if accountID == "" {
+		return 0
 	}
+	m.subsMu.Lock()
+	defer m.subsMu.Unlock()
+	n := 0
+	for _, s := range m.subscriptions {
+		s.mu.Lock()
+		if s.AutoOrderAccountID == accountID {
+			s.AutoOrderAccountID = ""
+			// 账户没了就不可能下单,别让 AutoOrder 停留在"开着但买不了"的假状态
+			s.AutoOrder = false
+			n++
+		}
+		s.mu.Unlock()
+	}
+	return n
 }

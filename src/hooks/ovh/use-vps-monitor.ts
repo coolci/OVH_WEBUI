@@ -5,6 +5,8 @@ import { toast } from "sonner";
 
 export interface VPSSubscription {
   id: string;
+  /** OVH 已经不卖这个型号了 —— 这条订阅永远不会响。后端每次读列表时现算，不落库 */
+  retired?: boolean;
   planCode: string;
   ovhSubsidiary: string;
   datacenters: string[];
@@ -14,6 +16,10 @@ export interface VPSSubscription {
   notifyUnavailable: boolean;
   autoOrder?: boolean;
   quantity?: number;
+  /** 自动下单时装什么系统。空 = 用 OVH 默认镜像 */
+  os?: string;
+  /** 下单成功后自动付款(显式开关,默认关) */
+  autoPay?: boolean;
   /** 触发 auto-order 时用哪个 OVH 账户下单(空 = 只通知) */
   autoOrderAccountId?: string;
   lastStatus: Record<string, string>;
@@ -131,6 +137,31 @@ export function useUpdateVPSSubscription() {
 }
 
 /** 清空 VPS 订阅 */
+export interface VPSModel {
+  planCode: string;
+  name: string;
+  generation: string;
+  price?: string;
+  location?: string;
+  datacenters?: string[];
+  osChoices?: string[];
+}
+
+/** 当前还在售的 VPS 型号，来自 OVH 实时目录 */
+export function useVPSModels(subsidiary?: string) {
+  return useQuery({
+    queryKey: ["vps-monitor", "models", subsidiary || ""],
+    queryFn: async () =>
+      (
+        await api.get<{ subsidiary: string; models: VPSModel[] }>("/vps-monitor/models", {
+          params: subsidiary ? { subsidiary } : undefined,
+        })
+      ).data,
+    staleTime: 30 * 60 * 1000,
+    retry: 0,
+  });
+}
+
 export function useClearVPSMonitor() {
   const qc = useQueryClient();
   return useMutation({

@@ -363,6 +363,7 @@ function AddSubscriptionDialog({
   const [autoOrder, setAutoOrder] = useState(false);
   const [quantity, setQuantity] = useState(1);
   const [autoOrderAccountId, setAutoOrderAccountId] = useState("");
+  const [autoPay, setAutoPay] = useState(false);
 
   const reset = () => {
     setPlanCode("");
@@ -372,6 +373,7 @@ function AddSubscriptionDialog({
     setAutoOrder(false);
     setQuantity(1);
     setAutoOrderAccountId("");
+    setAutoPay(false);
   };
 
   const submit = (e: React.FormEvent) => {
@@ -399,6 +401,7 @@ function AddSubscriptionDialog({
         autoOrder,
         quantity: autoOrder ? quantity : undefined,
         autoOrderAccountId: autoOrder ? autoOrderAccountId : "",
+        autoPay: autoOrder ? autoPay : false,
       },
       {
         onSuccess: () => {
@@ -500,6 +503,10 @@ function AddSubscriptionDialog({
               <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1.5">
                 下单数量
+              </label>
+              <label className="flex items-center gap-2.5 cursor-pointer rounded-xl border border-border px-3.5 py-2.5 hover:bg-muted/40 transition-colors">
+                <Checkbox checked={autoPay} onCheckedChange={(v) => setAutoPay(!!v)} />
+                <span className="text-sm">抢到后自动付款</span>
               </label>
               <Input
                 type="number"

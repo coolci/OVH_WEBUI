@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/ovh-webui/server/internal/app"
+	"github.com/ovh-webui/server/internal/catalog"
 	"github.com/ovh-webui/server/internal/types"
 )
 
@@ -22,10 +24,10 @@ func AddQueueItem(state *app.State) gin.HandlerFunc {
 			Datacenter    string   `json:"datacenter"`
 			Options       []string `json:"options"`
 			RetryInterval int      `json:"retryInterval"`
+			// AutoPay 下单成功后用默认支付方式自动付款(显式开关,默认关)
+			AutoPay bool `json:"autoPay"`
 		}
 		_ = c.ShouldBindJSON(&body)
-		body.PlanCode = strings.TrimSpace(body.PlanCode)
-		body.Datacenter = strings.TrimSpace(body.Datacenter)
 		if body.AccountID == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "缺少 account_id"})
 			return
@@ -34,8 +36,22 @@ func AddQueueItem(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "account_id 不存在"})
 			return
 		}
+		body.PlanCode = strings.TrimSpace(body.PlanCode)
+		body.Datacenter = strings.TrimSpace(body.Datacenter)
 		if body.PlanCode == "" || body.Datacenter == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "缺少 planCode 或 datacenter"})
+			return
+		}
+		// 入队前挡住"这个账户根本买不到这台机器"的任务(跨区 / 非 Eco / planCode 不存在)。
+		// 前端的下单对话框有独立的账户选择器(web/src/routes/servers.tsx:646),
+		// 机型列表却是按另一个账户拉的 —— 拿欧区机型配美区账户是一键就能做出来的组合。
+		// 而这种任务进了队列后:availabilities 返回 200 + 空数组 → PurchaseServer 判"无货"
+		// → 按 retryInterval 永远重试,日志里永远只有一句"当前无货",用户看不出错在哪。
+		// 所以在这里就说清楚,而不是让它在后台空转到天荒地老。
+		// 探测失败(catalog.PlanVerdictUnknown)不拦 —— 一次网络瞬断不该让用户下不了单。
+		if verdict, hint := catalog.ClassifyPlan(state, body.AccountID, body.PlanCode, "queue"); hint != "" {
+			state.Logger.Warn(fmt.Sprintf("[queue] 拒绝任务(判定 %d): %s", verdict, hint), "queue")
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": hint})
 			return
 		}
 		if body.RetryInterval == 0 {
@@ -52,8 +68,8 @@ func AddQueueItem(state *app.State) gin.HandlerFunc {
 			UpdatedAt:     types.NowISO(),
 			RetryInterval: body.RetryInterval,
 			RetryCount:    0,
-			MaxRetries:    0, // 0 = 无限抢购（与 Telegram 一致）；quick-order 路径单独设上限
 			LastCheckTime: 0,
+			AutoPay:       body.AutoPay,
 		}
 		state.QueueMu.Lock()
 		state.Queue = append(state.Queue, item)

@@ -10,12 +10,16 @@ export interface QueueItem {
   accountId: string;
   planCode: string;
   datacenter: string;
+  /** 下单成功后用 OVH 默认支付方式自动付款(显式开关,默认关) */
+  autoPay?: boolean;
   options: string[];
   status: QueueStatus;
   createdAt: string;
   updatedAt: string;
   retryInterval: number;
   retryCount: number;
+  /** 真正提交给 OVH 并失败的次数（无货的轮次不计）。后端按它封顶重试。 */
+  failureCount?: number;
   /** 后端 types.QueueItem 还会传回这几个字段（多为 omitempty），前端目前不渲染但保留类型对齐 */
   maxRetries?: number;
   lastCheckTime?: number;
@@ -23,6 +27,24 @@ export interface QueueItem {
   priority?: number;
   fromTelegram?: boolean;
   configSniperTaskId?: string;
+}
+
+export interface PurchaseTiming {
+  at: string;
+  totalMs: number;
+  phases: { name: string; ms: number }[];
+  /** ordered = 真的下单了；unavailable = 那一轮没货；failed = 中途出错 */
+  outcome: "ordered" | "unavailable" | "failed";
+}
+
+/** 每条抢购链路（机型@机房）最近一轮的阶段耗时 */
+export function usePurchaseTimings() {
+  return useQuery({
+    queryKey: ["queue", "timings"],
+    queryFn: async () =>
+      (await api.get<{ timings: Record<string, PurchaseTiming> }>("/queue/timings")).data.timings,
+    refetchInterval: 5000,
+  });
 }
 
 /** 抢购队列列表 */
@@ -50,6 +72,7 @@ export function useCreateQueueItem() {
       options?: string[];
       retryInterval?: number;
       quantity?: number;
+      autoPay?: boolean;
     }) => {
       const qty = Math.max(1, payload.quantity ?? 1);
       const dcs = payload.datacenters;
@@ -64,6 +87,7 @@ export function useCreateQueueItem() {
               datacenter: dc,
               retryInterval: payload.retryInterval,
               options: payload.options || [],
+              autoPay: payload.autoPay ?? false,
             });
             success++;
           } catch (e) {

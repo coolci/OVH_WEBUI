@@ -174,7 +174,7 @@ func cmdMonitor(state *app.State, mon *monitor.Monitor, args []string) string {
 	}
 	state.ServerPlansMu.RUnlock()
 
-	mon.AddSubscription(planCode, dcs, true, false, serverName, nil, nil, false, 0, "")
+	mon.AddSubscription(planCode, dcs, true, false, serverName, nil, nil, false, 0, "", false)
 	mon.SaveToDB()
 	if !mon.Running() {
 		mon.Start()

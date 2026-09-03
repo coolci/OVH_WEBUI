@@ -24,7 +24,7 @@ import {
   useOwnedVps, useVpsServiceInfo, useVpsIps, useVpsCurrentOS,
   useVpsStart, useVpsStop, useVpsReboot, useVpsConsoleUrl, useVpsSetPassword,
   useUpdateVpsRenewal, useChangeVpsContact,
-  useTerminateVps, useConfirmTerminateVps,
+  useTerminateVps, useConfirmTerminateVps, useUpdateVpsTerminationPolicy,
   useVpsEngagement, useVpsEngagementAvailable, useVpsEngagementRequest,
   useCreateVpsEngagementRequest, useDeleteVpsEngagementRequest, useUpdateVpsEngagementEndRule,
   type OwnedVps,
@@ -184,6 +184,7 @@ function VpsDetail({
   const setPwd = useVpsSetPassword(server.serviceName);
   const terminate = useTerminateVps();
   const confirmTerm = useConfirmTerminateVps();
+  const vpsTermPolicy = useUpdateVpsTerminationPolicy(server.serviceName);
 
   const [reinstallOpen, setReinstallOpen] = useState(false);
   const [setPwdOpen, setSetPwdOpen] = useState(false);
@@ -555,6 +556,7 @@ function VpsDetail({
           open={renewalOpen}
           onOpenChange={setRenewalOpen}
           mutation={renewalMutation}
+          termination={{ policy: vpsTermPolicy }}
         />
       )}
 

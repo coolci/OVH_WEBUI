@@ -11,35 +11,40 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/ovh-webui/server/internal/telegram"
+	"github.com/ovh-webui/server/internal/notify"
 )
 
 // tgRecheckInterval loop 内 TG 健康检查节流间隔。5 分钟 verify 一次,
 // 失败立即调 Stop() 自停监控。
 const tgRecheckInterval = 5 * time.Minute
 
-// checkTGOrStop 节流后 verify Telegram,失败则调 Stop() 让 loop 退出。
-// 返回 true=继续 loop,false=已自停,loop 应该 break。
-func (m *Monitor) checkTGOrStop() bool {
+// checkNotifyOrStop 节流后体检通知通道,**全部**不可用才自停。
+//
+// 以前这里只看 Telegram,TG 一失效就停整个监控 —— 于是 bot 被封、token 过期、
+// 或者机器一时连不上 api.telegram.org,用户失去的不是一条通知,而是整个补货监控,
+// 且只有翻日志才知道。现在只要还有一条通道能送达(比如 Webhook),监控就继续跑。
+//
+// 返回 true=继续 loop,false=已自停。
+func (m *Monitor) checkNotifyOrStop() bool {
 	m.tgCheckMu.Lock()
 	due := time.Since(m.lastTGCheck) >= tgRecheckInterval
 	m.tgCheckMu.Unlock()
 	if !due {
 		return true
 	}
-	ok, reason := telegram.VerifyConfig(m.state)
+	ok, reason := notify.AnyAvailable(m.state, true)
 	m.tgCheckMu.Lock()
 	m.lastTGCheck = time.Now()
 	m.tgCheckMu.Unlock()
 	if !ok {
-		m.state.Logger.Error("Telegram 通知失效,自动停止服务器监控: "+reason, "monitor")
+		m.state.Logger.Error("所有通知通道都不可用,自动停止服务器监控("+reason+
+			")。配一条 Webhook 作为备用通道可以避免这种全盲。", "monitor")
 		m.Stop()
 		return false
 	}
 	return true
 }
 
-// CheckNewServers 对应 Python: check_new_servers
 func (m *Monitor) CheckNewServers(currentServerList []map[string]interface{}) {
 	current := map[string]struct{}{}
 	for _, s := range currentServerList {
@@ -73,7 +78,6 @@ func (m *Monitor) CheckNewServers(currentServerList []map[string]interface{}) {
 	}
 }
 
-// runSubscriptionCheck 对应 Python: _run_subscription_check
 func (m *Monitor) runSubscriptionCheck(sub *Subscription, traceID string) {
 	planCode := sub.PlanCode
 	m.state.Logger.Info("开始处理订阅: "+planCode, "monitor")
@@ -81,7 +85,6 @@ func (m *Monitor) runSubscriptionCheck(sub *Subscription, traceID string) {
 	m.state.Logger.Info("完成处理订阅: "+planCode, "monitor")
 }
 
-// monitorLoop 对应 Python: monitor_loop
 func (m *Monitor) monitorLoop() {
 	m.state.Logger.Info("监控循环已启动", "monitor")
 	for {
@@ -92,8 +95,8 @@ func (m *Monitor) monitorLoop() {
 			break
 		}
 
-		// TG 失效 → 自停。checkTGOrStop 内部已节流 5 分钟,且失败时调 Stop()。
-		if !m.checkTGOrStop() {
+		// 通知通道全挂 → 自停。checkNotifyOrStop 内部已节流 5 分钟,且失败时调 Stop()。
+		if !m.checkNotifyOrStop() {
 			break
 		}
 
@@ -144,8 +147,6 @@ func (m *Monitor) monitorLoop() {
 				}(sub, traceID)
 			}
 			wg.Wait()
-			// 持久化 LastStatus / History，避免重启后空基线触发误下单
-			m.SaveToDB()
 		} else {
 			m.state.Logger.Info("当前无订阅，跳过检查", "monitor")
 		}
@@ -181,7 +182,6 @@ func (m *Monitor) stillInSubscriptions(sub *Subscription) bool {
 	return false
 }
 
-// Start 对应 Python: start
 func (m *Monitor) Start() bool {
 	m.subsMu.Lock()
 	if m.running {
@@ -190,18 +190,21 @@ func (m *Monitor) Start() bool {
 		return false
 	}
 	m.running = true
+	// MonitorRunning 与 checkInterval 都要在锁内取/写:
+	// Start 可能与 loop 自停时调的 Stop、以及 SetCheckInterval 并发,
+	// 出锁之后再写就是无同步的写-写竞争(go test -race 会报)。
+	m.state.MonitorRunning = true
+	interval := m.checkInterval
 	m.subsMu.Unlock()
 	// 重置 TG 检查时间戳,保证启动后第一轮一定 verify
 	m.tgCheckMu.Lock()
 	m.lastTGCheck = time.Time{}
 	m.tgCheckMu.Unlock()
 	go m.monitorLoop()
-	m.state.Logger.Info(fmt.Sprintf("服务器监控已启动 (检查间隔: %d秒)", m.checkInterval), "monitor")
-	m.state.MonitorRunning = true
+	m.state.Logger.Info(fmt.Sprintf("服务器监控已启动 (检查间隔: %d秒)", interval), "monitor")
 	return true
 }
 
-// Stop 对应 Python: stop
 func (m *Monitor) Stop() bool {
 	m.subsMu.Lock()
 	if !m.running {
@@ -210,16 +213,16 @@ func (m *Monitor) Stop() bool {
 		return false
 	}
 	m.running = false
+	m.state.MonitorRunning = false
 	m.subsMu.Unlock()
 	m.state.Logger.Info("正在停止服务器监控...", "monitor")
-	m.state.MonitorRunning = false
 	return true
 }
 
-// batchOrder 对应 Python: 监控->下单批量调用 quick-order。
+// batchOrder 监控触发的批量下单:逐个调本地 quick-order 入队。
 // accountID:auto_order 账户;空时 batchOrder 不应该被调到(check.go 的 guard 已挡住),
 // 这里再做一次防御性检查。
-func (m *Monitor) batchOrder(planCode string, configInfo map[string]interface{}, targets []notification, quantity int, accountID string) {
+func (m *Monitor) batchOrder(planCode string, configInfo map[string]interface{}, targets []notification, quantity int, accountID string, autoPay bool) {
 	if accountID == "" {
 		m.state.Logger.Warn("[monitor->order] 跳过自动下单: 订阅未指定 auto_order 账户", "monitor")
 		return
@@ -269,6 +272,8 @@ func (m *Monitor) batchOrder(planCode string, configInfo map[string]interface{},
 			"options":            options,
 			"fromMonitor":        true,
 			"skipDuplicateCheck": true,
+			// 订阅上显式开了才带过去;默认 false,不替用户扣钱
+			"autoPay": autoPay,
 		}
 		body, _ := json.Marshal(payload)
 		req, _ := http.NewRequest(http.MethodPost,

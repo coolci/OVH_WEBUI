@@ -229,6 +229,7 @@ export const api = {
     datacenter: string;
     options?: string[];
     account_id: string;
+    autoPay?: boolean;
   }) =>
     apiRequest<any>("/api/queue/quick-order", {
       method: "POST",

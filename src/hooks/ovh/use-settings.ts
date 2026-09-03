@@ -13,6 +13,8 @@ export interface SettingsConfig {
   tgToken?: string;
   tgChatId?: string;
   webhookUrl?: string;
+  /** 自定义通知地址：补货/下单结果由本程序 POST 到这里（出）。和 Telegram webhook 方向相反 */
+  notifyWebhookUrl?: string;
 }
 
 export interface TelegramWebhookInfo {

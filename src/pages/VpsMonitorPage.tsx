@@ -13,7 +13,7 @@ import {
   Plus,
   AlertTriangle,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -49,19 +49,12 @@ import {
   useClearVPSMonitor,
   useCreateVPSMonitorSubscription,
   useVPSMonitorHistory,
+  useVPSModels,
   type VPSSubscription,
 } from "@/hooks/use-vps-monitor";
 import { useTelegramVerify } from "@/hooks/use-telegram";
 
 /** VPS 补货通知 */
-const VPS_MODELS = [
-  { value: "vps-2025-model1", label: "VPS-1" },
-  { value: "vps-2025-model2", label: "VPS-2" },
-  { value: "vps-2025-model3", label: "VPS-3" },
-  { value: "vps-2025-model4", label: "VPS-4" },
-  { value: "vps-2025-model5", label: "VPS-5" },
-  { value: "vps-2025-model6", label: "VPS-6" },
-];
 
 const SUBSIDIARIES = [
   { value: "IE", label: "IE 爱尔兰" },
@@ -75,8 +68,8 @@ const SUBSIDIARIES = [
   { value: "US", label: "US 美国" },
 ];
 
-function modelLabel(code: string): string {
-  return VPS_MODELS.find((m) => m.value === code)?.label || code;
+function modelLabel(code: string, models?: { planCode: string; name: string }[]): string {
+  return models?.find((m) => m.planCode === code)?.name || code;
 }
 
 function VPSMonitorPage() {
@@ -260,6 +253,7 @@ function VPSRow({
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1 flex-wrap">
               <span className="font-semibold text-sm">{modelLabel(sub.planCode)}</span>
+              {sub.retired && <Chip tone="warning">已停售</Chip>}
               <span className="font-mono text-[11px] text-muted-foreground">{sub.planCode}</span>
               <Chip tone="default">{sub.ovhSubsidiary}</Chip>
             </div>
@@ -285,6 +279,7 @@ function VPSRow({
               ) : sub.autoOrder ? (
                 <Chip tone="warning">已勾自动下单但未选账户(只通知)</Chip>
               ) : null}
+              {sub.autoPay && <Chip tone="success">自动付款</Chip>}
             </div>
           </div>
           <div className="flex items-center gap-1 flex-shrink-0">
@@ -389,8 +384,10 @@ function AddVPSDialog({
   const create = useCreateVPSMonitorSubscription();
   const tgVerify = useTelegramVerify();
   const tgBlocked = tgVerify.data ? !tgVerify.data.ok : false;
-  const [vpsModel, setVpsModel] = useState(VPS_MODELS[0].value);
   const [ovhSubsidiary, setOvhSubsidiary] = useState("IE");
+  const modelsQ = useVPSModels(ovhSubsidiary);
+  const models = modelsQ.data?.models || [];
+  const [vpsModel, setVpsModel] = useState("");
   const [datacenters, setDatacenters] = useState("");
   const [monitorLinux, setMonitorLinux] = useState(true);
   const [monitorWindows, setMonitorWindows] = useState(true);
@@ -399,9 +396,17 @@ function AddVPSDialog({
   const [autoOrder, setAutoOrder] = useState(false);
   const [quantity, setQuantity] = useState(1);
   const [autoOrderAccountId, setAutoOrderAccountId] = useState("");
+  const [autoPay, setAutoPay] = useState(false);
+
+  useEffect(() => {
+    if (models.length === 0) return;
+    if (!vpsModel || !models.some((m) => m.planCode === vpsModel)) {
+      setVpsModel(models[0].planCode);
+    }
+  }, [models, vpsModel]);
 
   const reset = () => {
-    setVpsModel(VPS_MODELS[0].value);
+    setVpsModel(models[0]?.planCode || "");
     setOvhSubsidiary("IE");
     setDatacenters("");
     setMonitorLinux(true);
@@ -411,6 +416,7 @@ function AddVPSDialog({
     setAutoOrder(false);
     setQuantity(1);
     setAutoOrderAccountId("");
+    setAutoPay(false);
   };
 
   const submit = (e: React.FormEvent) => {
@@ -436,6 +442,7 @@ function AddVPSDialog({
         autoOrder,
         quantity: autoOrder ? quantity : undefined,
         autoOrderAccountId: autoOrder ? autoOrderAccountId : "",
+        autoPay: autoOrder ? autoPay : false,
       },
       {
         onSuccess: () => {
@@ -486,18 +493,25 @@ function AddVPSDialog({
               <label className="block text-xs font-medium text-muted-foreground mb-1.5">
                 VPS 型号 <span className="text-destructive">*</span>
               </label>
-              <Select value={vpsModel} onValueChange={setVpsModel}>
+              <Select
+                value={vpsModel}
+                onValueChange={setVpsModel}
+                disabled={modelsQ.isPending || models.length === 0}
+              >
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue placeholder={modelsQ.isPending ? "加载型号…" : "选择在售型号"} />
                 </SelectTrigger>
                 <SelectContent>
-                  {VPS_MODELS.map((m) => (
-                    <SelectItem key={m.value} value={m.value}>
-                      {m.label} ({m.value})
+                  {models.map((m) => (
+                    <SelectItem key={m.planCode} value={m.planCode}>
+                      {m.name} ({m.planCode})
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {modelsQ.isError && (
+                <p className="text-[11px] text-destructive mt-1">实时目录拉取失败，请稍后重试</p>
+              )}
             </div>
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1.5">
@@ -580,6 +594,10 @@ function AddVPSDialog({
                   下单账户 <span className="text-destructive">*</span>
                 </label>
                 <AccountSelect value={autoOrderAccountId} onChange={setAutoOrderAccountId} />
+                <label className="flex items-center gap-2.5 cursor-pointer rounded-xl border border-border px-3.5 py-2.5 hover:bg-muted/40 transition-colors mt-3">
+                  <Checkbox checked={autoPay} onCheckedChange={(v) => setAutoPay(!!v)} />
+                  <span className="text-sm">抢到后自动付款</span>
+                </label>
                 <p className="text-[11px] text-muted-foreground mt-1">不选账户 = 只通知不下单</p>
               </div>
               <div>

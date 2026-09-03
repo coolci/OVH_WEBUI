@@ -40,6 +40,13 @@ export function IpmiDialog({
   const [notAvailable, setNotAvailable] = useState(false);
   const startedRef = useRef(false);
   const runIdRef = useRef(0);
+  const [types, setTypes] = useState<{
+    supportedTypes: string[];
+    typeLabels: Record<string, string>;
+    activated: boolean;
+  } | null>(null);
+  const [chosen, setChosen] = useState("");
+  const [typesLoading, setTypesLoading] = useState(false);
 
   const reset = () => {
     setCountdown(60);
@@ -48,6 +55,8 @@ export function IpmiDialog({
     setError(null);
     setNotAvailable(false);
     startedRef.current = false;
+    setTypes(null);
+    setChosen("");
   };
 
   const fetchConsole = async (runId: number) => {
@@ -72,6 +81,7 @@ export function IpmiDialog({
       // 后端最长 ~60s 轮询；前端 axios timeout 120s（lib/http）
       const res = await api.get(`/server-control/${serviceName}/console`, {
         timeout: 120_000,
+        params: chosen ? { type: chosen } : undefined,
       });
       if (runId !== runIdRef.current) {
         clearInterval(interval);
@@ -137,10 +147,22 @@ export function IpmiDialog({
       reset();
       return;
     }
-    if (startedRef.current) return;
-    startedRef.current = true;
-    const runId = ++runIdRef.current;
-    void fetchConsole(runId);
+    setTypesLoading(true);
+    (async () => {
+      try {
+        const res = await api.get(`/server-control/${serviceName}/ipmi-types`);
+        setTypes({
+          supportedTypes: res.data?.supportedTypes || [],
+          typeLabels: res.data?.typeLabels || {},
+          activated: res.data?.activated !== false,
+        });
+        setChosen(res.data?.defaultType || "");
+      } catch (e: any) {
+        setError(e?.response?.data?.error || "查询控制台类型失败");
+      } finally {
+        setTypesLoading(false);
+      }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, serviceName]);
 
@@ -164,6 +186,47 @@ export function IpmiDialog({
         </DialogHeader>
 
         <div className="flex flex-col items-center justify-center gap-3 py-6">
+          {!loading && !result && (
+            <div className="w-full space-y-3">
+              {typesLoading ? (
+                <p className="text-center text-[12px] text-muted-foreground">正在查询可用接入方式…</p>
+              ) : types ? (
+                <>
+                  <p className="text-[12px] text-muted-foreground">
+                    {types.activated === false
+                      ? "IPMI 未激活，申请会话可能失败。"
+                      : "请选择接入方式后再打开控制台。"}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {(types.supportedTypes.length ? types.supportedTypes : Object.keys(types.typeLabels)).map(
+                      (t) => (
+                        <Button
+                          key={t}
+                          type="button"
+                          size="sm"
+                          variant={chosen === t ? "default" : "outline"}
+                          onClick={() => setChosen(t)}
+                        >
+                          {types.typeLabels[t] || t}
+                        </Button>
+                      )
+                    )}
+                  </div>
+                  <Button
+                    className="w-full"
+                    disabled={!chosen || loading}
+                    onClick={() => {
+                      const runId = ++runIdRef.current;
+                      startedRef.current = true;
+                      void fetchConsole(runId);
+                    }}
+                  >
+                    打开控制台
+                  </Button>
+                </>
+              ) : null}
+            </div>
+          )}
           {loading ? (
             <>
               <Loader2 className="h-12 w-12 animate-spin text-primary/80" />

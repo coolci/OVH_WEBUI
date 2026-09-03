@@ -210,6 +210,7 @@ function CreateQueueDialog({
   const [picked, setPicked] = useState<Partial<Record<OptionGroupKey, string>>>({});
   // 手填的额外 addon planCode(catalog 里没分组覆盖到的、或用户想加的特殊 addon)
   const [extraInput, setExtraInput] = useState("");
+  const [autoPay, setAutoPay] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -305,6 +306,7 @@ function CreateQueueDialog({
     setRetryInterval(String(DEFAULT_RETRY_INTERVAL));
     setPicked({});
     setExtraInput("");
+    setAutoPay(false);
     prevPlanCodeRef.current = "";
   };
 
@@ -334,6 +336,7 @@ function CreateQueueDialog({
       quantity: qty,
       retryInterval: Number(retryInterval) || DEFAULT_RETRY_INTERVAL,
       options: parsedOptions,
+      autoPay,
     });
     if (result.success > 0) {
       toast.success(`已创建 ${result.success}/${result.total} 个抢购任务`);
@@ -525,6 +528,14 @@ function CreateQueueDialog({
             )}
           </div>
 
+
+          <label className="flex items-center gap-2.5 cursor-pointer rounded-xl border border-border px-3.5 py-2.5 hover:bg-muted/40 transition-colors">
+            <Checkbox checked={autoPay} onCheckedChange={(v) => setAutoPay(!!v)} />
+            <div>
+              <div className="text-sm">抢到后自动付款</div>
+              <p className="text-[11px] text-muted-foreground">默认关闭。开启后用 OVH 账户默认支付方式扣款。</p>
+            </div>
+          </label>
 
           {/* 汇总提示 */}
           {datacenters.length > 0 && (

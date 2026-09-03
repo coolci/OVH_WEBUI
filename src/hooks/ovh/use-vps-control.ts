@@ -32,6 +32,7 @@ export interface VpsServiceInfo {
   renewalType: boolean;
   renewalPeriod: number;
   renewalDeleteAtExpiration: boolean;
+  terminationScheduled?: boolean;
   renewalForced: boolean;
   renewalManualPayment: boolean;
   possibleRenewPeriod: number[];
@@ -367,6 +368,21 @@ export function useTerminateVps() {
   return useMutation({
     mutationFn: async (vars: { serviceName: string }) =>
       (await api.post(`/vps-control/${vars.serviceName}/terminate`)).data,
+  });
+}
+
+/** 到期终止策略。不要用 POST /terminate —— 那是立即终止。 */
+export function useUpdateVpsTerminationPolicy(serviceName: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { policy: string }) =>
+      (await api.put(`/vps-control/${serviceName}/termination-policy`, vars)).data as {
+        success: boolean;
+        message: string;
+      },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.vpsControl.serviceInfo(serviceName) });
+    },
   });
 }
 

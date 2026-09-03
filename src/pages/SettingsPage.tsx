@@ -257,6 +257,17 @@ function TelegramSection({
           placeholder="-1001234567890"
         />
       </Field>
+      <Field
+        label="通知 Webhook（可选）"
+        hint="补货/下单结果 POST 到这个地址。和上面 Telegram 回调方向相反，留空则只用 Telegram。"
+      >
+        <Input
+          value={form.notifyWebhookUrl || ""}
+          onChange={(e) => set("notifyWebhookUrl", e.target.value)}
+          placeholder="https://example.com/notify"
+          className="font-mono text-[13px]"
+        />
+      </Field>
 
       <div className="rounded-2xl border border-border/80 bg-muted/20 p-4 space-y-3">
         <div>

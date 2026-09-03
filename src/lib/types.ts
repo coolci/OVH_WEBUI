@@ -22,6 +22,8 @@ export interface QueueItem {
   retryCount?: number;
   lastCheckTime?: number;
   accountId?: string;
+  autoPay?: boolean;
+  failureCount?: number;
 }
 
 export interface LogEntry {
@@ -70,6 +72,7 @@ export interface Subscription {
   autoOrder?: boolean;
   quantity?: number;
   accountId?: string;
+  autoPay?: boolean;
 }
 
 export interface VpsSubscription {
@@ -84,6 +87,9 @@ export interface VpsSubscription {
   notifyUnavailable?: boolean;
   lastStatus?: Record<string, unknown>;
   autoOrder?: boolean;
+  autoPay?: boolean;
+  os?: string;
+  retired?: boolean;
   createdAt?: string;
 }
 

@@ -66,6 +66,7 @@ export function QuickOrderDialog({ open, onOpenChange }: QuickOrderDialogProps) 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoadingPrice, setIsLoadingPrice] = useState(false);
   const [priceInfo, setPriceInfo] = useState<any>(null);
+  const [autoPay, setAutoPay] = useState(false);
 
   const selectedServer = useMemo(() => {
     return (servers || []).find((s) => s.planCode === planCode) || null;
@@ -164,6 +165,7 @@ export function QuickOrderDialog({ open, onOpenChange }: QuickOrderDialogProps) 
         datacenter,
         options: selectedOptions,
         account_id: accountId,
+        autoPay,
       };
       const res = await api.quickOrder(payload);
       if (res?.success) {
@@ -232,6 +234,10 @@ export function QuickOrderDialog({ open, onOpenChange }: QuickOrderDialogProps) 
               placeholder="选择 OVH 账户"
               className="w-full min-w-0"
             />
+            <label className="flex items-center gap-2 text-sm pt-1">
+              <Checkbox checked={autoPay} onCheckedChange={(v) => setAutoPay(!!v)} />
+              抢到后自动付款
+            </label>
           </div>
 
           <div className="space-y-2 min-w-0">

@@ -1,0 +1,436 @@
+package updater
+
+import (
+	"crypto/sha256"
+	"io"
+	"log/slog"
+
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"github.com/ovh-webui/server/internal/app"
+	"github.com/ovh-webui/server/internal/config"
+	"github.com/ovh-webui/server/internal/db"
+	"github.com/ovh-webui/server/internal/logger"
+	"github.com/ovh-webui/server/internal/storage"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// 造一个假的 Release 服务:一个二进制附件 + 一份 checksums.txt
+func fakeRelease(t *testing.T, payload []byte, sumOverride string) (*httptest.Server, *Release) {
+	t.Helper()
+	sum := sha256.Sum256(payload)
+	hexSum := hex.EncodeToString(sum[:])
+	if sumOverride != "" {
+		hexSum = sumOverride
+	}
+	name := AssetName()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/asset", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", fmt.Sprint(len(payload)))
+		w.Write(payload)
+	})
+	mux.HandleFunc("/sums", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "%s  %s\n%s  ovh-server-other-arch\n", hexSum, name, strings.Repeat("0", 64))
+	})
+	srv := httptest.NewServer(mux)
+
+	rel := &Release{
+		TagName: "v9.9.9",
+		Assets: []Asset{
+			{Name: name, Size: int64(len(payload)), BrowserDownloadURL: srv.URL + "/asset"},
+			{Name: ChecksumAsset, BrowserDownloadURL: srv.URL + "/sums"},
+		},
+	}
+	return srv, rel
+}
+
+// 把"当前可执行文件"指到临时目录里的一个假二进制,好让 Prepare/Install 在沙箱里跑
+func withFakeExe(t *testing.T, content string) string {
+	t.Helper()
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "ovh-server-fake")
+	if err := os.WriteFile(exe, []byte(content), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	orig := selfPathFn
+	selfPathFn = func() (string, error) { return exe, nil }
+	t.Cleanup(func() { selfPathFn = orig })
+	return exe
+}
+
+func TestPrepareAndInstall(t *testing.T) {
+	newBinary := []byte("#!/bin/sh\necho new version\n")
+	srv, rel := fakeRelease(t, newBinary, "")
+	defer srv.Close()
+
+	exe := withFakeExe(t, "old version")
+
+	var lastPct int
+	tmp, gotExe, err := Prepare(rel, func(p int) { lastPct = p })
+	if err != nil {
+		t.Fatalf("Prepare 失败: %v", err)
+	}
+	if gotExe != exe {
+		t.Errorf("目标路径 = %q, 期望 %q", gotExe, exe)
+	}
+	if filepath.Dir(tmp) != filepath.Dir(exe) {
+		t.Errorf("临时文件必须与目标同目录(否则 rename 跨文件系统会失败): %q vs %q", tmp, exe)
+	}
+	if lastPct != 100 {
+		t.Errorf("下载进度最终应到 100, 实际 %d", lastPct)
+	}
+
+	if err := Install(tmp, exe); err != nil {
+		t.Fatalf("Install 失败: %v", err)
+	}
+	got, _ := os.ReadFile(exe)
+	if string(got) != string(newBinary) {
+		t.Errorf("替换后内容不对: %q", string(got))
+	}
+	if fi, err := os.Stat(exe); err == nil && fi.Mode().Perm()&0o111 == 0 {
+		t.Error("替换后的文件没有可执行位")
+	}
+	if _, err := os.Stat(tmp); !os.IsNotExist(err) {
+		t.Error("临时文件应该已被 rename 掉")
+	}
+}
+
+// 校验和不匹配必须拒绝,而且不能留下临时文件 —— 这是整个更新链路最关键的一道闸:
+// 没有它,任何能中间人的网络都能让程序把自己换成任意二进制。
+func TestPrepareRejectsBadChecksum(t *testing.T) {
+	srv, rel := fakeRelease(t, []byte("malicious payload"), strings.Repeat("a", 64))
+	defer srv.Close()
+	exe := withFakeExe(t, "old version")
+
+	tmp, _, err := Prepare(rel, nil)
+	if err == nil {
+		t.Fatal("校验和不匹配却没报错")
+	}
+	if !strings.Contains(err.Error(), "校验和不匹配") {
+		t.Errorf("错误信息应指明校验失败, 实际: %v", err)
+	}
+	if tmp != "" {
+		if _, statErr := os.Stat(tmp); statErr == nil {
+			t.Error("校验失败后临时文件必须删掉")
+		}
+	}
+	// 原文件不能被动过
+	if got, _ := os.ReadFile(exe); string(got) != "old version" {
+		t.Error("校验失败时不能碰原来的二进制")
+	}
+}
+
+// 没有 checksums.txt 时直接拒绝,不给"要不要冒险"的选项
+func TestPrepareRequiresChecksumFile(t *testing.T) {
+	payload := []byte("x")
+	srv, rel := fakeRelease(t, payload, "")
+	defer srv.Close()
+	withFakeExe(t, "old")
+
+	// 去掉 checksums.txt 附件
+	rel.Assets = rel.Assets[:1]
+	if _, _, err := Prepare(rel, nil); err == nil || !strings.Contains(err.Error(), ChecksumAsset) {
+		t.Fatalf("缺少校验和文件时应拒绝更新, 实际: %v", err)
+	}
+}
+
+// 当前平台没有对应产物时要说清楚,而不是随便抓一个附件装上
+func TestPrepareRejectsMissingAsset(t *testing.T) {
+	srv, rel := fakeRelease(t, []byte("x"), "")
+	defer srv.Close()
+	withFakeExe(t, "old")
+
+	rel.Assets[0].Name = "ovh-server-someother-arch"
+	if _, _, err := Prepare(rel, nil); err == nil || !strings.Contains(err.Error(), AssetName()) {
+		t.Fatalf("缺少本平台产物时应拒绝, 实际: %v", err)
+	}
+}
+
+// 目录不可写时要早报错(而不是下完 16MB 才失败)
+func TestPrepareRejectsReadOnlyDir(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root 无视目录权限,跳过")
+	}
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "ovh-server-fake")
+	os.WriteFile(exe, []byte("old"), 0o755)
+	os.Chmod(dir, 0o555)
+	t.Cleanup(func() { os.Chmod(dir, 0o755) })
+
+	orig := selfPathFn
+	selfPathFn = func() (string, error) { return exe, nil }
+	t.Cleanup(func() { selfPathFn = orig })
+
+	srv, rel := fakeRelease(t, []byte("x"), "")
+	defer srv.Close()
+	if _, _, err := Prepare(rel, nil); err == nil || !strings.Contains(err.Error(), "不可写") {
+		t.Fatalf("目录不可写时应提前报错, 实际: %v", err)
+	}
+}
+
+func TestAssetNameMatchesBuildScript(t *testing.T) {
+	// build.sh 产出的名字形如 ovh-server-linux-amd64 / ovh-server-windows-amd64.exe
+	n := AssetName()
+	if !strings.HasPrefix(n, "ovh-server-") {
+		t.Errorf("产物名前缀必须与 build.sh 一致: %s", n)
+	}
+}
+
+// CleanupStale 清的是下载残骸,不包括 .old ——
+// 后者是"新版本起不来就换回去"的后路,删早了等于取消回滚能力。
+// 它的去留由 MarkHealthy(起来了)/ RollbackIfStale(没起来)决定。
+func TestCleanupStaleRemovesLeftovers(t *testing.T) {
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "ovh-server-fake")
+	os.WriteFile(exe, []byte("cur"), 0o755)
+	orig := selfPathFn
+	selfPathFn = func() (string, error) { return exe, nil }
+	t.Cleanup(func() { selfPathFn = orig })
+
+	backup := exe + backupSuffix
+	junk := []string{filepath.Join(dir, ".ovh-server-new-123"), filepath.Join(dir, ".ovh-server-update-probe")}
+	os.WriteFile(backup, []byte("old"), 0o755)
+	for _, f := range junk {
+		os.WriteFile(f, []byte("junk"), 0o644)
+	}
+	CleanupStale()
+	for _, f := range junk {
+		if _, err := os.Stat(f); !os.IsNotExist(err) {
+			t.Errorf("下载残骸未清理: %s", f)
+		}
+	}
+	if _, err := os.Stat(backup); err != nil {
+		t.Error("CleanupStale 不能删 .old:那是回滚用的备份")
+	}
+	if _, err := os.Stat(exe); err != nil {
+		t.Error("清理不能误删当前程序")
+	}
+}
+
+// 新版本活到对外服务那一刻 → 删掉 pending 标记和 .old 备份,回滚窗口关闭
+func TestMarkHealthyClearsBackup(t *testing.T) {
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "ovh-server-fake")
+	os.WriteFile(exe, []byte("new"), 0o755)
+	orig := selfPathFn
+	selfPathFn = func() (string, error) { return exe, nil }
+	t.Cleanup(func() { selfPathFn = orig })
+
+	os.WriteFile(exe+backupSuffix, []byte("old"), 0o755)
+	MarkPending()
+	if _, err := os.Stat(exe + pendingSuffix); err != nil {
+		t.Fatal("MarkPending 应该写下待验证标记")
+	}
+	MarkHealthy(testUpdaterState(t))
+	if _, err := os.Stat(exe + pendingSuffix); !os.IsNotExist(err) {
+		t.Error("MarkHealthy 后待验证标记应该被清掉")
+	}
+	if _, err := os.Stat(exe + backupSuffix); !os.IsNotExist(err) {
+		t.Error("MarkHealthy 后 .old 备份应该被清掉")
+	}
+}
+
+func TestFetchLatestParsesRelease(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(Release{TagName: "v1.2.3", Assets: []Asset{{Name: "a"}}})
+	}))
+	defer srv.Close()
+	// FetchLatest 打的是写死的 GitHub 地址,这里只验证 JSON 结构解析没问题
+	var rel Release
+	resp, err := http.Get(srv.URL)
+	if err != nil {
+		t.Fatalf("请求假服务器失败: %v", err)
+	}
+	defer resp.Body.Close()
+	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil || rel.TagName != "v1.2.3" {
+		t.Fatalf("Release 解析失败: %v %+v", err, rel)
+	}
+}
+
+// ── 回滚 ───────────────────────────────────────────────────────────
+
+// 新版本没能起来(待验证标记还在)→ 下次启动必须换回旧版本。
+// 抢购服务停机就是错过补货,一次坏更新不能把机器撂在那儿。
+func TestRollbackIfStale_新版本起不来时回滚(t *testing.T) {
+	exe := withFakeExe(t, "新版本(起不来)")
+	os.WriteFile(exe+backupSuffix, []byte("旧版本(能跑)"), 0o755)
+	os.WriteFile(exe+pendingSuffix, []byte("1"), 0o644)
+
+	if !RollbackIfStale(testUpdaterState(t)) {
+		t.Fatal("有备份 + 有待验证标记时必须回滚")
+	}
+	got, _ := os.ReadFile(exe)
+	if string(got) != "旧版本(能跑)" {
+		t.Errorf("回滚后内容 = %q, 期望旧版本", string(got))
+	}
+	if _, err := os.Stat(exe + pendingSuffix); !os.IsNotExist(err) {
+		t.Error("回滚后应清掉待验证标记,否则会反复回滚")
+	}
+}
+
+// 新版本起来过(标记已被 MarkHealthy 删掉)→ 绝不能回滚,
+// 否则会把用户刚更新好的版本又换回旧的
+func TestRollbackIfStale_已验证过不回滚(t *testing.T) {
+	exe := withFakeExe(t, "新版本(正常)")
+	os.WriteFile(exe+backupSuffix, []byte("旧版本"), 0o755)
+	// 没有 pending 标记
+
+	if RollbackIfStale(testUpdaterState(t)) {
+		t.Fatal("没有待验证标记时不该回滚")
+	}
+	got, _ := os.ReadFile(exe)
+	if string(got) != "新版本(正常)" {
+		t.Errorf("不该动当前程序, 实际 = %q", string(got))
+	}
+	if _, err := os.Stat(exe + backupSuffix); !os.IsNotExist(err) {
+		t.Error("确认没问题后应顺手清掉备份")
+	}
+}
+
+// 没更新过(没有备份)→ 什么都不做
+func TestRollbackIfStale_没更新过(t *testing.T) {
+	exe := withFakeExe(t, "当前版本")
+	if RollbackIfStale(testUpdaterState(t)) {
+		t.Fatal("没有备份时不该回滚")
+	}
+	if got, _ := os.ReadFile(exe); string(got) != "当前版本" {
+		t.Error("不该动当前程序")
+	}
+}
+
+// MarkHealthy 删掉备份 = 这次更新被确认成功
+func TestMarkHealthy清理备份(t *testing.T) {
+	exe := withFakeExe(t, "新版本")
+	os.WriteFile(exe+backupSuffix, []byte("旧版本"), 0o755)
+	MarkHealthy(testUpdaterState(t))
+	if _, err := os.Stat(exe + backupSuffix); !os.IsNotExist(err) {
+		t.Error("确认健康后应删掉备份")
+	}
+}
+
+// Install 必须留下备份 —— 不留后路的更新不能做
+func TestInstall留下备份(t *testing.T) {
+	newBin := []byte("新二进制")
+	srv, rel := fakeRelease(t, newBin, "")
+	defer srv.Close()
+	exe := withFakeExe(t, "旧二进制")
+
+	tmp, _, err := Prepare(rel, nil)
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	if err := Install(tmp, exe); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	backup, err := os.ReadFile(exe + backupSuffix)
+	if err != nil {
+		t.Fatalf("没有留下备份: %v", err)
+	}
+	if string(backup) != "旧二进制" {
+		t.Errorf("备份内容 = %q, 期望旧二进制", string(backup))
+	}
+}
+
+func testUpdaterState(t *testing.T) *app.State {
+	t.Helper()
+	dir := t.TempDir()
+	database, err := db.Open(dir)
+	if err != nil {
+		t.Fatalf("打开测试库: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+	lg := logger.New(filepath.Join(dir, "t.log"), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return app.NewState(storage.Paths{DataDir: dir}, config.New(database), lg, database)
+}
+
+// 这是回归测试:自更新替换完二进制、重启进新版本,新版本的**第一次启动**
+// 绝不能被判定为"起不来"。
+//
+// 之前就是这么错的:RollbackIfStale 跑在启动早期,而清除标记的 MarkHealthy
+// 要等端口监听成功才执行 —— 于是"标记还在"永远成立,每次自更新都在新版本
+// 刚起来的那一刻被静默回滚成旧版本。用户看到的是前端一直转
+// "正在重启并加载新版本…"直到超时,以为是更新卡住了。
+func TestRollbackIfStale_新版本首次启动不回滚(t *testing.T) {
+	exe := withFakeExe(t, "新版本")
+	os.WriteFile(exe+backupSuffix, []byte("旧版本"), 0o755)
+	MarkPending() // 自更新在重启前做的事
+
+	if RollbackIfStale(testUpdaterState(t)) {
+		t.Fatal("新版本头一回启动就被回滚了 —— 这样自更新永远升不上去")
+	}
+	if got, _ := os.ReadFile(exe); string(got) != "新版本" {
+		t.Errorf("二进制不该被换掉,实际 %q", got)
+	}
+	if _, err := os.Stat(exe + pendingSuffix); err != nil {
+		t.Error("标记要留着:这一版还没跑到 MarkHealthy,万一崩了下次启动要靠它回滚")
+	}
+}
+
+// 首次启动放行之后,如果这一版真的没能跑到 MarkHealthy,
+// 下一次启动就必须回滚 —— 否则回滚保护等于没有
+func TestRollbackIfStale_第二次启动才回滚(t *testing.T) {
+	exe := withFakeExe(t, "新版本(会崩)")
+	os.WriteFile(exe+backupSuffix, []byte("旧版本(能跑)"), 0o755)
+	MarkPending()
+
+	st := testUpdaterState(t)
+	if RollbackIfStale(st) {
+		t.Fatal("第一次不该回滚")
+	}
+	// 模拟:这一版启动后崩了,没到 MarkHealthy,进程被拉起来第二次
+	if !RollbackIfStale(st) {
+		t.Fatal("第二次带着标记启动,说明上一次没撑到健康点,必须回滚")
+	}
+	if got, _ := os.ReadFile(exe); string(got) != "旧版本(能跑)" {
+		t.Errorf("回滚后应该是旧版本,实际 %q", got)
+	}
+	if _, err := os.Stat(exe + pendingSuffix); !os.IsNotExist(err) {
+		t.Error("回滚后要清掉标记,否则会反复回滚")
+	}
+}
+
+// 完整走一遍成功路径:更新 → 首次启动放行 → 跑到健康点 → 标记和备份都清掉,
+// 之后再启动多少次都不会回滚
+func TestRollback成功路径不留残留(t *testing.T) {
+	exe := withFakeExe(t, "新版本")
+	os.WriteFile(exe+backupSuffix, []byte("旧版本"), 0o755)
+	MarkPending()
+
+	st := testUpdaterState(t)
+	if RollbackIfStale(st) {
+		t.Fatal("首次启动不该回滚")
+	}
+	MarkHealthy(st) // 端口监听成功
+
+	if _, err := os.Stat(exe + pendingSuffix); !os.IsNotExist(err) {
+		t.Error("健康之后标记该没了")
+	}
+	if _, err := os.Stat(exe + backupSuffix); !os.IsNotExist(err) {
+		t.Error("健康之后备份该没了")
+	}
+	if RollbackIfStale(st) {
+		t.Fatal("已经健康过了,再启动不该回滚")
+	}
+	if got, _ := os.ReadFile(exe); string(got) != "新版本" {
+		t.Errorf("二进制该保持新版本,实际 %q", got)
+	}
+}
+
+// 老版本写的标记内容是 "1"。升级上来时如果把它当成"没启动过"而放行,
+// 一个真的起不来的版本就会永远滚不回去
+func TestRollbackIfStale_认得老版本的标记(t *testing.T) {
+	exe := withFakeExe(t, "新版本(起不来)")
+	os.WriteFile(exe+backupSuffix, []byte("旧版本"), 0o755)
+	os.WriteFile(exe+pendingSuffix, []byte("1"), 0o644) // v0.1.3 及以前的写法
+
+	if !RollbackIfStale(testUpdaterState(t)) {
+		t.Fatal("老标记应当被当作『已经启动过一次』,直接回滚")
+	}
+}
