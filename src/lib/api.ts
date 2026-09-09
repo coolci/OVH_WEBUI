@@ -97,7 +97,7 @@ function normalizeActionResult(raw: unknown): {
   };
 }
 
-type Settings = {
+export type Settings = {
   appKey: string;
   appSecret: string;
   consumerKey: string;
@@ -106,6 +106,8 @@ type Settings = {
   tgChatId: string;
   iam: string;
   zone: string;
+  notifyWebhookUrl?: string;
+  autoPayEnabled?: boolean;
 };
 
 async function getSettings(): Promise<Settings> {
@@ -609,6 +611,150 @@ export const api = {
       }),
     });
   },
+
+  // ==================== Payment & Order Pay ====================
+  getPaymentMethods: (account?: string) =>
+    apiRequest<{ success: boolean; methods: any[] }>(
+      account ? `/api/ovh/payment-methods?account=${encodeURIComponent(account)}` : "/api/ovh/payment-methods"
+    ),
+  payOrder: (orderId: string, paymentMethodId?: number, account?: string) =>
+    apiRequest<{ success: boolean; message?: string; error?: string }>(
+      `/api/order/${encodeURIComponent(orderId)}/pay${account ? `?account=${encodeURIComponent(account)}` : ""}`,
+      {
+        method: "POST",
+        body: JSON.stringify({ paymentMethodId }),
+      }
+    ),
+
+  // ==================== IP Asset Management ====================
+  getIps: (account?: string) =>
+    apiRequest<{ success: boolean; ips: any[] }>(
+      account ? `/api/ip?account=${encodeURIComponent(account)}` : "/api/ip"
+    ),
+  getIpDetail: (ip: string, account?: string) =>
+    apiRequest<{ success: boolean; detail: any }>(
+      `/api/ip/details/${encodeURIComponent(ip)}${account ? `?account=${encodeURIComponent(account)}` : ""}`
+    ),
+  moveIpToService: (ip: string, to: string, account?: string) =>
+    apiRequest<{ success: boolean; message?: string; result?: any }>(
+      `/api/ip/move/${encodeURIComponent(ip)}${account ? `?account=${encodeURIComponent(account)}` : ""}`,
+      {
+        method: "POST",
+        body: JSON.stringify({ to }),
+      }
+    ),
+  getIpReverse: (ip: string, account?: string) =>
+    apiRequest<{ success: boolean; reverses: any[] }>(
+      `/api/ip/reverse/${encodeURIComponent(ip)}${account ? `?account=${encodeURIComponent(account)}` : ""}`
+    ),
+  setIpReverse: (ip: string, ipReverse: string, reverse: string, account?: string) =>
+    apiRequest<{ success: boolean; message?: string }>(
+      `/api/ip/reverse/${encodeURIComponent(ip)}${account ? `?account=${encodeURIComponent(account)}` : ""}`,
+      {
+        method: "POST",
+        body: JSON.stringify({ ipReverse, reverse }),
+      }
+    ),
+  deleteIpReverse: (ip: string, ipReverse: string, account?: string) =>
+    apiRequest<{ success: boolean; message?: string }>(
+      `/api/ip/reverse/${encodeURIComponent(ip)}?ipReverse=${encodeURIComponent(ipReverse)}${
+        account ? `&account=${encodeURIComponent(account)}` : ""
+      }`,
+      { method: "DELETE" }
+    ),
+  getIpFirewall: (ip: string, account?: string) =>
+    apiRequest<{ success: boolean; firewalls: any[] }>(
+      `/api/ip/firewall/${encodeURIComponent(ip)}${account ? `?account=${encodeURIComponent(account)}` : ""}`
+    ),
+  createIpFirewall: (ip: string, ipOnFirewall: string, account?: string) =>
+    apiRequest<{ success: boolean; message?: string }>(
+      `/api/ip/firewall/${encodeURIComponent(ip)}${account ? `?account=${encodeURIComponent(account)}` : ""}`,
+      {
+        method: "POST",
+        body: JSON.stringify({ ipOnFirewall }),
+      }
+    ),
+  toggleIpFirewall: (ip: string, ipOnFirewall: string, enabled: boolean, account?: string) =>
+    apiRequest<{ success: boolean; message?: string }>(
+      `/api/ip/firewall/${encodeURIComponent(ip)}${account ? `?account=${encodeURIComponent(account)}` : ""}`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ ipOnFirewall, enabled }),
+      }
+    ),
+  getIpFirewallRules: (ip: string, ipOnFirewall: string, account?: string) =>
+    apiRequest<{ success: boolean; rules: any[] }>(
+      `/api/ip/firewall-rules/${encodeURIComponent(ip)}?ipOnFirewall=${encodeURIComponent(ipOnFirewall)}${
+        account ? `&account=${encodeURIComponent(account)}` : ""
+      }`
+    ),
+  createIpFirewallRule: (ip: string, rule: Record<string, unknown>, account?: string) =>
+    apiRequest<{ success: boolean; message?: string }>(
+      `/api/ip/firewall-rules/${encodeURIComponent(ip)}${account ? `?account=${encodeURIComponent(account)}` : ""}`,
+      {
+        method: "POST",
+        body: JSON.stringify(rule),
+      }
+    ),
+  deleteIpFirewallRule: (ip: string, ipOnFirewall: string, sequence: number, account?: string) =>
+    apiRequest<{ success: boolean; message?: string }>(
+      `/api/ip/firewall-rules/${encodeURIComponent(ip)}?ipOnFirewall=${encodeURIComponent(ipOnFirewall)}&sequence=${sequence}${
+        account ? `&account=${encodeURIComponent(account)}` : ""
+      }`,
+      { method: "DELETE" }
+    ),
+
+  // ==================== SSH Keys ====================
+  getSshKeys: (account?: string) =>
+    apiRequest<{ success: boolean; keys: any[] }>(
+      account ? `/api/sshkeys?account=${encodeURIComponent(account)}` : "/api/sshkeys"
+    ),
+  createSshKey: (keyName: string, key: string, isDefault?: boolean, account?: string) =>
+    apiRequest<{ success: boolean; message?: string }>(
+      `/api/sshkeys${account ? `?account=${encodeURIComponent(account)}` : ""}`,
+      {
+        method: "POST",
+        body: JSON.stringify({ keyName, key, default: !!isDefault }),
+      }
+    ),
+  deleteSshKey: (keyName: string, account?: string) =>
+    apiRequest<{ success: boolean; message?: string }>(
+      `/api/sshkeys/${encodeURIComponent(keyName)}${account ? `?account=${encodeURIComponent(account)}` : ""}`,
+      { method: "DELETE" }
+    ),
+
+  // ==================== Support Tickets ====================
+  getTickets: (archived?: boolean, account?: string) =>
+    apiRequest<{ success: boolean; tickets: any[] }>(
+      `/api/tickets?${archived ? "archived=true&" : ""}${account ? `account=${encodeURIComponent(account)}` : ""}`
+    ),
+  getTicketDetail: (id: number | string, account?: string) =>
+    apiRequest<{ success: boolean; ticket: any }>(
+      `/api/tickets/${id}${account ? `?account=${encodeURIComponent(account)}` : ""}`
+    ),
+  getTicketMessages: (id: number | string, account?: string) =>
+    apiRequest<{ success: boolean; messages: any[] }>(
+      `/api/tickets/${id}/messages${account ? `?account=${encodeURIComponent(account)}` : ""}`
+    ),
+  replyTicket: (id: number | string, body: string, account?: string) =>
+    apiRequest<{ success: boolean; message?: string }>(
+      `/api/tickets/${id}/reply${account ? `?account=${encodeURIComponent(account)}` : ""}`,
+      {
+        method: "POST",
+        body: JSON.stringify({ body }),
+      }
+    ),
+  createTicket: (
+    ticket: { category: string; subject: string; body: string; serviceName?: string; type?: string },
+    account?: string
+  ) =>
+    apiRequest<{ success: boolean; message?: string; result?: any }>(
+      `/api/tickets${account ? `?account=${encodeURIComponent(account)}` : ""}`,
+      {
+        method: "POST",
+        body: JSON.stringify(ticket),
+      }
+    ),
 };
 
 export default api;

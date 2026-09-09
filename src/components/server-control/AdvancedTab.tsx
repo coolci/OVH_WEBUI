@@ -1,12 +1,13 @@
+import { useState } from "react";
 import {
   Zap, Shield, FolderArchive, Globe, Wifi, Network, ShoppingBag, Settings, MapPin,
-  Power, ShieldAlert,
+  Power, ShieldAlert, Key,
 } from "lucide-react";
 import type { OwnedServer } from "@/hooks/use-server-control";
 import {
   useServerBurst, useSetBurst,
   useServerFirewall, useSetFirewall,
-  useServerBackupFtp, useActivateBackupFtp,
+  useServerBackupFtp, useActivateBackupFtp, useResetBackupFtpPassword,
   useServerSecondaryDns,
   useServerVirtualMac,
   useServerVrack,
@@ -141,6 +142,9 @@ function FirewallPane({ serviceName }: { serviceName: string }) {
 function BackupFtpPane({ serviceName }: { serviceName: string }) {
   const q = useServerBackupFtp(serviceName);
   const act = useActivateBackupFtp();
+  const resetPwd = useResetBackupFtpPassword();
+  const [resetConfirm, setResetConfirm] = useState(false);
+
   if (q.isPending) return <PaneSkeleton />;
   const data: any = q.data;
   if (!data) return <EmptyState icon={FolderArchive} title="暂无 Backup FTP 数据" />;
@@ -179,6 +183,37 @@ function BackupFtpPane({ serviceName }: { serviceName: string }) {
     <Pane title="Backup FTP" icon={FolderArchive}>
       {quotaText && <Row label="配额" value={quotaText} />}
       {usageText && <Row label="已用" value={usageText} />}
+      {ftp.ftpBackup && <Row label="FTP 服务器" value={<code className="font-mono text-xs">{ftp.ftpBackup}</code>} />}
+      {ftp.readOnly != null && <Row label="只读模式" value={ftp.readOnly ? "是" : "否"} />}
+
+      <div className="pt-3 flex items-center gap-2 flex-wrap">
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={resetPwd.isPending}
+          onClick={async () => {
+            if (!resetConfirm) {
+              setResetConfirm(true);
+              return;
+            }
+            try {
+              await resetPwd.mutateAsync(serviceName);
+              toast.success("密码已重置，新密码已发送至 OVH 绑定邮箱");
+              setResetConfirm(false);
+            } catch (e: any) {
+              toast.error(e?.response?.data?.error || "密码重置失败");
+            }
+          }}
+        >
+          <Key className="w-3.5 h-3.5 mr-1" />
+          {resetPwd.isPending ? "重置中…" : resetConfirm ? "确认重置密码（新密码发至邮箱）" : "重置 FTP 密码"}
+        </Button>
+        {resetConfirm && (
+          <Button variant="ghost" size="sm" onClick={() => setResetConfirm(false)}>
+            取消
+          </Button>
+        )}
+      </div>
 
       <div className="pt-3">
         <h4 className="text-[12px] font-semibold mb-2">访问控制列表（允许的 IP 块）</h4>

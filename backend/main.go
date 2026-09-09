@@ -489,6 +489,42 @@ func main() {
 		api.GET("/ovh/account/sub-accounts", handlers.GetSubAccounts(state))
 		api.GET("/ovh/account/bills", handlers.GetAccountBills(state))
 		api.GET("/ovh/account/orders", handlers.GetAccountOrders(state))
+
+		// Payment & Orders
+		api.GET("/ovh/payment-methods", handlers.GetPaymentMethods(state))
+		api.POST("/order/:orderId/pay", handlers.PayOrder(state))
+
+		// IP Asset Center
+		ipGroup := api.Group("/ip")
+		{
+			ipGroup.GET("", handlers.ListIPs(state))
+			ipGroup.GET("/details/*ip", handlers.GetIPDetail(state))
+			ipGroup.POST("/move/*ip", handlers.MoveIPToService(state))
+			ipGroup.GET("/reverse/*ip", handlers.GetIPReverse(state))
+			ipGroup.POST("/reverse/*ip", handlers.SetIPReverse(state))
+			ipGroup.DELETE("/reverse/*ip", handlers.DeleteIPReverse(state))
+			ipGroup.GET("/firewall/*ip", handlers.GetIPFirewall(state))
+			ipGroup.POST("/firewall/*ip", handlers.CreateIPFirewall(state))
+			ipGroup.PUT("/firewall/*ip", handlers.ToggleIPFirewall(state))
+			ipGroup.GET("/firewall-rules/*ip", handlers.ListIPFirewallRules(state))
+			ipGroup.POST("/firewall-rules/*ip", handlers.CreateIPFirewallRule(state))
+			ipGroup.DELETE("/firewall-rules/*ip", handlers.DeleteIPFirewallRule(state))
+		}
+
+		// SSH Keys
+		api.GET("/sshkeys", handlers.ListSSHKeys(state))
+		api.POST("/sshkeys", handlers.CreateSSHKey(state))
+		api.DELETE("/sshkeys/:keyName", handlers.DeleteSSHKey(state))
+
+		// Support Tickets
+		ticketGroup := api.Group("/tickets")
+		{
+			ticketGroup.GET("", handlers.ListTickets(state))
+			ticketGroup.GET("/:id", handlers.GetTicketDetail(state))
+			ticketGroup.GET("/:id/messages", handlers.GetTicketMessages(state))
+			ticketGroup.POST("/:id/reply", handlers.ReplyTicket(state))
+			ticketGroup.POST("", handlers.CreateTicket(state))
+		}
 	}
 
 	// 前端静态文件（仅 `-tags ui` 构建时生效）

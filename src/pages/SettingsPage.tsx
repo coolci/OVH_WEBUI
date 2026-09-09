@@ -1,12 +1,18 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Helmet } from "react-helmet-async";
-import { Settings as SettingsIcon, KeyRound, Globe, Send, Database, Save, AlertTriangle, CheckCircle2, Plus, Star, RotateCw, Trash2, Pencil } from "lucide-react";
+import {
+  Settings as SettingsIcon, KeyRound, Globe, Send, Database, Save,
+  AlertTriangle, CheckCircle2, Plus, Star, RotateCw, Trash2, Pencil,
+  CreditCard, Terminal, ShieldCheck, ShieldAlert
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/common/Skeleton";
 import { Chip } from "@/components/common/Chip";
@@ -19,6 +25,8 @@ import {
   useTelegramPollerStatus,
   type SettingsConfig,
 } from "@/hooks/use-settings";
+import { usePaymentMethods } from "@/hooks/use-payment";
+import { useSshKeys, useCreateSshKey, useDeleteSshKey } from "@/hooks/use-ssh-keys";
 import { getApiSecretKey, setApiSecretKey } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { OVH_SUBSIDIARIES } from "@/lib/ovh-subsidiaries";
@@ -42,6 +50,8 @@ function endpointForZone(zone: string): string {
 const SECTIONS = [
   { id: "password", icon: KeyRound, label: "访问密码" },
   { id: "accounts", icon: Globe, label: "OVH 账户" },
+  { id: "payment", icon: CreditCard, label: "支付与自动扣款" },
+  { id: "ssh", icon: Terminal, label: "SSH 密钥" },
   { id: "telegram", icon: Send, label: "Telegram" },
   { id: "cache", icon: Database, label: "缓存管理" },
 ] as const;
@@ -141,6 +151,10 @@ function SettingsPage() {
               </Section>
             ) : active === "accounts" ? (
               <AccountsSection />
+            ) : active === "payment" ? (
+              <PaymentSection form={form} setForm={setForm} />
+            ) : active === "ssh" ? (
+              <SshSection />
             ) : active === "telegram" ? (
               <TelegramSection form={form} set={set} />
             ) : (
@@ -153,10 +167,21 @@ function SettingsPage() {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  action,
+  children,
+}: {
+  title: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
     <div className="space-y-5">
-      <h2 className="text-base font-semibold">{title}</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-semibold">{title}</h2>
+        {action}
+      </div>
       <div className="space-y-4">{children}</div>
     </div>
   );
@@ -539,6 +564,263 @@ function AccountDialog({ acc, onClose }: { acc?: OVHAccount; onClose: () => void
   );
 }
 
+function PaymentSection({
+  form,
+  setForm,
+}: {
+  form: SettingsConfig;
+  setForm: React.Dispatch<React.SetStateAction<SettingsConfig>>;
+}) {
+  const { data: methods, isLoading } = usePaymentMethods();
+
+  return (
+    <div className="space-y-6">
+      <Section title="自动扣款安全总开关">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 rounded-xl border border-border bg-card">
+          <div className="space-y-1 max-w-2xl">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-sm">允许抢购自动扣款 (Auto-Pay)</span>
+              <Chip tone={form.autoPayEnabled ? "success" : "default"}>
+                {form.autoPayEnabled ? "已开启" : "已关闭"}
+              </Chip>
+            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              全局总控安全阀。仅当此开关开启<strong>且</strong>抢购任务/云下单勾选了【自动扣款】时，系统才会在下单锁单成功后第一时间调用 OVH 默认支付方式完成结算。
+            </p>
+          </div>
+          <Switch
+            checked={!!form.autoPayEnabled}
+            onCheckedChange={(checked) => setForm((p) => ({ ...p, autoPayEnabled: checked }))}
+          />
+        </div>
+        {form.autoPayEnabled ? (
+          <div className="flex items-center gap-2 p-3 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs">
+            <ShieldCheck className="w-4 h-4 flex-shrink-0" />
+            <span>自动扣款总开关已就绪。创建抢购任务时可勾选开启自动支付闭环。</span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs">
+            <ShieldAlert className="w-4 h-4 flex-shrink-0" />
+            <span>自动扣款总开关处于关闭状态。所有抢购任务锁单后均保持待付款状态，需手动支付。</span>
+          </div>
+        )}
+      </Section>
+
+      <Section title="已绑定的支付方式看板">
+        <p className="text-xs text-muted-foreground -mt-2 mb-3">
+          展示当前活跃 OVH 账户名下绑定的有效支付手段。如需新增或解绑信用卡/PayPal，请前往 OVH 官方控制台。
+        </p>
+        {isLoading ? (
+          <Skeleton className="h-24 rounded-xl" />
+        ) : !methods || methods.length === 0 ? (
+          <div className="text-center p-6 border border-dashed border-border rounded-xl text-xs text-muted-foreground">
+            当前账户未查询到有效支付方式或尚未授权 billing 权限
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {methods.map((m: any) => (
+              <div
+                key={m.paymentMethodId}
+                className="p-4 rounded-xl border border-border bg-card flex flex-col justify-between gap-3"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+                      <CreditCard className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold flex items-center gap-2">
+                        {m.description || m.label || m.paymentType}
+                        {m.default && (
+                          <Chip tone="success" className="text-[10px] px-1.5 py-0">
+                            默认扣款卡
+                          </Chip>
+                        )}
+                      </div>
+                      <div className="text-xs text-muted-foreground font-mono">
+                        {m.paymentType} · ID: {m.paymentMethodId}
+                      </div>
+                    </div>
+                  </div>
+                  <Chip tone={m.status === "VALID" ? "success" : "default"} className="text-[10px]">
+                    {m.status}
+                  </Chip>
+                </div>
+                {m.expirationDate && (
+                  <div className="text-xs text-muted-foreground">
+                    有效期至: <span className="font-mono">{m.expirationDate}</span>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </Section>
+    </div>
+  );
+}
+
+function SshSection() {
+  const { data: keys, isLoading } = useSshKeys();
+  const del = useDeleteSshKey();
+  const [openAdd, setOpenAdd] = useState(false);
+  const [deletingKey, setDeletingKey] = useState<string | null>(null);
+
+  return (
+    <div className="space-y-6">
+      <Section
+        title="全局 SSH 公钥库"
+        action={
+          <Button size="sm" onClick={() => setOpenAdd(true)}>
+            <Plus className="w-4 h-4 mr-1" />
+            添加公钥
+          </Button>
+        }
+      >
+        <p className="text-xs text-muted-foreground -mt-2 mb-3">
+          管理预存到 OVH 账户的 SSH 公钥。在独服和 VPS 重装操作系统时可一键免密注入，省去等待临时密码邮件。
+        </p>
+        {isLoading ? (
+          <Skeleton className="h-32 rounded-xl" />
+        ) : !keys || keys.length === 0 ? (
+          <div className="text-center p-8 border border-dashed border-border rounded-xl text-xs text-muted-foreground">
+            暂未添加全局 SSH 公钥，点击右上角「添加公钥」录入
+          </div>
+        ) : (
+          <div className="space-y-2.5">
+            {keys.map((k) => (
+              <div
+                key={k.keyName}
+                className="p-3.5 rounded-xl border border-border bg-card flex items-center justify-between gap-3"
+              >
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-sm text-foreground">{k.keyName}</span>
+                    {k.default && (
+                      <Chip tone="success" className="text-[10px] px-1.5 py-0">
+                        默认公钥
+                      </Chip>
+                    )}
+                  </div>
+                  <code className="text-xs text-muted-foreground font-mono block truncate max-w-xl">
+                    {k.key}
+                  </code>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs h-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                    onClick={() => setDeletingKey(k.keyName)}
+                  >
+                    <Trash2 className="w-3.5 h-3.5 mr-1" />
+                    删除
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Section>
+
+      {openAdd && <AddSshKeyDialog onClose={() => setOpenAdd(false)} />}
+
+      <Dialog open={!!deletingKey} onOpenChange={(v) => !v && setDeletingKey(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>删除 SSH 密钥</DialogTitle>
+            <DialogDescription>
+              确定要从 OVH 账户中删除公钥 <strong>{deletingKey}</strong> 吗？删除后重装系统将不再自动注入该密钥。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeletingKey(null)}>
+              取消
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={del.isPending}
+              onClick={async () => {
+                if (!deletingKey) return;
+                try {
+                  await del.mutateAsync({ keyName: deletingKey });
+                  toast.success("公钥已成功删除");
+                  setDeletingKey(null);
+                } catch {
+                  toast.error("删除失败");
+                }
+              }}
+            >
+              {del.isPending ? "删除中..." : "确认删除"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function AddSshKeyDialog({ onClose }: { onClose: () => void }) {
+  const add = useCreateSshKey();
+  const [keyName, setKeyName] = useState("");
+  const [key, setKey] = useState("");
+
+  const canSubmit = keyName.trim() && key.trim();
+
+  const handleSubmit = async () => {
+    if (!canSubmit) return;
+    try {
+      await add.mutateAsync({
+        keyName: keyName.trim(),
+        key: key.trim(),
+      });
+      toast.success("公钥已成功录入 OVH");
+      onClose();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error || "录入公钥失败");
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>添加全局 SSH 公钥</DialogTitle>
+          <DialogDescription>
+            公钥将被保存在 OVH 账户库中，独服/VPS 重装时可一键指定。
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <Field label="公钥标识名称 *">
+            <Input
+              value={keyName}
+              onChange={(e) => setKeyName(e.target.value)}
+              placeholder="例如: my-macbook 或 prod-deploy-key"
+              autoFocus
+            />
+          </Field>
+          <Field label="公钥内容 (id_rsa.pub / id_ed25519.pub) *">
+            <Textarea
+              rows={4}
+              value={key}
+              onChange={(e) => setKey(e.target.value)}
+              placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA..."
+              className="font-mono text-xs"
+            />
+          </Field>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            取消
+          </Button>
+          <Button onClick={handleSubmit} disabled={!canSubmit || add.isPending}>
+            {add.isPending ? "提交中..." : "录入公钥"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 const Page = () => (
   <>

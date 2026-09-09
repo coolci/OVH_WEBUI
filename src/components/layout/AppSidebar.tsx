@@ -16,6 +16,8 @@ import {
   MessageSquare,
   Cloud,
   CloudLightning,
+  Network,
+  LifeBuoy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { QuickOrderDialog } from "@/components/orders/QuickOrderDialog";
@@ -30,6 +32,7 @@ const navGroups = [
     title: "系统",
     items: [
       { to: "/", icon: LayoutDashboard, label: "仪表盘" },
+      { to: "/tickets", icon: LifeBuoy, label: "服务工单" },
       { to: "/logs", icon: ScrollText, label: "系统日志" },
     ],
   },
@@ -37,6 +40,7 @@ const navGroups = [
     title: "服务器",
     items: [
       { to: "/servers", icon: Server, label: "服务器列表" },
+      { to: "/ip", icon: Network, label: "IP 资产" },
       { to: "/server-control", icon: Cpu, label: "服务器控制" },
       { to: "/vps-control", icon: Cloud, label: "VPS 控制" },
       { to: "/performance", icon: BarChart3, label: "性能监控" },

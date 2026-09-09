@@ -25,6 +25,9 @@ type Config struct {
 	// TgWebhookSecretRegistered secret 是否已经推给 Telegram（setWebhook 成功过）。
 	// false 时 webhook 处于兼容模式：不强制校验 secret，避免升级后老用户的按钮直接全挂。
 	TgWebhookSecretRegistered bool `json:"tgWebhookSecretRegistered,omitempty"`
+	// AutoPayEnabled 全局自动扣款总开关。默认关闭。
+	// 只有此总开关开启且单任务开启 autoPay 时，锁单成功后才会触发自动扣款 API。
+	AutoPayEnabled bool `json:"autoPayEnabled"`
 }
 
 // DefaultConfig 默认配置

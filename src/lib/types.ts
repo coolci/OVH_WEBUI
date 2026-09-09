@@ -43,6 +43,7 @@ export interface HistoryEntry {
   status: string;
   orderId?: string | null;
   orderUrl?: string | null;
+  orderStatus?: string | null;
   errorMessage?: string | null;
   purchaseTime: string;
   attemptCount?: number;
@@ -163,3 +164,78 @@ export interface AccountInfo {
   state?: string;
   [key: string]: unknown;
 }
+
+export interface PaymentMethod {
+  paymentMethodId: number;
+  paymentType: string;
+  description?: string;
+  label?: string;
+  default: boolean;
+  status: string;
+  expirationDate?: string;
+}
+
+export interface IpAsset {
+  ip: string;
+  type?: string;
+  routedTo?: {
+    serviceName?: string;
+  };
+  country?: string;
+  region?: string;
+  description?: string;
+  organisationId?: string;
+  canBeTerminated?: boolean;
+  accountId?: string;
+  accountName?: string;
+  accountZone?: string;
+}
+
+export interface IpReverse {
+  ipReverse: string;
+  reverse: string;
+}
+
+export interface IpFirewall {
+  ipOnFirewall: string;
+  enabled: boolean;
+  state?: string;
+}
+
+export interface IpFirewallRule {
+  sequence: number;
+  action: "permit" | "deny";
+  protocol: "tcp" | "udp" | "icmp" | "ipv4";
+  destinationPort?: number | string;
+  sourcePort?: number | string;
+  source?: string;
+  rule?: string;
+  state?: string;
+}
+
+export interface SshKey {
+  keyName: string;
+  key: string;
+  default?: boolean;
+}
+
+export interface SupportTicket {
+  ticketId: number;
+  ticketNumber?: number;
+  subject: string;
+  category: string;
+  serviceName?: string;
+  state: "open" | "closed" | "answered" | string;
+  creationDate: string;
+  updateDate: string;
+  lastMessageFrom?: string;
+}
+
+export interface TicketMessage {
+  messageId: number;
+  body: string;
+  creationDate: string;
+  from: "customer" | "support" | string;
+  ticketId: number;
+}
+

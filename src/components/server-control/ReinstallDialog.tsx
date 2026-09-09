@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { HardDrive, Search, AlertTriangle, Database, Plus, X as XIcon, Cog, Zap, RefreshCw, Loader2 } from "lucide-react";
+import { HardDrive, Search, AlertTriangle, Database, Plus, X as XIcon, Cog, Zap, RefreshCw, Loader2, Key } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,7 @@ import {
   useServerPartitionSchemes,
   type CustomPartition,
 } from "@/hooks/use-server-control";
+import { useSshKeys } from "@/hooks/use-ssh-keys";
 import { OsIcon, detectOsKind, osBrandColor } from "@/components/server-control/OsIcon";
 import { toast } from "sonner";
 
@@ -76,6 +77,7 @@ export function ReinstallDialog({
   const disk = useServerDiskInfo(serviceName, open);
   const raid = useServerRaidProfiles(serviceName, open);
   const mut = useReinstallServer();
+  const sshKeys = useSshKeys();
 
   // 基本
   const [search, setSearch] = useState("");
@@ -83,6 +85,7 @@ export function ReinstallDialog({
   /** 当前展开的 OS 分组(左栏选中)。null = 没选,搜索时强制 null 让右栏展示扁平结果。 */
   const [activeGroup, setActiveGroup] = useState<ReturnType<typeof detectOsKind> | null>(null);
   const [hostname, setHostname] = useState("");
+  const [selectedSshKey, setSelectedSshKey] = useState("");
 
   // Proxmox + ZFS
   const [useProxmox9Zfs, setUseProxmox9Zfs] = useState(true);
@@ -170,6 +173,7 @@ export function ReinstallDialog({
         serviceName,
         templateName,
         customHostname: hostname || undefined,
+        sshKey: selectedSshKey || undefined,
         useProxmox9Zfs: isProxmox9 && useProxmox9Zfs,
         zfsRaidLevel: isProxmox9 && useProxmox9Zfs ? zfsRaidLevel : undefined,
         zfsVzSize: isProxmox9 && useProxmox9Zfs ? zfsVzSize : undefined,
@@ -192,6 +196,7 @@ export function ReinstallDialog({
     setSearch("");
     setTemplateName("");
     setHostname("");
+    setSelectedSshKey("");
     setUseProxmox9Zfs(true);
     setZfsRaidLevel(1);
     setZfsVzSize(100 * 1024);
@@ -469,6 +474,36 @@ export function ReinstallDialog({
               value={hostname}
               onChange={(e) => setHostname(e.target.value)}
             />
+          </div>
+
+          {/* SSH 公钥免密注入 */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-[12px] font-semibold flex items-center gap-1.5">
+                <Key className="w-3.5 h-3.5 text-muted-foreground" />
+                SSH 公钥免密注入（可选）
+              </label>
+              <span className="text-[11px] text-muted-foreground">全局 SSH 密钥库</span>
+            </div>
+            <Select value={selectedSshKey || "none"} onValueChange={(v) => setSelectedSshKey(v === "none" ? "" : v)}>
+              <SelectTrigger>
+                <SelectValue placeholder="不注入公钥（使用 OVH 初始邮件密码）" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">不注入公钥（使用 OVH 初始邮件密码）</SelectItem>
+                {(sshKeys.data || []).map((k) => (
+                  <SelectItem key={k.keyName} value={k.key}>
+                    <span className="font-semibold">{k.keyName}</span>
+                    <span className="font-mono text-[11px] text-muted-foreground ml-2">
+                      {k.key.trim().substring(0, 32)}...
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground mt-1">
+              注入公钥后系统安装完毕将直接允许 root 免密登录（可在「系统设置 → SSH 密钥」中添加管理）。
+            </p>
           </div>
 
           {/* 内置分区方案（非自定义存储路径） */}

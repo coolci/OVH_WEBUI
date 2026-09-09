@@ -1,6 +1,6 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Helmet } from "react-helmet-async";
-import { Clock, RefreshCw, Trash2, Search, ExternalLink, AlertCircle, Hourglass } from "lucide-react";
+import { Clock, RefreshCw, Trash2, Search, ExternalLink, AlertCircle, Hourglass, Zap } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -21,6 +21,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useHistory, useClearHistory, type PurchaseHistory } from "@/hooks/use-history";
+import { usePayOrder } from "@/hooks/use-payment";
 
 /** 抢购历史：表格 + 搜索 + 状态过滤 */
 /** 订单有效期 15 天，未提供 expirationTime 时用 purchaseTime + 15d 兜底 */
@@ -174,12 +175,28 @@ function HistoryPage() {
 }
 
 function HistoryRow({ item, now }: { item: PurchaseHistory; now: number }) {
+  const pay = usePayOrder();
+  const [paying, setPaying] = useState(false);
   // 只有成功且拿到 orderId 的行才显示倒计时
   const showCountdown = item.status === "success" && !!item.orderId;
   const remainingMs = showCountdown ? getExpirationMs(item) - now : 0;
   const isExpired = showCountdown && remainingMs <= 0;
   // 24 小时内进入告警色
   const isUrgent = showCountdown && !isExpired && remainingMs < 24 * 60 * 60 * 1000;
+
+  const handlePay = async () => {
+    if (!item.orderId) return;
+    setPaying(true);
+    try {
+      const res = await pay.mutateAsync({ orderId: item.orderId, accountId: item.accountId });
+      toast.success(res.message || "扣款指令已提交");
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error || e?.message || "扣款失败");
+    } finally {
+      setPaying(false);
+    }
+  };
+
   return (
     <tr className={`text-[13px] hover:bg-muted ${isExpired ? "opacity-60" : ""}`}>
       <td className={`px-4 py-3 font-mono font-semibold ${isExpired ? "line-through" : ""}`}>
@@ -230,29 +247,43 @@ function HistoryRow({ item, now }: { item: PurchaseHistory; now: number }) {
         )}
       </td>
       <td className="px-4 py-3">
-        {item.status === "success" && item.orderUrl ? (
-          <a
-            href={item.orderUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-disabled={isExpired}
-            className={`inline-flex items-center gap-1 text-foreground hover:underline text-[12px] ${
-              isExpired ? "pointer-events-none opacity-50" : ""
-            }`}
-          >
-            <ExternalLink className="w-3 h-3" />
-            订单
-          </a>
-        ) : item.status === "failed" && item.errorMessage ? (
-          <button
-            type="button"
-            onClick={() => toast.info(item.errorMessage)}
-            className="inline-flex items-center gap-1 text-destructive hover:underline text-[12px]"
-          >
-            <AlertCircle className="w-3 h-3" />
-            错误
-          </button>
-        ) : "—"}
+        <div className="flex items-center gap-2">
+          {item.status === "success" && item.orderId && !isExpired && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-6 text-[11px] px-2 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/30"
+              disabled={paying || pay.isPending}
+              onClick={handlePay}
+            >
+              <Zap className="w-3 h-3 mr-1" />
+              {paying ? "扣款中…" : "立即扣款"}
+            </Button>
+          )}
+          {item.status === "success" && item.orderUrl ? (
+            <a
+              href={item.orderUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-disabled={isExpired}
+              className={`inline-flex items-center gap-1 text-foreground hover:underline text-[12px] ${
+                isExpired ? "pointer-events-none opacity-50" : ""
+              }`}
+            >
+              <ExternalLink className="w-3 h-3" />
+              订单
+            </a>
+          ) : item.status === "failed" && item.errorMessage ? (
+            <button
+              type="button"
+              onClick={() => toast.info(item.errorMessage)}
+              className="inline-flex items-center gap-1 text-destructive hover:underline text-[12px]"
+            >
+              <AlertCircle className="w-3 h-3" />
+              错误
+            </button>
+          ) : "—"}
+        </div>
       </td>
     </tr>
   );
@@ -260,10 +291,26 @@ function HistoryRow({ item, now }: { item: PurchaseHistory; now: number }) {
 
 /** 手机端的订单卡片渲染。跟 HistoryRow 字段一一对应,但堆叠成卡片。 */
 function HistoryCard({ item, now }: { item: PurchaseHistory; now: number }) {
+  const pay = usePayOrder();
+  const [paying, setPaying] = useState(false);
   const showCountdown = item.status === "success" && !!item.orderId;
   const remainingMs = showCountdown ? getExpirationMs(item) - now : 0;
   const isExpired = showCountdown && remainingMs <= 0;
   const isUrgent = showCountdown && !isExpired && remainingMs < 24 * 60 * 60 * 1000;
+
+  const handlePay = async () => {
+    if (!item.orderId) return;
+    setPaying(true);
+    try {
+      const res = await pay.mutateAsync({ orderId: item.orderId, accountId: item.accountId });
+      toast.success(res.message || "扣款指令已提交");
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error || e?.message || "扣款失败");
+    } finally {
+      setPaying(false);
+    }
+  };
+
   return (
     <Card className={isExpired ? "opacity-60" : ""}>
       <CardContent className="p-3 space-y-2">
@@ -292,7 +339,7 @@ function HistoryCard({ item, now }: { item: PurchaseHistory; now: number }) {
             </span>
           ) : null}
         </div>
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
           {showCountdown ? (
             <Chip
               tone={isExpired ? "danger" : isUrgent ? "warning" : "info"}
@@ -302,26 +349,40 @@ function HistoryCard({ item, now }: { item: PurchaseHistory; now: number }) {
               {formatCountdown(remainingMs)}
             </Chip>
           ) : <span />}
-          {item.status === "success" && item.orderUrl ? (
-            <a
-              href={item.orderUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={`inline-flex items-center gap-1 text-foreground hover:underline text-[12px] ${isExpired ? "pointer-events-none opacity-50" : ""}`}
-            >
-              <ExternalLink className="w-3 h-3" />
-              订单
-            </a>
-          ) : item.status === "failed" && item.errorMessage ? (
-            <button
-              type="button"
-              onClick={() => toast.info(item.errorMessage)}
-              className="inline-flex items-center gap-1 text-destructive hover:underline text-[12px]"
-            >
-              <AlertCircle className="w-3 h-3" />
-              错误详情
-            </button>
-          ) : null}
+          <div className="flex items-center gap-2">
+            {item.status === "success" && item.orderId && !isExpired && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-6 text-[11px] px-2 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/30"
+                disabled={paying || pay.isPending}
+                onClick={handlePay}
+              >
+                <Zap className="w-3 h-3 mr-1" />
+                {paying ? "扣款中…" : "立即扣款"}
+              </Button>
+            )}
+            {item.status === "success" && item.orderUrl ? (
+              <a
+                href={item.orderUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`inline-flex items-center gap-1 text-foreground hover:underline text-[12px] ${isExpired ? "pointer-events-none opacity-50" : ""}`}
+              >
+                <ExternalLink className="w-3 h-3" />
+                订单
+              </a>
+            ) : item.status === "failed" && item.errorMessage ? (
+              <button
+                type="button"
+                onClick={() => toast.info(item.errorMessage)}
+                className="inline-flex items-center gap-1 text-destructive hover:underline text-[12px]"
+              >
+                <AlertCircle className="w-3 h-3" />
+                错误详情
+              </button>
+            ) : null}
+          </div>
         </div>
       </CardContent>
     </Card>

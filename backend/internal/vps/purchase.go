@@ -169,11 +169,14 @@ func PurchaseVPS(state *app.State, sub types.VPSSubscription, dcCode string) Out
 		state.Logger.Info(fmt.Sprintf("[VPS下单] 配置 %s = %s", cfg.label, cfg.value), "vps_purchase")
 	}
 
+	cfg := state.Config.Get()
+	shouldAutoPay := cfg.AutoPayEnabled && sub.AutoPay
+
 	// 5) 结账
 	var checkoutResult map[string]interface{}
 	if err := client.Post("/order/cart/"+cartID+"/checkout", map[string]interface{}{
-		// 订阅上显式打开"自动付款"才为 true;默认不替用户扣钱
-		"autoPayWithPreferredPaymentMethod": sub.AutoPay,
+		// 只有全局总开关开启且订阅开启"自动付款"才为 true;默认不替用户扣钱
+		"autoPayWithPreferredPaymentMethod": shouldAutoPay,
 		"waiveRetractationPeriod":           true,
 	}, &checkoutResult); err != nil {
 		// 配置接口对取值几乎不校验,真正的"这个机房没货"往往到 checkout 才报出来
@@ -183,6 +186,16 @@ func PurchaseVPS(state *app.State, sub types.VPSSubscription, dcCode string) Out
 	orderID := numconv.ToString(checkoutResult["orderId"])
 	orderURL, _ := checkoutResult["url"].(string)
 	success = true
+	if shouldAutoPay && orderID != "" {
+		go func() {
+			state.Logger.Info(fmt.Sprintf("[VPS下单] 订单 %s 触发自动扣款 API", orderID), "vps_purchase")
+			if _, payErr := ovh.PayOrder(client, orderID, nil); payErr != nil {
+				state.Logger.Error(fmt.Sprintf("[VPS下单] 订单 %s 自动扣款失败: %s", orderID, payErr.Error()), "vps_purchase")
+			} else {
+				state.Logger.Info(fmt.Sprintf("[VPS下单] 订单 %s 自动扣款指令已成功提交", orderID), "vps_purchase")
+			}
+		}()
+	}
 	state.Logger.Info(fmt.Sprintf("[VPS下单] 成功: %s @ %s 订单 %s", sub.PlanCode, dcCode, orderID), "vps_purchase")
 	return Outcome{Success: true, OrderID: orderID, OrderURL: orderURL}
 }
@@ -353,7 +366,7 @@ func autoOrderOnRestock(state *app.State, sub types.VPSSubscription, dcs []map[s
 				b.WriteString("🧾 订单号: " + out.OrderID + "\n")
 			}
 			b.WriteString("\n")
-			if sub.AutoPay {
+			if state.Config.Get().AutoPayEnabled && sub.AutoPay {
 				b.WriteString("💳 已请求默认支付方式自动扣款，请点击下方按钮核对支付状态。\n")
 			} else {
 				b.WriteString("⚠️ 订单尚未付款，请点击下方按钮完成支付，逾期将自动作废。\n")

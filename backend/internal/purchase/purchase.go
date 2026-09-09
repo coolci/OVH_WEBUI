@@ -447,13 +447,14 @@ func PurchaseServer(state *app.State, item *types.QueueItem) Outcome {
 
 	// 直接结账 —— 跳过 /summary(它只是日志用的价格,2 秒开销),
 	// 价格 + 过期时间下面 checkout 成功后用 /me/order 异步补,不阻塞主流程。
+	cfg := state.Config.Get()
+	shouldAutoPay := cfg.AutoPayEnabled && item.AutoPay
+
 	state.Logger.Info("对购物车 "+cartID+" 执行结账", "purchase")
 	var checkoutResult map[string]interface{}
 	checkoutPayload := map[string]interface{}{
-		// 用户在任务上显式打开了"自动付款"才为 true(schema 描述:
-		// "order will be automatically paid with preferred payment method",
-		// 需要 OVH 账户已设置默认支付方式)。默认 false:不替用户扣钱。
-		"autoPayWithPreferredPaymentMethod": item.AutoPay,
+		// 只有全局总开关开启且单任务开启"自动付款"才为 true(需要 OVH 账户已设置默认支付方式)
+		"autoPayWithPreferredPaymentMethod": shouldAutoPay,
 		"waiveRetractationPeriod":           true,
 	}
 	if err := client.Post("/order/cart/"+cartID+"/checkout", checkoutPayload, &checkoutResult); err != nil {
@@ -500,6 +501,16 @@ func PurchaseServer(state *app.State, item *types.QueueItem) Outcome {
 	// 异步补:从 /me/order/{orderID} 读 expirationDate + 价格,写回 history
 	if orderID != "" {
 		go backfillOrderDetail(state, client, item.ID, orderID)
+		if shouldAutoPay {
+			go func() {
+				state.Logger.Info(fmt.Sprintf("订单 %s 触发自动扣款 API", orderID), "purchase")
+				if _, payErr := ovh.PayOrder(client, orderID, nil); payErr != nil {
+					state.Logger.Error(fmt.Sprintf("订单 %s 自动扣款失败: %s", orderID, payErr.Error()), "purchase")
+				} else {
+					state.Logger.Info(fmt.Sprintf("订单 %s 自动扣款指令已成功提交", orderID), "purchase")
+				}
+			}()
+		}
 	}
 
 	state.Logger.Info(fmt.Sprintf("成功购买 %s 在 %s (订单ID: %s, URL: %s)",
@@ -526,7 +537,7 @@ func PurchaseServer(state *app.State, item *types.QueueItem) Outcome {
 				b.WriteString("⚙️ 选配: " + strings.Join(item.Options, ", ") + "\n")
 			}
 			b.WriteString("\n")
-			if item.AutoPay {
+			if shouldAutoPay {
 				b.WriteString("💳 已请求默认支付方式自动扣款，请点击下方按钮核对支付状态。\n")
 			} else {
 				b.WriteString("⚠️ 订单尚未付款，请点击下方按钮完成支付，逾期将自动作废。\n")

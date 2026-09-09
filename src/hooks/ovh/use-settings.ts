@@ -14,6 +14,8 @@ export interface SettingsConfig {
   tgChatId?: string;
   /** 自定义通知地址：补货/下单结果由本程序 POST 到这里（出站 HTTP，不是 Telegram 入站） */
   notifyWebhookUrl?: string;
+  /** 全局自动扣款总开关：默认关闭，只有开启后且任务指定 autoPay 时才会自动扣款 */
+  autoPayEnabled?: boolean;
 }
 
 export interface TelegramPollerStatus {

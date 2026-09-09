@@ -7,10 +7,17 @@ import {
 
 const EVT = "ovh-active-account-changed";
 
+export type ActiveAccountResult = [string, (id: string) => void] & {
+  accountId: string;
+  activeAccountId: string;
+  set: (id: string) => void;
+  setActiveAccountId: (id: string) => void;
+};
+
 /** 服务器控制 tab 活跃账户 ID。localStorage 持久化,跨组件同步。
- *  set 时自动 invalidate 所有 /server-control/* 和 /ovh/account/* 查询,让数据按新账户重拉。
+ *  set 时自动 invalidate 所有相关查询,让数据按新账户重拉。
  */
-export function useActiveServerControlAccount(): [string, (id: string) => void] {
+export function useActiveServerControlAccount(): ActiveAccountResult {
   const qc = useQueryClient();
   const [accountId, setAccountId] = useState<string>(() => getActiveServerControlAccount());
 
@@ -33,8 +40,19 @@ export function useActiveServerControlAccount(): [string, (id: string) => void] 
     qc.invalidateQueries({ queryKey: ["server-control"] });
     qc.invalidateQueries({ queryKey: ["vps-control"] });
     qc.invalidateQueries({ queryKey: ["account"] });
+    qc.invalidateQueries({ queryKey: ["ips"] });
+    qc.invalidateQueries({ queryKey: ["ssh-keys"] });
+    qc.invalidateQueries({ queryKey: ["payment-methods"] });
+    qc.invalidateQueries({ queryKey: ["support-tickets"] });
   };
-  return [accountId, set];
+
+  const res = [accountId, set] as unknown as ActiveAccountResult;
+  res.accountId = accountId;
+  res.activeAccountId = accountId;
+  res.set = set;
+  res.setActiveAccountId = set;
+  return res;
 }
 
 export const useActiveAccount = useActiveServerControlAccount;
+

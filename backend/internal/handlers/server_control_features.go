@@ -129,7 +129,7 @@ func GetBurst(state *app.State) gin.HandlerFunc {
 			lower := strings.ToLower(err.Error())
 			if strings.Contains(lower, "does not exist") || strings.Contains(lower, "not exist") {
 				state.Logger.Info("服务器 "+svc+" 不支持突发带宽功能", "server_control")
-				c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "该服务器不支持突发带宽功能", "notAvailable": true})
+				c.JSON(http.StatusOK, gin.H{"success": false, "error": "该服务器不支持突发带宽功能", "notAvailable": true})
 				return
 			}
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
@@ -196,7 +196,7 @@ func GetFirewall(state *app.State) gin.HandlerFunc {
 		if err := client.Get("/dedicated/server/"+svc+"/features/firewall", &fw); err != nil {
 			lower := strings.ToLower(err.Error())
 			if strings.Contains(lower, "does not exist") || strings.Contains(lower, "not exist") {
-				c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "该服务器不支持防火墙功能", "notAvailable": true})
+				c.JSON(http.StatusOK, gin.H{"success": false, "error": "该服务器不支持防火墙功能", "notAvailable": true})
 				return
 			}
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
@@ -216,26 +216,19 @@ func UpdateFirewall(state *app.State) gin.HandlerFunc {
 			return
 		}
 		var body struct {
-			Enabled *bool `json:"enabled"`
+			Enabled bool `json:"enabled"`
 		}
 		_ = c.ShouldBindJSON(&body)
-		if body.Enabled == nil {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少enabled参数"})
-			return
-		}
 		var result map[string]interface{}
 		if err := client.Put("/dedicated/server/"+svc+"/features/firewall", map[string]interface{}{
-			"enabled": *body.Enabled,
+			"enabled": body.Enabled,
 		}, &result); err != nil {
+			state.Logger.Error("更新服务器 "+svc+" 防火墙状态失败: "+err.Error(), "server_control")
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 			return
 		}
-		text := "启用"
-		if !*body.Enabled {
-			text = "禁用"
-		}
-		state.Logger.Info(text+"服务器 "+svc+" 防火墙", "server_control")
-		c.JSON(http.StatusOK, gin.H{"success": true, "message": "防火墙已" + text, "result": result})
+		state.Logger.Info("更新服务器 "+svc+" 防火墙状态成功", "server_control")
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "防火墙状态已更新", "result": result})
 	}
 }
 
@@ -256,7 +249,7 @@ func GetBackupFTP(state *app.State) gin.HandlerFunc {
 			code, msg := featureOVHErr(err)
 			if code == http.StatusNotFound || strings.Contains(strings.ToLower(msg), "does not exist") {
 				if featureIsFeatureMissing(client, svc) {
-					c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "备份FTP未激活", "notActivated": true})
+					c.JSON(http.StatusOK, gin.H{"success": false, "error": "备份FTP未激活", "notActivated": true})
 					return
 				}
 				state.Logger.Warn("查询服务器 "+svc+" 备份FTP：服务器不存在或不属于当前账户 - "+msg, "server_control")

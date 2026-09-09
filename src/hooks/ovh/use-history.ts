@@ -19,6 +19,8 @@ export interface PurchaseHistory {
   /** 抢购到这单时一共尝试了几次（后端 attemptCount） */
   attemptCount?: number;
   expirationTime?: string;
+  orderStatus?: "notPaid" | "checking" | "delivering" | "delivered" | "cancelled" | "cancelling" | "documentsRequested" | "unknown" | string;
+  orderStatusAt?: string;
   price?: {
     withTax?: number;
     withoutTax?: number;
