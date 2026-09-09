@@ -253,8 +253,8 @@ const TelegramOrderPage = () => {
   return (
     <>
       <Helmet>
-        <title>Telegram 下单 | OVH Sniper</title>
-        <meta name="description" content="通过Telegram快速下单" />
+        <title>云下单 | OVH Sniper</title>
+        <meta name="description" content="云端快捷指令下单" />
       </Helmet>
       
       <AppLayout>
@@ -265,11 +265,11 @@ const TelegramOrderPage = () => {
               <div className="flex-1 min-w-0">
                 <h1 className="text-xl sm:text-2xl font-bold text-primary flex items-center gap-2">
                   <span className="text-muted-foreground">&gt;</span>
-                  <span className="truncate">Telegram 下单</span>
+                  <span className="truncate">云下单</span>
                   <span className="cursor-blink">_</span>
                 </h1>
                 <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-                  网页演练与 Bot 相同的命令。收消息走后端轮询，只需设置里填写 Token 和 Chat ID。
+                  网页演练云端与 Bot 相同的快捷命令。收消息走后端轮询，只需设置里填写 Token 和 Chat ID。
                 </p>
               </div>
               {/* Bot Connection Status */}

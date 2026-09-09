@@ -15,6 +15,7 @@ import {
   BarChart3,
   MessageSquare,
   Cloud,
+  CloudLightning,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { QuickOrderDialog } from "@/components/orders/QuickOrderDialog";
@@ -46,7 +47,7 @@ const navGroups = [
     items: [
       { to: "/queue", icon: ListOrdered, label: "抢购队列" },
       { to: "/history", icon: History, label: "购买历史" },
-      { to: "/telegram-order", icon: MessageSquare, label: "Telegram 下单" },
+      { to: "/telegram-order", icon: CloudLightning, label: "云下单" },
     ],
   },
   {

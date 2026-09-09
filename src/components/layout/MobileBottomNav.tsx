@@ -15,6 +15,7 @@ import {
   BarChart3,
   MessageSquare,
   UserCog,
+  CloudLightning,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -38,7 +39,7 @@ const moreNav = [
   { to: "/vps-control", icon: Cloud, label: "VPS 控制", group: "实例" },
   { to: "/performance", icon: BarChart3, label: "性能监控", group: "实例" },
   { to: "/history", icon: History, label: "购买历史", group: "抢购" },
-  { to: "/telegram-order", icon: MessageSquare, label: "TG 下单", group: "抢购" },
+  { to: "/telegram-order", icon: CloudLightning, label: "云下单", group: "抢购" },
   { to: "/account", icon: User, label: "账户管理", group: "配置" },
   { to: "/contact-change", icon: UserCog, label: "联系人变更", group: "配置" },
   { to: "/logs", icon: ScrollText, label: "系统日志", group: "配置" },
