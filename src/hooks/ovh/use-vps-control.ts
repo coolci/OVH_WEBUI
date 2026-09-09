@@ -78,11 +78,14 @@ export interface VpsSnapshot {
   region: string;
 }
 
+import { useActiveAccount } from "./use-active-account";
+
 /* ────────────── List + Info + Status ────────────── */
 
 export function useOwnedVps() {
+  const [accountId] = useActiveAccount();
   return useQuery({
-    queryKey: qk.vpsControl.list(),
+    queryKey: qk.vpsControl.list(accountId),
     queryFn: async () => {
       const res = await api.get("/vps-control/list");
       return (res.data?.vps || []) as OwnedVps[];

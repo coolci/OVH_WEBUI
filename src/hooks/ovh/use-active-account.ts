@@ -36,3 +36,5 @@ export function useActiveServerControlAccount(): [string, (id: string) => void] 
   };
   return [accountId, set];
 }
+
+export const useActiveAccount = useActiveServerControlAccount;

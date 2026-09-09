@@ -44,13 +44,16 @@ export interface ServiceInfo {
   possibleRenewPeriod: number[];
 }
 
+import { useActiveAccount } from "./use-active-account";
+
 /**
  * 已购服务器列表（后端返回 { success, servers, total }）
  * 过滤逻辑照搬旧前端：只显示 state === 'ok' | 'active'，排除 expired / suspended / error
  */
 export function useOwnedServers() {
+  const [accountId] = useActiveAccount();
   return useQuery({
-    queryKey: qk.serverControl.list(),
+    queryKey: qk.serverControl.list(accountId),
     queryFn: async () => {
       const res = await api.get("/server-control/list");
       const raw = (res.data?.servers || []) as OwnedServer[];

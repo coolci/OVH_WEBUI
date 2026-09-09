@@ -1,7 +1,15 @@
 import { useState } from "react";
-import { Power, RotateCw, HardDrive, Monitor, Zap, Server, Cog, Activity } from "lucide-react";
+import { Power, RotateCw, HardDrive, Monitor, Zap, Server, Cog, Activity, AlertTriangle } from "lucide-react";
 import type { OwnedServer } from "@/hooks/use-server-control";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { api } from "@/lib/http";
 import { toast } from "sonner";
 import { BootModeDialog } from "./BootModeDialog";
@@ -10,6 +18,7 @@ import { ReinstallDialog } from "./ReinstallDialog";
 import { BiosDialog } from "./BiosDialog";
 import { InstallProgressDialog } from "./InstallProgressDialog";
 import { IpmiDialog } from "./IpmiDialog";
+import { SplaDialog } from "./SplaDialog";
 
 /** 电源与系统 Tab：重启 / 重装 / IPMI / 启动模式 / 解锁 Windows / 任务 / BIOS / 安装进度 */
 export function PowerTab({ server }: { server: OwnedServer }) {
@@ -19,13 +28,20 @@ export function PowerTab({ server }: { server: OwnedServer }) {
   const [biosOpen, setBiosOpen] = useState(false);
   const [progressOpen, setProgressOpen] = useState(false);
   const [ipmiOpen, setIpmiOpen] = useState(false);
+  const [splaOpen, setSplaOpen] = useState(false);
+  const [rebootOpen, setRebootOpen] = useState(false);
+  const [rebooting, setRebooting] = useState(false);
 
-  const action = async (label: string, fn: () => Promise<unknown>) => {
+  const doReboot = async () => {
+    setRebooting(true);
     try {
-      await fn();
-      toast.success(`${label} 已发起`);
+      await api.post(`/server-control/${server.serviceName}/reboot`);
+      toast.success("重启已发起");
+      setRebootOpen(false);
     } catch (e: any) {
-      toast.error(e.response?.data?.error || `${label} 失败`);
+      toast.error(e.response?.data?.error || "重启失败");
+    } finally {
+      setRebooting(false);
     }
   };
 
@@ -35,8 +51,9 @@ export function PowerTab({ server }: { server: OwnedServer }) {
         <ActionCard
           icon={Power}
           title="重启服务器"
-          description="发起一次软重启任务"
-          onClick={() => action("重启", () => api.post(`/server-control/${server.serviceName}/reboot`))}
+          description="硬重启（相当于按电源键，未落盘数据会丢失）"
+          onClick={() => setRebootOpen(true)}
+          tone="warning"
         />
         <ActionCard
           icon={HardDrive}
@@ -60,16 +77,9 @@ export function PowerTab({ server }: { server: OwnedServer }) {
         />
         <ActionCard
           icon={Zap}
-          title="解锁 Windows"
-          description="申请 SPLA OS 许可证"
-          onClick={() =>
-            action("解锁 Windows", () =>
-              api.post(`/server-control/${server.serviceName}/spla`, {
-                type: "os",
-                serialNumber: "W269N-WFGWX-YVC9B-4J6C9-T83GX",
-              })
-            )
-          }
+          title="SPLA 许可证"
+          description="登记 Windows Server / SQL Server 正版授权"
+          onClick={() => setSplaOpen(true)}
         />
         <ActionCard
           icon={RotateCw}
@@ -92,12 +102,36 @@ export function PowerTab({ server }: { server: OwnedServer }) {
         />
       </div>
 
+      <SplaDialog serviceName={server.serviceName} open={splaOpen} onOpenChange={setSplaOpen} />
       <BootModeDialog serviceName={server.serviceName} open={bootOpen} onOpenChange={setBootOpen} />
       <TasksDialog serviceName={server.serviceName} open={tasksOpen} onOpenChange={setTasksOpen} />
       <ReinstallDialog serviceName={server.serviceName} open={reinstallOpen} onOpenChange={setReinstallOpen} />
       <BiosDialog serviceName={server.serviceName} open={biosOpen} onOpenChange={setBiosOpen} />
       <InstallProgressDialog serviceName={server.serviceName} open={progressOpen} onOpenChange={setProgressOpen} />
       <IpmiDialog serviceName={server.serviceName} open={ipmiOpen} onOpenChange={setIpmiOpen} />
+
+      {/* 硬重启二次确认弹窗 */}
+      <Dialog open={rebootOpen} onOpenChange={(v) => !rebooting && setRebootOpen(v)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-warning">
+              <AlertTriangle className="w-5 h-5 text-amber-500" />
+              确认硬重启 {server.serviceName}？
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground leading-relaxed">
+              这相当于直接按下电源重置键，并非操作系统内的正常软重启：内存和磁盘缓存中未落盘的数据将丢失，正在运行的服务会被立即切断。请务必确认业务已准备就绪。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setRebootOpen(false)} disabled={rebooting}>
+              取消
+            </Button>
+            <Button variant="destructive" onClick={doReboot} disabled={rebooting}>
+              {rebooting ? "正在发起…" : "确认重启"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

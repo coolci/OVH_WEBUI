@@ -185,7 +185,7 @@ func PurchaseServer(state *app.State, item *types.QueueItem) Outcome {
 	}, &cartResult); err != nil {
 		state.Logger.Error(fmt.Sprintf("购买 %s 时发生 OVH API 错误: %s", item.PlanCode, err.Error()), "purchase")
 		recordFailure(state, item, err.Error())
-		return Outcome{Attempted: true}
+		return attemptOutcome(err)
 	}
 	cartID, _ = cartResult["cartId"].(string)
 	tl.mark("建购物车")
@@ -221,7 +221,7 @@ func PurchaseServer(state *app.State, item *types.QueueItem) Outcome {
 		state.Logger.Error(fmt.Sprintf("购买 %s 时发生 OVH API 错误: %s", item.PlanCode, errMsg), "purchase")
 		state.Logger.Error("错误发生时的购物车ID: "+cartID, "purchase")
 		recordFailure(state, item, errMsg)
-		return Outcome{Attempted: true}
+		return attemptOutcome(err)
 	}
 	tl.mark("绑定购物车")
 	state.Logger.Info("购物车绑定成功", "purchase")
@@ -256,7 +256,7 @@ func PurchaseServer(state *app.State, item *types.QueueItem) Outcome {
 			state.Logger.Error(fmt.Sprintf("购买 %s 时发生 OVH API 错误: %s", item.PlanCode, err.Error()), "purchase")
 			state.Logger.Error(fmt.Sprintf("错误发生时的购物车ID: %s", cartID), "purchase")
 			recordFailure(state, item, err.Error())
-			return Outcome{Attempted: true}
+			return attemptOutcome(err)
 		}
 	}
 	if n, ok := numconv.ToInt64(itemResult["itemId"]); ok {

@@ -59,7 +59,7 @@ export const qk = {
 
   // 服务器控制（已购）
   serverControl: {
-    list: () => ["server-control", "list"] as const,
+    list: (accountId?: string) => ["server-control", "list", accountId || ""] as const,
     hardware: (serviceName: string) => ["server-control", "hardware", serviceName] as const,
     serviceInfo: (serviceName: string) => ["server-control", "service-info", serviceName] as const,
     ips: (serviceName: string) => ["server-control", "ips", serviceName] as const,
@@ -90,7 +90,7 @@ export const qk = {
     options: (serviceName: string) => ["server-control", "options", serviceName] as const,
     ipSpecs: (serviceName: string) => ["server-control", "ip-specs", serviceName] as const,
     networkSpecs: (serviceName: string) => ["server-control", "network-specs", serviceName] as const,
-    contactRequests: () => ["server-control", "contact-requests"] as const,
+    contactRequests: (accountId?: string) => ["server-control", "contact-requests", accountId || ""] as const,
     engagement: (serviceName: string) => ["server-control", "engagement", serviceName] as const,
     engagementAvailable: (serviceName: string) => ["server-control", "engagement-available", serviceName] as const,
     engagementRequest: (serviceName: string) => ["server-control", "engagement-request", serviceName] as const,
@@ -101,7 +101,7 @@ export const qk = {
 
   // VPS 控制(已购 VPS 管理,跟监控库存的 vpsMonitor 不同)
   vpsControl: {
-    list: () => ["vps-control", "list"] as const,
+    list: (accountId?: string) => ["vps-control", "list", accountId || ""] as const,
     info: (svc: string) => ["vps-control", "info", svc] as const,
     status: (svc: string) => ["vps-control", "status", svc] as const,
     serviceInfo: (svc: string) => ["vps-control", "service-info", svc] as const,
@@ -123,9 +123,9 @@ export const qk = {
 
   // 账户
   account: {
-    info: () => ["account", "info"] as const,
-    refunds: () => ["account", "refunds"] as const,
-    emails: () => ["account", "emails"] as const,
+    info: (accountId?: string) => ["account", "info", accountId || ""] as const,
+    refunds: (accountId?: string) => ["account", "refunds", accountId || ""] as const,
+    emails: (accountId?: string) => ["account", "emails", accountId || ""] as const,
   },
 
   // 历史与日志

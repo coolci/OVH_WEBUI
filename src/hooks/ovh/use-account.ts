@@ -32,26 +32,31 @@ export interface EmailHistoryEntry {
   body: string;
 }
 
+import { useActiveAccount } from "./use-active-account";
+
 /** OVH 账户信息（后端直接返回 OVH /me 字段） */
 export function useAccountInfo() {
+  const [accountId] = useActiveAccount();
   return useQuery({
-    queryKey: qk.account.info(),
+    queryKey: qk.account.info(accountId),
     queryFn: async () => (await api.get<AccountInfo>("/ovh/account/info")).data,
   });
 }
 
 /** 退款记录（后端直接返回数组） */
 export function useRefunds() {
+  const [accountId] = useActiveAccount();
   return useQuery({
-    queryKey: qk.account.refunds(),
+    queryKey: qk.account.refunds(accountId),
     queryFn: async () => (await api.get<RefundRecord[]>("/ovh/account/refunds")).data,
   });
 }
 
 /** 邮件历史（后端直接返回数组） */
 export function useEmails() {
+  const [accountId] = useActiveAccount();
   return useQuery({
-    queryKey: qk.account.emails(),
+    queryKey: qk.account.emails(accountId),
     queryFn: async () => (await api.get<EmailHistoryEntry[]>("/ovh/account/email-history")).data,
   });
 }
