@@ -78,8 +78,35 @@ func (db *DB) migrate() error {
 	if err := db.addColumnIfMissing("monitor_subscriptions", "auto_pay", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
+	// VPS 订阅的自动下单配置。这四个字段在 types.VPSSubscription 里早就有了,
+	// 但表里一直没列、行结构也没映射 —— 写入被静默丢弃,读回来全是零值。
+	// 后果是 VPS 自动下单重启即失效(界面开关还亮着),而且删任意账户时
+	// reloadAfterAccountDelete 会用零值回灌内存,当场清零。
+	for _, c := range [][2]string{
+		{"auto_order", "INTEGER NOT NULL DEFAULT 0"},
+		{"quantity", "INTEGER NOT NULL DEFAULT 0"},
+		{"auto_pay", "INTEGER NOT NULL DEFAULT 0"},
+		{"os", "TEXT NOT NULL DEFAULT ''"},
+	} {
+		if err := db.addColumnIfMissing("vps_subscriptions", c[0], c[1]); err != nil {
+			return err
+		}
+	}
 	if err := db.addColumnIfMissing("queue", "failure_count", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
+	}
+	// order_status / order_status_at:OVH 侧订单支付状态(GET /me/order/{id}/status)。
+	// timing / total_ms:抢购各阶段耗时,以前只在内存,重启即丢。
+	// ListHistory 是 SELECT * + sqlx 严格映射,结构体字段和列必须同一次上线。
+	for _, c := range [][2]string{
+		{"order_status", "TEXT NOT NULL DEFAULT ''"},
+		{"order_status_at", "TEXT NOT NULL DEFAULT ''"},
+		{"timing", "TEXT"},
+		{"total_ms", "INTEGER NOT NULL DEFAULT 0"},
+	} {
+		if err := db.addColumnIfMissing("history", c[0], c[1]); err != nil {
+			return err
+		}
 	}
 	if err := db.addColumnIfMissing("history", "retraction_time", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err

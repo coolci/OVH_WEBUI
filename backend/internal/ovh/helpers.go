@@ -169,3 +169,28 @@ func EndpointRegion(endpoint string) string {
 		return "EU"
 	}
 }
+
+// ManagerOrderURL 订单在 OVH 控制面板里的深链（需要登录）。
+//
+// 为什么通知里要用它，而不是 checkout 直接返回的那个 url:
+// OVH 的 billing.Order 模型里 url / pdfUrl 旁边就摆着一个 password 字段 ——
+// 那个下载链接是**带凭证的**,拿到就能看订单详情、账单地址,并走付款流程。
+// 而抢购成功通知会发进 Telegram 群和用户自己配的任意 webhook,
+// 那条链接等于对每个能看到消息的人开放。
+// 控制面板深链只有订单号,打开先要登录,能力不外泄,用户点一下照样能去付款。
+// 带凭证的原始 url 仍然存在本地历史里(那已经在本应用的鉴权后面)。
+//
+// 三个大区各有各的控制面板,彼此不认对方的订单号(账户体系本来就独立)。
+func ManagerOrderURL(endpoint, orderID string) string {
+	if orderID == "" {
+		return ""
+	}
+	host := "manager.eu.ovhcloud.com"
+	switch EndpointRegion(endpoint) {
+	case "US":
+		host = "manager.us.ovhcloud.com"
+	case "CA":
+		host = "manager.ca.ovhcloud.com"
+	}
+	return "https://" + host + "/dedicated/#/billing/order?orderId=" + orderID
+}

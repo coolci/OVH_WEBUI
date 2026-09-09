@@ -24,6 +24,10 @@ type historyRow struct {
 	ExpirationTime string         `db:"expiration_time"`
 	RetractionTime string         `db:"retraction_time"`
 	PriceJSON      sql.NullString `db:"price"`
+	OrderStatus    string         `db:"order_status"`
+	OrderStatusAt  string         `db:"order_status_at"`
+	TimingJSON     sql.NullString `db:"timing"`
+	TotalMs        int64          `db:"total_ms"`
 }
 
 func rowToHistory(r historyRow) types.PurchaseHistoryEntry {
@@ -46,6 +50,11 @@ func rowToHistory(r historyRow) types.PurchaseHistoryEntry {
 		s := r.ErrorMessage.String
 		errMsg = &s
 	}
+	// 抢购耗时以前只在内存里,重启就没了 —— 这里一并落库
+	var timing []types.PhaseTiming
+	if r.TimingJSON.Valid && r.TimingJSON.String != "" {
+		_ = json.Unmarshal([]byte(r.TimingJSON.String), &timing)
+	}
 	return types.PurchaseHistoryEntry{
 		ID:             r.ID,
 		AccountID:      r.AccountID,
@@ -62,6 +71,10 @@ func rowToHistory(r historyRow) types.PurchaseHistoryEntry {
 		ExpirationTime: r.ExpirationTime,
 		RetractionTime: r.RetractionTime,
 		Price:          price,
+		OrderStatus:    r.OrderStatus,
+		OrderStatusAt:  r.OrderStatusAt,
+		Timing:         timing,
+		TotalMs:        r.TotalMs,
 	}
 }
 
@@ -87,6 +100,14 @@ func historyToRow(h types.PurchaseHistoryEntry) (historyRow, error) {
 		AttemptCount:   h.AttemptCount,
 		ExpirationTime: h.ExpirationTime,
 		RetractionTime: h.RetractionTime,
+		OrderStatus:    h.OrderStatus,
+		OrderStatusAt:  h.OrderStatusAt,
+		TotalMs:        h.TotalMs,
+	}
+	if len(h.Timing) > 0 {
+		if tj, err := json.Marshal(h.Timing); err == nil {
+			row.TimingJSON = sql.NullString{String: string(tj), Valid: true}
+		}
 	}
 	if h.ErrorMessage != nil {
 		row.ErrorMessage = sql.NullString{String: *h.ErrorMessage, Valid: true}
@@ -132,10 +153,12 @@ func (db *DB) ReplaceHistory(items []types.PurchaseHistoryEntry) error {
 		_, err = tx.NamedExec(`
 			INSERT INTO history
 			(id, account_id, task_id, plan_code, datacenter, options, status, order_id, order_url,
-			 error_message, purchase_time, attempt_count, expiration_time, retraction_time, price)
+			 error_message, purchase_time, attempt_count, expiration_time, retraction_time, price,
+			 order_status, order_status_at, timing, total_ms)
 			VALUES
 			(:id, :account_id, :task_id, :plan_code, :datacenter, :options, :status, :order_id, :order_url,
-			 :error_message, :purchase_time, :attempt_count, :expiration_time, :retraction_time, :price)
+			 :error_message, :purchase_time, :attempt_count, :expiration_time, :retraction_time, :price,
+			 :order_status, :order_status_at, :timing, :total_ms)
 		`, r)
 		if err != nil {
 			return fmt.Errorf("insert history %s: %w", h.ID, err)

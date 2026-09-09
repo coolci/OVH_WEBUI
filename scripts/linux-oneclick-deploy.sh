@@ -101,20 +101,39 @@ if [[ ! -f .env ]]; then
   grn "    已创建 .env"
 fi
 
+gen_hex() {
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -hex 32
+  else
+    head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n'
+  fi
+}
+
+upsert_env() {
+  local k="$1" v="$2"
+  if grep -qE "^${k}=" .env 2>/dev/null; then
+    if sed --version >/dev/null 2>&1; then
+      sed -i "s|^${k}=.*|${k}=${v}|" .env
+    else
+      sed -i '' "s|^${k}=.*|${k}=${v}|" .env
+    fi
+  else
+    echo "${k}=${v}" >> .env
+  fi
+}
+
 # 随机 API 密钥
 if grep -qE 'API_SECRET_KEY=(change-me-to-a-long-random-string|ovh-webui-dev-key)?[[:space:]]*$' .env \
   || grep -q 'API_SECRET_KEY=change-me-to-a-long-random-string' .env; then
-  if command -v openssl >/dev/null 2>&1; then
-    KEY="$(openssl rand -hex 32)"
-  else
-    KEY="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
-  fi
-  if sed --version >/dev/null 2>&1; then
-    sed -i "s|^API_SECRET_KEY=.*|API_SECRET_KEY=$KEY|" .env
-  else
-    sed -i '' "s|^API_SECRET_KEY=.*|API_SECRET_KEY=$KEY|" .env
-  fi
+  KEY="$(gen_hex)"
+  upsert_env API_SECRET_KEY "$KEY"
   grn "    已生成随机 API_SECRET_KEY"
+fi
+
+# 数据库凭据加密密钥（生产 compose 必填）
+if ! grep -qE '^OVH_DB_KEY=.+' .env; then
+  upsert_env OVH_DB_KEY "$(gen_hex)"
+  grn "    已生成 OVH_DB_KEY"
 fi
 
 # 加载 .env
@@ -151,19 +170,6 @@ if [[ "$NO_SSL" -eq 0 ]]; then
     ACME_EMAIL="${ACME_EMAIL:-admin@${DOMAIN}}"
     USE_SSL=1
 
-    # 写回 .env（幂等）
-    upsert_env() {
-      local k="$1" v="$2"
-      if grep -qE "^${k}=" .env 2>/dev/null; then
-        if sed --version >/dev/null 2>&1; then
-          sed -i "s|^${k}=.*|${k}=${v}|" .env
-        else
-          sed -i '' "s|^${k}=.*|${k}=${v}|" .env
-        fi
-      else
-        echo "${k}=${v}" >> .env
-      fi
-    }
     upsert_env DOMAIN "$DOMAIN"
     upsert_env ACME_EMAIL "$ACME_EMAIL"
     upsert_env PUBLIC_BASE_URL "https://${DOMAIN}"

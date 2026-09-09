@@ -29,6 +29,7 @@ type notification struct {
 	traceID          string
 	detectedTime     string
 	durationText     string
+	notify           bool
 }
 
 func (n notification) oldStatusJSON() interface{} {
@@ -515,71 +516,65 @@ func (m *Monitor) CheckAvailabilityChange(sub *Subscription, traceID string) {
 				}
 			}
 
+			// 状态跳变的判定必须和"要不要发通知"分开。
+			//
+			// 以前 9 个分支的 statusChanged 全被 if cfg.NotifyAvailable/NotifyUnavailable 包着,
+			// 而下单链路是 statusChanged → notifications → availables → orderTargets → batchOrder。
+			// 于是关掉「有货时提醒」就等于关掉自动下单 —— 而界面上这是三个独立复选框,
+			// 用户为了不被 TG 刷屏关掉提醒,得到一个看着在跑、永远不下单的监控,没有任何线索。
+			// (VPS 侧本来就是分开的两个 if,写法是对的,这里对齐它。)
 			statusChanged := false
 			changeType := ""
 
-			if !ds.hasOld {
-				if actualStatus == "price_check_failed" {
-					m.state.Logger.Info(fmt.Sprintf("首次检查: %s@%s [%s] 可用性有货但价格校验失败，发送通知",
+			switch {
+			case !ds.hasOld:
+				switch actualStatus {
+				case "price_check_failed":
+					m.state.Logger.Info(fmt.Sprintf("首次检查: %s@%s [%s] 可用性有货但价格校验失败",
 						planCode, dc, configDisplay), "monitor")
-					if cfg.NotifyAvailable {
-						statusChanged = true
-						changeType = "price_check_failed"
-					}
-				} else if actualStatus == "unavailable" {
+					statusChanged, changeType = true, "price_check_failed"
+				case "unavailable":
 					m.state.Logger.Info(fmt.Sprintf("首次检查: %s@%s [%s] 无货", planCode, dc, configDisplay), "monitor")
-					if cfg.NotifyUnavailable {
-						statusChanged = true
-						changeType = "unavailable"
-					}
+					statusChanged, changeType = true, "unavailable"
+				default:
+					m.state.Logger.Info(fmt.Sprintf("首次检查: %s@%s [%s] 有货（价格校验通过）",
+						planCode, dc, configDisplay), "monitor")
+					statusChanged, changeType = true, "available"
+				}
+			case ds.oldStatus == "unavailable" && actualStatus == "available":
+				statusChanged, changeType = true, "available"
+				m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 从无货变有货（价格校验通过）",
+					planCode, dc, configDisplay), "monitor")
+			case ds.oldStatus == "unavailable" && actualStatus == "price_check_failed":
+				statusChanged, changeType = true, "price_check_failed"
+				m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 从无货变可用性有货但价格校验失败",
+					planCode, dc, configDisplay), "monitor")
+			case ds.oldStatus == "price_check_failed" && actualStatus == "available":
+				statusChanged, changeType = true, "available"
+				m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 从价格校验失败变有货（价格校验通过）",
+					planCode, dc, configDisplay), "monitor")
+			case ds.oldStatus == "price_check_failed" && actualStatus == "unavailable":
+				statusChanged, changeType = true, "unavailable"
+				m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 从价格校验失败变无货",
+					planCode, dc, configDisplay), "monitor")
+			case ds.oldStatus == "available" && actualStatus == "unavailable":
+				statusChanged, changeType = true, "unavailable"
+				m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 从有货变无货", planCode, dc, configDisplay), "monitor")
+			case ds.oldStatus == "available" && actualStatus == "price_check_failed":
+				statusChanged, changeType = true, "price_check_failed"
+				m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 从有货变可用性有货但价格校验失败",
+					planCode, dc, configDisplay), "monitor")
+			}
+
+			// 通知开关只决定"发不发消息",不再影响跳变本身。
+			// changeType 是 unavailable 的看 NotifyUnavailable,其余(available /
+			// price_check_failed,都属于"有货了")看 NotifyAvailable。
+			notifyThis := false
+			if statusChanged {
+				if changeType == "unavailable" {
+					notifyThis = cfg.NotifyUnavailable
 				} else {
-					m.state.Logger.Info(fmt.Sprintf("首次检查: %s@%s [%s] 有货（价格校验通过），发送通知",
-						planCode, dc, configDisplay), "monitor")
-					if cfg.NotifyAvailable {
-						statusChanged = true
-						changeType = "available"
-					}
-				}
-			} else if ds.oldStatus == "unavailable" && actualStatus == "available" {
-				if cfg.NotifyAvailable {
-					statusChanged = true
-					changeType = "available"
-					m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 从无货变有货（价格校验通过）",
-						planCode, dc, configDisplay), "monitor")
-				}
-			} else if ds.oldStatus == "unavailable" && actualStatus == "price_check_failed" {
-				m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 从无货变可用性有货但价格校验失败，发送通知",
-					planCode, dc, configDisplay), "monitor")
-				if cfg.NotifyAvailable {
-					statusChanged = true
-					changeType = "price_check_failed"
-				}
-			} else if ds.oldStatus == "price_check_failed" && actualStatus == "available" {
-				if cfg.NotifyAvailable {
-					statusChanged = true
-					changeType = "available"
-					m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 从价格校验失败变有货（价格校验通过）",
-						planCode, dc, configDisplay), "monitor")
-				}
-			} else if ds.oldStatus == "price_check_failed" && actualStatus == "unavailable" {
-				if cfg.NotifyUnavailable {
-					statusChanged = true
-					changeType = "unavailable"
-					m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 从价格校验失败变无货",
-						planCode, dc, configDisplay), "monitor")
-				}
-			} else if ds.oldStatus == "available" && actualStatus == "unavailable" {
-				if cfg.NotifyUnavailable {
-					statusChanged = true
-					changeType = "unavailable"
-					m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 从有货变无货", planCode, dc, configDisplay), "monitor")
-				}
-			} else if ds.oldStatus == "available" && actualStatus == "price_check_failed" {
-				m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 从有货变可用性有货但价格校验失败，发送通知",
-					planCode, dc, configDisplay), "monitor")
-				if cfg.NotifyAvailable {
-					statusChanged = true
-					changeType = "price_check_failed"
+					notifyThis = cfg.NotifyAvailable
 				}
 			}
 
@@ -597,6 +592,7 @@ func (m *Monitor) CheckAvailabilityChange(sub *Subscription, traceID string) {
 					configTraceID:    configTraceID,
 					traceID:          traceID,
 					detectedTime:     detectedTime,
+					notify:           notifyThis,
 				}
 				if changeType == "available" && ds.oldStatus == "unavailable" {
 					n.durationText = m.calcDuration(sub, dc, configDisplay, []string{"unavailable", "price_check_failed"})
@@ -638,9 +634,13 @@ func (m *Monitor) CheckAvailabilityChange(sub *Subscription, traceID string) {
 			}
 		}
 
-		// 分类
+		// 分类。通知三兄弟只收 notify=true 的 —— 通知开关只管发不发消息;
+		// 下单走下面独立的一遍,不受通知开关影响。
 		var availables, unavailables, priceFailed []notification
 		for _, n := range notifications {
+			if !n.notify {
+				continue
+			}
 			switch n.changeType {
 			case "available":
 				availables = append(availables, n)
@@ -651,10 +651,20 @@ func (m *Monitor) CheckAvailabilityChange(sub *Subscription, traceID string) {
 			}
 		}
 
-		// 自动下单
+		// 自动下单:从全量 notifications 里挑,不看 notify 标记。
+		//
+		// oldStatus 的白名单里必须带上 price_check_failed:价格校验把
+		// 本地 HTTP 异常 / 30 秒超时 / OVH 429 全算失败,而补货那一刻正是
+		// OVH 最容易抖的时候。以前只认 "unavailable",于是
+		// unavailable → price_check_failed(抖一下) → available 这条路上,
+		// 最后那步跳变会被过滤掉 —— 通知发了「🎉 上架」,一单没下,
+		// 而且此后 lastStatus 停在 available 再无跳变,整个补货窗口都不下单。
 		orderTargets := []notification{}
-		for _, n := range availables {
-			if !n.priceCheckFailed && (!n.hasOld || n.oldStatus == "unavailable") {
+		for _, n := range notifications {
+			if n.changeType != "available" || n.priceCheckFailed {
+				continue
+			}
+			if !n.hasOld || n.oldStatus == "unavailable" || n.oldStatus == "price_check_failed" {
 				orderTargets = append(orderTargets, n)
 			}
 		}
@@ -786,6 +796,9 @@ func (m *Monitor) CheckAvailabilityChange(sub *Subscription, traceID string) {
 	//     "首次检查"分支失效,当次有货既不通知也不触发 auto-order。
 	// 监控范围内的机房在上面的主循环里已经写过规范化状态了,所以这里不再补写。
 	sub.replaceLastStatus(lastStatus)
+	// 状态动过就标脏,循环末尾统一落一次库。不标的话 LastStatus 只活在内存里,
+	// 重启后当次有货会被当成"初始存量"吞掉(既不通知也不自动下单)。
+	m.dirty.Store(true)
 }
 
 func containsString(list []string, s string) bool {

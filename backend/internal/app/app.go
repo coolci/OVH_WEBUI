@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -140,6 +141,13 @@ type State struct {
 
 	MonitorRunning        bool
 	QueueProcessorRunning bool
+
+	loadFailedMu sync.RWMutex
+	loadFailed   map[string]string
+
+	saveHistoryMu sync.Mutex
+	saveQueueMu   sync.Mutex
+	saveServersMu sync.Mutex
 }
 
 // NewState 构造应用状态。DB 必须已 Open。
@@ -253,7 +261,7 @@ func (s *State) LoadAll() {
 	if items, err := s.DB.ListQueue(); err == nil {
 		s.Queue = items
 	} else {
-		s.Logger.Error("load queue: "+err.Error(), "system")
+		s.MarkLoadFailed("queue", err)
 	}
 	if s.Queue == nil {
 		s.Queue = []types.QueueItem{}
@@ -263,7 +271,7 @@ func (s *State) LoadAll() {
 	if items, err := s.DB.ListHistory(); err == nil {
 		s.History = items
 	} else {
-		s.Logger.Error("load history: "+err.Error(), "system")
+		s.MarkLoadFailed("history", err)
 	}
 	if s.History == nil {
 		s.History = []types.PurchaseHistoryEntry{}
@@ -281,7 +289,7 @@ func (s *State) LoadAll() {
 		}
 		s.Logger.Info("已从 SQLite 加载服务器目录并同步到缓存", "system")
 	} else if err != nil {
-		s.Logger.Error("load servers: "+err.Error(), "system")
+		s.MarkLoadFailed("servers", err)
 	}
 	if s.ServerPlans == nil {
 		s.ServerPlans = []types.ServerPlan{}
@@ -291,7 +299,7 @@ func (s *State) LoadAll() {
 	if subs, err := s.DB.ListVPSSubscriptions(); err == nil {
 		s.VPSSubscriptions = subs
 	} else {
-		s.Logger.Error("load vps subs: "+err.Error(), "system")
+		s.MarkLoadFailed("vps_subscriptions", err)
 	}
 	if s.VPSSubscriptions == nil {
 		s.VPSSubscriptions = []types.VPSSubscription{}
@@ -349,8 +357,49 @@ func (s *State) CountPurchase() (success, failed int) {
 	return
 }
 
+// MarkLoadFailed 记下某张表启动时没读出来,之后禁止覆盖写它。
+func (s *State) MarkLoadFailed(table string, err error) {
+	s.loadFailedMu.Lock()
+	if s.loadFailed == nil {
+		s.loadFailed = make(map[string]string)
+	}
+	s.loadFailed[table] = err.Error()
+	s.loadFailedMu.Unlock()
+	s.Logger.Error(
+		"load "+table+" 失败,已禁止本次运行覆盖写该表(避免用空内存抹掉磁盘上的数据): "+err.Error(),
+		"system",
+	)
+}
+
+// SaveBlocked 读失败的表返回非 nil,调用方据此放弃保存。
+func (s *State) SaveBlocked(table string) error {
+	s.loadFailedMu.RLock()
+	reason, bad := s.loadFailed[table]
+	s.loadFailedMu.RUnlock()
+	if !bad {
+		return nil
+	}
+	return fmt.Errorf("拒绝写 %s:启动时这张表就没读出来(%s),再写会用空内存覆盖掉磁盘上的数据。请修复后重启", table, reason)
+}
+
+// LoadFailures 返回启动时读失败的表,给健康检查/前端横幅用。
+func (s *State) LoadFailures() map[string]string {
+	s.loadFailedMu.RLock()
+	defer s.loadFailedMu.RUnlock()
+	out := make(map[string]string, len(s.loadFailed))
+	for k, v := range s.loadFailed {
+		out[k] = v
+	}
+	return out
+}
+
 // SaveQueue 把内存中 Queue 整表覆盖写入 SQLite
 func (s *State) SaveQueue() error {
+	if err := s.SaveBlocked("queue"); err != nil {
+		return err
+	}
+	s.saveQueueMu.Lock()
+	defer s.saveQueueMu.Unlock()
 	s.QueueMu.Lock()
 	cp := make([]types.QueueItem, len(s.Queue))
 	copy(cp, s.Queue)
@@ -360,6 +409,11 @@ func (s *State) SaveQueue() error {
 
 // SaveHistory 把内存中 History 整表覆盖写入 SQLite
 func (s *State) SaveHistory() error {
+	if err := s.SaveBlocked("history"); err != nil {
+		return err
+	}
+	s.saveHistoryMu.Lock()
+	defer s.saveHistoryMu.Unlock()
 	s.HistoryMu.Lock()
 	cp := make([]types.PurchaseHistoryEntry, len(s.History))
 	copy(cp, s.History)
@@ -369,6 +423,11 @@ func (s *State) SaveHistory() error {
 
 // SaveServers 把内存中 ServerPlans 整表覆盖写入 SQLite
 func (s *State) SaveServers() error {
+	if err := s.SaveBlocked("servers"); err != nil {
+		return err
+	}
+	s.saveServersMu.Lock()
+	defer s.saveServersMu.Unlock()
 	s.ServerPlansMu.RLock()
 	cp := make([]types.ServerPlan, len(s.ServerPlans))
 	copy(cp, s.ServerPlans)

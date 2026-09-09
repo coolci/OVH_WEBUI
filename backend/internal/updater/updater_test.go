@@ -17,6 +17,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -94,8 +95,10 @@ func TestPrepareAndInstall(t *testing.T) {
 	if string(got) != string(newBinary) {
 		t.Errorf("替换后内容不对: %q", string(got))
 	}
-	if fi, err := os.Stat(exe); err == nil && fi.Mode().Perm()&0o111 == 0 {
-		t.Error("替换后的文件没有可执行位")
+	if runtime.GOOS != "windows" {
+		if fi, err := os.Stat(exe); err == nil && fi.Mode().Perm()&0o111 == 0 {
+			t.Error("替换后的文件没有可执行位")
+		}
 	}
 	if _, err := os.Stat(tmp); !os.IsNotExist(err) {
 		t.Error("临时文件应该已被 rename 掉")
@@ -155,6 +158,9 @@ func TestPrepareRejectsMissingAsset(t *testing.T) {
 
 // 目录不可写时要早报错(而不是下完 16MB 才失败)
 func TestPrepareRejectsReadOnlyDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows 不支持 chmod 0555 目录只读语义")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("root 无视目录权限,跳过")
 	}

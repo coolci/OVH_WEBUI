@@ -360,7 +360,13 @@ func autoOrderOnRestock(state *app.State, sub types.VPSSubscription, dcs []map[s
 			}
 			b.WriteString("💡 点击下方按钮直达 OVH 支付账单：")
 			var replyMarkup map[string]interface{}
-			if out.OrderURL != "" {
+			linkURL := out.OrderURL
+			if acc, ok := state.FindAccount(sub.AutoOrderAccountID); ok {
+				if u := ovh.ManagerOrderURL(acc.Endpoint, out.OrderID); u != "" {
+					linkURL = u
+				}
+			}
+			if linkURL != "" {
 				btnText := "💳 前往 OVH 支付订单"
 				if out.OrderID != "" {
 					btnText = "💳 前往 OVH 支付订单 (" + out.OrderID + ")"
@@ -368,7 +374,7 @@ func autoOrderOnRestock(state *app.State, sub types.VPSSubscription, dcs []map[s
 				replyMarkup = map[string]interface{}{
 					"inline_keyboard": [][]map[string]string{
 						{
-							{"text": btnText, "url": out.OrderURL},
+							{"text": btnText, "url": linkURL},
 						},
 					},
 				}

@@ -16,7 +16,7 @@ import (
 
 // Version 当前二进制版本。build.sh 用 -ldflags "-X github.com/ovh-webui/server/internal/handlers.Version=x.y.z" 注入。
 // 默认 "dev" 给 go run / 未注入的 build。
-var Version = "0.1.10"
+var Version = "0.1.12"
 
 // GetVersion GET /api/version  无需鉴权,前端启动时拿来显示
 func GetVersion(state *app.State) gin.HandlerFunc {

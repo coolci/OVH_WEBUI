@@ -3,6 +3,7 @@ package monitor
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ovh-webui/server/internal/app"
@@ -14,7 +15,29 @@ type Monitor struct {
 
 	subsMu        sync.Mutex
 	subscriptions []*Subscription
-	knownServers  map[string]struct{}
+	// saveMu 保存串行化。SaveToDB 是"拍快照 → 全表覆盖",
+	// 两个并发保存里晚拍快照的可能先落库,新数据被旧快照整表覆盖
+	// (实测 60 条订阅并发保存只剩 9~17 条)。必须包住整个"快照+写库"。
+	saveMu sync.Mutex
+
+	// generation 循环代际号,每次 Start 递增。只翻 running 布尔的话,
+	// "停止后立刻启动"会让旧循环活下来(它下一个检查点看到 running 又是 true),
+	// 两个循环并存 → 同一次补货被下两次单,而 skipDuplicateCheck 已关掉去重。
+	generation   int64
+	knownServers map[string]struct{}
+
+	// dirty 检查循环里有没有改出需要落库的东西(LastStatus / History)。
+	//
+	// SaveToDB 以前只有六个 HTTP handler 会调 —— 也就是说**只有用户手动增删改订阅时
+	// 才落库**,检查循环跑一整周,LastStatus 一次都没写进去。后果:
+	// 重启后 LastStatus 是空的 → isFirstCheckOverall 判定为 true →
+	// 那一轮把"现在有货"当成初始存量吞掉,既不通知也不 auto-order。
+	// 用户重启一次程序,就正好错过一次补货。
+	// (VPS 那边每轮都存,是监控这边漏了。)
+	//
+	// 但也不能每轮无条件全表覆盖:最小检查间隔 5 秒,那是每 5 秒重写一次整张表。
+	// 所以只在真的有变化时落库。
+	dirty atomic.Bool
 
 	running       bool
 	checkInterval int // 检查间隔(秒),可配,见 SetCheckInterval

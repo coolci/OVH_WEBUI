@@ -148,6 +148,21 @@ func ProcessOrder(state *app.State, planCode, datacenter string, quantity int, o
 	}
 
 	totalOrders := len(configsToOrder) * len(dcsToOrder) * quantity
+	// 总量封顶。不指定机房时任务数 = 配置数 × 有货机房数 × 数量,
+	// 一句 "24ska01 20" 在补货潮里可能扇出上百个任务,每个都会真实下单。
+	// 以前完全没有上限,只在回复里提一句"不想跑这么多就去队列删" ——
+	// 那时候单已经在下了。
+	if totalOrders > MaxOrderFanout {
+		state.Logger.Warn(fmt.Sprintf("[Telegram下单] 扇出 %d 超过上限 %d,已拒绝(配置数=%d × 机房数=%d × 数量=%d)",
+			totalOrders, MaxOrderFanout, len(configsToOrder), len(dcsToOrder), quantity), "telegram")
+		return OrderResult{
+			Success:     false,
+			TotalOrders: totalOrders,
+			Message: fmt.Sprintf("这条指令会创建 %d 个抢购任务(%d 个配置 × %d 个机房 × %d 台),超过单条消息上限 %d。"+
+				"请指定机房、减少数量,或到网页端的抢购队列里精确添加",
+				totalOrders, len(configsToOrder), len(dcsToOrder), quantity, MaxOrderFanout),
+		}
+	}
 	ordersToCreate := []types.QueueItem{}
 	state.Logger.Info(fmt.Sprintf("[Telegram下单] 账户=%s, 子公司=%s, planCode=%s, 机房=%v, 现货状态=%v",
 		accLabel, sub, planCode, dcsToOrder, targetInStock), "telegram")

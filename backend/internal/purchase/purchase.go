@@ -348,7 +348,7 @@ func PurchaseServer(state *app.State, item *types.QueueItem) Outcome {
 			state.Logger.Error(fmt.Sprintf("错误发生时的购物车ID: %s", cartID), "purchase")
 			state.Logger.Error(fmt.Sprintf("错误发生时的基础商品ID: %d", itemID), "purchase")
 			recordFailure(state, item, errMsg)
-			return Outcome{Attempted: true}
+			return attemptOutcome(err)
 		}
 	}
 
@@ -370,7 +370,7 @@ func PurchaseServer(state *app.State, item *types.QueueItem) Outcome {
 				errMsg := fmt.Sprintf("获取 Eco 硬件选项列表失败: %s（用户指定了 %d 个选项，无法验证，已取消下单避免下到错误配置）", err.Error(), len(filtered))
 				state.Logger.Error(errMsg, "purchase")
 				recordFailure(state, item, errMsg)
-				return Outcome{Attempted: true}
+				return attemptOutcome(err)
 			}
 			state.Logger.Info(fmt.Sprintf("找到 %d 个可用的 Eco 硬件选项。", len(availableEcoOpts)), "purchase")
 
@@ -433,7 +433,7 @@ func PurchaseServer(state *app.State, item *types.QueueItem) Outcome {
 					// 关键选项添加失败 → 整单失败。不能静默继续 checkout,否则会下到错误配置。
 					errMsg := fmt.Sprintf("添加 Eco 选项 %s 失败: %s（已取消下单避免下到错误配置）", t.planCode, err.Error())
 					recordFailure(state, item, errMsg)
-					return Outcome{Attempted: true}
+					return attemptOutcome(err)
 				}
 				state.Logger.Info(fmt.Sprintf("成功添加 Eco 选项: %s", t.planCode), "purchase")
 			}
@@ -481,7 +481,7 @@ func PurchaseServer(state *app.State, item *types.QueueItem) Outcome {
 				notify.Broadcast(state, failMsg, nil)
 			}
 		}
-		return Outcome{Attempted: true}
+		return attemptOutcome(err)
 	}
 	tl.mark("下单")
 	recordTiming(timingKey, tl, "ordered")
@@ -975,7 +975,16 @@ func backfillOrderDetail(state *app.State, client *ovhsdk.Client, taskID, orderI
 		}
 	}
 
-	if expirationTime == "" && priceInfo == nil {
+	// 支付状态也顺手读一次(之后由 OrderStatusLoop 定时刷)。
+	// 拿到的多半是 notPaid —— 但"明确的待付款"和"什么都不知道"对用户是两回事
+	orderStatus := ""
+	if st, err := FetchOrderStatus(client, orderID); err != nil {
+		state.Logger.Warn(fmt.Sprintf("查询订单 %s 状态失败: %s", orderID, err.Error()), "purchase")
+	} else {
+		orderStatus = st
+	}
+
+	if expirationTime == "" && priceInfo == nil && orderStatus == "" {
 		return
 	}
 
@@ -986,6 +995,11 @@ func backfillOrderDetail(state *app.State, client *ovhsdk.Client, taskID, orderI
 			continue
 		}
 		changed := false
+		if orderStatus != "" {
+			state.History[i].OrderStatus = orderStatus
+			state.History[i].OrderStatusAt = types.NowISO()
+			changed = true
+		}
 		if expirationTime != "" && state.History[i].ExpirationTime != expirationTime {
 			state.History[i].ExpirationTime = expirationTime
 			changed = true
@@ -999,8 +1013,8 @@ func backfillOrderDetail(state *app.State, client *ovhsdk.Client, taskID, orderI
 			changed = true
 		}
 		if changed {
-			state.Logger.Info(fmt.Sprintf("补全订单 %s 详情: 过期时间=%q 价格=%v",
-				orderID, expirationTime, priceInfo != nil), "purchase")
+			state.Logger.Info(fmt.Sprintf("补全订单 %s 详情: 状态=%q 过期时间=%q 价格=%v",
+				orderID, orderStatus, expirationTime, priceInfo != nil), "purchase")
 			go state.SaveHistory()
 		}
 		return

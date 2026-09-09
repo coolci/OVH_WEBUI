@@ -14,6 +14,7 @@ COPY src ./src
 
 # 生产构建：前端走同源 /api（由 nginx 反代）
 ENV NODE_ENV=production
+ENV NODE_OPTIONS=--max-old-space-size=384
 RUN npm run build
 
 FROM nginx:1.27-alpine

@@ -75,9 +75,19 @@ func AddQueueItem(state *app.State) gin.HandlerFunc {
 		state.QueueMu.Lock()
 		state.Queue = append(state.Queue, item)
 		state.QueueMu.Unlock()
-		_ = state.SaveQueue()
+		// 落库失败不撤任务:它已经在内存里跑起来了,撤掉等于用户明确要抢的机器不抢了。
+		// 但必须说出来 —— 不落库意味着重启后这条任务就没了,而界面上它看着一切正常。
+		warn := ""
+		if err := state.SaveQueue(); err != nil {
+			warn = "任务已在本次运行中启动，但没能写进数据库，重启后会丢失：" + err.Error()
+			state.Logger.Error("添加任务后保存队列失败: "+err.Error(), "queue")
+		}
 		state.Logger.Info("添加任务 "+item.ID+" ("+item.PlanCode+" 在 "+item.Datacenter+", 账户 "+body.AccountID+") 到队列并立即启动 (状态: running)", "")
-		c.JSON(http.StatusOK, gin.H{"status": "success", "id": item.ID})
+		resp := gin.H{"status": "success", "id": item.ID}
+		if warn != "" {
+			resp["warning"] = warn
+		}
+		c.JSON(http.StatusOK, resp)
 	}
 }
 
@@ -105,7 +115,15 @@ func RemoveQueueItem(state *app.State) gin.HandlerFunc {
 		}
 		state.Queue = kept
 		state.QueueMu.Unlock()
-		_ = state.SaveQueue()
+		if err := state.SaveQueue(); err != nil {
+			// 删除没落库 → 重启后这条任务会"复活"并继续抢。必须告诉用户。
+			state.Logger.Error("删除任务后保存队列失败: "+err.Error(), "queue")
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"status": "error",
+				"error":  "已从运行中的队列移除，但没能写进数据库，重启后这条任务会重新出现：" + err.Error(),
+			})
+			return
+		}
 		if removed != nil {
 			state.Logger.Info("Removed "+removed.PlanCode+" from queue (ID: "+id+")", "system")
 			if removed.TelegramMessageID != 0 && strings.TrimSpace(removed.TelegramChatID) != "" {
@@ -131,7 +149,14 @@ func ClearQueue(state *app.State) gin.HandlerFunc {
 		state.DeletedTaskIDsMu.Unlock()
 		state.Queue = []types.QueueItem{}
 		state.QueueMu.Unlock()
-		_ = state.SaveQueue()
+		if err := state.SaveQueue(); err != nil {
+			state.Logger.Error("清空队列后保存失败: "+err.Error(), "queue")
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"status": "error",
+				"error":  "已清空运行中的队列，但没能写进数据库，重启后这些任务会重新出现：" + err.Error(),
+			})
+			return
+		}
 
 		for _, it := range oldQueue {
 			if it.TelegramMessageID != 0 && strings.TrimSpace(it.TelegramChatID) != "" {
@@ -171,7 +196,14 @@ func UpdateQueueStatus(state *app.State) gin.HandlerFunc {
 			}
 		}
 		state.QueueMu.Unlock()
-		_ = state.SaveQueue()
+		if err := state.SaveQueue(); err != nil {
+			state.Logger.Error("改任务状态后保存队列失败: "+err.Error(), "queue")
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"status": "error",
+				"error":  "状态已在本次运行中改掉，但没能写进数据库，重启后会回到原状态：" + err.Error(),
+			})
+			return
+		}
 
 		if target != nil && target.TelegramMessageID != 0 && strings.TrimSpace(target.TelegramChatID) != "" {
 			if body.Status == "paused" {

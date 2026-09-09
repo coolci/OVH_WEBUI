@@ -166,15 +166,20 @@ func main() {
 	// 不信任任意反向代理头，避免 X-Forwarded-For 伪造 ClientIP
 	_ = r.SetTrustedProxies(nil)
 	r.Use(gin.Recovery())
-	r.Use(cors.New(cors.Config{
-		AllowAllOrigins: true,
-		AllowMethods:    []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
-		AllowHeaders:    []string{"Content-Type", "Authorization", "X-API-Key", "X-Request-Time"},
+	corsCfg := cors.Config{
+		AllowMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
+		AllowHeaders: []string{"Content-Type", "Authorization", "X-API-Key", "X-Request-Time"},
 		// X-Partial-Failures:部分明细拉取失败的计数(账单/退款/邮件等走响应头下发),
 		// 跨源部署时不列进 ExposeHeaders 浏览器就读不到,前端的"部分失败"提示会恒不显示
 		ExposeHeaders:    []string{"X-Cache-Warning", "X-Partial-Failures", "X-Cache-Age-Seconds"},
 		AllowCredentials: false,
-	}))
+	}
+	if pub := strings.TrimRight(strings.TrimSpace(os.Getenv("PUBLIC_BASE_URL")), "/"); pub != "" {
+		corsCfg.AllowOrigins = []string{pub}
+	} else {
+		corsCfg.AllowAllOrigins = true
+	}
+	r.Use(cors.New(corsCfg))
 
 	enableAuth := !strings.EqualFold(os.Getenv("ENABLE_API_KEY_AUTH"), "false")
 	r.Use(auth.Middleware(auth.Config{
@@ -491,6 +496,8 @@ func main() {
 
 	// 后台线程
 	go purchase.ProcessQueueLoop(state)
+	// 定时刷新历史里未到终态订单的支付状态(付款发生在下单之后的任意时刻)
+	go purchase.OrderStatusLoop(state)
 	// 预热各账户子公司的区域配置:region 的合法取值要从 10MB 的公开目录里解析,
 	// 首次解析放在抢购链路上会白白慢 2-7 秒
 	go catalog.WarmRegionCache(state)

@@ -1,8 +1,8 @@
 # ═══════════════════════════════════════════════════════════
-# OVH_WEBUI · 完整 HTTPS 栈（一键生产，含 Telegram Webhook）
+# OVH_WEBUI · 完整 HTTPS 栈（生产）
 # ═══════════════════════════════════════════════════════════
 #
-# 前置：域名 A → 本机；放行 80/443；.env 含 DOMAIN / ACME_EMAIL / API_SECRET_KEY
+# 前置：域名 A → 本机；放行 80/443；.env 含 DOMAIN / ACME_EMAIL / API_SECRET_KEY / OVH_DB_KEY
 #
 #   ./scripts/linux-oneclick-deploy.sh
 #   docker compose -f docker-compose.https.yml up -d --build
@@ -29,10 +29,20 @@ services:
       API_SECRET_KEY: ${API_SECRET_KEY:?Set API_SECRET_KEY in .env}
       PUBLIC_BASE_URL: https://${DOMAIN:?Set DOMAIN in .env}
       TZ: ${TZ:-Asia/Shanghai}
+      OVH_DB_KEY: ${OVH_DB_KEY:?Set OVH_DB_KEY in .env}
     volumes:
       - ovh_webui_data:/data
     expose:
       - "19998"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=64m,noexec,nosuid
+    mem_limit: 384m
+    pids_limit: 256
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:19998/health"]
       interval: 15s
@@ -59,6 +69,14 @@ services:
         condition: service_healthy
     expose:
       - "80"
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+      - /tmp
+    mem_limit: 96m
+    pids_limit: 64
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1/health"]
       interval: 20s
@@ -93,7 +111,10 @@ services:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
-    # caddy version 作为存活探针（admin API 已关闭）
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    pids_limit: 128
     healthcheck:
       test: ["CMD", "caddy", "version"]
       interval: 30s

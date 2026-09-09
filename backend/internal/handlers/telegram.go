@@ -29,11 +29,19 @@ func TelegramStatus(state *app.State) gin.HandlerFunc {
 	}
 }
 
-// ProcessTelegramUpdate 轮询入站的统一入口：幂等 → 按钮回调 / 文本命令。
+// ProcessTelegramUpdate 轮询入站的统一入口：授权 → 幂等 → 按钮回调 / 文本命令。
 func ProcessTelegramUpdate(state *app.State, mon *monitor.Monitor, data map[string]interface{}) {
 	if data == nil {
 		return
 	}
+	// 发送者授权 —— 必须排在幂等写入之前。
+	// 以前顺序是「幂等 → 授权」,于是未授权请求也会先往 telegram_updates 写一行。
+	authorized := telegram.IsAuthorizedActor(state, actorChatID(data), actorUserID(data))
+	if !authorized {
+		state.Logger.Warn("拒绝未授权的 Telegram 请求(未写入幂等表)", "telegram")
+		return
+	}
+
 	if updateID := telegram.ParseUpdateID(data["update_id"]); updateID > 0 && state.DB != nil {
 		claimed, err := state.DB.TryClaimTelegramUpdate(updateID)
 		if err != nil {
@@ -166,7 +174,13 @@ func handleTelegramCallback(state *app.State, mon *monitor.Monitor, cb map[strin
 				options = cached.Options
 				state.Logger.Info("从内存缓存恢复按钮配置（旧按钮）: "+buttonID, "telegram")
 			} else {
-				state.Logger.Warn("按钮 UUID 不存在: "+buttonID, "telegram")
+				// 库里没有、内存缓存也没有 → 拒绝。
+				// 以前这里只打一行 Warn 就继续往下走,照样拿 JSON 里的 p/d 下单 ——
+				// 按钮行被 DeleteExpiredTelegramButtons 清掉、换库、换机器都会落进
+				// 这个分支,等于防重放形同虚设。
+				state.Logger.Warn("按钮 UUID 不存在,拒绝下单: "+buttonID, "telegram")
+				telegram.AnswerCallback(state, fmt.Sprintf("%v", cb["id"]), "按钮已失效,请等下一条通知", true)
+				return
 			}
 		}
 	}
@@ -231,7 +245,6 @@ func handleTelegramCallback(state *app.State, mon *monitor.Monitor, cb map[strin
 		Status:        "running",
 		CreatedAt:     types.NowISO(),
 		UpdatedAt:     types.NowISO(),
-		RetryInterval: 30,
 		RetryCount:    0,
 		LastCheckTime: 0,
 		FromTelegram:  true,
@@ -240,11 +253,29 @@ func handleTelegramCallback(state *app.State, mon *monitor.Monitor, cb map[strin
 	state.Queue = append(state.Queue, item)
 	state.QueueMu.Unlock()
 	if err := state.SaveQueue(); err != nil {
-		// 落库失败 → 归还按钮，让用户可以重试
+		// 落库失败 → 把内存里这条也撤掉,再归还按钮。
+		//
+		// 以前只归还按钮、不撤内存:任务还在队列里跑着,而按钮又可以再按一次 ——
+		// 用户按第二次就是同一台机器的第二条任务,抢到就是两笔真实订单、两次扣款。
+		// 而且下面照样回"✅ 已添加到抢购队列",用户完全不知道出过事。
+		// 撤销 + 归还按钮 + 明确告知,三件事必须一起做,重试才是安全的。
 		state.Logger.Error("Telegram 入队后保存失败: "+err.Error(), "telegram")
+		state.QueueMu.Lock()
+		for i := range state.Queue {
+			if state.Queue[i].ID == item.ID {
+				state.Queue = append(state.Queue[:i], state.Queue[i+1:]...)
+				break
+			}
+		}
+		state.QueueMu.Unlock()
 		if claimed {
 			_ = state.DB.UnclaimTelegramButton(buttonID)
 		}
+		telegram.AnswerCallback(state, fmt.Sprintf("%v", cb["id"]), "入队失败，请重试", true)
+		telegram.SendReply(state, chatID,
+			"⚠️ 入队失败：任务没能写进数据库，已撤销，未开始抢购。\n原因: "+err.Error()+"\n\n可以再按一次按钮重试。",
+			int64(messageID))
+		return
 	}
 
 	optsStr := strings.Join(options, ", ")
@@ -362,4 +393,30 @@ func toStringSlice(v interface{}) []string {
 		out = append(out, x...)
 	}
 	return out
+}
+
+// actorChatID / actorUserID 从 update 里取出发送者标识,
+// callback_query 和 message 两种形态各取各的位置。
+// 提前取是为了把授权判断挪到幂等写入之前(见 webhook handler 里的说明)。
+func actorChatID(data map[string]interface{}) interface{} {
+	if cb, ok := data["callback_query"].(map[string]interface{}); ok {
+		msg, _ := cb["message"].(map[string]interface{})
+		return getNested(msg, "chat", "id")
+	}
+	if msg, ok := data["message"].(map[string]interface{}); ok {
+		return getNested(msg, "chat", "id")
+	}
+	return nil
+}
+
+func actorUserID(data map[string]interface{}) interface{} {
+	if cb, ok := data["callback_query"].(map[string]interface{}); ok {
+		from, _ := cb["from"].(map[string]interface{})
+		return from["id"]
+	}
+	if msg, ok := data["message"].(map[string]interface{}); ok {
+		from, _ := msg["from"].(map[string]interface{})
+		return from["id"]
+	}
+	return nil
 }

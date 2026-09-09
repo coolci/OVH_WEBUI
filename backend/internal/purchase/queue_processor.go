@@ -67,8 +67,8 @@ func ProcessQueueLoop(state *app.State) {
 			if ap != bp {
 				return ap < bp
 			}
-			at, _ := time.Parse(time.RFC3339Nano, a.CreatedAt)
-			bt, _ := time.Parse(time.RFC3339Nano, b.CreatedAt)
+			at, _ := types.ParseTS(a.CreatedAt)
+			bt, _ := types.ParseTS(b.CreatedAt)
 			return at.After(bt)
 		})
 

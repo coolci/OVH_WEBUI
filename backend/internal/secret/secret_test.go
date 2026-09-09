@@ -3,6 +3,7 @@ package secret
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -127,8 +128,10 @@ func TestKeyFile权限(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if perm := fi.Mode().Perm(); perm != 0o600 {
-		t.Errorf("密钥文件权限 = %o, 期望 600", perm)
+	if runtime.GOOS != "windows" {
+		if perm := fi.Mode().Perm(); perm != 0o600 {
+			t.Errorf("密钥文件权限 = %o, 期望 600", perm)
+		}
 	}
 }
 
@@ -176,8 +179,10 @@ func TestInit没密钥时写进配置文件(t *testing.T) {
 		t.Error("新装机器不该再生成 data/.dbkey")
 	}
 	// 0600:同机器上别的用户不该读得到
-	if st, _ := os.Stat(env); st != nil && st.Mode().Perm() != 0o600 {
-		t.Errorf("配置文件权限应该是 0600,实际 %o", st.Mode().Perm())
+	if runtime.GOOS != "windows" {
+		if st, _ := os.Stat(env); st != nil && st.Mode().Perm() != 0o600 {
+			t.Errorf("配置文件权限应该是 0600,实际 %o", st.Mode().Perm())
+		}
 	}
 }
 

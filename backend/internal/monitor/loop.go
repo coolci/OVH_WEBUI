@@ -85,13 +85,25 @@ func (m *Monitor) runSubscriptionCheck(sub *Subscription, traceID string) {
 	m.state.Logger.Info("完成处理订阅: "+planCode, "monitor")
 }
 
+// monitorLoop 兼容入口:按当前代际号跑
 func (m *Monitor) monitorLoop() {
+	m.subsMu.Lock()
+	gen := m.generation
+	m.subsMu.Unlock()
+	m.monitorLoopGen(gen)
+}
+
+// stillMine 这个循环该不该继续:running 为真且代际号还是自己那一代
+func (m *Monitor) stillMine(gen int64) bool {
+	m.subsMu.Lock()
+	defer m.subsMu.Unlock()
+	return m.running && m.generation == gen
+}
+
+func (m *Monitor) monitorLoopGen(gen int64) {
 	m.state.Logger.Info("监控循环已启动", "monitor")
 	for {
-		m.subsMu.Lock()
-		running := m.running
-		m.subsMu.Unlock()
-		if !running {
+		if !m.stillMine(gen) {
 			break
 		}
 
@@ -121,9 +133,7 @@ func (m *Monitor) monitorLoop() {
 			sem := make(chan struct{}, workers)
 			var wg sync.WaitGroup
 			for _, sub := range subsCopy {
-				m.subsMu.Lock()
-				running := m.running
-				m.subsMu.Unlock()
+				running := m.stillMine(gen)
 				if !running {
 					break
 				}
@@ -147,20 +157,25 @@ func (m *Monitor) monitorLoop() {
 				}(sub, traceID)
 			}
 			wg.Wait()
+
+			// 本轮改出了新状态就落库。
+			// 以前这一步根本不存在:LastStatus / History 只活在内存里,
+			// 只有用户手动增删改订阅时才顺带被写进去。程序重启后 LastStatus 是空的,
+			// 下一轮就把"现在有货"误判成首次检查的初始存量 —— 不通知,也不自动下单。
+			// 用户重启一次,就正好错过一次补货。
+			if m.dirty.Swap(false) {
+				m.SaveToDB()
+			}
 		} else {
 			m.state.Logger.Info("当前无订阅，跳过检查", "monitor")
 		}
 
 		// 等下次（可中断 sleep）
-		m.subsMu.Lock()
-		running = m.running
-		m.subsMu.Unlock()
+		running := m.stillMine(gen)
 		if running {
 			m.state.Logger.Info(fmt.Sprintf("等待 %d 秒后进行下次检查...", interval), "monitor")
 			for i := 0; i < interval; i++ {
-				m.subsMu.Lock()
-				running = m.running
-				m.subsMu.Unlock()
+				running = m.stillMine(gen)
 				if !running {
 					break
 				}
@@ -190,6 +205,8 @@ func (m *Monitor) Start() bool {
 		return false
 	}
 	m.running = true
+	m.generation++
+	gen := m.generation
 	// MonitorRunning 与 checkInterval 都要在锁内取/写:
 	// Start 可能与 loop 自停时调的 Stop、以及 SetCheckInterval 并发,
 	// 出锁之后再写就是无同步的写-写竞争(go test -race 会报)。
@@ -200,7 +217,7 @@ func (m *Monitor) Start() bool {
 	m.tgCheckMu.Lock()
 	m.lastTGCheck = time.Time{}
 	m.tgCheckMu.Unlock()
-	go m.monitorLoop()
+	go m.monitorLoopGen(gen)
 	m.state.Logger.Info(fmt.Sprintf("服务器监控已启动 (检查间隔: %d秒)", interval), "monitor")
 	return true
 }

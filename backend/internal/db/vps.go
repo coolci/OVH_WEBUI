@@ -20,6 +20,10 @@ type vpsSubRow struct {
 	HistoryJSON        string `db:"history"`
 	CreatedAt          string `db:"created_at"`
 	AutoOrderAccountID string `db:"auto_order_account_id"`
+	AutoOrder          int    `db:"auto_order"`
+	Quantity           int    `db:"quantity"`
+	AutoPay            int    `db:"auto_pay"`
+	OS                 string `db:"os"`
 }
 
 func rowToVPSSub(r vpsSubRow) types.VPSSubscription {
@@ -48,6 +52,10 @@ func rowToVPSSub(r vpsSubRow) types.VPSSubscription {
 		History:            hist,
 		CreatedAt:          r.CreatedAt,
 		AutoOrderAccountID: r.AutoOrderAccountID,
+		AutoOrder:          r.AutoOrder == 1,
+		Quantity:           r.Quantity,
+		AutoPay:            r.AutoPay == 1,
+		OS:                 r.OS,
 	}
 }
 
@@ -83,6 +91,10 @@ func vpsSubToRow(s types.VPSSubscription) (vpsSubRow, error) {
 		HistoryJSON:        string(histJSON),
 		CreatedAt:          s.CreatedAt,
 		AutoOrderAccountID: s.AutoOrderAccountID,
+		AutoOrder:          bi(s.AutoOrder),
+		Quantity:           s.Quantity,
+		AutoPay:            bi(s.AutoPay),
+		OS:                 s.OS,
 	}, nil
 }
 
@@ -111,10 +123,12 @@ func (db *DB) UpsertVPSSubscription(s types.VPSSubscription) error {
 	_, err = db.NamedExec(`
 		INSERT INTO vps_subscriptions
 		(id, plan_code, ovh_subsidiary, datacenters, monitor_linux, monitor_windows,
-		 notify_available, notify_unavailable, last_status, history, created_at, auto_order_account_id)
+		 notify_available, notify_unavailable, last_status, history, created_at, auto_order_account_id,
+		 auto_order, quantity, auto_pay, os)
 		VALUES
 		(:id, :plan_code, :ovh_subsidiary, :datacenters, :monitor_linux, :monitor_windows,
-		 :notify_available, :notify_unavailable, :last_status, :history, :created_at, :auto_order_account_id)
+		 :notify_available, :notify_unavailable, :last_status, :history, :created_at, :auto_order_account_id,
+		 :auto_order, :quantity, :auto_pay, :os)
 		ON CONFLICT(id) DO UPDATE SET
 		  plan_code          = excluded.plan_code,
 		  ovh_subsidiary     = excluded.ovh_subsidiary,
@@ -125,7 +139,11 @@ func (db *DB) UpsertVPSSubscription(s types.VPSSubscription) error {
 		  notify_unavailable = excluded.notify_unavailable,
 		  last_status            = excluded.last_status,
 		  history                = excluded.history,
-		  auto_order_account_id  = excluded.auto_order_account_id
+		  auto_order_account_id  = excluded.auto_order_account_id,
+		  auto_order             = excluded.auto_order,
+		  quantity               = excluded.quantity,
+		  auto_pay               = excluded.auto_pay,
+		  os                     = excluded.os
 	`, r)
 	if err != nil {
 		return fmt.Errorf("upsert vps sub %s: %w", s.ID, err)
@@ -151,10 +169,12 @@ func (db *DB) ReplaceVPSSubscriptions(subs []types.VPSSubscription) error {
 		_, err = tx.NamedExec(`
 			INSERT INTO vps_subscriptions
 			(id, plan_code, ovh_subsidiary, datacenters, monitor_linux, monitor_windows,
-			 notify_available, notify_unavailable, last_status, history, created_at, auto_order_account_id)
+			 notify_available, notify_unavailable, last_status, history, created_at, auto_order_account_id,
+			 auto_order, quantity, auto_pay, os)
 			VALUES
 			(:id, :plan_code, :ovh_subsidiary, :datacenters, :monitor_linux, :monitor_windows,
-			 :notify_available, :notify_unavailable, :last_status, :history, :created_at, :auto_order_account_id)
+			 :notify_available, :notify_unavailable, :last_status, :history, :created_at, :auto_order_account_id,
+			 :auto_order, :quantity, :auto_pay, :os)
 		`, r)
 		if err != nil {
 			return fmt.Errorf("insert vps sub %s: %w", s.ID, err)

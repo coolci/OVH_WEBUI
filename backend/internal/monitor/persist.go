@@ -99,7 +99,9 @@ func fromDBSub(s types.Subscription) *Subscription {
 func (m *Monitor) LoadFromDB() {
 	subs, err := m.state.DB.ListMonitorSubscriptions()
 	if err != nil {
-		m.state.Logger.Warn("加载监控订阅失败: "+err.Error(), "monitor")
+		// 读失败时下面照样会把 m.subscriptions 重置成空,而 SaveToDB 是全表覆盖 ——
+		// 不拦住的话,启动读一次失败就等于把用户所有监控订阅永久删了。
+		m.state.MarkLoadFailed("monitor_subscriptions", err)
 	}
 	known := []string{}
 	if _, err := m.state.DB.GetKV("monitor_known_servers", &known); err != nil {
@@ -130,6 +132,16 @@ func (m *Monitor) LoadFromDB() {
 
 // SaveToDB 把订阅 + known_servers 写回 SQLite
 func (m *Monitor) SaveToDB() {
+	// 保存串行化:和 app.State.Save* 同一个问题 —— "拍快照 → 全表覆盖",
+	// 两个并发保存里晚拍快照的可能先落库,新数据被旧快照整表覆盖
+	// (实测 60 条订阅并发保存只剩 9~17 条)。必须包住整个"快照+写库"。
+	// 六个 HTTP 调用点(增/删/改/批量添加)会并发进来。
+	if err := m.state.SaveBlocked("monitor_subscriptions"); err != nil {
+		m.state.Logger.Error(err.Error(), "monitor")
+		return
+	}
+	m.saveMu.Lock()
+	defer m.saveMu.Unlock()
 	m.subsMu.Lock()
 	subs := make([]types.Subscription, 0, len(m.subscriptions))
 	for _, s := range m.subscriptions {
