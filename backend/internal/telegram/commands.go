@@ -72,37 +72,47 @@ func IsKnownCommand(name string) bool {
 // HelpMessage 返回中文帮助文案（/start、/help、未知命令时共用）。
 func HelpMessage() string {
 	return strings.TrimSpace(`
-🤖 OVH Sniper Bot 命令帮助
-
-📦 库存查询
-  /stock <planCode>
-  例: /stock 24ska01（查完可直接点击按钮开抢）
+🤖 OVH Sniper · 快捷命令指南
+───────────────────────
 
 ⚡ 快速下单 & 抢购排队
-  /buy                   → 点选型号和机房
-  /buy <planCode>        → 点选机房
-  /buy <planCode> gra    → 直接入队（有货秒冲/缺货挂机）
+• /buy
+  └ 交互式点选型号与机房
+• /buy <型号>
+  └ 选定型号后点选机房
+• /buy <型号> <机房> [数量]
+  └ 例: /buy 24ska01 gra 1 (有货秒冲 / 缺货排队)
 
-📋 任务管理
-  /tasks                 → 查看当前抢购队列，支持一键取消
+📦 库存查询
+• /stock <型号>
+  └ 例: /stock 24ska01 (查完可直接点击按钮开抢)
 
-👤 账户管理
-  /accounts              → 查看各区 OVH 账户与切换默认
-
-👁 添加监控（有货推送）
-  /monitor <planCode> [datacenter...]
-  例: /monitor 24ska01
-  例: /monitor 24ska01 gra rbx
+👁 添加监控 (有货推送)
+• /monitor <型号> [机房...]
+  └ 例: /monitor 24ska01
+  └ 例: /monitor 24ska01 gra rbx
 
 💰 价格查询
-  /price <planCode> <datacenter>
-  例: /price 24ska01 gra
+• /price <型号> <机房>
+  └ 例: /price 24ska01 gra
 
-也可直接发送（无斜杠）:
-  planCode [datacenter] [quantity] [options]
-  例: 24ska01 gra 1
+📋 任务管理
+• /tasks
+  └ 查看当前抢购队列，支持一键取消
 
-说明: 仅配置的 Chat ID 可下单；机房代码支持 gra/rbx/bhs…（不区分大小写）。
+👤 账户管理
+• /accounts
+  └ 查看各区 OVH 账户与切换默认
+
+───────────────────────
+💡 极速免斜杠模式 (直接发送消息):
+  <型号> [机房] [数量] [选项]
+  └ 例: 24ska01 gra 1
+
+📌 使用提示:
+• 鉴权安全: 仅配置的 Chat ID 可执行下单
+• 机房代码: 支持 gra / rbx / bhs / sbg / waw 等 (不区分大小写)
+• 可视操作: 亦可点击下方内联按钮直接交互 👇
 `) + "\n"
 }
 

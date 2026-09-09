@@ -530,43 +530,152 @@ const TelegramOrderPage = () => {
 
           {/* Command Reference */}
           <TerminalCard
-            title="命令参考"
+            title="快捷指令参考与使用说明"
             icon={<Info className="h-4 w-4" />}
           >
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-xs text-muted-foreground uppercase border-b border-border">
-                    <th className="text-left py-3 px-2">命令</th>
-                    <th className="text-left py-3 px-2">格式</th>
-                    <th className="text-left py-3 px-2">说明</th>
-                    <th className="text-left py-3 px-2">示例</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {orderModes.map((mode) => (
-                    <tr 
-                      key={mode.mode}
-                      className="border-b border-border/50 hover:bg-muted/30 transition-colors"
-                    >
-                      <td className="py-3 px-2">
-                        <Badge variant="outline" className={mode.color}>
-                          /{mode.mode}
-                        </Badge>
-                      </td>
-                      <td className="py-3 px-2 font-mono text-xs">
-                        /{mode.mode} &lt;planCode&gt; [datacenter] [quantity]
-                      </td>
-                      <td className="py-3 px-2 text-muted-foreground">
-                        {mode.description}
-                      </td>
-                      <td className="py-3 px-2 font-mono text-xs text-primary">
-                        {mode.example}
-                      </td>
+            <div className="space-y-4">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-xs text-muted-foreground uppercase border-b border-border">
+                      <th className="text-left py-2.5 px-2">命令</th>
+                      <th className="text-left py-2.5 px-2">格式</th>
+                      <th className="text-left py-2.5 px-2">说明</th>
+                      <th className="text-left py-2.5 px-2">示例</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {[
+                      {
+                        command: "/buy",
+                        format: "/buy [型号] [机房] [数量]",
+                        description: "快速下单或抢购排队（有货秒抢 / 缺货挂机）",
+                        example: "/buy 24ska01 gra 1",
+                        color: "text-red-500",
+                      },
+                      {
+                        command: "/stock",
+                        format: "/stock <型号>",
+                        description: "查询实时库存并支持直接点选加购",
+                        example: "/stock 24ska01",
+                        color: "text-blue-500",
+                      },
+                      {
+                        command: "/monitor",
+                        format: "/monitor <型号> [机房...]",
+                        description: "添加型号监控，上架有货时自动发送通知",
+                        example: "/monitor 24ska01 gra rbx",
+                        color: "text-green-500",
+                      },
+                      {
+                        command: "/price",
+                        format: "/price <型号> <机房>",
+                        description: "查询指定型号在特定机房的实际落地价格",
+                        example: "/price 24ska01 gra",
+                        color: "text-yellow-500",
+                      },
+                      {
+                        command: "/tasks",
+                        format: "/tasks",
+                        description: "查看当前挂机抢购任务队列，支持一键取消",
+                        example: "/tasks",
+                        color: "text-purple-500",
+                      },
+                      {
+                        command: "/accounts",
+                        format: "/accounts",
+                        description: "查看各区域绑定的 OVH 账户与切换默认号",
+                        example: "/accounts",
+                        color: "text-cyan-500",
+                      },
+                    ].map((cmd) => (
+                      <tr 
+                        key={cmd.command}
+                        className="border-b border-border/50 hover:bg-muted/30 transition-colors"
+                      >
+                        <td className="py-2.5 px-2">
+                          <Badge variant="outline" className={cmd.color}>
+                            {cmd.command}
+                          </Badge>
+                        </td>
+                        <td className="py-2.5 px-2 font-mono text-xs text-muted-foreground">
+                          {cmd.format}
+                        </td>
+                        <td className="py-2.5 px-2 text-foreground/90">
+                          {cmd.description}
+                        </td>
+                        <td className="py-2.5 px-2 font-mono text-xs text-primary">
+                          <div className="flex items-center gap-1.5">
+                            <span>{cmd.example}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(cmd.example);
+                                toast.success(`已复制: ${cmd.example}`);
+                              }}
+                              className="text-muted-foreground hover:text-primary transition-colors p-0.5"
+                              title="复制示例"
+                            >
+                              <Copy className="h-3 w-3" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Free-form & Tips */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
+                <div className="p-3 bg-muted/40 rounded-sm border border-border/70 text-xs space-y-1.5">
+                  <div className="flex items-center gap-1.5 font-medium text-foreground">
+                    <Zap className="h-3.5 w-3.5 text-amber-500" />
+                    <span>免斜杠极速模式 (直接发送)</span>
+                  </div>
+                  <p className="text-muted-foreground leading-relaxed">
+                    在 Telegram 聊天框或快捷命令中直接发送（无需斜杠前缀）：
+                  </p>
+                  <div className="flex items-center justify-between bg-background/80 px-2.5 py-1.5 rounded border border-border/60 font-mono text-xs text-primary">
+                    <span>24ska01 gra 1</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText("24ska01 gra 1");
+                        toast.success("已复制: 24ska01 gra 1");
+                      }}
+                      className="text-muted-foreground hover:text-primary transition-colors ml-2"
+                      title="复制"
+                    >
+                      <Copy className="h-3 w-3" />
+                    </button>
+                  </div>
+                  <p className="text-muted-foreground text-[11px]">
+                    格式: <code className="font-mono text-foreground/80">&lt;型号&gt; [机房] [数量] [系统选项]</code>
+                  </p>
+                </div>
+
+                <div className="p-3 bg-muted/40 rounded-sm border border-border/70 text-xs space-y-1.5">
+                  <div className="flex items-center gap-1.5 font-medium text-foreground">
+                    <Info className="h-3.5 w-3.5 text-primary" />
+                    <span>使用与安全说明</span>
+                  </div>
+                  <ul className="text-muted-foreground space-y-1 text-[11px] leading-relaxed list-disc list-inside">
+                    <li>
+                      <span className="text-foreground/90 font-medium">鉴权安全：</span>
+                      仅在【系统设置】中授权的 <code className="font-mono text-primary">Chat ID</code> 可下单。
+                    </li>
+                    <li>
+                      <span className="text-foreground/90 font-medium">机房代码：</span>
+                      支持常用缩写如 <code className="font-mono text-primary">gra</code> / <code className="font-mono text-primary">rbx</code> / <code className="font-mono text-primary">bhs</code> / <code className="font-mono text-primary">sbg</code> / <code className="font-mono text-primary">waw</code>（不区分大小写）。
+                    </li>
+                    <li>
+                      <span className="text-foreground/90 font-medium">交互点选：</span>
+                      在 Telegram 中发送 <code className="font-mono text-primary">/start</code> 或 <code className="font-mono text-primary">/buy</code> 亦可展开多级菜单点选。
+                    </li>
+                  </ul>
+                </div>
+              </div>
             </div>
           </TerminalCard>
         </div>
