@@ -186,30 +186,47 @@
     background-color: hsl(var(--background));
   }
 
-  /* Subtle background architectural grid */
+  /* Subtle background: clean solid canvas */
+  .ambient-glow {
+    /* No glow */
+  }
+
   .grid-lines {
-    background-image:
-      linear-gradient(hsl(var(--foreground) / 0.015) 1px, transparent 1px),
-      linear-gradient(90deg, hsl(var(--foreground) / 0.015) 1px, transparent 1px);
-    background-size: 40px 40px;
+    /* No grid lines */
+  }
+
+  /* Horizontal scroll edge fade masks & scrollbar hiding */
+  .mask-fade-x {
+    mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 24px), transparent);
+    -webkit-mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 24px), transparent);
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
   }
 
   /* Clean glass panel */
   .glass-panel {
-    @apply border border-border/80 backdrop-blur-xl bg-card/85 rounded-xl;
-    box-shadow: 0 4px 16px -4px hsl(0 0% 0% / 0.3);
+    @apply border border-border/80 bg-card rounded-xl;
   }
 
-  /* Clean card surface */
+  /* Standard surface cards */
+  .surface-card {
+    @apply border border-border/80 rounded-xl bg-card text-card-foreground;
+  }
+
+  /* Clean terminal card surface */
   .terminal-card {
-    @apply border border-border/70 rounded-xl overflow-hidden bg-card/75;
-    box-shadow: 0 1px 3px 0 hsl(0 0% 0% / 0.2);
-    transition: border-color 0.2s ease, background-color 0.2s ease;
+    @apply border border-border/80 rounded-xl overflow-hidden bg-card text-card-foreground;
+    transition: border-color 0.15s ease;
   }
 
   .terminal-card:hover {
     border-color: hsl(var(--border));
-    background-color: hsl(var(--card) / 0.95);
   }
 
   .cursor-blink {

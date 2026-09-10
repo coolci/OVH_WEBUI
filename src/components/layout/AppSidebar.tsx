@@ -87,10 +87,10 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
                     to={item.to}
                     onClick={onNavigate}
                     className={cn(
-                      "group flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] font-medium transition-colors",
+                      "group relative flex items-center gap-2.5 px-3 py-2 rounded-xl text-[13px] font-medium transition-all duration-150",
                       isActive
-                        ? "bg-primary/12 text-primary"
-                        : "text-sidebar-foreground/80 hover:bg-muted/60 hover:text-foreground"
+                        ? "bg-primary/10 text-primary font-semibold"
+                        : "text-sidebar-foreground/75 hover:bg-sidebar-accent/60 hover:text-foreground"
                     )}
                   >
                     <item.icon
@@ -100,9 +100,14 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
                           ? "text-primary"
                           : "text-muted-foreground/80 group-hover:text-foreground"
                       )}
-                      strokeWidth={isActive ? 2 : 1.75}
+                      strokeWidth={isActive ? 2.2 : 1.75}
                     />
                     <span className="truncate">{item.label}</span>
+                    {item.to === "/telegram-order" && !isActive && (
+                      <span className="ml-auto text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-400/90 font-medium leading-none">
+                        TG
+                      </span>
+                    )}
                     {isActive && (
                       <span className="ml-auto h-1.5 w-1.5 rounded-full bg-primary" />
                     )}

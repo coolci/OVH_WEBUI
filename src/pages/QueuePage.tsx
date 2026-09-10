@@ -133,51 +133,31 @@ function QueuePage() {
         title="抢购队列"
         description="管理自动抢购服务器的队列"
         action={
-          <div className="flex gap-2 flex-wrap">
-            {runningCount > 0 && (
-              <Button
-                variant="outline"
-                onClick={handlePauseAll}
-                disabled={toggle.isPending}
-                title="暂停所有运行中的任务"
-              >
-                <PauseCircle className="w-4 h-4" />
-                全部暂停 ({runningCount})
-              </Button>
-            )}
-            {pausedCount > 0 && (
-              <Button
-                variant="outline"
-                onClick={handleResumeAll}
-                disabled={toggle.isPending}
-                title="恢复所有已暂停的任务"
-              >
-                <PlayCircle className="w-4 h-4" />
-                全部恢复 ({pausedCount})
-              </Button>
-            )}
-            <Button onClick={() => setShowCreateDialog(true)}>
-              <Plus className="w-4 h-4" />
-              新建抢购任务
-            </Button>
-            <Button variant="outline" onClick={() => queue.refetch()} disabled={queue.isFetching}>
-              <RefreshCw className={`w-4 h-4 ${queue.isFetching ? "animate-spin" : ""}`} />
-              刷新
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={() => setShowCreateDialog(true)}
+              size="sm"
+              className="h-8 text-xs font-medium gap-1.5 px-3 rounded-lg"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>新建抢购</span>
             </Button>
             <Button
               variant="outline"
-              onClick={() => setShowClearDialog(true)}
-              disabled={items.length === 0}
+              size="sm"
+              className="h-8 w-8 p-0 rounded-lg border-border/80 hover:bg-secondary flex-shrink-0"
+              onClick={() => queue.refetch()}
+              disabled={queue.isFetching}
+              title="刷新队列数据"
             >
-              <Trash2 className="w-4 h-4" />
-              清空
+              <RefreshCw className={`w-3.5 h-3.5 ${queue.isFetching ? "animate-spin" : ""}`} />
             </Button>
           </div>
         }
       />
 
       {items.length > 0 && (
-        <Card>
+        <Card className="surface-card rounded-xl border-border">
           <CardContent className="p-3 sm:p-4 flex flex-col sm:flex-row items-center gap-3">
             <div className="relative flex-1 w-full min-w-0">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
@@ -185,12 +165,12 @@ function QueuePage() {
                 placeholder="搜索型号 / 机房 / 账户..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="pl-9 pr-9 rounded-full h-8 text-xs"
+                className="pl-9 pr-9 rounded-lg h-8 text-xs bg-background/50 border-border/80 focus-visible:ring-1 focus-visible:ring-primary/40"
               />
               {search && (
                 <button
                   type="button"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-muted-foreground hover:text-foreground transition-colors"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-muted-foreground hover:text-foreground transition-colors"
                   onClick={() => setSearch("")}
                   aria-label="清空搜索"
                 >
@@ -198,7 +178,7 @@ function QueuePage() {
                 </button>
               )}
             </div>
-            <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto scrollbar-none">
+            <div className="grid grid-cols-4 sm:flex items-center gap-1 w-full sm:w-auto p-1 bg-muted/50 rounded-lg border border-border/60">
               {[
                 { id: "all", label: "全部", count: items.length },
                 { id: "running", label: "运行中", count: runningCount },
@@ -210,19 +190,19 @@ function QueuePage() {
                   type="button"
                   onClick={() => setStatusFilter(tab.id)}
                   className={cn(
-                    "px-2.5 py-1 text-xs font-medium rounded-lg transition-colors whitespace-nowrap flex items-center gap-1.5 border",
+                    "px-2 py-1 text-xs font-medium rounded-md transition-all duration-200 justify-center flex items-center gap-1 sm:gap-1.5",
                     statusFilter === tab.id
-                      ? "bg-secondary text-foreground border-border font-semibold shadow-none"
-                      : "bg-transparent text-muted-foreground border-transparent hover:bg-secondary/50 hover:text-foreground"
+                      ? "bg-background text-foreground font-semibold shadow-sm border border-border/60"
+                      : "text-muted-foreground hover:bg-secondary/40 hover:text-foreground"
                   )}
                 >
-                  <span>{tab.label}</span>
+                  <span className="truncate">{tab.label}</span>
                   <span
                     className={cn(
                       "text-[10px] px-1.5 py-0.2 rounded-full",
                       statusFilter === tab.id
-                        ? "bg-background/80 text-foreground"
-                        : "bg-secondary text-muted-foreground"
+                        ? "bg-primary/10 text-primary"
+                        : "bg-muted text-muted-foreground"
                     )}
                   >
                     {tab.count}
@@ -234,14 +214,63 @@ function QueuePage() {
         </Card>
       )}
 
+      {items.length > 0 && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs px-1">
+          <div className="text-muted-foreground font-medium flex items-center gap-1.5">
+            <span>队列任务</span>
+            <span className="text-[11px] px-1.5 py-0.2 rounded-full bg-secondary text-foreground font-mono font-medium">
+              {filteredItems.length}/{items.length}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            {runningCount > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs gap-1.5 px-2.5 rounded-lg border-border/80 hover:bg-secondary font-medium"
+                onClick={handlePauseAll}
+                disabled={toggle.isPending}
+                title="暂停所有运行中的任务"
+              >
+                <PauseCircle className="w-3.5 h-3.5 text-warning" />
+                <span>全部暂停 ({runningCount})</span>
+              </Button>
+            )}
+            {pausedCount > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs gap-1.5 px-2.5 rounded-lg border-border/80 hover:bg-secondary font-medium"
+                onClick={handleResumeAll}
+                disabled={toggle.isPending}
+                title="恢复所有已暂停的任务"
+              >
+                <PlayCircle className="w-3.5 h-3.5 text-primary" />
+                <span>全部恢复 ({pausedCount})</span>
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs gap-1 px-2 rounded-lg text-muted-foreground hover:text-destructive"
+              onClick={() => setShowClearDialog(true)}
+              title="清空所有队列任务"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>清空队列</span>
+            </Button>
+          </div>
+        </div>
+      )}
+
       {queue.isPending ? (
         <div className="space-y-3">
           {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-20 rounded-2xl" />
+            <Skeleton key={i} className="h-20 rounded-xl" />
           ))}
         </div>
       ) : items.length === 0 ? (
-        <Card>
+        <Card className="surface-card rounded-xl border-border">
           <EmptyState
             icon={ClipboardList}
             title="暂无任务"
@@ -249,7 +278,7 @@ function QueuePage() {
           />
         </Card>
       ) : filteredItems.length === 0 ? (
-        <Card>
+        <Card className="surface-card rounded-xl border-border">
           <EmptyState
             icon={Search}
             title="未找到匹配的任务"
@@ -714,11 +743,11 @@ function QueueRow({
   })();
 
   return (
-    <Card>
-      <CardContent className="p-3 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-3">
+    <Card className="surface-card rounded-xl border-border hover:border-border/80 transition-all duration-200 shadow-sm">
+      <CardContent className="p-3.5 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-3">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <span className="font-mono font-semibold text-sm">{item.planCode}</span>
+          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+            <span className="font-mono font-semibold text-sm text-foreground tracking-tight">{item.planCode}</span>
             <AccountChip accountId={item.accountId} />
             <Chip tone="default">DC {item.datacenter.toUpperCase()}</Chip>
             {item.fromTelegram && (
@@ -735,7 +764,7 @@ function QueueRow({
             )}
           </div>
           <div className="text-[11px] text-muted-foreground flex items-center gap-2 flex-wrap">
-            <Clock className="w-3 h-3" />
+            <Clock className="w-3.5 h-3.5 text-muted-foreground/80" />
             <span>
               下次尝试 {item.retryCount > 0 ? `${item.retryInterval}秒后（第 ${item.retryCount + 1} 次）` : "即将开始"}
             </span>
@@ -743,16 +772,30 @@ function QueueRow({
             <span>{new Date(item.createdAt).toLocaleString()}</span>
           </div>
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex items-center justify-between sm:justify-end gap-2 flex-shrink-0 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-border/40">
           {chip}
-          {item.status !== "completed" && item.status !== "failed" && (
-            <Button variant="ghost" size="icon" onClick={onToggle} aria-label={item.status === "running" ? "暂停" : "恢复"}>
-              {item.status === "running" ? <PauseCircle className="w-4 h-4" /> : <PlayCircle className="w-4 h-4" />}
+          <div className="flex items-center gap-1">
+            {item.status !== "completed" && item.status !== "failed" && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-secondary rounded-lg"
+                onClick={onToggle}
+                aria-label={item.status === "running" ? "暂停" : "恢复"}
+              >
+                {item.status === "running" ? <PauseCircle className="w-4 h-4 text-amber-400" /> : <PlayCircle className="w-4 h-4 text-emerald-400" />}
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg"
+              onClick={onDelete}
+              aria-label="删除"
+            >
+              <X className="w-4 h-4" />
             </Button>
-          )}
-          <Button variant="ghost" size="icon" onClick={onDelete} aria-label="删除">
-            <X className="w-4 h-4" />
-          </Button>
+          </div>
         </div>
       </CardContent>
     </Card>

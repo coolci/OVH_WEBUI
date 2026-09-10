@@ -47,7 +47,7 @@ export function StatusBar() {
           <span>可用: {stats?.availableServers ?? 0}</span>
         </div>
 
-        <div className="flex items-center gap-1.5 pl-2 border-l border-white/[0.06]">
+        <div className="flex items-center gap-1.5 pl-2 border-l border-border/60">
           <span className="font-semibold text-foreground/80">OVH</span>
           <span className="font-semibold text-primary">统御</span>
         </div>

@@ -3,7 +3,7 @@ import { Helmet } from "react-helmet-async";
 import {
   Settings as SettingsIcon, KeyRound, Globe, Send, Database, Save,
   AlertTriangle, CheckCircle2, Plus, Star, RotateCw, Trash2, Pencil,
-  RefreshCw
+  RefreshCw, Eye, EyeOff, Cpu
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -59,6 +59,7 @@ function SettingsPage() {
   const [active, setActive] = useState<typeof SECTIONS[number]["id"]>("password");
   const [form, setForm] = useState<SettingsConfig>({});
   const [apiKey, setApiKey] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     if (cfg.data) setForm(cfg.data);
@@ -91,59 +92,77 @@ function SettingsPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6 max-w-[1280px]">
       <PageHeader
         icon={SettingsIcon}
         title="API 设置"
         description="配置 OVH API 和通知设置"
         action={
-          <Button onClick={onSave} disabled={save.isPending || cfg.isPending || !cfg.data}>
-            <Save className="w-4 h-4" />
+          <Button
+            onClick={onSave}
+            disabled={save.isPending || cfg.isPending || !cfg.data}
+            size="sm"
+            className="h-8 px-3 sm:px-4 gap-1.5 text-xs font-medium"
+          >
+            <Save className="w-3.5 h-3.5" />
             {save.isPending ? "保存中..." : "保存设置"}
           </Button>
         }
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-[200px_1fr] gap-4">
-        {/* sub-nav:桌面竖向左栏,手机横向滚动 tab */}
-        <nav className="lg:space-y-1 flex lg:flex-col overflow-x-auto lg:overflow-visible gap-1 lg:gap-0 -mx-3 px-3 lg:mx-0 lg:px-0">
-          {SECTIONS.map((s) => {
-            const Icon = s.icon;
-            const a = active === s.id;
-            return (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => setActive(s.id)}
-                className={cn(
-                  "flex items-center gap-2 px-3 py-2 rounded-md text-[13px] transition-colors whitespace-nowrap flex-shrink-0",
-                  "lg:w-full lg:border-l-2",
-                  a
-                    ? "bg-secondary text-foreground font-medium lg:border-l-foreground"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground lg:border-l-transparent"
-                )}
-              >
-                <Icon className="w-4 h-4" />
-                {s.label}
-              </button>
-            );
-          })}
-        </nav>
+      <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-4 sm:gap-6 items-start">
+        {/* sub-nav: 桌面竖向左栏, 移动端 4 列等宽分段控制器 */}
+        <div className="relative">
+          <nav className="grid grid-cols-4 lg:flex lg:flex-col gap-1 p-1 bg-muted/50 lg:bg-transparent rounded-xl border border-border/50 lg:border-none">
+            {SECTIONS.map((s) => {
+              const Icon = s.icon;
+              const a = active === s.id;
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => setActive(s.id)}
+                  className={cn(
+                    "flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1 sm:gap-2 px-1.5 sm:px-3 py-2 rounded-lg text-xs sm:text-[13px] font-medium transition-all whitespace-nowrap touch-manipulation",
+                    "lg:w-full lg:rounded-xl lg:px-3.5 lg:py-2.5",
+                    a
+                      ? "bg-background text-foreground shadow-sm lg:border-l-2 lg:border-l-primary lg:bg-secondary/70"
+                      : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                  )}
+                >
+                  <Icon className={cn("w-3.5 h-3.5 sm:w-4 sm:h-4 transition-colors", a ? "text-primary" : "text-muted-foreground")} />
+                  <span className="truncate">{s.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+        </div>
 
         {/* 右内容 */}
-        <Card>
+        <Card className="surface-card rounded-2xl overflow-hidden border-border/70">
           <CardContent className="p-4 sm:p-6">
             {cfg.isPending ? (
               <Skeleton className="h-64 rounded-2xl" />
             ) : active === "password" ? (
               <Section title="访问密码 / API Secret Key">
                 <Field label="访问密码 *" hint="后端 .env 中的 API_SECRET_KEY，本地仅保存在 localStorage">
-                  <Input
-                    type="password"
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    placeholder="输入访问密码"
-                  />
+                  <div className="relative max-w-lg">
+                    <Input
+                      type={showPassword ? "text" : "password"}
+                      value={apiKey}
+                      onChange={(e) => setApiKey(e.target.value)}
+                      placeholder="输入访问密码"
+                      className="pr-10 font-mono tracking-wider bg-background/50 border-border/70 focus-visible:ring-primary/40"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1"
+                      title={showPassword ? "隐藏密码" : "显示密码"}
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                 </Field>
               </Section>
             ) : active === "accounts" ? (
@@ -338,15 +357,36 @@ function CacheSection() {
       <p className="text-[11px] text-muted-foreground">
         缓存只指 OVH 服务器目录。订阅 / 队列 / 历史 等业务数据不在此清理范围内。
       </p>
-      <div className="flex flex-wrap gap-2">
-        <Button variant="outline" onClick={() => clear.mutate("memory")} disabled={clear.isPending}>
-          清除内存缓存
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-2.5 pt-1">
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-9 rounded-xl text-xs gap-1.5 border-border/80 hover:bg-secondary font-medium justify-center"
+          onClick={() => clear.mutate("memory")}
+          disabled={clear.isPending}
+        >
+          <Cpu className="w-3.5 h-3.5 text-muted-foreground" />
+          <span>清除内存缓存</span>
         </Button>
-        <Button variant="outline" onClick={() => clear.mutate("sqlite")} disabled={clear.isPending}>
-          清除 SQLite 缓存
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-9 rounded-xl text-xs gap-1.5 border-border/80 hover:bg-secondary font-medium justify-center"
+          onClick={() => clear.mutate("sqlite")}
+          disabled={clear.isPending}
+        >
+          <Database className="w-3.5 h-3.5 text-muted-foreground" />
+          <span>清除 SQLite 缓存</span>
         </Button>
-        <Button variant="destructive" onClick={() => clear.mutate("all")} disabled={clear.isPending}>
-          清除全部
+        <Button
+          variant="outline"
+          size="sm"
+          className="col-span-2 sm:col-span-1 h-9 rounded-xl text-xs gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 font-medium justify-center"
+          onClick={() => clear.mutate("all")}
+          disabled={clear.isPending}
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+          <span>清除全部缓存</span>
         </Button>
       </div>
     </Section>

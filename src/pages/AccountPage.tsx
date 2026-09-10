@@ -51,10 +51,10 @@ function AccountPage() {
       </div>
 
       <Tabs defaultValue="emails">
-        <TabsList className="flex flex-wrap h-auto gap-1">
-          <TabsTrigger value="emails">邮件历史</TabsTrigger>
-          <TabsTrigger value="orders">订单记录</TabsTrigger>
-          <TabsTrigger value="refunds">退款记录</TabsTrigger>
+        <TabsList className="grid grid-cols-3 sm:flex h-auto gap-1 p-1 bg-muted/50 rounded-lg border border-border/60">
+          <TabsTrigger value="emails" className="text-[12px] sm:text-xs px-2.5 sm:px-3.5 py-1.5 rounded-md data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm font-medium">邮件历史</TabsTrigger>
+          <TabsTrigger value="orders" className="text-[12px] sm:text-xs px-2.5 sm:px-3.5 py-1.5 rounded-md data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm font-medium">订单记录</TabsTrigger>
+          <TabsTrigger value="refunds" className="text-[12px] sm:text-xs px-2.5 sm:px-3.5 py-1.5 rounded-md data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm font-medium">退款记录</TabsTrigger>
         </TabsList>
         <TabsContent value="emails">
           <EmailsTab />
@@ -86,10 +86,10 @@ function KpiCard({
   badge?: React.ReactNode;
 }) {
   return (
-    <Card>
-      <CardContent className="p-5 flex items-start gap-3">
-        <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center flex-shrink-0">
-          <Icon className="w-5 h-5" strokeWidth={1.75} />
+    <Card className="surface-card rounded-xl border-border hover:border-border/80 transition-all duration-200 shadow-sm">
+      <CardContent className="p-4 sm:p-5 flex items-start gap-3.5">
+        <div className="w-9 h-9 rounded-lg bg-secondary border border-border/60 text-foreground flex items-center justify-center flex-shrink-0">
+          <Icon className="w-4 h-4" strokeWidth={1.75} />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
@@ -99,7 +99,7 @@ function KpiCard({
           {loading ? (
             <Skeleton className="h-6 w-32 mt-1" />
           ) : (
-            <p className="text-lg font-bold truncate" title={value}>{value || "—"}</p>
+            <p className="text-lg font-bold truncate text-foreground" title={value}>{value || "—"}</p>
           )}
           {sub && <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{sub}</p>}
         </div>
@@ -114,30 +114,30 @@ function EmailsTab() {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      <Card className="overflow-hidden">
-        <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+      <Card className="surface-card rounded-xl border-border overflow-hidden shadow-sm">
+        <div className="px-4 py-3 border-b border-border/60 flex items-center justify-between">
           <span className="text-sm font-semibold">邮件列表</span>
-          <Button variant="outline" size="sm" onClick={() => emails.refetch()} disabled={emails.isFetching}>
+          <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5 border-border/80 hover:bg-secondary" onClick={() => emails.refetch()} disabled={emails.isFetching}>
             <RefreshCw className={`w-3.5 h-3.5 ${emails.isFetching ? "animate-spin" : ""}`} />
-            刷新
+            <span className="hidden sm:inline">刷新</span>
           </Button>
         </div>
         {emails.isPending ? (
           <div className="p-4 space-y-2">
-            {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-14 rounded-xl" />)}
+            {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-14 rounded-lg" />)}
           </div>
         ) : (emails.data || []).length === 0 ? (
           <EmptyState icon={Inbox} title="暂无邮件" />
         ) : (
-          <div className="divide-y divide-border max-h-[500px] overflow-y-auto">
+          <div className="divide-y divide-border/40 max-h-[500px] overflow-y-auto">
             {(emails.data || []).map((e) => (
               <button
                 key={e.id}
                 type="button"
                 onClick={() => setSelected(e)}
                 className={
-                  "w-full text-left px-4 py-3 hover:bg-muted transition-colors " +
-                  (selected?.id === e.id ? "bg-secondary" : "")
+                  "w-full text-left px-4 py-3 hover:bg-muted/50 transition-colors " +
+                  (selected?.id === e.id ? "bg-muted border-l-2 border-primary" : "")
                 }
               >
                 <div className="flex items-center gap-2 mb-1">
@@ -151,8 +151,8 @@ function EmailsTab() {
         )}
       </Card>
 
-      <Card>
-        <CardContent className="p-5">
+      <Card className="surface-card rounded-xl border-border shadow-sm">
+        <CardContent className="p-4 sm:p-5">
           <div className="flex items-center gap-2 mb-4">
             <FileText className="w-4 h-4 text-muted-foreground" />
             <h3 className="text-sm font-semibold">邮件详情</h3>
@@ -161,7 +161,7 @@ function EmailsTab() {
             <>
               <p className="text-[15px] font-semibold mb-1">{selected.subject}</p>
               <p className="text-[12px] text-muted-foreground mb-4">{new Date(selected.date).toLocaleString("zh-CN")}</p>
-              <pre className="text-[12px] font-mono whitespace-pre-wrap text-foreground bg-secondary rounded-lg p-3 max-h-[400px] overflow-y-auto">
+              <pre className="text-[12px] font-mono whitespace-pre-wrap text-foreground bg-muted/40 border border-border/50 rounded-lg p-3.5 max-h-[400px] overflow-y-auto">
                 {selected.body}
               </pre>
             </>
@@ -177,34 +177,34 @@ function EmailsTab() {
 function OrdersTab() {
   const orders = useOrders(30);
   return (
-    <Card>
+    <Card className="surface-card rounded-xl border-border shadow-sm">
       <CardContent className="p-4 sm:p-5">
         <div className="flex items-center justify-between mb-4 gap-2">
           <h3 className="text-sm font-semibold flex items-center gap-2">
-            <ShoppingCart className="w-4 h-4" />
+            <ShoppingCart className="w-4 h-4 text-foreground" />
             最近订单
           </h3>
           <Button
             variant="outline"
             size="sm"
-            className="min-h-9 touch-manipulation"
+            className="h-8 text-xs gap-1.5 border-border/80 hover:bg-secondary"
             onClick={() => orders.refetch()}
             disabled={orders.isFetching}
           >
             <RefreshCw className={`w-3.5 h-3.5 ${orders.isFetching ? "animate-spin" : ""}`} />
-            刷新
+            <span className="hidden sm:inline">刷新</span>
           </Button>
         </div>
         {orders.isPending ? (
           <div className="space-y-2">
             {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-16 rounded-xl" />
+              <Skeleton key={i} className="h-16 rounded-lg" />
             ))}
           </div>
         ) : (orders.data || []).length === 0 ? (
           <EmptyState icon={ShoppingCart} title="暂无订单记录" />
         ) : (
-          <div className="divide-y divide-border">
+          <div className="divide-y divide-border/40">
             {(orders.data || []).map((o, idx) => {
               const id = o.orderId != null ? o.orderId : idx;
               const priceText =
@@ -230,13 +230,13 @@ function OrdersTab() {
                     <p className="text-[11px] text-muted-foreground">{dateStr}</p>
                   </div>
                   <div className="flex items-center gap-3 sm:text-right flex-shrink-0">
-                    <p className="text-base sm:text-lg font-bold text-primary">{priceText}</p>
+                    <p className="text-base sm:text-lg font-bold font-mono text-foreground">{priceText}</p>
                     {o.url && (
                       <a
                         href={String(o.url)}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-[11px] text-foreground hover:underline min-h-9"
+                        className="inline-flex items-center gap-1 text-[11px] text-foreground hover:underline min-h-8"
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
                         打开
@@ -247,7 +247,7 @@ function OrdersTab() {
                         href={String(o.pdfUrl)}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-[11px] text-muted-foreground hover:underline min-h-9 inline-flex items-center"
+                        className="text-[11px] text-muted-foreground hover:underline min-h-8 inline-flex items-center"
                       >
                         PDF
                       </a>
@@ -266,18 +266,18 @@ function OrdersTab() {
 function RefundsTab() {
   const refunds = useRefunds();
   return (
-    <Card>
-      <CardContent className="p-5">
+    <Card className="surface-card rounded-xl border-border shadow-sm">
+      <CardContent className="p-4 sm:p-5">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-semibold">退款记录</h3>
-          <Button variant="outline" size="sm" onClick={() => refunds.refetch()} disabled={refunds.isFetching}>
+          <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5 border-border/80 hover:bg-secondary" onClick={() => refunds.refetch()} disabled={refunds.isFetching}>
             <RefreshCw className={`w-3.5 h-3.5 ${refunds.isFetching ? "animate-spin" : ""}`} />
-            刷新
+            <span className="hidden sm:inline">刷新</span>
           </Button>
         </div>
         {refunds.isPending ? (
           <div className="space-y-2">
-            {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-xl" />)}
+            {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-lg" />)}
           </div>
         ) : (refunds.data || []).length === 0 ? (
           <EmptyState icon={Inbox} title="暂无退款记录" />

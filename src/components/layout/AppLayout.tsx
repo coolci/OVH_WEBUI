@@ -18,7 +18,7 @@ export const AppLayout = forwardRef<HTMLDivElement, AppLayoutProps>(({ children 
   return (
     <div
       ref={ref}
-      className="min-h-[100dvh] app-canvas grid-lines relative overflow-x-hidden touch-manipulation"
+      className="min-h-[100dvh] app-canvas relative overflow-x-hidden touch-manipulation"
     >
       <div className="flex min-h-[100dvh] h-[100dvh]">
         <aside className="hidden lg:flex w-[260px] flex-col overflow-hidden border-r border-sidebar-border bg-sidebar flex-shrink-0">
@@ -26,7 +26,7 @@ export const AppLayout = forwardRef<HTMLDivElement, AppLayoutProps>(({ children 
         </aside>
 
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
-          <header className="h-14 min-h-14 border-b border-border/80 bg-card/85 backdrop-blur-xl flex items-center px-2 sm:px-4 gap-1 sm:gap-3 safe-area-top z-10">
+          <header className="h-14 min-h-14 border-b border-border/70 bg-card/75 backdrop-blur-xl flex items-center px-2 sm:px-4 gap-1 sm:gap-3 safe-area-top z-10">
             <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
               <SheetTrigger asChild>
                 <Button

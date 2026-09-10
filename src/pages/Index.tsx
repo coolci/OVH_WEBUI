@@ -102,14 +102,14 @@ function DashboardPage() {
 
       {/* 中部：活跃队列 + 系统状态 */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <Card className="lg:col-span-2">
-          <CardContent className="p-6">
+        <Card className="surface-card rounded-xl overflow-hidden lg:col-span-2 border-border">
+          <CardContent className="p-4 sm:p-6">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                <ClipboardList className="w-4 h-4 text-muted-foreground" />
+                <ClipboardList className="w-4 h-4 text-primary" />
                 <h2 className="text-[15px] font-semibold">活跃队列</h2>
               </div>
-              <Link to="/queue" className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
+              <Link to="/queue" className="text-xs text-muted-foreground hover:text-primary transition-colors inline-flex items-center gap-1 font-medium">
                 查看全部
                 <ChevronRight className="w-3 h-3" />
               </Link>
@@ -117,7 +117,7 @@ function DashboardPage() {
             {queue.isPending ? (
               <div className="space-y-2">
                 {Array.from({ length: 3 }).map((_, i) => (
-                  <Skeleton key={i} className="h-16 rounded-xl" />
+                  <Skeleton key={i} className="h-16 rounded-lg" />
                 ))}
               </div>
             ) : activeQueue.length === 0 ? (
@@ -125,9 +125,9 @@ function DashboardPage() {
                 icon={Calendar}
                 title="暂无活跃任务"
                 action={
-                  <Button asChild>
+                  <Button asChild size="sm" className="h-8 text-xs font-medium">
                     <Link to="/queue">
-                      <Plus className="w-4 h-4" />
+                      <Plus className="w-3.5 h-3.5 mr-1" />
                       创建抢购任务
                     </Link>
                   </Button>
@@ -138,13 +138,13 @@ function DashboardPage() {
                 {activeQueue.map((q) => (
                   <div
                     key={q.id}
-                    className="flex items-center justify-between gap-3 rounded-xl px-4 py-3 bg-secondary/50 border border-border"
+                    className="flex items-center justify-between gap-3 rounded-lg px-4 py-3 bg-secondary/35 border border-border/70 hover:border-border transition-colors"
                   >
                     <div className="min-w-0 flex-1">
-                      <p className="font-medium text-sm truncate">{q.planCode}</p>
+                      <p className="font-medium text-sm truncate font-mono">{q.planCode}</p>
                       <div className="flex items-center gap-2 text-[11px] text-muted-foreground mt-0.5">
-                        <span className="inline-flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
+                        <span className="inline-flex items-center gap-1 font-medium">
+                          <Clock className="w-3 h-3 text-primary" />
                           {q.datacenter.toUpperCase()}
                         </span>
                         <span className="text-muted-foreground/50">·</span>
@@ -159,10 +159,10 @@ function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="p-6">
+        <Card className="surface-card rounded-xl overflow-hidden border-border">
+          <CardContent className="p-4 sm:p-6">
             <div className="flex items-center gap-2 mb-4">
-              <CheckCheck className="w-4 h-4 text-muted-foreground" />
+              <CheckCheck className="w-4 h-4 text-primary" />
               <h2 className="text-[15px] font-semibold">系统状态</h2>
             </div>
             <div className="space-y-1">
@@ -189,7 +189,7 @@ function DashboardPage() {
                 offText="待启用"
                 warnOff
               />
-              <div className="flex justify-between items-center px-3 py-2.5 mt-1 border-t border-border pt-3">
+              <div className="flex justify-between items-center px-3 py-2.5 mt-1 border-t border-border/70 pt-3">
                 <div className="inline-flex items-center gap-2 text-xs text-muted-foreground">
                   <Info className="w-3.5 h-3.5" />
                   系统版本
@@ -201,7 +201,7 @@ function DashboardPage() {
                       href={update.data.url}
                       target="_blank"
                       rel="noreferrer noopener"
-                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-primary/15 text-primary hover:bg-primary/25 transition-colors"
                       title={`有新版本 v${update.data.latest} 可用,点击查看`}
                     >
                       <Sparkles className="w-3 h-3" />
@@ -217,7 +217,7 @@ function DashboardPage() {
 
       {/* 系统监控:CPU / 内存 / 磁盘 三个圆环 */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card>
+        <Card className="surface-card rounded-xl overflow-hidden border-border">
           <CardContent className="p-0">
             <MetricRing
               label="CPU"
@@ -226,7 +226,7 @@ function DashboardPage() {
             />
           </CardContent>
         </Card>
-        <Card>
+        <Card className="surface-card rounded-xl overflow-hidden border-border">
           <CardContent className="p-0">
             <MetricRing
               label="内存"
@@ -239,7 +239,7 @@ function DashboardPage() {
             />
           </CardContent>
         </Card>
-        <Card>
+        <Card className="surface-card rounded-xl overflow-hidden border-border">
           <CardContent className="p-0">
             <MetricRing
               label={sys.data?.disk.path || "磁盘"}
@@ -291,12 +291,12 @@ function KpiCard({
   loading?: boolean;
 }) {
   return (
-    <Card className="group hover:border-border transition-colors">
+    <Card className="surface-card group hover:border-border transition-all duration-200 rounded-xl overflow-hidden border-border">
       <CardContent className="p-4 sm:p-5">
         <div className="flex items-center justify-between mb-3">
-          <span className="section-label">{label}</span>
-          <div className="icon-well w-9 h-9 sm:w-10 sm:h-10 rounded-lg">
-            <Icon className="w-4 h-4 sm:w-5 sm:h-5 text-primary" strokeWidth={1.8} />
+          <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground/80">{label}</span>
+          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-secondary border border-border/60 flex items-center justify-center transition-transform duration-200 group-hover:scale-105">
+            <Icon className="w-4 h-4 sm:w-5 sm:h-5 text-foreground" strokeWidth={1.8} />
           </div>
         </div>
         <div className="flex items-baseline">
@@ -311,10 +311,10 @@ function KpiCard({
         </div>
         <Link
           to={linkTo}
-          className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground/80 hover:text-primary transition-colors"
+          className="mt-3.5 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-primary transition-colors"
         >
           {linkText}
-          <ChevronRight className="w-3 h-3" />
+          <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
         </Link>
       </CardContent>
     </Card>

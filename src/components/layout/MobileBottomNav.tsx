@@ -55,8 +55,8 @@ export function MobileBottomNav() {
 
   return (
     <>
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-sidebar/95 backdrop-blur-xl border-t border-border safe-area-bottom">
-        <div className="flex items-stretch justify-around min-h-[3.5rem]">
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-card/85 backdrop-blur-2xl border-t border-border/70 safe-area-bottom shadow-[0_-4px_24px_rgba(0,0,0,0.5)]">
+        <div className="flex items-stretch justify-around min-h-[3.6rem] px-1 py-1">
           {primaryNav.map((item) => {
             const isActive = location.pathname === item.to;
             return (
@@ -64,17 +64,24 @@ export function MobileBottomNav() {
                 key={item.to}
                 to={item.to}
                 className={cn(
-                  "relative flex flex-col items-center justify-center gap-0.5 px-1 py-2 min-w-0 flex-1 touch-manipulation select-none",
-                  "min-h-[48px] active:bg-secondary/40 transition-colors",
-                  isActive ? "text-primary" : "text-muted-foreground"
+                  "relative flex flex-col items-center justify-center gap-1 px-2 py-1 min-w-0 flex-1 touch-manipulation select-none rounded-xl transition-all duration-200",
+                  "active:scale-95",
+                  isActive
+                    ? "text-primary font-medium"
+                    : "text-muted-foreground hover:text-foreground"
                 )}
               >
-                <item.icon className="h-5 w-5 transition-colors" />
-                <span className="text-[10px] font-medium truncate max-w-full px-0.5">
+                <div className={cn(
+                  "relative flex items-center justify-center w-8 h-7 rounded-lg transition-all",
+                  isActive && "bg-primary/10"
+                )}>
+                  <item.icon className={cn("h-4.5 w-4.5 transition-transform duration-200", isActive && "scale-105")} />
+                </div>
+                <span className="text-[10.5px] tracking-tight truncate max-w-full leading-none">
                   {item.label}
                 </span>
                 {isActive && (
-                  <span className="absolute top-1 w-1 h-1 rounded-full bg-primary" />
+                  <span className="absolute -bottom-0.5 w-4 h-0.5 rounded-full bg-primary" />
                 )}
               </NavLink>
             );
@@ -84,15 +91,22 @@ export function MobileBottomNav() {
             type="button"
             onClick={() => setMoreOpen(true)}
             className={cn(
-              "relative flex flex-col items-center justify-center gap-0.5 px-1 py-2 min-w-0 flex-1 touch-manipulation select-none",
-              "min-h-[48px] active:bg-secondary/40 transition-colors",
-              moreActive ? "text-primary" : "text-muted-foreground"
+              "relative flex flex-col items-center justify-center gap-1 px-2 py-1 min-w-0 flex-1 touch-manipulation select-none rounded-xl transition-all duration-200",
+              "active:scale-95",
+              moreActive
+                ? "text-primary font-medium"
+                : "text-muted-foreground hover:text-foreground"
             )}
           >
-            <MoreHorizontal className="h-5 w-5" />
-            <span className="text-[10px] font-medium">更多</span>
+            <div className={cn(
+              "relative flex items-center justify-center w-8 h-7 rounded-lg transition-all",
+              moreActive && "bg-primary/10"
+            )}>
+              <MoreHorizontal className={cn("h-4.5 w-4.5 transition-transform duration-200", moreActive && "scale-105")} />
+            </div>
+            <span className="text-[10.5px] tracking-tight leading-none">更多</span>
             {moreActive && (
-              <span className="absolute top-1 w-1 h-1 rounded-full bg-primary" />
+              <span className="absolute -bottom-0.5 w-4 h-0.5 rounded-full bg-primary" />
             )}
           </button>
         </div>
@@ -101,18 +115,20 @@ export function MobileBottomNav() {
       <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
         <SheetContent
           side="bottom"
-          className="max-h-[75dvh] rounded-t-2xl border-border bg-sidebar p-0 safe-area-bottom"
+          className="max-h-[80dvh] rounded-t-2xl border-t border-border bg-card p-0 safe-area-bottom shadow-2xl"
         >
-          <SheetHeader className="px-4 pt-4 pb-2 border-b border-border text-left">
-            <SheetTitle className="text-base">全部功能</SheetTitle>
+          {/* 拖动横条 */}
+          <div className="mx-auto mt-3 h-1 w-10 rounded-full bg-muted-foreground/30" />
+          <SheetHeader className="px-5 pt-3 pb-3 border-b border-border text-left">
+            <SheetTitle className="text-sm font-semibold tracking-tight">全部功能</SheetTitle>
           </SheetHeader>
-          <div className="overflow-y-auto max-h-[calc(75dvh-4rem)] p-3 space-y-4">
+          <div className="overflow-y-auto max-h-[calc(80dvh-5rem)] p-4 space-y-4">
             {Object.entries(groups).map(([group, items]) => (
-              <div key={group}>
-                <div className="text-[11px] uppercase tracking-wider text-muted-foreground px-2 mb-1.5">
+              <div key={group} className="space-y-2">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/75 px-1">
                   {group}
                 </div>
-                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5">
                   {items.map((item) => {
                     const active = location.pathname === item.to;
                     return (
@@ -124,15 +140,20 @@ export function MobileBottomNav() {
                           setMoreOpen(false);
                         }}
                         className={cn(
-                          "flex flex-col items-center gap-1.5 p-3 rounded-xl border text-center touch-manipulation min-h-[72px]",
-                          "active:scale-[0.98] transition-all",
+                          "flex flex-col items-center justify-center gap-2 p-3 rounded-xl border text-center touch-manipulation min-h-[72px]",
+                          "active:scale-[0.96] transition-colors",
                           active
-                            ? "border-primary/50 bg-primary/10 text-primary"
-                            : "border-border bg-card/40 text-foreground hover:bg-secondary/50"
+                            ? "border-primary bg-primary/10 text-primary font-medium"
+                            : "border-border bg-secondary/30 text-foreground hover:bg-secondary/60 hover:border-border"
                         )}
                       >
-                        <item.icon className="h-5 w-5" />
-                        <span className="text-[11px] font-medium leading-tight">
+                        <div className={cn(
+                          "w-8 h-8 rounded-lg flex items-center justify-center transition-colors",
+                          active ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"
+                        )}>
+                          <item.icon className="h-4.5 w-4.5" />
+                        </div>
+                        <span className="text-[11.5px] font-medium leading-tight">
                           {item.label}
                         </span>
                       </button>

@@ -119,31 +119,33 @@ function LogsPage() {
         title="系统日志"
         description="限量拉取 · 本地筛选 · 避免一次渲染过多"
         action={
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
             <Button
               variant="outline"
               size="sm"
+              className="h-8 text-xs gap-1.5 border-border/80 hover:bg-secondary"
               onClick={() => logs.refetch()}
               disabled={logs.isFetching}
             >
-              <RefreshCw className={cn("w-4 h-4", logs.isFetching && "animate-spin")} />
-              刷新
+              <RefreshCw className={cn("w-3.5 h-3.5", logs.isFetching && "animate-spin")} />
+              <span className="hidden sm:inline">刷新</span>
             </Button>
             <Button
               variant="outline"
               size="sm"
+              className="h-8 text-xs gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10"
               onClick={() => setConfirmClear(true)}
               disabled={items.length === 0}
             >
-              <Trash2 className="w-4 h-4" />
-              清空
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>清空</span>
             </Button>
           </div>
         }
       />
 
-      <Card>
-        <CardContent className="p-4 sm:p-5">
+      <Card className="surface-card rounded-xl border-border">
+        <CardContent className="p-3.5 sm:p-5">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:items-center">
             <div className="relative sm:col-span-2 lg:col-span-1">
               <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -151,11 +153,11 @@ function LogsPage() {
                 placeholder="搜索消息 / 来源…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="rounded-full pl-9"
+                className="rounded-lg pl-9 h-8 text-xs bg-background/50 border-border/80 focus-visible:ring-1 focus-visible:ring-primary/40"
               />
             </div>
             <Select value={levelFilter} onValueChange={setLevelFilter}>
-              <SelectTrigger className="rounded-full">
+              <SelectTrigger className="rounded-lg h-8 text-xs bg-background/50 border-border/80">
                 <SelectValue placeholder="级别" />
               </SelectTrigger>
               <SelectContent>
@@ -170,7 +172,7 @@ function LogsPage() {
               value={String(limit)}
               onValueChange={(v) => setLimit(Number(v))}
             >
-              <SelectTrigger className="rounded-full">
+              <SelectTrigger className="rounded-lg h-8 text-xs bg-background/50 border-border/80">
                 <SelectValue placeholder="条数" />
               </SelectTrigger>
               <SelectContent>
@@ -181,13 +183,13 @@ function LogsPage() {
                 ))}
               </SelectContent>
             </Select>
-            <label className="inline-flex cursor-pointer items-center gap-2 text-sm">
+            <label className="inline-flex cursor-pointer items-center gap-2 text-xs">
               <Checkbox
                 checked={autoRefresh}
                 onCheckedChange={(c) => setAutoRefresh(c === true)}
               />
               <span className="text-muted-foreground">
-                自动刷新 <span className="font-mono text-[11px]">12s</span>
+                自动刷新 <span className="font-mono text-[11px] text-foreground font-semibold">12s</span>
               </span>
             </label>
           </div>
@@ -200,8 +202,8 @@ function LogsPage() {
         </CardContent>
       </Card>
 
-      <Card className="overflow-hidden">
-        <div className="flex items-center justify-between border-b border-border px-4 py-2.5 text-[12px]">
+      <Card className="surface-card rounded-xl border-border overflow-hidden shadow-sm">
+        <div className="flex items-center justify-between border-b border-border/60 bg-muted/30 px-4 py-2.5 text-[12px]">
           <span className="font-semibold">日志流</span>
           <span className="font-mono text-muted-foreground">
             显示 {windowed.length}
@@ -214,7 +216,7 @@ function LogsPage() {
         {logs.isPending && items.length === 0 ? (
           <div className="space-y-2 p-4">
             {Array.from({ length: 8 }).map((_, i) => (
-              <Skeleton key={i} className="h-8" />
+              <Skeleton key={i} className="h-8 rounded-lg" />
             ))}
           </div>
         ) : filtered.length === 0 ? (
@@ -236,7 +238,7 @@ function LogsPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="rounded-full"
+                  className="rounded-lg h-8 text-xs gap-1.5"
                   onClick={() => setVisibleCount((n) => n + PAGE_SIZE)}
                 >
                   <ChevronDown className="h-3.5 w-3.5" />

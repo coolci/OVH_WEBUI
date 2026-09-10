@@ -59,41 +59,43 @@ function MonitorPage() {
         title="服务器监控"
         description="自动监控服务器可用性变化并推送通知"
         action={
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => list.refetch()} disabled={list.isFetching}>
-              <RefreshCw className={`w-4 h-4 ${list.isFetching ? "animate-spin" : ""}`} />
-              刷新
-            </Button>
-            <Button onClick={() => setOpenAdd(true)}>
-              <Plus className="w-4 h-4" />
-              添加订阅
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              className="h-8 text-xs gap-1.5 font-medium px-3 rounded-lg"
+              onClick={() => setOpenAdd(true)}
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>添加订阅</span>
             </Button>
             <Button
               variant="outline"
-              onClick={() => setConfirmClear(true)}
-              disabled={subs.length === 0}
+              size="sm"
+              className="h-8 w-8 p-0 rounded-lg border-border/80 hover:bg-secondary flex-shrink-0"
+              onClick={() => list.refetch()}
+              disabled={list.isFetching}
+              title="刷新订阅状态"
             >
-              <Trash2 className="w-4 h-4" />
-              清空全部
+              <RefreshCw className={`w-3.5 h-3.5 ${list.isFetching ? "animate-spin" : ""}`} />
             </Button>
           </div>
         }
       />
 
       {/* 状态卡 */}
-      <Card>
-        <CardContent className="p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <Card className="surface-card rounded-xl border-border">
+        <CardContent className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center">
+            <div className="w-9 h-9 rounded-lg bg-secondary text-foreground border border-border/60 flex items-center justify-center flex-shrink-0">
               {status.data?.running ? (
-                <Bell className="w-5 h-5 text-success" />
+                <Bell className="w-4 h-4 text-foreground" />
               ) : (
-                <BellOff className="w-5 h-5 text-muted-foreground" />
+                <BellOff className="w-4 h-4 text-muted-foreground" />
               )}
             </div>
             <div>
               <div className="text-sm font-semibold">监控状态</div>
-              <div className="text-xs text-muted-foreground inline-flex items-center gap-1.5">
+              <div className="text-xs text-muted-foreground inline-flex items-center gap-1.5 mt-0.5">
                 <StatusDot
                   tone={status.data?.running ? "success" : "muted"}
                   pulse={status.data?.running}
@@ -119,7 +121,7 @@ function MonitorPage() {
           ))}
         </div>
       ) : subs.length === 0 ? (
-        <Card>
+        <Card className="surface-card rounded-xl border-border">
           <EmptyState
             icon={Bell}
             title="暂无订阅"
@@ -128,6 +130,26 @@ function MonitorPage() {
         </Card>
       ) : (
         <div className="space-y-3">
+          {/* 订阅列表头部栏 */}
+          <div className="flex items-center justify-between text-xs px-1">
+            <div className="text-muted-foreground font-medium flex items-center gap-1.5">
+              <span>已订阅型号</span>
+              <span className="text-[11px] px-1.5 py-0.2 rounded-full bg-secondary text-foreground font-mono font-medium">
+                {subs.length}
+              </span>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs text-muted-foreground hover:text-destructive gap-1 px-2 rounded-lg"
+              onClick={() => setConfirmClear(true)}
+              title="清空所有服务器订阅"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>清空全部</span>
+            </Button>
+          </div>
+
           {subs.map((s) => (
             <SubRow
               key={s.planCode}
@@ -223,8 +245,8 @@ function SubRow({
   onDelete: () => void;
 }) {
   return (
-    <Card>
-      <CardContent className="p-5">
+    <Card className="surface-card rounded-xl border-border hover:border-border/80 transition-all duration-200 shadow-sm">
+      <CardContent className="p-4 sm:p-5">
         <div className="flex flex-col sm:flex-row sm:items-center gap-3">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1 flex-wrap">

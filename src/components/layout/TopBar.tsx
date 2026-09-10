@@ -96,27 +96,27 @@ export function TopBar() {
         </span>
       </div>
 
-      <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+      <div className="flex items-center gap-2 flex-shrink-0">
         <div
           className={cn(
-            "flex items-center gap-1.5 text-[10px] sm:text-[11px] px-2 sm:px-2.5 py-1 rounded-full border font-medium",
+            "flex items-center gap-1.5 text-[10.5px] sm:text-[11px] px-2.5 py-0.5 rounded-full border transition-colors",
             isChecking
-              ? "border-border text-muted-foreground bg-muted/40"
+              ? "border-border/60 text-muted-foreground bg-secondary/30"
               : isConnected
-                ? "border-primary/20 text-primary bg-primary/10"
+                ? "border-emerald-500/25 text-emerald-400 bg-emerald-500/10"
                 : "border-destructive/30 text-destructive bg-destructive/10"
           )}
-          title={isConnected ? "后端已连接" : "后端离线"}
+          title={isConnected ? "后端服务在线" : "后端连接已断开"}
         >
           {isChecking ? (
-            <Loader2 className="h-3 w-3 animate-spin" />
+            <Loader2 className="h-2.5 w-2.5 animate-spin" />
           ) : isConnected ? (
-            <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400" />
           ) : (
-            <WifiOff className="h-3 w-3" />
+            <WifiOff className="h-2.5 w-2.5" />
           )}
-          <span className="hidden sm:inline font-mono">
-            {isChecking ? "检测" : isConnected ? "在线" : "离线"}
+          <span className="font-medium tracking-tight">
+            {isChecking ? "检测中" : isConnected ? "在线" : "离线"}
           </span>
         </div>
 
@@ -130,12 +130,13 @@ export function TopBar() {
             <Button
               variant="ghost"
               size="icon"
-              className="relative h-9 w-9 min-h-9 min-w-9 touch-manipulation rounded-lg hover:bg-muted"
+              className="relative h-8 w-8 sm:h-9 sm:w-9 touch-manipulation rounded-lg hover:bg-muted/70 transition-colors"
               onClick={() => void refetch()}
+              aria-label="查看通知"
             >
               <Bell className="h-4 w-4 text-foreground/80" />
               {unreadCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-destructive text-[10px] font-semibold text-destructive-foreground flex items-center justify-center shadow-sm">
+                <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-destructive text-[9.5px] font-bold text-destructive-foreground flex items-center justify-center leading-none">
                   {unreadCount > 9 ? "9+" : unreadCount}
                 </span>
               )}

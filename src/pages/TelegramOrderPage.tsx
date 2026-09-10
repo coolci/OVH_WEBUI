@@ -1,5 +1,6 @@
 import { AppLayout } from "@/components/layout/AppLayout";
-import { TerminalCard } from "@/components/ui/terminal-card";
+import { PageHeader } from "@/components/common/PageHeader";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Helmet } from "react-helmet-async";
@@ -260,63 +261,80 @@ const TelegramOrderPage = () => {
       <AppLayout>
         <div className="space-y-4 sm:space-y-6">
           {/* Header */}
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-              <div className="flex-1 min-w-0">
-                <h1 className="text-xl sm:text-2xl font-bold text-primary flex items-center gap-2">
-                  <span className="text-muted-foreground">&gt;</span>
-                  <span className="truncate">云下单</span>
-                  <span className="cursor-blink">_</span>
-                </h1>
-                <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-                  网页演练云端与 Bot 相同的快捷命令。收消息走后端轮询，只需设置里填写 Token 和 Chat ID。
-                </p>
+          <PageHeader
+            icon={Zap}
+            title="云下单"
+            description="网页演练云端与 Bot 相同的快捷命令 · 设置填写 Token 和 Chat ID"
+            action={
+              <div className="flex items-center gap-2">
+                {/* Bot Connection Status */}
+                {poller.isFetching && !poller.data ? (
+                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/60 px-2.5 h-8 rounded-lg border border-border/60 flex-shrink-0">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <span className="hidden sm:inline">检查中</span>
+                  </span>
+                ) : isPollerConnected ? (
+                  <span
+                    className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2.5 h-8 rounded-lg border border-emerald-500/25 flex-shrink-0"
+                    title={poller.data?.botUsername ? `@${poller.data.botUsername} 轮询正常` : "Bot 轮询正常"}
+                  >
+                    <Wifi className="h-3.5 w-3.5" />
+                    <span>轮询中</span>
+                    {poller.data?.botUsername ? (
+                      <span className="hidden md:inline font-mono text-[11px] text-muted-foreground">
+                        @{poller.data.botUsername}
+                      </span>
+                    ) : null}
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1.5 text-xs text-destructive bg-destructive/10 px-2.5 h-8 rounded-lg border border-destructive/20 flex-shrink-0">
+                    <WifiOff className="h-3.5 w-3.5" />
+                    <span>未连接</span>
+                  </span>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void poller.refetch()}
+                  disabled={poller.isFetching}
+                  className="h-8 w-8 p-0 rounded-lg border-border/80 hover:bg-secondary flex-shrink-0"
+                  title="刷新 Bot 状态"
+                >
+                  <RefreshCw className={cn("h-3.5 w-3.5", poller.isFetching && "animate-spin")} />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRegisterCommands}
+                  className="h-8 text-xs gap-1.5 border-border/80 hover:bg-secondary px-2.5 sm:px-3 rounded-lg flex-shrink-0"
+                  title="向 Telegram 注册 Bot 命令菜单（/buy /stock 等）"
+                >
+                  <Settings2 className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="hidden sm:inline">注册命令菜单</span>
+                  <span className="sm:hidden">注册菜单</span>
+                </Button>
               </div>
-              {/* Bot Connection Status */}
-              {poller.isFetching && !poller.data ? (
-                <span className="flex items-center gap-1 text-xs text-muted-foreground bg-muted px-2 py-1 rounded w-fit">
-                  <Loader2 className="h-3 w-3 animate-spin" /> 检查中
-                </span>
-              ) : isPollerConnected ? (
-                <span className="flex items-center gap-1 text-xs text-primary bg-primary/10 px-2 py-1 rounded w-fit">
-                  <Wifi className="h-3 w-3" /> 轮询中{poller.data?.botUsername ? ` @${poller.data.botUsername}` : ""}
-                </span>
-              ) : (
-                <span className="flex items-center gap-1 text-xs text-destructive bg-destructive/10 px-2 py-1 rounded w-fit">
-                  <WifiOff className="h-3 w-3" /> 未连接
-                </span>
-              )}
-            </div>
-            
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" onClick={() => void poller.refetch()} disabled={poller.isFetching} className="h-8 text-xs">
-                <RefreshCw className={cn("h-3 w-3 sm:h-4 sm:w-4 mr-1", poller.isFetching && "animate-spin")} />
-                刷新
-              </Button>
-              <Button variant="outline" size="sm" onClick={handleRegisterCommands} className="h-8 text-xs">
-                <Settings2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1" />
-                注册命令菜单
-              </Button>
-            </div>
-          </div>
+            }
+          />
 
           {/* Mode Selection Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-3">
             {orderModes.map((mode) => (
               <button
                 key={mode.mode}
                 onClick={() => setSelectedMode(mode.mode)}
                 className={cn(
-                  "terminal-card p-2 sm:p-4 text-left transition-all hover:border-primary/50",
+                  "surface-card rounded-xl p-3 sm:p-4 text-left transition-all duration-200 border border-border/80 hover:border-border",
                   selectedMode === mode.mode 
-                    ? "border-primary bg-primary/12 text-foreground" 
-                    : "border-border"
+                    ? "border-primary bg-primary/10 text-foreground" 
+                    : "text-muted-foreground hover:text-foreground",
+                  mode.mode === 'buy' && "col-span-2 sm:col-span-1"
                 )}
               >
-                <div className={cn("mb-1 sm:mb-2", mode.color)}>
+                <div className={cn("mb-1.5 sm:mb-2", mode.color)}>
                   {mode.icon}
                 </div>
-                <h3 className="font-medium text-xs sm:text-sm">{mode.name}</h3>
+                <h3 className="font-medium text-xs sm:text-sm text-foreground">{mode.name}</h3>
                 <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 sm:mt-1 line-clamp-2 hidden xs:block">
                   {mode.description}
                 </p>
@@ -326,26 +344,29 @@ const TelegramOrderPage = () => {
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
             {/* Configuration Panel */}
-            <TerminalCard
-              title={`${currentMode.name} 配置`}
-              icon={currentMode.icon}
-            >
-              <div className="space-y-4">
+            <Card className="surface-card rounded-xl border-border flex flex-col">
+              <CardHeader className="p-4 sm:p-5 pb-3 border-b border-border/40">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <span className="text-primary">{currentMode.icon}</span>
+                  <span>{currentMode.name} 配置</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 sm:p-5 space-y-4 flex-1">
                 {/* Mode Info */}
-                <div className="p-3 bg-muted/50 rounded-sm border border-border">
-                  <div className="flex items-start gap-2">
-                    <Info className="h-4 w-4 text-primary mt-0.5" />
-                    <div>
-                      <p className="text-sm">{currentMode.description}</p>
-                      <p className="text-xs text-muted-foreground mt-1 font-mono">
+                <div className="p-3 bg-secondary/40 rounded-xl border border-border/60">
+                  <div className="flex items-start gap-2.5">
+                    <Info className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-xs text-foreground/90 leading-relaxed">{currentMode.description}</p>
+                      <p className="text-[11px] text-muted-foreground mt-1 font-mono">
                         示例: {currentMode.example}
                       </p>
                     </div>
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label>服务器型号 *</Label>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium">服务器型号 *</Label>
                   <PlanCodeCombobox
                     value={planCode}
                     onChange={setPlanCode}
@@ -355,43 +376,53 @@ const TelegramOrderPage = () => {
                 </div>
 
                 {needsDatacenter && (
-                  <DatacenterPicker
-                    multiple={false}
-                    value={datacenter ? [datacenter] : []}
-                    onChange={(codes) => setDatacenter(codes[0] || "")}
-                    availability={dcAvailability}
-                    disabled={!planCode.trim()}
-                    placeholder="请先选择服务器型号，再点选机房。"
-                  />
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-medium">选择机房 *</Label>
+                    <DatacenterPicker
+                      multiple={false}
+                      value={datacenter ? [datacenter] : []}
+                      onChange={(codes) => setDatacenter(codes[0] || "")}
+                      availability={dcAvailability}
+                      disabled={!planCode.trim()}
+                      placeholder="请先选择服务器型号，再点选机房。"
+                    />
+                  </div>
                 )}
 
                 {/* Quantity (only for buy mode) */}
                 {selectedMode === 'buy' && (
-                  <div className="space-y-2">
-                    <Label>购买数量</Label>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-medium">购买数量</Label>
                     <Input 
                       type="number"
                       min={1}
                       max={10}
                       value={quantity}
                       onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
+                      className="h-8 rounded-lg text-xs bg-background/50 border-border/80"
                     />
                   </div>
                 )}
 
                 {/* Generated Command */}
                 {planCode && (
-                  <div className="space-y-2">
-                    <Label>生成的命令</Label>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-medium">生成的快捷命令</Label>
                     <div className="flex items-center gap-2">
-                      <code className="flex-1 px-3 py-2 bg-background border border-border rounded-sm font-mono text-sm text-primary">
+                      <code className="flex-1 px-3 py-2 bg-secondary/40 border border-border/80 rounded-lg font-mono text-xs text-primary truncate">
                         {generateCommand()}
                       </code>
-                      <Button variant="outline" size="sm" onClick={copyCommand}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={copyCommand}
+                        className="h-8 w-8 p-0 rounded-lg border-border/80 hover:bg-secondary flex-shrink-0"
+                        title="复制命令"
+                      >
                         {copied ? (
-                          <CheckCircle2 className="h-4 w-4 text-primary" />
+                          <CheckCircle2 className="h-3.5 w-3.5 text-primary" />
                         ) : (
-                          <Copy className="h-4 w-4" />
+                          <Copy className="h-3.5 w-3.5" />
                         )}
                       </Button>
                     </div>
@@ -400,148 +431,165 @@ const TelegramOrderPage = () => {
 
                 {/* Submit Button */}
                 <Button 
-                  className="w-full" 
+                  className="w-full h-9 rounded-lg font-medium text-xs gap-1.5 mt-2" 
                   onClick={handleSubmit} 
                   disabled={isSubmitting || !planCode}
                 >
                   {isSubmitting ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   ) : (
-                    <Send className="h-4 w-4 mr-2" />
+                    <Send className="h-3.5 w-3.5" />
                   )}
                   执行 {currentMode.name}
                 </Button>
-              </div>
-            </TerminalCard>
+              </CardContent>
+            </Card>
 
             {/* Result Panel */}
-            <TerminalCard
-              title="执行结果"
-              icon={<MessageSquare className="h-4 w-4" />}
-            >
-              {lastResult ? (
-                <div className="space-y-4">
-                  <div className={cn(
-                    "p-4 rounded-sm border",
-                    lastResult.success 
-                      ? "bg-primary/10 border-primary/30" 
-                      : "bg-destructive/10 border-destructive/30"
-                  )}>
-                    <div className="flex items-center gap-2 mb-2">
-                      {lastResult.success ? (
-                        <CheckCircle2 className="h-5 w-5 text-primary" />
-                      ) : (
-                        <Info className="h-5 w-5 text-destructive" />
-                      )}
-                      <span className={cn(
-                        "font-medium",
-                        lastResult.success ? "text-primary" : "text-destructive"
-                      )}>
-                        {lastResult.success ? "操作成功" : "操作失败"}
-                      </span>
-                    </div>
-                    <p className="text-sm">
-                      {lastResult.message || lastResult.error}
-                    </p>
-                  </div>
-
-                  {/* Additional Result Info */}
-                  {lastResult.price && (
-                    <div className="p-3 bg-muted/50 rounded-sm border border-border">
-                      <p className="text-sm text-muted-foreground mb-1">价格信息</p>
-                      <p className="text-lg font-bold font-mono text-accent">
-                        {lastResult.price.prices?.withTax?.toFixed(2) || lastResult.price} €
+            <Card className="surface-card rounded-xl border-border flex flex-col">
+              <CardHeader className="p-4 sm:p-5 pb-3 border-b border-border/40">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4 text-primary" />
+                  <span>执行结果</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 sm:p-5 flex-1 flex flex-col justify-center">
+                {lastResult ? (
+                  <div className="space-y-3 w-full">
+                    <div className={cn(
+                      "p-3.5 rounded-xl border",
+                      lastResult.success 
+                        ? "bg-primary/10 border-primary/30" 
+                        : "bg-destructive/10 border-destructive/30"
+                    )}>
+                      <div className="flex items-center gap-2 mb-1.5">
+                        {lastResult.success ? (
+                          <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />
+                        ) : (
+                          <Info className="h-4 w-4 text-destructive flex-shrink-0" />
+                        )}
+                        <span className={cn(
+                          "text-xs font-semibold",
+                          lastResult.success ? "text-primary" : "text-destructive"
+                        )}>
+                          {lastResult.success ? "操作成功" : "操作失败"}
+                        </span>
+                      </div>
+                      <p className="text-xs text-foreground/90 leading-relaxed break-words">
+                        {lastResult.message || lastResult.error}
                       </p>
                     </div>
-                  )}
 
-                  {lastResult.orderId && (
-                    <div className="p-3 bg-muted/50 rounded-sm border border-border">
-                      <p className="text-sm text-muted-foreground mb-1">订单ID</p>
-                      <p className="font-mono text-primary">{lastResult.orderId}</p>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="text-center py-12 text-muted-foreground">
-                  <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-30" />
-                  <p>执行操作后结果将显示在这里</p>
-                </div>
-              )}
-            </TerminalCard>
+                    {lastResult.price && (
+                      <div className="p-3 bg-secondary/30 rounded-xl border border-border/60 flex items-center justify-between">
+                        <span className="text-xs text-muted-foreground">价格信息</span>
+                        <span className="text-base font-bold font-mono text-foreground">
+                          {lastResult.price.prices?.withTax?.toFixed(2) || lastResult.price} €
+                        </span>
+                      </div>
+                    )}
+
+                    {lastResult.orderId && (
+                      <div className="p-3 bg-secondary/30 rounded-xl border border-border/60 flex items-center justify-between">
+                        <span className="text-xs text-muted-foreground">订单 ID</span>
+                        <span className="font-mono text-xs font-semibold text-primary">{lastResult.orderId}</span>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center py-10 text-muted-foreground">
+                    <MessageSquare className="h-10 w-10 mx-auto mb-2.5 opacity-20" />
+                    <p className="text-xs">执行操作后结果将显示在这里</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
             {/* Command History Panel */}
-            <TerminalCard
-              title="命令历史"
-              icon={<History className="h-4 w-4" />}
-              headerAction={
-                commandHistory.length > 0 ? (
-                  <Button variant="ghost" size="sm" onClick={clearHistory}>
+            <Card className="surface-card rounded-xl border-border flex flex-col">
+              <CardHeader className="p-4 sm:p-5 pb-3 border-b border-border/40 flex flex-row items-center justify-between">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <History className="w-4 h-4 text-primary" />
+                  <span>命令历史</span>
+                </CardTitle>
+                {commandHistory.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={clearHistory}
+                    className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive gap-1"
+                  >
                     <Trash2 className="h-3 w-3" />
+                    <span>清空</span>
                   </Button>
-                ) : undefined
-              }
-            >
-              {commandHistory.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  <History className="h-12 w-12 mx-auto mb-4 opacity-30" />
-                  <p>暂无历史记录</p>
-                </div>
-              ) : (
-                <div className="space-y-2 max-h-80 overflow-y-auto">
-                  {commandHistory.map((item) => (
-                    <div 
-                      key={item.id}
-                      className={cn(
-                        "p-3 rounded-sm border transition-colors hover:border-primary/30 cursor-pointer group",
-                        item.success ? "border-border" : "border-destructive/30"
-                      )}
-                      onClick={() => repeatCommand(item)}
-                    >
-                      <div className="flex items-center justify-between">
-                        <code className="font-mono text-xs text-primary">
-                          {item.command}
-                        </code>
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          className="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 p-0"
-                        >
-                          <Play className="h-3 w-3" />
-                        </Button>
-                      </div>
-                      <div className="flex items-center gap-2 mt-1">
-                        <Badge variant="outline" className="text-xs">
-                          {orderModes.find(m => m.mode === item.mode)?.name}
-                        </Badge>
-                        <span className="text-xs text-muted-foreground">
-                          {new Date(item.timestamp).toLocaleString("zh-CN")}
-                        </span>
-                        {!item.success && (
-                          <span className="text-xs text-destructive">失败</span>
+                )}
+              </CardHeader>
+              <CardContent className="p-4 sm:p-5 flex-1">
+                {commandHistory.length === 0 ? (
+                  <div className="text-center py-10 text-muted-foreground">
+                    <History className="h-10 w-10 mx-auto mb-2.5 opacity-20" />
+                    <p className="text-xs">暂无历史记录</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                    {commandHistory.map((item) => (
+                      <div 
+                        key={item.id}
+                        className={cn(
+                          "p-2.5 rounded-lg border transition-all hover:border-primary/40 cursor-pointer group bg-secondary/20",
+                          item.success ? "border-border/70" : "border-destructive/30"
                         )}
+                        onClick={() => repeatCommand(item)}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <code className="font-mono text-xs text-primary truncate">
+                            {item.command}
+                          </code>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 p-0 rounded-md"
+                          >
+                            <Play className="h-3 w-3" />
+                          </Button>
+                        </div>
+                        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 rounded">
+                            {orderModes.find(m => m.mode === item.mode)?.name}
+                          </Badge>
+                          <span className="text-[11px] text-muted-foreground font-mono">
+                            {new Date(item.timestamp).toLocaleString("zh-CN")}
+                          </span>
+                          {!item.success && (
+                            <span className="text-[10px] text-destructive font-medium">失败</span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </TerminalCard>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
 
           {/* Command Reference */}
-          <TerminalCard
-            title="快捷指令参考与使用说明"
-            icon={<Info className="h-4 w-4" />}
-          >
-            <div className="space-y-4">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+          <Card className="surface-card rounded-xl border-border">
+            <CardHeader className="p-4 sm:p-5 pb-3 border-b border-border/40">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Info className="w-4 h-4 text-primary" />
+                <span>快捷指令参考与使用说明</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 sm:p-5 space-y-4">
+              {/* Desktop Table View */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full text-xs">
                   <thead>
-                    <tr className="text-xs text-muted-foreground uppercase border-b border-border">
-                      <th className="text-left py-2.5 px-2">命令</th>
-                      <th className="text-left py-2.5 px-2">格式</th>
-                      <th className="text-left py-2.5 px-2">说明</th>
-                      <th className="text-left py-2.5 px-2">示例</th>
+                    <tr className="text-muted-foreground uppercase border-b border-border/60 text-[11px]">
+                      <th className="text-left py-2.5 px-3">命令</th>
+                      <th className="text-left py-2.5 px-3">格式</th>
+                      <th className="text-left py-2.5 px-3">说明</th>
+                      <th className="text-left py-2.5 px-3">示例</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -551,60 +599,60 @@ const TelegramOrderPage = () => {
                         format: "/buy [型号] [机房] [数量]",
                         description: "快速下单或抢购排队（有货秒抢 / 缺货挂机）",
                         example: "/buy 24ska01 gra 1",
-                        color: "text-red-500",
+                        badgeClass: "border-red-500/30 text-red-400 bg-red-500/10",
                       },
                       {
                         command: "/stock",
                         format: "/stock <型号>",
                         description: "查询实时库存并支持直接点选加购",
                         example: "/stock 24ska01",
-                        color: "text-blue-500",
+                        badgeClass: "border-blue-500/30 text-blue-400 bg-blue-500/10",
                       },
                       {
                         command: "/monitor",
                         format: "/monitor <型号> [机房...]",
                         description: "添加型号监控，上架有货时自动发送通知",
                         example: "/monitor 24ska01 gra rbx",
-                        color: "text-green-500",
+                        badgeClass: "border-emerald-500/30 text-emerald-400 bg-emerald-500/10",
                       },
                       {
                         command: "/price",
                         format: "/price <型号> <机房>",
                         description: "查询指定型号在特定机房的实际落地价格",
                         example: "/price 24ska01 gra",
-                        color: "text-yellow-500",
+                        badgeClass: "border-amber-500/30 text-amber-400 bg-amber-500/10",
                       },
                       {
                         command: "/tasks",
                         format: "/tasks",
                         description: "查看当前挂机抢购任务队列，支持一键取消",
                         example: "/tasks",
-                        color: "text-purple-500",
+                        badgeClass: "border-purple-500/30 text-purple-400 bg-purple-500/10",
                       },
                       {
                         command: "/accounts",
                         format: "/accounts",
                         description: "查看各区域绑定的 OVH 账户与切换默认号",
                         example: "/accounts",
-                        color: "text-cyan-500",
+                        badgeClass: "border-border text-foreground bg-secondary/50",
                       },
                     ].map((cmd) => (
                       <tr 
                         key={cmd.command}
-                        className="border-b border-border/50 hover:bg-muted/30 transition-colors"
+                        className="border-b border-border/40 hover:bg-secondary/30 transition-colors"
                       >
-                        <td className="py-2.5 px-2">
-                          <Badge variant="outline" className={cmd.color}>
+                        <td className="py-2.5 px-3">
+                          <Badge variant="outline" className={cn("font-mono text-xs px-2 py-0.5 rounded-md", cmd.badgeClass)}>
                             {cmd.command}
                           </Badge>
                         </td>
-                        <td className="py-2.5 px-2 font-mono text-xs text-muted-foreground">
+                        <td className="py-2.5 px-3 font-mono text-muted-foreground">
                           {cmd.format}
                         </td>
-                        <td className="py-2.5 px-2 text-foreground/90">
+                        <td className="py-2.5 px-3 text-foreground/90">
                           {cmd.description}
                         </td>
-                        <td className="py-2.5 px-2 font-mono text-xs text-primary">
+                        <td className="py-2.5 px-3 font-mono text-primary">
                           <div className="flex items-center gap-1.5">
                             <span>{cmd.example}</span>
                             <button
@@ -613,7 +661,7 @@ const TelegramOrderPage = () => {
                                 navigator.clipboard.writeText(cmd.example);
                                 toast.success(`已复制: ${cmd.example}`);
                               }}
-                              className="text-muted-foreground hover:text-primary transition-colors p-0.5"
+                              className="text-muted-foreground hover:text-primary transition-colors p-1 rounded hover:bg-secondary"
                               title="复制示例"
                             >
                               <Copy className="h-3 w-3" />
@@ -626,17 +674,92 @@ const TelegramOrderPage = () => {
                 </table>
               </div>
 
+              {/* Mobile Command Cards */}
+              <div className="md:hidden grid grid-cols-1 gap-2.5">
+                {[
+                  {
+                    command: "/buy",
+                    format: "/buy [型号] [机房] [数量]",
+                    description: "快速下单或抢购排队（有货秒抢 / 缺货挂机）",
+                    example: "/buy 24ska01 gra 1",
+                    badgeClass: "border-red-500/30 text-red-400 bg-red-500/10",
+                  },
+                  {
+                    command: "/stock",
+                    format: "/stock <型号>",
+                    description: "查询实时库存并支持直接点选加购",
+                    example: "/stock 24ska01",
+                    badgeClass: "border-blue-500/30 text-blue-400 bg-blue-500/10",
+                  },
+                  {
+                    command: "/monitor",
+                    format: "/monitor <型号> [机房...]",
+                    description: "添加型号监控，上架有货时自动发送通知",
+                    example: "/monitor 24ska01 gra rbx",
+                    badgeClass: "border-emerald-500/30 text-emerald-400 bg-emerald-500/10",
+                  },
+                  {
+                    command: "/price",
+                    format: "/price <型号> <机房>",
+                    description: "查询指定型号在特定机房的实际落地价格",
+                    example: "/price 24ska01 gra",
+                    badgeClass: "border-amber-500/30 text-amber-400 bg-amber-500/10",
+                  },
+                  {
+                    command: "/tasks",
+                    format: "/tasks",
+                    description: "查看当前挂机抢购任务队列，支持一键取消",
+                    example: "/tasks",
+                    badgeClass: "border-purple-500/30 text-purple-400 bg-purple-500/10",
+                  },
+                  {
+                    command: "/accounts",
+                    format: "/accounts",
+                    description: "查看各区域绑定的 OVH 账户与切换默认号",
+                    example: "/accounts",
+                    badgeClass: "border-border text-foreground bg-secondary/50",
+                  },
+                ].map((cmd) => (
+                  <div
+                    key={cmd.command}
+                    className="p-3 rounded-xl border border-border/70 bg-secondary/20 space-y-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <Badge variant="outline" className={cn("font-mono text-xs px-2 py-0.5 rounded-md", cmd.badgeClass)}>
+                        {cmd.command}
+                      </Badge>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(cmd.example);
+                          toast.success(`已复制: ${cmd.example}`);
+                        }}
+                        className="inline-flex items-center gap-1 text-[11px] font-mono text-primary bg-primary/10 hover:bg-primary/20 px-2 py-1 rounded-md border border-primary/20 transition-colors"
+                        title="复制示例"
+                      >
+                        <span>{cmd.example}</span>
+                        <Copy className="h-3 w-3 ml-0.5" />
+                      </button>
+                    </div>
+                    <p className="text-xs text-foreground/90">{cmd.description}</p>
+                    <div className="text-[11px] font-mono text-muted-foreground bg-secondary/50 px-2.5 py-1 rounded-md">
+                      格式: {cmd.format}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
               {/* Free-form & Tips */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
-                <div className="p-3 bg-muted/40 rounded-sm border border-border/70 text-xs space-y-1.5">
+                <div className="p-3.5 bg-secondary/30 rounded-xl border border-border/70 text-xs space-y-2">
                   <div className="flex items-center gap-1.5 font-medium text-foreground">
                     <Zap className="h-3.5 w-3.5 text-amber-500" />
                     <span>免斜杠极速模式 (直接发送)</span>
                   </div>
-                  <p className="text-muted-foreground leading-relaxed">
+                  <p className="text-muted-foreground leading-relaxed text-[12px]">
                     在 Telegram 聊天框或快捷命令中直接发送（无需斜杠前缀）：
                   </p>
-                  <div className="flex items-center justify-between bg-background/80 px-2.5 py-1.5 rounded border border-border/60 font-mono text-xs text-primary">
+                  <div className="flex items-center justify-between bg-background/80 px-3 py-2 rounded-lg border border-border/70 font-mono text-xs text-primary">
                     <span>24ska01 gra 1</span>
                     <button
                       type="button"
@@ -644,40 +767,40 @@ const TelegramOrderPage = () => {
                         navigator.clipboard.writeText("24ska01 gra 1");
                         toast.success("已复制: 24ska01 gra 1");
                       }}
-                      className="text-muted-foreground hover:text-primary transition-colors ml-2"
+                      className="text-muted-foreground hover:text-primary transition-colors ml-2 p-1 rounded hover:bg-secondary"
                       title="复制"
                     >
-                      <Copy className="h-3 w-3" />
+                      <Copy className="h-3.5 w-3.5" />
                     </button>
                   </div>
                   <p className="text-muted-foreground text-[11px]">
-                    格式: <code className="font-mono text-foreground/80">&lt;型号&gt; [机房] [数量] [系统选项]</code>
+                    格式: <code className="font-mono text-foreground/80 bg-secondary/50 px-1.5 py-0.5 rounded">&lt;型号&gt; [机房] [数量] [系统选项]</code>
                   </p>
                 </div>
 
-                <div className="p-3 bg-muted/40 rounded-sm border border-border/70 text-xs space-y-1.5">
+                <div className="p-3.5 bg-secondary/30 rounded-xl border border-border/70 text-xs space-y-2">
                   <div className="flex items-center gap-1.5 font-medium text-foreground">
                     <Info className="h-3.5 w-3.5 text-primary" />
                     <span>使用与安全说明</span>
                   </div>
-                  <ul className="text-muted-foreground space-y-1 text-[11px] leading-relaxed list-disc list-inside">
+                  <ul className="text-muted-foreground space-y-1.5 text-[11px] leading-relaxed list-disc list-inside">
                     <li>
                       <span className="text-foreground/90 font-medium">鉴权安全：</span>
-                      仅在【系统设置】中授权的 <code className="font-mono text-primary">Chat ID</code> 可下单。
+                      仅在【系统设置】中授权的 <code className="font-mono text-primary bg-secondary/50 px-1 py-0.5 rounded">Chat ID</code> 可下单。
                     </li>
                     <li>
                       <span className="text-foreground/90 font-medium">机房代码：</span>
-                      支持常用缩写如 <code className="font-mono text-primary">gra</code> / <code className="font-mono text-primary">rbx</code> / <code className="font-mono text-primary">bhs</code> / <code className="font-mono text-primary">sbg</code> / <code className="font-mono text-primary">waw</code>（不区分大小写）。
+                      支持常用缩写如 <code className="font-mono text-primary bg-secondary/50 px-1 py-0.5 rounded">gra</code> / <code className="font-mono text-primary bg-secondary/50 px-1 py-0.5 rounded">rbx</code> / <code className="font-mono text-primary bg-secondary/50 px-1 py-0.5 rounded">bhs</code> / <code className="font-mono text-primary bg-secondary/50 px-1 py-0.5 rounded">sbg</code> / <code className="font-mono text-primary bg-secondary/50 px-1 py-0.5 rounded">waw</code>（不区分大小写）。
                     </li>
                     <li>
                       <span className="text-foreground/90 font-medium">交互点选：</span>
-                      在 Telegram 中发送 <code className="font-mono text-primary">/start</code> 或 <code className="font-mono text-primary">/buy</code> 亦可展开多级菜单点选。
+                      在 Telegram 中发送 <code className="font-mono text-primary bg-secondary/50 px-1 py-0.5 rounded">/start</code> 或 <code className="font-mono text-primary bg-secondary/50 px-1 py-0.5 rounded">/buy</code> 亦可展开多级菜单点选。
                     </li>
                   </ul>
                 </div>
               </div>
-            </div>
-          </TerminalCard>
+            </CardContent>
+          </Card>
         </div>
       </AppLayout>
     </>

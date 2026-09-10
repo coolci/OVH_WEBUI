@@ -10,31 +10,31 @@ interface PageHeaderProps {
   className?: string;
 }
 
-/** Page title: type-only, emerald hairline, matches console chrome. */
+/** Page title: responsive, clean accent bar, never crushed on mobile, spacious on desktop. */
 export function PageHeader({ title, description, action, className }: PageHeaderProps) {
   return (
     <div
       className={cn(
-        "flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-5",
+        "flex items-center justify-between gap-2.5 sm:gap-4 pb-1 sm:pb-2",
         className
       )}
     >
-      <div className="relative min-w-0 pl-3.5">
+      <div className="relative min-w-0 pl-3 sm:pl-3.5 flex-1 pr-1">
         <span
           aria-hidden
-          className="absolute left-0 top-[0.15rem] bottom-[0.15rem] w-0.5 rounded-full bg-primary"
+          className="absolute left-0 top-1 bottom-1 w-0.5 rounded-full bg-primary"
         />
-        <h1 className="text-[1.22rem] font-semibold leading-tight tracking-tight text-foreground sm:text-[1.38rem]">
+        <h1 className="text-base sm:text-lg font-bold leading-tight tracking-tight text-foreground whitespace-nowrap flex-shrink-0">
           {title}
         </h1>
         {description && (
-          <p className="mt-1 max-w-2xl line-clamp-2 text-[12.5px] leading-relaxed text-muted-foreground sm:line-clamp-1">
+          <p className="mt-0.5 text-xs text-muted-foreground truncate">
             {description}
           </p>
         )}
       </div>
       {action && (
-        <div className="flex flex-wrap items-center gap-2 sm:flex-shrink-0 sm:justify-end">
+        <div className="flex items-center gap-2 flex-shrink-0">
           {action}
         </div>
       )}

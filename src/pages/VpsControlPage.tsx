@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import {
   Cloud, Power, PowerOff, RefreshCw, Monitor, KeyRound, HardDrive, Cpu, MemoryStick,
   MapPin, Globe, CalendarClock, CalendarPlus, Repeat, Eye, EyeOff,
-  AlertTriangle, ListTodo, Terminal,
+  AlertTriangle, ListTodo, Terminal, Settings, Zap,
 } from "lucide-react";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
@@ -79,69 +79,80 @@ function VpsControlPage() {
         description="已购 VPS 的电源 / 快照 / 重装 / 控制台管理"
         icon={Cloud}
         action={
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={toggle}>
-              {hidden ? <EyeOff className="w-4 h-4 mr-1" /> : <Eye className="w-4 h-4 mr-1" />}
-              {hidden ? "显示 IP" : "隐藏 IP"}
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5 border-border/80 hover:bg-secondary" onClick={toggle}>
+              {hidden ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              <span>{hidden ? "显示 IP" : "隐藏 IP"}</span>
             </Button>
-            <Button variant="outline" size="sm" onClick={() => q.refetch()} disabled={q.isFetching}>
-              <RefreshCw className={"w-4 h-4 mr-1" + (q.isFetching ? " animate-spin" : "")} />
-              刷新
+            <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5 border-border/80 hover:bg-secondary" onClick={() => q.refetch()} disabled={q.isFetching}>
+              <RefreshCw className={"w-3.5 h-3.5" + (q.isFetching ? " animate-spin" : "")} />
+              <span className="hidden sm:inline">刷新</span>
             </Button>
           </div>
         }
       />
 
       {/* 账户 + VPS 选择 */}
-      <Card>
-        <CardContent className="p-4 flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2">
-            <span className="text-[12px] text-muted-foreground">账户</span>
-            <Select value={activeAccount || ""} onValueChange={(v) => setActiveAccount(v || "")}>
-              <SelectTrigger className="h-10 w-full sm:w-44 min-h-10 touch-manipulation">
-                <SelectValue placeholder="选择账户" />
-              </SelectTrigger>
-              <SelectContent>
-                {(accounts || []).map((a) => (
-                  <SelectItem key={a.id} value={a.id}>
-                    {a.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-col sm:flex-row sm:items-center gap-2 flex-1 min-w-0 w-full">
-            <span className="text-[12px] text-muted-foreground flex-shrink-0">VPS</span>
-            <Select value={selectedName || ""} onValueChange={setSelectedName}>
-              <SelectTrigger className="h-10 w-full min-h-10 touch-manipulation">
-                <SelectValue placeholder={vpsList.length === 0 ? "无 VPS" : "选择 VPS"} />
-              </SelectTrigger>
-              <SelectContent>
-                {vpsList.map((v) => {
-                  const label = aliasOf(aliases.data, v.serviceName, v.displayName || v.serviceName);
-                  return (
-                    <SelectItem key={v.serviceName} value={v.serviceName}>
-                      <span className="flex items-center gap-2">
-                        <StatusDot tone={v.state === "running" ? "success" : v.state === "stopped" ? "warning" : "muted"} />
-                        <span className="truncate">{label}</span>
-                        <span className="text-[10px] text-muted-foreground font-mono">{v.serviceName}</span>
-                      </span>
+      <Card className="surface-card rounded-xl border-border">
+        <CardContent className="p-3 sm:p-4">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-4">
+            {/* 账户选择 */}
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <span className="text-xs font-medium text-muted-foreground whitespace-nowrap w-9 sm:w-auto flex-shrink-0">
+                账户
+              </span>
+              <Select value={activeAccount || ""} onValueChange={(v) => setActiveAccount(v || "")}>
+                <SelectTrigger className="h-9 rounded-lg w-full text-xs border-border/80 bg-background/50 touch-manipulation">
+                  <SelectValue placeholder="选择账户" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(accounts || []).map((a) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.name}
                     </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="text-[11px] text-muted-foreground">
-            共 {vpsList.length} 台
-            {q.isFetching && " · 同步中…"}
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* VPS 选择 */}
+            <div className="flex items-center gap-2 flex-[2] min-w-0">
+              <span className="text-xs font-medium text-muted-foreground whitespace-nowrap w-9 sm:w-auto flex-shrink-0">
+                VPS
+              </span>
+              <Select value={selectedName || ""} onValueChange={setSelectedName}>
+                <SelectTrigger className="h-9 rounded-lg w-full text-xs border-border/80 bg-background/50 touch-manipulation">
+                  <SelectValue placeholder={vpsList.length === 0 ? "无 VPS" : "选择 VPS"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {vpsList.map((v) => {
+                    const label = aliasOf(aliases.data, v.serviceName, v.displayName || v.serviceName);
+                    return (
+                      <SelectItem key={v.serviceName} value={v.serviceName}>
+                        <span className="flex items-center gap-2">
+                          <StatusDot tone={v.state === "running" ? "success" : v.state === "stopped" ? "warning" : "muted"} />
+                          <span className="truncate">{label}</span>
+                          <span className="text-[10px] text-muted-foreground font-mono">{v.serviceName}</span>
+                        </span>
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* 设备统计 */}
+            <div className="text-[11px] text-muted-foreground flex items-center justify-between sm:justify-end gap-2 flex-shrink-0 pt-1.5 sm:pt-0 border-t sm:border-t-0 border-border/40">
+              <span>共 {vpsList.length} 台 VPS</span>
+              {q.isFetching && <span className="text-primary font-medium animate-pulse">同步中…</span>}
+            </div>
           </div>
         </CardContent>
       </Card>
 
       {/* 内容区 */}
       {!q.isPending && vpsList.length === 0 ? (
-        <Card>
+        <Card className="surface-card rounded-xl border-border">
           <CardContent className="py-12">
             <EmptyState icon={Cloud} title="该账户下暂无 VPS" description="可以去 OVH 官网下单,或换个有 VPS 的账户" />
           </CardContent>
@@ -297,36 +308,56 @@ function VpsDetail({
 
   const ipDisplay = ips.data && ips.data.length > 0 ? maskSensitive(ips.data[0].ipAddress, hidden) : "—";
 
-  return (
-    <>
-      <Tabs defaultValue="overview">
-        {/* 顶部信息条 + 工具按钮 */}
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <TabsList className="grid grid-cols-4 sm:flex h-auto gap-1 p-1">
-            <TabsTrigger value="overview" className="text-[12px] sm:text-sm px-2 sm:px-3">概览</TabsTrigger>
-            <TabsTrigger value="snapshot" className="text-[12px] sm:text-sm px-2 sm:px-3">快照</TabsTrigger>
-            <TabsTrigger value="ddos" className="text-[12px] sm:text-sm px-2 sm:px-3">DDoS</TabsTrigger>
-            <TabsTrigger value="maintenance" className="text-[12px] sm:text-sm px-2 sm:px-3">维护</TabsTrigger>
-          </TabsList>
+  const vpsLabel = aliasOf(aliases.data, server.serviceName, server.displayName || server.serviceName);
 
-          <div className="flex flex-wrap gap-2 items-center">
-            <Chip tone={sLabel.tone}>{sLabel.text}</Chip>
+  return (
+    <div className="space-y-4">
+      {/* 顶部设备摘要卡片 (移动端 App 风格) */}
+      <Card className="surface-card rounded-xl border-border overflow-hidden">
+        <CardContent className="p-3.5 sm:p-4 space-y-3">
+          {/* 第一行: 别名/型号 + 状态 */}
+          <div className="flex items-start justify-between gap-2.5">
+            <div className="min-w-0 space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-semibold text-base sm:text-lg text-foreground truncate">
+                  {vpsLabel}
+                </span>
+                {server.model && (
+                  <span className="px-2 py-0.5 rounded-md text-[11px] font-mono bg-secondary text-muted-foreground border border-border/60">
+                    {server.model}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono flex-wrap">
+                <span>{server.serviceName}</span>
+                <span>·</span>
+                <span>IP: {ipDisplay}</span>
+              </div>
+            </div>
+            <Chip tone={sLabel.tone} className="flex-shrink-0">
+              <StatusDot tone={sLabel.tone === "default" ? "muted" : sLabel.tone} pulse={isRunning} size="xs" />
+              {sLabel.text}
+            </Chip>
+          </div>
+
+          {/* 第二行: 属性胶囊 (系统/到期/续费) */}
+          <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-border/50">
             {currentOS.data && (
               <button
                 type="button"
                 onClick={() => setReinstallOpen(true)}
-                className="inline-flex items-center gap-1.5 h-7 pl-2.5 pr-3 rounded-full border border-border bg-background hover:bg-muted cursor-pointer transition-colors shadow-sm text-[12px]"
+                className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border border-border bg-background hover:bg-muted cursor-pointer transition-colors text-[12px]"
                 title="点击进入重装系统"
               >
                 <Terminal className="w-3.5 h-3.5 text-muted-foreground" />
-                <span className="text-muted-foreground">系统</span>
-                <span className="font-medium truncate max-w-[220px]">{currentOS.data.name}</span>
+                <span className="text-muted-foreground">系统:</span>
+                <span className="font-medium truncate max-w-[140px] sm:max-w-[200px]">{currentOS.data.name}</span>
               </button>
             )}
             {info.data?.expiration && (
-              <span className="inline-flex items-center gap-1.5 h-7 pl-2.5 pr-3 rounded-full border border-border bg-secondary/50 text-[12px]">
+              <span className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border border-border bg-secondary/40 text-[12px]">
                 <CalendarClock className="w-3.5 h-3.5 text-muted-foreground" />
-                <span className="text-muted-foreground">到期</span>
+                <span className="text-muted-foreground">到期:</span>
                 <span className="font-medium">{new Date(info.data.expiration).toLocaleDateString("zh-CN")}</span>
               </span>
             )}
@@ -334,10 +365,11 @@ function VpsDetail({
               <button
                 type="button"
                 onClick={() => setRenewalOpen(true)}
-                className="inline-flex items-center gap-1.5 h-7 pl-2.5 pr-3 rounded-full border border-border bg-background hover:bg-muted cursor-pointer transition-colors shadow-sm text-[12px]"
+                className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border border-border bg-background hover:bg-muted cursor-pointer transition-colors text-[12px]"
+                title="点击管理续费策略"
               >
                 <Repeat className="w-3.5 h-3.5 text-muted-foreground" />
-                <span className="text-muted-foreground">续费</span>
+                <span className="text-muted-foreground">续费:</span>
                 <span className="font-medium">
                   {info.data.renewalDeleteAtExpiration
                     ? "到期注销"
@@ -351,69 +383,110 @@ function VpsDetail({
               </button>
             )}
           </div>
-        </div>
+        </CardContent>
+      </Card>
 
-        {/* 顶部硬件信息卡(VPS 简化版) */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3 mt-4">
-          <InfoCard icon={<Cpu className="w-4 h-4" />} label="vCore" value={String(server.vcore || "—")} />
-          <InfoCard
-            icon={<MemoryStick className="w-4 h-4" />}
-            label="内存"
-            value={server.memoryMB ? `${(server.memoryMB / 1024).toFixed(0)} GB` : "—"}
-          />
-          <InfoCard
-            icon={<HardDrive className="w-4 h-4" />}
-            label="磁盘"
-            value={server.diskGB ? `${server.diskGB} GB` : "—"}
-          />
-          <InfoCard
-            icon={<MapPin className="w-4 h-4" />}
-            label="区域"
-            value={humanZoneShort(server.zone)}
-          />
-        </div>
+      {/* 硬件规格 4 格卡片 (移动端 2x2, 桌面 4 列) */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
+        <InfoCard icon={<Cpu className="w-4 h-4 text-primary" />} label="vCore" value={String(server.vcore || "—")} />
+        <InfoCard
+          icon={<MemoryStick className="w-4 h-4 text-primary" />}
+          label="内存"
+          value={server.memoryMB ? `${(server.memoryMB / 1024).toFixed(0)} GB` : "—"}
+        />
+        <InfoCard
+          icon={<HardDrive className="w-4 h-4 text-primary" />}
+          label="磁盘"
+          value={server.diskGB ? `${server.diskGB} GB` : "—"}
+        />
+        <InfoCard
+          icon={<MapPin className="w-4 h-4 text-primary" />}
+          label="区域"
+          value={humanZoneShort(server.zone, server.cluster)}
+        />
+      </div>
 
-        {/* 电源 / 控制台 / 重装 / 改密 按钮行 */}
-        <div className="mt-4 border border-border rounded-2xl p-3 flex flex-wrap gap-2">
-          {isStopped && (
-            <Button onClick={handleStart} disabled={start.isPending}>
-              <Power className="w-4 h-4 mr-1" />
-              启动
+      {/* 快捷操作区 (移动 App 风格网格) */}
+      <Card className="surface-card rounded-xl border-border">
+        <CardContent className="p-3 sm:p-4 space-y-2.5">
+          {/* Tier 1: 电源控制与控制台 (对称 3 等分列) */}
+          <div className="grid grid-cols-3 gap-2">
+            {isStopped ? (
+              <Button size="sm" onClick={handleStart} disabled={start.isPending} className="h-10 text-xs font-medium">
+                <Power className="w-3.5 h-3.5 mr-1" />
+                开机
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setStopOpen(true)}
+                disabled={stop.isPending}
+                className="h-10 text-xs font-medium border-border/80 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30"
+              >
+                <PowerOff className="w-3.5 h-3.5 mr-1 text-destructive" />
+                关机
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleReboot}
+              disabled={reboot.isPending || !isRunning}
+              className="h-10 text-xs font-medium border-border/80"
+            >
+              <RefreshCw className="w-3.5 h-3.5 mr-1 text-primary" />
+              重启
             </Button>
-          )}
-          {isRunning && (
-            <Button variant="outline" onClick={() => setStopOpen(true)} disabled={stop.isPending}>
-              <PowerOff className="w-4 h-4 mr-1" />
-              关机
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleConsole}
+              disabled={console_.isPending}
+              className="h-10 text-xs font-medium border-border/80"
+            >
+              <Monitor className="w-3.5 h-3.5 mr-1 text-muted-foreground" />
+              Web控制台
             </Button>
-          )}
-          <Button variant="outline" onClick={handleReboot} disabled={reboot.isPending || !isRunning}>
-            <RefreshCw className="w-4 h-4 mr-1" />
-            重启
-          </Button>
-          <Button variant="outline" onClick={handleConsole} disabled={console_.isPending}>
-            <Monitor className="w-4 h-4 mr-1" />
-            Web 控制台
-          </Button>
-          <Button variant="outline" onClick={() => setReinstallOpen(true)}>
-            <HardDrive className="w-4 h-4 mr-1" />
-            重装系统
-          </Button>
-          {!isUS && (
-            <Button variant="outline" onClick={() => setSetPwdOpen(true)}>
-              <KeyRound className="w-4 h-4 mr-1" />
-              重置密码
+          </div>
+
+          {/* Tier 2: 常用运维 (移动端 2x2, 桌面 4 等分列) */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 border-t border-border/40">
+            <Button variant="outline" size="sm" onClick={() => setReinstallOpen(true)} className="h-9 text-xs font-normal border-border/70 justify-center">
+              <HardDrive className="w-3.5 h-3.5 mr-1.5 text-muted-foreground" />
+              重装系统
             </Button>
-          )}
-          <Button variant="outline" onClick={() => setEngagementOpen(true)}>
-            <CalendarPlus className="w-4 h-4 mr-1" />
-            合同期
-          </Button>
-          <Button variant="outline" onClick={() => setTasksOpen(true)}>
-            <ListTodo className="w-4 h-4 mr-1" />
-            任务历史
-          </Button>
-        </div>
+            {!isUS ? (
+              <Button variant="outline" size="sm" onClick={() => setSetPwdOpen(true)} className="h-9 text-xs font-normal border-border/70 justify-center">
+                <KeyRound className="w-3.5 h-3.5 mr-1.5 text-muted-foreground" />
+                重置密码
+              </Button>
+            ) : (
+              <Button variant="outline" size="sm" disabled className="h-9 text-xs font-normal border-border/70 justify-center opacity-40">
+                <KeyRound className="w-3.5 h-3.5 mr-1.5 text-muted-foreground" />
+                密码(美区禁)
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={() => setEngagementOpen(true)} className="h-9 text-xs font-normal border-border/70 justify-center">
+              <CalendarPlus className="w-3.5 h-3.5 mr-1.5 text-muted-foreground" />
+              合同期
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setTasksOpen(true)} className="h-9 text-xs font-normal border-border/70 justify-center">
+              <ListTodo className="w-3.5 h-3.5 mr-1.5 text-muted-foreground" />
+              任务历史
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 分段选项卡 */}
+      <Tabs defaultValue="overview" className="w-full">
+        <TabsList className="grid grid-cols-4 w-full h-10 p-1 bg-muted/60 rounded-xl border border-border/40">
+          <TabsTrigger value="overview" className="text-xs rounded-lg data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm font-medium">概览</TabsTrigger>
+          <TabsTrigger value="snapshot" className="text-xs rounded-lg data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm font-medium">快照</TabsTrigger>
+          <TabsTrigger value="ddos" className="text-xs rounded-lg data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm font-medium">DDoS</TabsTrigger>
+          <TabsTrigger value="maintenance" className="text-xs rounded-lg data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm font-medium">维护</TabsTrigger>
+        </TabsList>
 
         {/* 概览 Tab */}
         <TabsContent value="overview" className="mt-4 space-y-4">
@@ -642,7 +715,7 @@ function VpsDetail({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
+    </div>
   );
 }
 
@@ -650,11 +723,11 @@ function InfoCard({
   icon, label, value,
 }: { icon: React.ReactNode; label: string; value: string }) {
   return (
-    <div className="border border-border rounded-xl px-3.5 py-3 flex items-center gap-3 min-w-0">
-      <div className="w-9 h-9 rounded-lg bg-secondary flex items-center justify-center flex-shrink-0">{icon}</div>
+    <div className="surface-card border border-border rounded-xl px-3.5 py-3 flex items-center gap-3 min-w-0">
+      <div className="w-9 h-9 rounded-lg bg-secondary border border-border/60 flex items-center justify-center text-foreground flex-shrink-0">{icon}</div>
       <div className="min-w-0">
         <div className="text-[11px] text-muted-foreground">{label}</div>
-        <div className="text-[13px] font-semibold truncate" title={value}>{value}</div>
+        <div className="text-[13px] font-semibold truncate text-foreground" title={value}>{value}</div>
       </div>
     </div>
   );
@@ -662,18 +735,60 @@ function InfoCard({
 
 /** humanZoneShort OVH zone 字段转可读名,InfoCard 用短版只显示中文标签。
  *  2025 cloud VPS 给 "Region OpenStack: os-us-west-or-2",老款给 "bhs"/"gra"/"sbg" 之类机房代号。 */
-function humanZoneShort(zone: string): string {
-  const friendly = zoneFriendly(zone);
-  if (!friendly) return (zone || "—").toUpperCase();
+function humanZoneShort(zone?: string, cluster?: string): string {
+  const friendly = zoneFriendly(zone, cluster);
+  if (!friendly) {
+    if (!zone && !cluster) return "—";
+    const raw = (zone || cluster || "").trim();
+    const clean = raw.replace(/^Region\s+OpenStack:?\s*/i, "").trim();
+    return clean || "OpenStack 云机房";
+  }
   return friendly.label;
 }
 
-function zoneFriendly(zone: string): { label: string; code: string } | null {
-  if (!zone) return null;
-  const m = zone.match(/os-[a-z0-9-]+/i);
-  const code = (m ? m[0] : zone.trim().toLowerCase().split(/\s+/).pop() || zone).toLowerCase();
-  const label = OS_ZONE_MAP[code] || LEGACY_DC_MAP[code.slice(0, 3)];
-  return label ? { label, code } : null;
+function zoneFriendly(zone?: string, cluster?: string): { label: string; code: string } | null {
+  const combined = `${zone || ""} ${cluster || ""}`.toLowerCase();
+  if (!combined.trim()) return null;
+
+  // 1. OpenStack zone 标准代号匹配 (os-us-west-or-1 等)
+  const m = combined.match(/os-[a-z0-9-]+/i);
+  if (m) {
+    const code = m[0].toLowerCase();
+    if (OS_ZONE_MAP[code]) return { label: OS_ZONE_MAP[code], code };
+  }
+
+  // 2. 常见机房与区域关键字匹配
+  if (/or-|oregon|hil|pdx/.test(combined)) return { label: "美西·俄勒冈", code: "or" };
+  if (/va-|virginia|vin|iad/.test(combined)) return { label: "美东·弗吉尼亚", code: "va" };
+  if (/gra/.test(combined)) return { label: "法国·格拉夫林", code: "gra" };
+  if (/rbx/.test(combined)) return { label: "法国·鲁贝", code: "rbx" };
+  if (/sbg/.test(combined)) return { label: "法国·斯特拉斯堡", code: "sbg" };
+  if (/bhs|beauhar/.test(combined)) return { label: "加拿大·博阿尔诺", code: "bhs" };
+  if (/fra|frankfurt/.test(combined)) return { label: "德国·法兰克福", code: "fra" };
+  if (/waw|warsaw/.test(combined)) return { label: "波兰·华沙", code: "waw" };
+  if (/lon|london|eri/.test(combined)) return { label: "英国·伦敦", code: "lon" };
+  if (/lim/.test(combined)) return { label: "德国·林堡", code: "lim" };
+  if (/sgp|singapore/.test(combined)) return { label: "新加坡", code: "sgp" };
+  if (/syd|sydney/.test(combined)) return { label: "澳大利亚·悉尼", code: "syd" };
+  if (/in-|mumbai/.test(combined)) return { label: "印度·孟买", code: "in" };
+  if (/it-|milan/.test(combined)) return { label: "意大利·米兰", code: "it" };
+  if (/fi-|helsinki/.test(combined)) return { label: "芬兰·赫尔辛基", code: "fi" };
+
+  // 3. 经典三字母机房代号
+  for (const [key, label] of Object.entries(LEGACY_DC_MAP)) {
+    if (combined.includes(key)) {
+      return { label, code: key };
+    }
+  }
+
+  // 4. 大区兜底
+  if (combined.includes("us-west")) return { label: "美国西部", code: "us-west" };
+  if (combined.includes("us-east")) return { label: "美国东部", code: "us-east" };
+  if (combined.includes("eu-west")) return { label: "西欧机房", code: "eu-west" };
+  if (combined.includes("ca-east")) return { label: "加拿大东部", code: "ca-east" };
+  if (combined.includes("openstack")) return { label: "OpenStack 云机房", code: "openstack" };
+
+  return null;
 }
 
 // OpenStack 区域代号(2025+ cloud VPS / OVH Public Cloud 同款命名)

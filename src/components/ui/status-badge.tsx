@@ -38,19 +38,19 @@ const statusConfig: Record<string, { color: string; bg: string; glow: string; la
   online: {
     color: "text-primary",
     bg: "bg-primary/10",
-    glow: "shadow-[0_0_10px_hsl(var(--primary)/0.5)]",
+    glow: "",
     label: "在线",
   },
   offline: {
     color: "text-destructive",
     bg: "bg-destructive/10",
-    glow: "shadow-[0_0_10px_hsl(var(--destructive)/0.5)]",
+    glow: "",
     label: "离线",
   },
   warning: {
     color: "text-warning",
     bg: "bg-warning/10",
-    glow: "shadow-[0_0_10px_hsl(var(--warning)/0.5)]",
+    glow: "",
     label: "警告",
   },
   pending: {
@@ -70,7 +70,7 @@ const statusConfig: Record<string, { color: string; bg: string; glow: string; la
   healthy: {
     color: "text-primary",
     bg: "bg-primary/10",
-    glow: "shadow-[0_0_8px_hsl(var(--primary)/0.4)]",
+    glow: "",
     label: "健康",
   },
   unhealthy: {
@@ -82,7 +82,7 @@ const statusConfig: Record<string, { color: string; bg: string; glow: string; la
   connected: {
     color: "text-primary",
     bg: "bg-primary/10",
-    glow: "shadow-[0_0_8px_hsl(var(--primary)/0.4)]",
+    glow: "",
     label: "已连接",
   },
   disconnected: {
@@ -96,7 +96,7 @@ const statusConfig: Record<string, { color: string; bg: string; glow: string; la
   running: {
     color: "text-accent",
     bg: "bg-accent/10",
-    glow: "shadow-[0_0_10px_hsl(var(--accent)/0.5)]",
+    glow: "",
     label: "运行中",
   },
   paused: {
@@ -160,7 +160,7 @@ const statusConfig: Record<string, { color: string; bg: string; glow: string; la
   available: {
     color: "text-primary",
     bg: "bg-primary/10",
-    glow: "shadow-[0_0_8px_hsl(var(--primary)/0.4)]",
+    glow: "",
     label: "有货",
   },
   unavailable: {
@@ -192,7 +192,7 @@ const statusConfig: Record<string, { color: string; bg: string; glow: string; la
   processing: {
     color: "text-accent",
     bg: "bg-accent/10",
-    glow: "shadow-[0_0_8px_hsl(var(--accent)/0.4)]",
+    glow: "",
     label: "处理中",
   },
   retry: {
@@ -204,7 +204,7 @@ const statusConfig: Record<string, { color: string; bg: string; glow: string; la
   active: {
     color: "text-primary",
     bg: "bg-primary/10",
-    glow: "shadow-[0_0_8px_hsl(var(--primary)/0.4)]",
+    glow: "",
     label: "活跃",
   },
   inactive: {
@@ -224,7 +224,7 @@ const statusConfig: Record<string, { color: string; bg: string; glow: string; la
   hacked: {
     color: "text-destructive",
     bg: "bg-destructive/10",
-    glow: "shadow-[0_0_10px_hsl(var(--destructive)/0.5)]",
+    glow: "",
     label: "被入侵",
   },
   hackedBlocked: {

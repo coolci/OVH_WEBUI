@@ -86,78 +86,82 @@ function ServerControlPage() {
             : "管理 OVH 独立服务器"
         }
         action={
-          <div className="flex flex-wrap items-center gap-2">
-            {/* 账户切换器:只影响当前 tab,持久化到 localStorage */}
-            <Select value={activeAccount} onValueChange={setActiveAccount}>
-              <SelectTrigger className="w-full sm:w-[180px] min-h-10 touch-manipulation">
-                <SelectValue placeholder="选账户" />
-              </SelectTrigger>
-              <SelectContent>
-                {(accounts || []).map((a) => (
-                  <SelectItem key={a.id} value={a.id}>
-                    {a.name} · {a.zone}
-                    {a.isDefault && <span className="ml-2 text-[10px] text-muted-foreground">(默认)</span>}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="flex items-center gap-2">
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="outline" size="icon" onClick={toggle} aria-label={hidden ? "显示 IP / MAC" : "隐藏 IP"}>
-                  {hidden ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                <Button variant="outline" size="sm" className="h-8 w-8 p-0 border-border/80 hover:bg-secondary" onClick={toggle} aria-label={hidden ? "显示 IP / MAC" : "隐藏 IP"}>
+                  {hidden ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{hidden ? "已隐藏敏感信息 · 点击显示" : "隐藏 IP"}</TooltipContent>
             </Tooltip>
-            <Button variant="outline" onClick={() => q.refetch()} disabled={q.isFetching}>
-              <RefreshCw className={`w-4 h-4 ${q.isFetching ? "animate-spin" : ""}`} />
-              刷新
+            <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5 border-border/80 hover:bg-secondary" onClick={() => q.refetch()} disabled={q.isFetching}>
+              <RefreshCw className={`w-3.5 h-3.5 ${q.isFetching ? "animate-spin" : ""}`} />
+              <span className="hidden sm:inline">刷新</span>
             </Button>
           </div>
         }
       />
 
+      {/* 账户 + 服务器 选择卡片 (移动端 App 风格) */}
+      <Card className="surface-card rounded-xl border-border">
+        <CardContent className="p-3 sm:p-4">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-4">
+            {/* 账户选择 */}
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <span className="text-xs font-medium text-muted-foreground whitespace-nowrap w-9 sm:w-auto flex-shrink-0">
+                账户
+              </span>
+              <Select value={activeAccount || ""} onValueChange={(v) => setActiveAccount(v || "")}>
+                <SelectTrigger className="h-9 rounded-lg w-full text-xs border-border/80 bg-background/50 touch-manipulation">
+                  <SelectValue placeholder="选择账户" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(accounts || []).map((a) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.name} · {a.zone}
+                      {a.isDefault && <span className="ml-2 text-[10px] text-muted-foreground">(默认)</span>}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* 服务器选择 */}
+            <div className="flex items-center gap-2 flex-[2] min-w-0">
+              <span className="text-xs font-medium text-muted-foreground whitespace-nowrap w-9 sm:w-auto flex-shrink-0">
+                服务器
+              </span>
+              <ServerSelector
+                servers={servers}
+                selected={selected}
+                onChange={(name) => setSelectedName(name)}
+                hidden={hidden}
+              />
+            </div>
+
+            {/* 设备统计 */}
+            <div className="text-[11px] text-muted-foreground flex items-center justify-between sm:justify-end gap-2 flex-shrink-0 pt-1.5 sm:pt-0 border-t sm:border-t-0 border-border/40">
+              <span>共 {servers.length} 台服务器</span>
+              {q.isFetching && <span className="text-primary font-medium animate-pulse">同步中…</span>}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {q.isPending ? (
-        <Skeleton className="h-[500px] rounded-2xl" />
+        <Skeleton className="h-[500px] rounded-xl" />
       ) : servers.length === 0 ? (
-        <Card>
+        <Card className="surface-card rounded-xl border-border">
           <EmptyState
             icon={Server}
             title="暂无服务器"
             description="您的 OVH 账户下还没有独立服务器，或 API 没拿到数据"
           />
         </Card>
-      ) : (
-        <Card>
-          <CardContent className="p-4 sm:p-6 space-y-4 sm:space-y-5">
-            {/* 服务器切换器 + 当前选中卡概览 */}
-            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 pb-4 sm:pb-5 border-b border-border">
-              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 min-w-0">
-                <ServerSelector
-                  servers={servers}
-                  selected={selected}
-                  onChange={(name) => setSelectedName(name)}
-                  hidden={hidden}
-                />
-                {selected && (
-                  <Chip tone={selected.state === "ok" ? "success" : "warning"} className="self-start sm:self-auto">
-                    <StatusDot tone={selected.state === "ok" ? "success" : "warning"} pulse={selected.state === "ok"} size="xs" />
-                    {selected.state}
-                  </Chip>
-                )}
-              </div>
-              {selected && (
-                <div className="text-[11px] sm:text-[12px] text-muted-foreground break-all sm:truncate font-mono">
-                  {selected.commercialRange} · {selected.datacenter.toUpperCase()} · {maskSensitive(selected.ip, hidden)}
-                </div>
-              )}
-            </div>
-
-            {/* Tabs */}
-            {selected && <ServerTabs server={selected} />}
-          </CardContent>
-        </Card>
-      )}
+      ) : selected ? (
+        <ServerTabs server={selected} />
+      ) : null}
     </div>
   );
 }
@@ -201,7 +205,7 @@ function ServerSelector({
     <>
     <Select value={selected?.serviceName || ""} onValueChange={onChange}>
       <SelectTrigger
-        className="rounded-full w-full sm:min-w-[280px] sm:w-auto lg:min-w-[340px] h-10 min-h-10 font-mono text-sm touch-manipulation"
+        className="rounded-lg w-full h-9 font-mono text-xs border-border/80 bg-background/50 focus:border-primary touch-manipulation"
         // 拦截右键 pointerdown(button=2),不让 Radix Select 打开下拉
         onPointerDown={(e) => {
           if (e.button === 2) {
@@ -364,6 +368,10 @@ function ServerTabs({ server }: { server: OwnedServer }) {
   const [renewalOpen, setRenewalOpen] = useState(false);
   const [reinstallOpen, setReinstallOpen] = useState(false);
   const [engagementOpen, setEngagementOpen] = useState(false);
+  const { hidden } = useHideIp();
+  const { data: aliases } = useServerAliases();
+
+  const srvLabel = aliasOf(aliases, server.serviceName, server.name || server.serviceName);
 
   const handleToggleMonitoring = async () => {
     try {
@@ -375,102 +383,130 @@ function ServerTabs({ server }: { server: OwnedServer }) {
   };
 
   return (
-    <>
-      <Tabs defaultValue="overview">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <TabsList className="grid grid-cols-4 sm:flex h-auto gap-1 p-1">
-            <TabsTrigger value="overview" className="text-[12px] sm:text-sm px-2 sm:px-3">概览</TabsTrigger>
-            <TabsTrigger value="power" className="text-[12px] sm:text-sm px-2 sm:px-3">电源</TabsTrigger>
-            <TabsTrigger value="maintenance" className="text-[12px] sm:text-sm px-2 sm:px-3">维护</TabsTrigger>
-            <TabsTrigger value="advanced" className="text-[12px] sm:text-sm px-2 sm:px-3">高级</TabsTrigger>
-          </TabsList>
-
-          {/* 服务信息胶囊条 + 全局开关 */}
-          {info.isPending ? (
-            <div className="flex flex-wrap gap-2">
-              <Skeleton className="h-7 w-28 rounded-full" />
-              <Skeleton className="h-7 w-28 rounded-full" />
-              <Skeleton className="h-7 w-20 rounded-full" />
-              <Skeleton className="h-7 w-32 rounded-full" />
+    <div className="space-y-4">
+      {/* 顶部设备摘要卡片 (移动端 App 风格) */}
+      <Card className="surface-card rounded-xl border-border overflow-hidden">
+        <CardContent className="p-3.5 sm:p-4 space-y-3">
+          {/* 第一行: 别名/名称 + 状态 */}
+          <div className="flex items-start justify-between gap-2.5">
+            <div className="min-w-0 space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-semibold text-base sm:text-lg text-foreground truncate">
+                  {srvLabel}
+                </span>
+                {server.commercialRange && (
+                  <span className="px-2 py-0.5 rounded-md text-[11px] font-mono bg-secondary text-muted-foreground border border-border/60">
+                    {server.commercialRange}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono flex-wrap">
+                <span>{server.serviceName}</span>
+                <span>·</span>
+                <span>{server.datacenter.toUpperCase()}</span>
+                <span>·</span>
+                <span>IP: {maskSensitive(server.ip, hidden)}</span>
+              </div>
             </div>
-          ) : (
-            <div className="flex flex-wrap gap-2 items-center">
-              {info.data && (
-                <>
-                  <InfoPill
-                    icon={<CalendarClock className="w-3.5 h-3.5" />}
-                    label="到期"
-                    value={info.data.expiration ? new Date(info.data.expiration).toLocaleDateString("zh-CN") : "—"}
-                  />
-                  <InfoPill
-                    icon={<CalendarPlus className="w-3.5 h-3.5" />}
-                    label="开通"
-                    value={info.data.creation ? new Date(info.data.creation).toLocaleDateString("zh-CN") : "—"}
-                  />
-                  <InfoPill
-                    icon={<Repeat className="w-3.5 h-3.5" />}
-                    label="续费"
-                    value={formatRenewal(info.data)}
-                    onClick={() => setRenewalOpen(true)}
-                  />
-                  <InfoPill
-                    icon={<Terminal className="w-3.5 h-3.5" />}
-                    label="OS"
-                    value={server.os || "—"}
-                    onClick={() => setReinstallOpen(true)}
-                  />
-                </>
-              )}
+            <Chip tone={server.state === "ok" ? "success" : "warning"} className="flex-shrink-0">
+              <StatusDot tone={server.state === "ok" ? "success" : "warning"} pulse={server.state === "ok"} size="xs" />
+              {server.state === "ok" ? "运行正常" : server.state}
+            </Chip>
+          </div>
 
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 rounded-full"
-                    onClick={handleToggleMonitoring}
-                    disabled={toggleMon.isPending}
-                  >
-                    <Activity className={`w-3.5 h-3.5 mr-1 ${monitoring.data ? "text-success" : "text-muted-foreground"}`} />
-                    {monitoring.data ? "监控 已开" : "监控 已关"}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>OVH 自动监控（异常会邮件通知）</TooltipContent>
-              </Tooltip>
+          {/* 第二行: 属性胶囊 (到期/开通/续费/OS) */}
+          <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-border/50">
+            {info.data?.expiration && (
+              <span className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border border-border bg-secondary/40 text-[12px]">
+                <CalendarClock className="w-3.5 h-3.5 text-muted-foreground" />
+                <span className="text-muted-foreground">到期:</span>
+                <span className="font-medium">{new Date(info.data.expiration).toLocaleDateString("zh-CN")}</span>
+              </span>
+            )}
+            {info.data?.creation && (
+              <span className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border border-border bg-secondary/40 text-[12px]">
+                <CalendarPlus className="w-3.5 h-3.5 text-muted-foreground" />
+                <span className="text-muted-foreground">开通:</span>
+                <span className="font-medium">{new Date(info.data.creation).toLocaleDateString("zh-CN")}</span>
+              </span>
+            )}
+            {info.data && (
+              <button
+                type="button"
+                onClick={() => setRenewalOpen(true)}
+                className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border border-border bg-background hover:bg-muted cursor-pointer transition-colors text-[12px]"
+                title="点击管理续费策略"
+              >
+                <Repeat className="w-3.5 h-3.5 text-muted-foreground" />
+                <span className="text-muted-foreground">续费:</span>
+                <span className="font-medium">{formatRenewal(info.data)}</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setReinstallOpen(true)}
+              className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border border-border bg-background hover:bg-muted cursor-pointer transition-colors text-[12px]"
+              title="点击进入重装系统"
+            >
+              <Terminal className="w-3.5 h-3.5 text-muted-foreground" />
+              <span className="text-muted-foreground">OS:</span>
+              <span className="font-medium truncate max-w-[140px] sm:max-w-[200px]">{server.os || "—"}</span>
+            </button>
+          </div>
+        </CardContent>
+      </Card>
 
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="outline" size="sm" className="h-7 rounded-full" onClick={() => setNetSpecsOpen(true)}>
-                    <Network className="w-3.5 h-3.5 mr-1" />
-                    网络规格
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>带宽四档 + IPv4 / IPv6 路由</TooltipContent>
-              </Tooltip>
+      {/* 快捷运维控制 (移动 App 风格 3 列对称网格) */}
+      <div className="grid grid-cols-3 gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-9 text-xs font-normal border-border/80 justify-center"
+          onClick={handleToggleMonitoring}
+          disabled={toggleMon.isPending}
+        >
+          <Activity className={`w-3.5 h-3.5 mr-1.5 ${monitoring.data ? "text-success" : "text-muted-foreground"}`} />
+          <span className="truncate">{monitoring.data ? "监控: 已开启" : "监控: 已关闭"}</span>
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-9 text-xs font-normal border-border/80 justify-center"
+          onClick={() => setNetSpecsOpen(true)}
+        >
+          <Network className="w-3.5 h-3.5 mr-1.5 text-muted-foreground" />
+          <span>网络规格</span>
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-9 text-xs font-normal border-border/80 justify-center"
+          onClick={() => setEngagementOpen(true)}
+        >
+          <CalendarRange className="w-3.5 h-3.5 mr-1.5 text-muted-foreground" />
+          <span>合同期</span>
+        </Button>
+      </div>
 
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="outline" size="sm" className="h-7 rounded-full" onClick={() => setEngagementOpen(true)}>
-                    <CalendarRange className="w-3.5 h-3.5 mr-1" />
-                    合同期
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>切换更长承诺期享受折扣 / 改到期策略</TooltipContent>
-              </Tooltip>
-            </div>
-          )}
-        </div>
+      {/* 分段选项卡 */}
+      <Tabs defaultValue="overview" className="w-full">
+        <TabsList className="grid grid-cols-4 w-full h-10 p-1 bg-muted/60 rounded-xl border border-border/40">
+          <TabsTrigger value="overview" className="text-xs rounded-lg data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm font-medium">概览</TabsTrigger>
+          <TabsTrigger value="power" className="text-xs rounded-lg data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm font-medium">电源</TabsTrigger>
+          <TabsTrigger value="maintenance" className="text-xs rounded-lg data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm font-medium">维护</TabsTrigger>
+          <TabsTrigger value="advanced" className="text-xs rounded-lg data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm font-medium">高级</TabsTrigger>
+        </TabsList>
 
-        <TabsContent value="overview">
+        <TabsContent value="overview" className="mt-4">
           <OverviewTab server={server} />
         </TabsContent>
-        <TabsContent value="power">
+        <TabsContent value="power" className="mt-4">
           <PowerTab server={server} />
         </TabsContent>
-        <TabsContent value="maintenance">
+        <TabsContent value="maintenance" className="mt-4">
           <MaintenanceTab server={server} />
         </TabsContent>
-        <TabsContent value="advanced">
+        <TabsContent value="advanced" className="mt-4">
           <AdvancedTab server={server} />
         </TabsContent>
       </Tabs>
@@ -501,7 +537,7 @@ function ServerTabs({ server }: { server: OwnedServer }) {
         open={engagementOpen}
         onOpenChange={setEngagementOpen}
       />
-    </>
+    </div>
   );
 }
 

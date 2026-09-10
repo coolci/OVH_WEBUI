@@ -27,6 +27,7 @@ import {
   useRefreshOrderStatus,
   type PurchaseHistory,
 } from "@/hooks/use-history";
+import { cn } from "@/lib/utils";
 
 /**
  * 订单支付状态 → 标签。取值是 OVH 的 billing.order.OrderStatusEnum,三区一致。
@@ -186,28 +187,38 @@ function HistoryPage() {
         title="抢购历史"
         description="查看服务器购买历史记录"
         action={
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
             <Button
               variant="outline"
+              size="sm"
+              className="h-8 text-xs gap-1.5 border-border/80 hover:bg-secondary px-2.5 sm:px-3 rounded-lg"
               onClick={() => refreshStatus.mutate()}
               disabled={list.isFetching || refreshStatus.isPending}
               title="向 OVH 查询未到终态订单的支付状态，然后重载列表"
             >
               <RefreshCw
-                className={`w-4 h-4 ${list.isFetching || refreshStatus.isPending ? "animate-spin" : ""}`}
+                className={`w-3.5 h-3.5 ${list.isFetching || refreshStatus.isPending ? "animate-spin" : ""}`}
               />
-              刷新状态
+              <span className="hidden sm:inline">刷新状态</span>
             </Button>
-            <Button variant="outline" onClick={() => setConfirmClear(true)} disabled={items.length === 0}>
-              <Trash2 className="w-4 h-4" />
-              清空
-            </Button>
+            {items.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 px-2.5 sm:px-3 rounded-lg"
+                onClick={() => setConfirmClear(true)}
+                title="清空所有历史"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">清空</span>
+              </Button>
+            )}
           </div>
         }
       />
 
-      <Card>
-        <CardContent className="p-5">
+      <Card className="surface-card rounded-xl border-border">
+        <CardContent className="p-3.5 sm:p-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="relative">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
@@ -215,11 +226,11 @@ function HistoryPage() {
                 placeholder="搜索型号 / 机房 / 订单号..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="pl-9 rounded-full"
+                className="pl-9 rounded-lg h-8 text-xs bg-background/50 border-border/80 focus-visible:ring-1 focus-visible:ring-primary/40"
               />
             </div>
             <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as any)}>
-              <SelectTrigger className="rounded-full">
+              <SelectTrigger className="rounded-lg h-8 text-xs bg-background/50 border-border/80">
                 <SelectValue placeholder="所有状态" />
               </SelectTrigger>
               <SelectContent>
@@ -233,25 +244,25 @@ function HistoryPage() {
       </Card>
 
       {list.isPending ? (
-        <Card>
+        <Card className="surface-card rounded-xl border-border">
           <CardContent className="p-4 space-y-2">
             {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-16 rounded-xl" />
+              <Skeleton key={i} className="h-16 rounded-lg" />
             ))}
           </CardContent>
         </Card>
       ) : filtered.length === 0 ? (
-        <Card>
+        <Card className="surface-card rounded-xl border-border">
           <EmptyState icon={Clock} title="没有匹配的订单" />
         </Card>
       ) : (
         <>
           {/* 桌面 / 平板:横向表格 */}
-          <Card className="hidden md:block">
+          <Card className="surface-card rounded-xl border-border overflow-hidden shadow-sm hidden md:block">
             <div className="table-scroll">
               <table className="w-full min-w-[760px]">
                 <thead>
-                  <tr className="text-left text-[11px] font-medium text-muted-foreground border-b border-border">
+                  <tr className="text-left text-[11px] font-medium text-muted-foreground/80 border-b border-border/60 bg-muted/30">
                     <th className="px-4 py-3">型号</th>
                     <th className="px-4 py-3">机房</th>
                     <th className="px-4 py-3">配置</th>
@@ -264,7 +275,7 @@ function HistoryPage() {
                     <th className="px-4 py-3">操作</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border">
+                <tbody className="divide-y divide-border/40">
                   {filtered.map((item) => (
                     <HistoryRow key={item.id} item={item} now={now} />
                   ))}
@@ -274,7 +285,7 @@ function HistoryPage() {
           </Card>
 
           {/* 手机:卡片堆叠,每条订单一张卡 */}
-          <div className="md:hidden space-y-2">
+          <div className="md:hidden space-y-3">
             {filtered.map((item) => (
               <HistoryCard key={item.id} item={item} now={now} />
             ))}
@@ -405,8 +416,8 @@ function HistoryCard({ item, now }: { item: PurchaseHistory; now: number }) {
   const isUrgent = showCountdown && !isExpired && remainingMs < 24 * 60 * 60 * 1000;
 
   return (
-    <Card className={isExpired ? "opacity-60" : ""}>
-      <CardContent className="p-3 space-y-2">
+    <Card className={cn("surface-card rounded-xl border-border hover:border-border/80 transition-all duration-200 shadow-sm", isExpired && "opacity-60")}>
+      <CardContent className="p-3.5 sm:p-4 space-y-2.5">
         <div className="flex items-start justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2 flex-wrap min-w-0">
             <span className={`font-mono font-semibold text-[13px] ${isExpired ? "line-through" : ""}`}>

@@ -20,6 +20,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { AccountSelect } from "@/components/common/AccountSelect";
 import { AccountChip } from "@/components/common/AccountChip";
@@ -96,56 +97,91 @@ function VPSMonitorPage() {
         title="VPS 补货通知"
         description="选择 VPS 型号，自动监控所有数据中心的库存变化"
         action={
-          <div className="flex gap-2 flex-wrap">
-            <Button variant="outline" onClick={() => list.refetch()} disabled={list.isFetching}>
-              <RefreshCw className={`w-4 h-4 ${list.isFetching ? "animate-spin" : ""}`} />
-              刷新
-            </Button>
-            <Button onClick={() => setOpenAdd(true)}>
-              <Plus className="w-4 h-4" />
-              添加订阅
-            </Button>
+          <div className="flex items-center gap-2">
             <Button
-              variant={running ? "destructive" : "outline"}
-              onClick={() => toggle.mutate(running)}
-              disabled={toggle.isPending}
+              size="sm"
+              className="h-8 text-xs gap-1.5 px-3 font-medium rounded-lg"
+              onClick={() => setOpenAdd(true)}
             >
-              {running ? <BellOff className="w-4 h-4" /> : <Bell className="w-4 h-4" />}
-              {running ? "停止监控" : "启动监控"}
+              <Plus className="w-3.5 h-3.5" />
+              <span>添加订阅</span>
             </Button>
             <Button
               variant="outline"
-              onClick={() => setConfirmClear(true)}
-              disabled={subs.length === 0}
+              size="sm"
+              className="h-8 w-8 p-0 rounded-lg border-border/80 hover:bg-secondary flex-shrink-0"
+              onClick={() => list.refetch()}
+              disabled={list.isFetching}
+              title="刷新订阅与库存状态"
             >
-              <Trash2 className="w-4 h-4" />
-              清空
+              <RefreshCw className={`w-3.5 h-3.5 ${list.isFetching ? "animate-spin" : ""}`} />
             </Button>
           </div>
         }
       />
 
-      <Card>
-        <CardContent className="p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center">
-              {running ? (
-                <Bell className="w-5 h-5 text-success" />
-              ) : (
-                <BellOff className="w-5 h-5 text-muted-foreground" />
-              )}
-            </div>
-            <div>
-              <div className="text-sm font-semibold">VPS 监控状态</div>
-              <div className="text-xs text-muted-foreground inline-flex items-center gap-1.5">
-                <StatusDot tone={running ? "success" : "muted"} pulse={running} size="xs" />
-                {running ? "运行中" : "已停止"}
+      {/* 监控状态卡片：集成启停控制与运行统计 */}
+      <Card className="surface-card rounded-xl border-border">
+        <CardContent className="p-4 sm:p-5 space-y-3.5 sm:space-y-0 sm:flex sm:items-center sm:justify-between sm:gap-4">
+          <div className="flex items-center justify-between sm:justify-start gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-secondary border border-border/60 flex items-center justify-center text-foreground flex-shrink-0">
+                {running ? (
+                  <Bell className="w-4 h-4 text-emerald-400" />
+                ) : (
+                  <BellOff className="w-4 h-4 text-muted-foreground" />
+                )}
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-foreground">VPS 监控状态</div>
+                <div className="text-xs text-muted-foreground inline-flex items-center gap-1.5 mt-0.5">
+                  <StatusDot tone={running ? "success" : "muted"} size="xs" pulse={running} />
+                  <span>{running ? "轮询监控中" : "已停止"}</span>
+                </div>
               </div>
             </div>
+
+            {/* 移动端: 启停按钮置于卡片顶部右侧 */}
+            <Button
+              variant="outline"
+              size="sm"
+              className={cn(
+                "sm:hidden h-8 text-xs gap-1.5 px-3 rounded-lg font-medium transition-all flex-shrink-0",
+                running
+                  ? "border-emerald-500/40 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20"
+                  : "border-border/80 hover:bg-secondary text-foreground"
+              )}
+              onClick={() => toggle.mutate(running)}
+              disabled={toggle.isPending}
+            >
+              {running ? <BellOff className="w-3.5 h-3.5" /> : <Bell className="w-3.5 h-3.5" />}
+              <span>{running ? "停止监控" : "启动监控"}</span>
+            </Button>
           </div>
-          <div className="flex gap-6 text-sm">
-            <Stat label="订阅数" value={status.data?.subscriptions_count ?? 0} />
-            <Stat label="检查间隔" value={`${status.data?.check_interval ?? 0}s`} />
+
+          {/* 指标与桌面端按钮 */}
+          <div className="flex items-center justify-between sm:justify-end gap-6 text-sm border-t border-border/40 sm:border-t-0 pt-2.5 sm:pt-0">
+            <div className="flex gap-6 text-sm">
+              <Stat label="订阅数" value={status.data?.subscriptions_count ?? 0} />
+              <Stat label="检查间隔" value={`${status.data?.check_interval ?? 0}s`} />
+            </div>
+
+            {/* 桌面端: 启停按钮置于卡片右侧 */}
+            <Button
+              variant="outline"
+              size="sm"
+              className={cn(
+                "hidden sm:inline-flex h-8 text-xs gap-1.5 px-3 rounded-lg font-medium transition-all flex-shrink-0",
+                running
+                  ? "border-emerald-500/40 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20"
+                  : "border-border/80 hover:bg-secondary text-foreground"
+              )}
+              onClick={() => toggle.mutate(running)}
+              disabled={toggle.isPending}
+            >
+              {running ? <BellOff className="w-3.5 h-3.5" /> : <Bell className="w-3.5 h-3.5" />}
+              <span>{running ? "停止监控" : "启动监控"}</span>
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -153,11 +189,11 @@ function VPSMonitorPage() {
       {list.isPending ? (
         <div className="space-y-3">
           {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-24 rounded-2xl" />
+            <Skeleton key={i} className="h-24 rounded-xl" />
           ))}
         </div>
       ) : subs.length === 0 ? (
-        <Card>
+        <Card className="surface-card rounded-xl border-border">
           <EmptyState
             icon={Cloud}
             title="暂无 VPS 订阅"
@@ -166,6 +202,26 @@ function VPSMonitorPage() {
         </Card>
       ) : (
         <div className="space-y-3">
+          {/* 订阅列表头部栏 */}
+          <div className="flex items-center justify-between text-xs px-1">
+            <div className="text-muted-foreground font-medium flex items-center gap-1.5">
+              <span>已订阅型号</span>
+              <span className="text-[11px] px-1.5 py-0.2 rounded-full bg-secondary text-foreground font-mono font-medium">
+                {subs.length}
+              </span>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs text-muted-foreground hover:text-destructive gap-1 px-2 rounded-lg"
+              onClick={() => setConfirmClear(true)}
+              title="清空全部 VPS 订阅"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>清空所有订阅</span>
+            </Button>
+          </div>
+
           {subs.map((s) => (
             <VPSRow
               key={s.id}
@@ -257,8 +313,8 @@ function VPSRow({
   onDelete: () => void;
 }) {
   return (
-    <Card>
-      <CardContent className="p-5">
+    <Card className="surface-card rounded-xl border-border hover:border-border/80 transition-all duration-200 shadow-sm">
+      <CardContent className="p-4 sm:p-5">
         <div className="flex flex-col sm:flex-row sm:items-center gap-3">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1 flex-wrap">

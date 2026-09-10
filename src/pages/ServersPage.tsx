@@ -165,33 +165,32 @@ function ServersPage() {
             <CacheBadge />
             <Button
               variant="outline"
+              size="sm"
+              className="h-8 sm:h-9 text-xs gap-1.5 border-border/70 hover:bg-secondary/60"
               onClick={() => {
                 // 一键刷三件套：目录强刷（清后端缓存）、catalog（价格）refetch、可用性 refetch
                 q.forceRefresh();
                 catalogQ.refetch();
                 availQ.refetch();
               }}
-              // 只看手动刷新状态：q.isRefreshing 是 forceRefresh 期间的 mutation pending；
-              // *Q.isRefetching 是 refetch 后的状态。不引入 isFetching/isLoading，
-              // 这样首次加载的菊花不会显示在这个按钮上，避免误导。
               disabled={q.isRefreshing || catalogQ.isRefetching || availQ.isRefetching}
             >
               <RefreshCw
-                className={`w-4 h-4 ${
+                className={`w-3.5 h-3.5 ${
                   q.isRefreshing || catalogQ.isRefetching || availQ.isRefetching
                     ? "animate-spin"
                     : ""
                 }`}
               />
-              刷新
+              <span className="hidden sm:inline">刷新</span>
             </Button>
           </div>
         }
       />
 
       {/* 工具条 */}
-      <Card>
-        <CardContent className="p-3 flex flex-col gap-2">
+      <Card className="surface-card rounded-xl border-border">
+        <CardContent className="p-3.5 sm:p-4 flex flex-col gap-2.5">
           {/* 搜索栏 */}
           <div className="relative">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
@@ -199,12 +198,12 @@ function ServersPage() {
               placeholder="搜索 planCode / 型号 / CPU / 内存..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 pr-9 rounded-full"
+              className="pl-9 pr-9 rounded-lg h-8 text-xs bg-background/50 border-border/80 focus-visible:ring-1 focus-visible:ring-primary/40"
             />
             {search && (
               <button
                 type="button"
-                className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-muted-foreground hover:text-foreground transition-colors"
+                className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-muted-foreground hover:text-foreground transition-colors"
                 onClick={() => setSearch("")}
                 aria-label="清空搜索"
               >
@@ -213,54 +212,61 @@ function ServersPage() {
             )}
           </div>
           {/* 第二行：筛选 + 地区 + 数量 */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <Button
-              variant={onlyAvailable ? "default" : "outline"}
-              size="sm"
-              className="rounded-full h-8 text-xs"
-              onClick={() => setOnlyAvailable((v) => !v)}
-            >
-              <Filter className="w-3 h-3" />
-              仅显示可用
-            </Button>
-            {/* 价格地区 */}
-            <div className="flex items-center gap-1.5">
-              <Select
-                value={subsidiary}
-                onValueChange={changeSubsidiary}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-1 border-t border-border/40 sm:border-t-0 sm:pt-0">
+            <div className="flex items-center gap-2 flex-1 min-w-0 flex-wrap sm:flex-nowrap">
+              <Button
+                variant={onlyAvailable ? "default" : "outline"}
+                size="sm"
+                className={cn(
+                  "rounded-lg h-8 text-xs gap-1.5 transition-all font-medium flex-shrink-0",
+                  onlyAvailable
+                    ? ""
+                    : "border-border/80 bg-secondary/30 hover:bg-secondary text-foreground"
+                )}
+                onClick={() => setOnlyAvailable((v) => !v)}
               >
-                <SelectTrigger
-                  className="h-8 rounded-full text-xs border-border bg-background focus:ring-1 focus:ring-primary/40 w-auto min-w-[140px] max-w-[220px]"
-                  title={
-                    accountSub
-                      ? `价格地区。账户当前绑定 ${accountSub}，实际下单按账户结算`
-                      : "切换价格地区"
-                  }
+                <Filter className="w-3 h-3" />
+                仅显示可用
+              </Button>
+              {/* 价格地区 */}
+              <div className="flex items-center gap-1.5 flex-1 min-w-[150px]">
+                <Select
+                  value={subsidiary}
+                  onValueChange={changeSubsidiary}
                 >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {OVH_SUBSIDIARIES.map((s) => (
-                    <SelectItem key={s.code} value={s.code}>
-                      <span className="font-medium">{s.code}</span>
-                      <span className="text-muted-foreground ml-1">· {s.label}{accountSub === s.code ? " · 我的账户" : ""}</span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {accountSub && subsidiary !== accountSub && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 rounded-full text-xs text-muted-foreground hover:text-foreground px-2"
-                  onClick={resetSubsidiaryToAccount}
-                  title={`回到账户绑定的子公司 ${accountSub}`}
-                >
-                  ↩ {accountSub}
-                </Button>
-              )}
+                  <SelectTrigger
+                    className="h-8 rounded-lg text-xs border-border/80 bg-background/50 focus:ring-1 focus:ring-primary/40 w-full sm:w-auto sm:min-w-[140px] sm:max-w-[220px]"
+                    title={
+                      accountSub
+                        ? `价格地区。账户当前绑定 ${accountSub}，实际下单按账户结算`
+                        : "切换价格地区"
+                    }
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {OVH_SUBSIDIARIES.map((s) => (
+                      <SelectItem key={s.code} value={s.code}>
+                        <span className="font-medium">{s.code}</span>
+                        <span className="text-muted-foreground ml-1">· {s.label}{accountSub === s.code ? " · 我的账户" : ""}</span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {accountSub && subsidiary !== accountSub && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 rounded-full text-xs text-muted-foreground hover:text-foreground px-2 flex-shrink-0"
+                    onClick={resetSubsidiaryToAccount}
+                    title={`回到账户绑定的子公司 ${accountSub}`}
+                  >
+                    ↩ {accountSub}
+                  </Button>
+                )}
+              </div>
             </div>
-            <span className="ml-auto text-[12px] text-muted-foreground whitespace-nowrap">
+            <span className="text-[12px] text-muted-foreground whitespace-nowrap self-end sm:self-center">
               {q.isPending ? "加载中..." : `共 ${filtered.length} 款`}
             </span>
           </div>
@@ -271,11 +277,11 @@ function ServersPage() {
       {q.isPending ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
           {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-[260px] rounded-2xl" />
+            <Skeleton key={i} className="h-[260px] rounded-xl" />
           ))}
         </div>
       ) : filtered.length === 0 ? (
-        <Card>
+        <Card className="surface-card rounded-xl border-border">
           <EmptyState
             icon={Server}
             title="未找到服务器"
@@ -383,33 +389,41 @@ function ServerCard({
   const statusText = okCount > 0 ? `${okCount}/${total} 可用` : "暂时缺货";
 
   return (
-    <Card className="overflow-hidden transition-colors hover:bg-secondary/30">
-      <CardContent className="p-5 flex flex-col gap-4">
-        {/* 头部：planCode + 状态 chip */}
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <h3 className="font-mono text-[15px] font-semibold truncate">{server.planCode}</h3>
-            <p className="text-[12px] text-muted-foreground truncate mt-0.5">{server.name}</p>
-            <div className="text-[13px] font-semibold mt-1 tabular-nums">
-              {price ? (
-                formatPrice(price)
-              ) : (
-                <span className="text-muted-foreground font-normal">— · 价格加载中</span>
-              )}
+    <Card className="surface-card rounded-xl border-border hover:border-border/80 transition-all duration-200 shadow-sm overflow-hidden flex flex-col justify-between">
+      <CardContent className="p-4 sm:p-5 flex flex-col gap-4 h-full">
+        {/* 头部：型号 + 当前可用标识 */}
+        <div className="flex items-center justify-between gap-2.5">
+          <h3 className="font-mono text-[15px] font-bold tracking-tight text-foreground truncate">
+            {server.planCode}
+          </h3>
+          {okCount > 0 ? (
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium border border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex-shrink-0 shadow-sm">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+              </span>
+              <span>当前可用 · {okCount} 机房</span>
             </div>
+          ) : (
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium border border-border/80 bg-secondary/60 text-muted-foreground flex-shrink-0">
+              <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50" />
+              <span>暂时缺货</span>
+            </div>
+          )}
+        </div>
+
+        {/* 次行：名称 + 价格 */}
+        <div className="flex items-baseline justify-between gap-2 -mt-1.5 text-xs">
+          <p className="text-muted-foreground truncate flex-1 min-w-0" title={server.name}>
+            {server.name}
+          </p>
+          <div className="text-sm font-bold tabular-nums text-foreground flex-shrink-0">
+            {price ? formatPrice(price) : <span className="text-muted-foreground font-normal text-xs">—</span>}
           </div>
-          <Chip tone={tone as any}>
-            {okCount > 0 ? (
-              <StatusDot tone="success" pulse size="xs" />
-            ) : (
-              <StatusDot tone="danger" size="xs" />
-            )}
-            {statusText}
-          </Chip>
         </div>
 
         {/* 规格 2x2 */}
-        <div className="grid grid-cols-2 gap-2 text-[12px]">
+        <div className="grid grid-cols-2 gap-2 text-[12px] bg-secondary/30 p-2.5 rounded-lg border border-border/50">
           <SpecRow icon={<Cpu className="w-3.5 h-3.5" />} text={server.cpu} />
           <SpecRow icon={<MemoryStick className="w-3.5 h-3.5" />} text={server.memory} />
           <SpecRow icon={<HardDrive className="w-3.5 h-3.5" />} text={server.storage} />
@@ -422,7 +436,12 @@ function ServerCard({
             <span
               key={dc.code}
               title={`${dc.name} · ${dc.region}`}
-              className="inline-flex items-center gap-1 px-1.5 h-5 rounded-full border border-border text-[10px] font-mono"
+              className={cn(
+                "inline-flex items-center gap-1 px-1.5 h-5 rounded-full border text-[10px] font-mono transition-colors",
+                isOk
+                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                  : "border-border/60 bg-muted/30 text-muted-foreground/60"
+              )}
             >
               <StatusDot tone={isOk ? "success" : "danger"} size="xs" pulse={isOk} />
               {dc.code.toUpperCase()}
@@ -431,19 +450,23 @@ function ServerCard({
         </div>
 
         {/* 操作按钮 */}
-        <div className="flex items-center gap-2 pt-1">
+        <div className="flex items-center gap-2.5 pt-2.5 mt-auto border-t border-border/40">
           <Button
             variant="outline"
             size="sm"
-            className="flex-1"
+            className="flex-1 rounded-lg h-8 text-xs gap-1.5 border-border/80 hover:bg-secondary font-medium"
             onClick={onMonitor}
           >
-            <Bell className="w-3.5 h-3.5" />
-            {isMonitored ? "监控设置" : "监控"}
+            <Bell className="w-3.5 h-3.5 text-muted-foreground" />
+            <span>{isMonitored ? "监控设置" : "监控"}</span>
           </Button>
-          <Button size="sm" className="flex-1" onClick={onView}>
+          <Button
+            size="sm"
+            className="flex-1 rounded-lg h-8 text-xs gap-1.5 font-medium shadow-sm"
+            onClick={onView}
+          >
             <ShoppingCart className="w-3.5 h-3.5" />
-            抢购
+            <span>抢购</span>
           </Button>
         </div>
       </CardContent>
@@ -454,9 +477,9 @@ function ServerCard({
 /** 单行规格（icon + 文本） */
 function SpecRow({ icon, text }: { icon: React.ReactNode; text: string }) {
   return (
-    <div className="flex items-center gap-1.5 min-w-0 text-foreground/80">
-      <span className="text-muted-foreground flex-shrink-0">{icon}</span>
-      <span className="truncate" title={text}>{text}</span>
+    <div className="flex items-center gap-2 min-w-0">
+      <span className="text-primary/80 flex-shrink-0">{icon}</span>
+      <span className="truncate text-xs font-medium text-foreground/90" title={text}>{text}</span>
     </div>
   );
 }
@@ -562,9 +585,18 @@ function DetailContent({
             <DialogDescription className="truncate mt-0.5">{server.name}</DialogDescription>
           </div>
           {ok > 0 ? (
-            <Chip tone="success"><StatusDot tone="success" pulse size="xs" />当前可用</Chip>
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex-shrink-0 shadow-sm">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+              </span>
+              <span>当前可用 · {ok} 机房有货</span>
+            </div>
           ) : (
-            <Chip tone="danger"><StatusDot tone="danger" size="xs" />暂时缺货</Chip>
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border border-border/80 bg-secondary/60 text-muted-foreground flex-shrink-0">
+              <span className="h-2 w-2 rounded-full bg-muted-foreground/50" />
+              <span>暂时缺货</span>
+            </div>
           )}
         </div>
       </DialogHeader>
@@ -653,63 +685,75 @@ function DetailContent({
         </div>
       </div>
 
-      <DialogFooter className="border-t border-border pt-4 -mx-6 px-6">
-        <div className="mr-auto text-[12px] text-muted-foreground">
+      <DialogFooter className="flex flex-col-reverse sm:flex-row sm:items-center justify-between gap-2.5 pt-3 border-t border-border">
+        <div className="text-xs text-muted-foreground">
           {selectedDCs.length > 0
-            ? `将创建 ${totalTasks} 个任务（${selectedDCs.length} DC × ${qty}）${selectedValues.length > 0 ? ` · ${selectedValues.length} 项选配` : ""}`
-            : "请选数据中心"}
+            ? `已选 ${selectedDCs.length} 个机房 · 共计 ${totalTasks} 个任务`
+            : "请选择至少一个数据中心"}
         </div>
-        <Button variant="outline" onClick={onClose} disabled={create.isPending}>
-          关闭
-        </Button>
-        <Button
-          variant="outline"
-          disabled={create.isPending}
-          onClick={() => onMonitor(selectedDCs)}
-        >
-          <Bell className="w-4 h-4" />
-          {isMonitored ? "监控设置" : "加入监控"}
-        </Button>
-        <Button
-          disabled={selectedDCs.length === 0 || create.isPending}
-          onClick={async () => {
-            if (selectedDCs.length === 0) {
-              toast.error("请至少选择一个数据中心");
-              return;
-            }
-            if (!accountId) {
-              toast.error("请选择 OVH 账户");
-              return;
-            }
-            const result = await create.mutateAsync({
-              account_id: accountId,
-              planCode: server.planCode,
-              datacenters: selectedDCs,
-              quantity: qty,
-              retryInterval: Number(retryInterval) || 60,
-              options: selectedValues,
-            });
-            if (result.success > 0) {
-              toast.success(`已创建 ${result.success}/${result.total} 个抢购任务`);
-              onClose();
-            }
-            if (result.failed > 0) {
-              toast.error(`${result.failed} 个任务创建失败`);
-            }
-          }}
-        >
-          {create.isPending ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              创建中…
-            </>
-          ) : (
-            <>
-              <ShoppingCart className="w-4 h-4" />
-              {selectedDCs.length > 0 ? `创建 ${totalTasks} 个任务` : "创建抢购任务"}
-            </>
-          )}
-        </Button>
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onClose}
+            disabled={create.isPending}
+            className="flex-1 sm:flex-none h-9 rounded-lg text-xs border-border/80 hover:bg-secondary px-3"
+          >
+            关闭
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={create.isPending}
+            onClick={() => onMonitor(selectedDCs)}
+            className="flex-1 sm:flex-none h-9 rounded-lg text-xs gap-1.5 border-border/80 hover:bg-secondary px-3"
+          >
+            <Bell className="w-3.5 h-3.5" />
+            {isMonitored ? "监控设置" : "加入监控"}
+          </Button>
+          <Button
+            size="sm"
+            disabled={selectedDCs.length === 0 || create.isPending}
+            className="flex-1 sm:flex-none h-9 rounded-lg text-xs font-medium gap-1.5 px-3.5"
+            onClick={async () => {
+              if (selectedDCs.length === 0) {
+                toast.error("请至少选择一个数据中心");
+                return;
+              }
+              if (!accountId) {
+                toast.error("请选择 OVH 账户");
+                return;
+              }
+              const result = await create.mutateAsync({
+                account_id: accountId,
+                planCode: server.planCode,
+                datacenters: selectedDCs,
+                quantity: qty,
+                retryInterval: Number(retryInterval) || 60,
+                options: selectedValues,
+              });
+              if (result.success > 0) {
+                toast.success(`已创建 ${result.success}/${result.total} 个抢购任务`);
+                onClose();
+              }
+              if (result.failed > 0) {
+                toast.error(`${result.failed} 个任务创建失败`);
+              }
+            }}
+          >
+            {create.isPending ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                创建中…
+              </>
+            ) : (
+              <>
+                <ShoppingCart className="w-3.5 h-3.5" />
+                {selectedDCs.length > 0 ? `创建 ${totalTasks} 个任务` : "创建抢购任务"}
+              </>
+            )}
+          </Button>
+        </div>
       </DialogFooter>
     </>
   );
@@ -724,13 +768,13 @@ function fmtMoney(v: number, currency: string): string {
 
 function SpecCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
-    <div className="border border-border rounded-xl px-3.5 py-3 flex items-center gap-3 min-w-0">
-      <div className="w-9 h-9 rounded-lg bg-secondary flex items-center justify-center text-foreground flex-shrink-0">
+    <div className="surface-card border border-border rounded-xl px-3.5 py-3 flex items-center gap-3 min-w-0">
+      <div className="w-9 h-9 rounded-lg bg-secondary border border-border/60 flex items-center justify-center text-primary flex-shrink-0">
         {icon}
       </div>
       <div className="min-w-0">
         <div className="text-[11px] text-muted-foreground">{label}</div>
-        <div className="text-[13px] font-semibold truncate" title={value}>{value}</div>
+        <div className="text-[13px] font-semibold truncate text-foreground" title={value}>{value}</div>
       </div>
     </div>
   );
