@@ -13,6 +13,8 @@ import {
   Settings,
   User,
   CloudLightning,
+  Github,
+  Flame,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -162,6 +164,45 @@ export function MobileBottomNav() {
                 </div>
               </div>
             ))}
+
+            {/* 开源作者致敬卡片 */}
+            <div className="pt-2 border-t border-border/70">
+              <div className="rounded-xl border border-white/10 bg-gradient-to-br from-card to-muted/40 p-3 relative overflow-hidden">
+                <div className="flex items-center gap-3">
+                  <img
+                    src="/author-avatar.png"
+                    alt="cola"
+                    className="w-10 h-10 rounded-full object-cover ring-1 ring-amber-500/40 flex-shrink-0"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1 text-[10.5px] text-muted-foreground font-medium uppercase tracking-wider">
+                      <Flame className="w-3 h-3 text-amber-500 fill-amber-500/30" />
+                      <span>致敬开源作者</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 mt-1">
+                      <a
+                        href="https://t.me/gocola"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs font-semibold text-foreground hover:text-primary transition-colors flex items-center gap-1"
+                      >
+                        cola <span className="text-sky-400 font-mono text-[10px]">(@gocola)</span>
+                      </a>
+                      <a
+                        href="https://github.com/gokele/ovh"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-secondary text-[11px] font-mono text-muted-foreground hover:text-foreground transition-colors"
+                        title="查看 GitHub 仓库"
+                      >
+                        <Github className="w-3.5 h-3.5" />
+                        <span>gokele/ovh</span>
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </SheetContent>
       </Sheet>

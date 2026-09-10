@@ -13,6 +13,8 @@ import {
   User,
   Cloud,
   CloudLightning,
+  Github,
+  Flame,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { QuickOrderDialog } from "@/components/orders/QuickOrderDialog";
@@ -119,7 +121,44 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
         ))}
       </nav>
 
-      <div className="shrink-0 border-t border-sidebar-border p-3">
+      <div className="shrink-0 border-t border-sidebar-border p-3 space-y-2">
+        {/* 致敬开源作者 */}
+        <div className="rounded-xl border border-white/10 bg-gradient-to-br from-card/90 to-muted/40 p-2.5 shadow-sm relative overflow-hidden group">
+          <div className="flex items-center gap-2.5">
+            <img
+              src="/author-avatar.png"
+              alt="cola"
+              className="w-8 h-8 rounded-full object-cover ring-1 ring-amber-500/40 flex-shrink-0"
+            />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1 text-[10px] text-muted-foreground font-medium uppercase tracking-wider">
+                <Flame className="w-2.5 h-2.5 text-amber-500 fill-amber-500/30" />
+                <span>致敬开源作者</span>
+              </div>
+              <div className="flex items-center justify-between gap-1 mt-0.5">
+                <a
+                  href="https://t.me/gocola"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs font-semibold text-foreground hover:text-primary transition-colors truncate"
+                  title="Telegram: @gocola"
+                >
+                  cola <span className="text-[10px] text-sky-400 font-normal font-mono">(@gocola)</span>
+                </a>
+                <a
+                  href="https://github.com/gokele/ovh"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded hover:bg-muted"
+                  title="GitHub: gokele/ovh"
+                >
+                  <Github className="w-3.5 h-3.5" />
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div className="flex items-center justify-between rounded-lg border border-border/70 bg-muted/30 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
           <div className="flex items-center gap-1.5">
             <span className="h-1.5 w-1.5 rounded-full bg-primary" />
