@@ -66,6 +66,11 @@ func ListMyServers(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 			return
 		}
+		if acc, ok := ovhAccountFor(state, c); ok && acc.ID != "" {
+			for _, name := range names {
+				RegisterServerOwner(name, acc.ID)
+			}
+		}
 		state.Logger.Info(fmt.Sprintf("获取服务器列表成功，共 %d 台", len(names)), "server_control")
 
 		// 并发拉 detail + serviceInfos：N 台服务器 × 2 GET × 串行 ~200ms => 改 10 并发 ≈ N/5 * 200ms

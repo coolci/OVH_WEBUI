@@ -129,7 +129,7 @@ export function OverviewTab({ server }: { server: OwnedServer }) {
             <div className="divide-y divide-border">
               {(interfaces.data || []).map((nic) => (
                 <div key={nic.mac} className="px-4 py-3 flex items-center justify-between text-[13px]">
-                  <code className="font-mono">{nic.mac}</code>
+                  <code className="font-mono">{maskSensitive(nic.mac, hidden)}</code>
                   <span className="text-[11px] text-muted-foreground">{nic.linkType || "—"}</span>
                 </div>
               ))}

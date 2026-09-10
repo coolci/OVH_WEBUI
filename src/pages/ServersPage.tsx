@@ -397,12 +397,9 @@ function ServerCard({
             {server.planCode}
           </h3>
           {okCount > 0 ? (
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium border border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex-shrink-0 shadow-sm">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-              </span>
-              <span>当前可用 · {okCount} 机房</span>
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium border border-emerald-500/25 bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 flex-shrink-0">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              <span>{okCount} 机房有货</span>
             </div>
           ) : (
             <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium border border-border/80 bg-secondary/60 text-muted-foreground flex-shrink-0">
@@ -578,23 +575,27 @@ function DetailContent({
 
   return (
     <>
-      <DialogHeader>
-        <div className="flex items-start justify-between gap-3 pr-6">
-          <div className="min-w-0">
-            <DialogTitle className="font-mono text-xl truncate">{server.planCode}</DialogTitle>
-            <DialogDescription className="truncate mt-0.5">{server.name}</DialogDescription>
-          </div>
+      <DialogHeader className="space-y-1.5 pb-2 text-left">
+        {/* 第一行：型号全称（独享整行，预留关闭按钮空间，绝不截断） */}
+        <div className="pr-8">
+          <DialogTitle className="font-mono text-lg sm:text-xl font-bold tracking-tight text-foreground break-all sm:break-normal">
+            {server.planCode}
+          </DialogTitle>
+        </div>
+
+        {/* 第二行：服务器名称 + 稳健低调库存徽章 */}
+        <div className="flex items-center justify-between gap-2.5 pt-0.5">
+          <DialogDescription className="text-xs sm:text-sm text-muted-foreground font-medium truncate flex-1 min-w-0" title={server.name}>
+            {server.name}
+          </DialogDescription>
           {ok > 0 ? (
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex-shrink-0 shadow-sm">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-              </span>
-              <span>当前可用 · {ok} 机房有货</span>
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11.5px] font-medium border border-emerald-500/25 bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 flex-shrink-0">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              <span>{ok} 机房有货</span>
             </div>
           ) : (
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border border-border/80 bg-secondary/60 text-muted-foreground flex-shrink-0">
-              <span className="h-2 w-2 rounded-full bg-muted-foreground/50" />
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11.5px] font-medium border border-border/80 bg-secondary/60 text-muted-foreground flex-shrink-0">
+              <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50" />
               <span>暂时缺货</span>
             </div>
           )}

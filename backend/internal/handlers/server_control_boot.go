@@ -146,7 +146,7 @@ func GetMonitoringStatus(state *app.State) gin.HandlerFunc {
 		}
 		var info map[string]interface{}
 		if err := client.Get("/dedicated/server/"+svc, &info); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			ovhRespondError(c, err, "获取监控状态失败")
 			return
 		}
 		// 缺失时默认 false

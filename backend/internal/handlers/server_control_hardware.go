@@ -78,7 +78,7 @@ func GetHardwareInfo(state *app.State) gin.HandlerFunc {
 		var hardware map[string]interface{}
 		if err := client.Get("/dedicated/server/"+svc+"/specifications/hardware", &hardware); err != nil {
 			state.Logger.Error("获取服务器 "+svc+" 硬件信息失败: "+err.Error(), "server_control")
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			ovhRespondError(c, err, "获取硬件信息失败")
 			return
 		}
 		// 缺字段补 N/A / 0 / {} / []，
@@ -117,7 +117,7 @@ func GetNetworkSpecs(state *app.State) gin.HandlerFunc {
 		}
 		var network map[string]interface{}
 		if err := client.Get("/dedicated/server/"+svc+"/specifications/network", &network); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			ovhRespondError(c, err, "获取网络规格失败")
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{
@@ -147,7 +147,7 @@ func GetServerIPs(state *app.State) gin.HandlerFunc {
 		}
 		var list []string
 		if err := client.Get("/dedicated/server/"+svc+"/ips", &list); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			ovhRespondError(c, err, "获取 IP 列表失败")
 			return
 		}
 		// 并发拉每个 IP 的详情
@@ -418,7 +418,7 @@ func GetServiceInfo(state *app.State) gin.HandlerFunc {
 		var info map[string]interface{}
 		if err := client.Get("/dedicated/server/"+svc+"/serviceInfos", &info); err != nil {
 			state.Logger.Error("获取服务器 "+svc+" 服务信息失败: "+err.Error(), "server_control")
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			ovhRespondError(c, err, "获取服务信息失败")
 			return
 		}
 		renew, _ := info["renew"].(map[string]interface{})

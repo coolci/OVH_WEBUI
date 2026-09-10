@@ -6,11 +6,13 @@ import { EmptyState } from "@/components/common/EmptyState";
 import {
   useVpsMitigation, useEnableVpsMitigation, useDisableVpsMitigation,
 } from "@/hooks/use-vps-control";
+import { useHideIp, maskSensitive } from "@/hooks/use-hide-ip";
 import { toast } from "sonner";
 
 /** VPS DDoS Mitigation 管理。逻辑跟 server-control 的 MitigationPane 相同 —— OVH
  *  自动缓解默认开,我们只暴露「永久缓解」手动开关。VPS 一般只 1 个 IP,UI 比 dedicated 简单。 */
 export function VpsMitigationPane({ serviceName }: { serviceName: string }) {
+  const { hidden } = useHideIp();
   const list = useVpsMitigation(serviceName);
   const enable = useEnableVpsMitigation(serviceName);
   const disable = useDisableVpsMitigation(serviceName);
@@ -58,7 +60,7 @@ export function VpsMitigationPane({ serviceName }: { serviceName: string }) {
         <div key={blk.ipBlock} className="border border-border rounded-2xl overflow-hidden">
           <div className="px-3.5 py-2.5 border-b border-border bg-secondary/30 flex items-center gap-2">
             <ShieldAlert className="w-3.5 h-3.5 text-muted-foreground" />
-            <code className="text-[12px] font-mono font-semibold">{blk.ipBlock}</code>
+            <code className="text-[12px] font-mono font-semibold">{maskSensitive(blk.ipBlock, hidden)}</code>
             {isV6 && <span className="text-[10px] text-muted-foreground ml-1">IPv6</span>}
             {blk.error && <span className="text-[11px] text-destructive ml-auto">{blk.error}</span>}
           </div>
@@ -93,7 +95,7 @@ export function VpsMitigationPane({ serviceName }: { serviceName: string }) {
                 const isRemoving = m.state === "removalPending";
                 return (
                   <div key={m.ipOnMitigation} className="px-3.5 py-2.5 flex items-center gap-2 text-[12px] flex-wrap">
-                    <code className="font-mono">{m.ipOnMitigation}</code>
+                    <code className="font-mono">{maskSensitive(m.ipOnMitigation, hidden)}</code>
                     <Chip tone={mitigationTone(m.state)}>{stateText(m.state)}</Chip>
                     {m.auto && <span className="text-[11px] text-muted-foreground">自动</span>}
                     {m.permanent && (

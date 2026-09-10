@@ -10,6 +10,7 @@ import {
   useUpdateTerminationPolicy,
   type ServiceInfo,
 } from "@/hooks/use-server-control";
+import { useHideIp, maskSensitive } from "@/hooks/use-hide-ip";
 import { toast } from "sonner";
 
 type RenewMode = "auto" | "manual" | "delete";
@@ -60,6 +61,7 @@ export function RenewalDialog({
       : "manual";
   const [mode, setMode] = useState<RenewMode>(currentMode);
   const [period, setPeriod] = useState<number>(info.renewalPeriod || 1);
+  const { hidden } = useHideIp();
   const defaultUpdate = useUpdateRenewal(serviceName);
   const update = mutation ?? defaultUpdate;
   const defaultPolicy = useUpdateTerminationPolicy(serviceName);
@@ -114,7 +116,7 @@ export function RenewalDialog({
             <Repeat className="w-5 h-5" />
             修改续费策略
           </DialogTitle>
-          <DialogDescription>{serviceName}</DialogDescription>
+          <DialogDescription>{maskSensitive(serviceName, hidden)}</DialogDescription>
         </DialogHeader>
 
         {info.renewalForced ? (

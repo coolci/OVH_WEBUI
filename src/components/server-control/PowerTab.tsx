@@ -19,9 +19,11 @@ import { BiosDialog } from "./BiosDialog";
 import { InstallProgressDialog } from "./InstallProgressDialog";
 import { IpmiDialog } from "./IpmiDialog";
 import { SplaDialog } from "./SplaDialog";
+import { useHideIp, maskSensitive } from "@/hooks/use-hide-ip";
 
 /** 电源与系统 Tab：重启 / 重装 / IPMI / 启动模式 / 解锁 Windows / 任务 / BIOS / 安装进度 */
 export function PowerTab({ server }: { server: OwnedServer }) {
+  const { hidden } = useHideIp();
   const [bootOpen, setBootOpen] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false);
   const [reinstallOpen, setReinstallOpen] = useState(false);
@@ -116,7 +118,7 @@ export function PowerTab({ server }: { server: OwnedServer }) {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-warning">
               <AlertTriangle className="w-5 h-5 text-amber-500" />
-              确认硬重启 {server.serviceName}？
+              确认硬重启 {maskSensitive(server.serviceName, hidden)}？
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground leading-relaxed">
               这相当于直接按下电源重置键，并非操作系统内的正常软重启：内存和磁盘缓存中未落盘的数据将丢失，正在运行的服务会被立即切断。请务必确认业务已准备就绪。

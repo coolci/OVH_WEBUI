@@ -5,6 +5,7 @@ import { Skeleton } from "@/components/common/Skeleton";
 import { EmptyState } from "@/components/common/EmptyState";
 import { Chip } from "@/components/common/Chip";
 import { useServerNetworkSpecs } from "@/hooks/use-server-control";
+import { useHideIp, maskSensitive } from "@/hooks/use-hide-ip";
 
 /**
  * Network specs：完全按 OVH 实际字段渲染
@@ -26,6 +27,7 @@ export function NetworkSpecsDialog({
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }) {
+  const { hidden } = useHideIp();
   const q = useServerNetworkSpecs(serviceName, open);
   const data = q.data;
 
@@ -84,9 +86,9 @@ export function NetworkSpecsDialog({
                   <div className="px-4 py-2 bg-secondary/50 text-[12px] font-semibold">IPv4 路由</div>
                   <KvRows
                     rows={[
-                      ["IP 地址", data.routing.ipv4.ip],
-                      ["网关", data.routing.ipv4.gateway],
-                      ["网段", data.routing.ipv4.network],
+                      ["IP 地址", maskSensitive(data.routing.ipv4.ip, hidden)],
+                      ["网关", maskSensitive(data.routing.ipv4.gateway, hidden)],
+                      ["网段", maskSensitive(data.routing.ipv4.network, hidden)],
                     ]}
                   />
                 </div>
@@ -98,9 +100,9 @@ export function NetworkSpecsDialog({
                   <div className="px-4 py-2 bg-secondary/50 text-[12px] font-semibold">IPv6 路由</div>
                   <KvRows
                     rows={[
-                      ["IP 地址", data.routing.ipv6.ip],
-                      ["网关", data.routing.ipv6.gateway],
-                      ["网段", data.routing.ipv6.network],
+                      ["IP 地址", maskSensitive(data.routing.ipv6.ip, hidden)],
+                      ["网关", maskSensitive(data.routing.ipv6.gateway, hidden)],
+                      ["网段", maskSensitive(data.routing.ipv6.network, hidden)],
                     ]}
                   />
                 </div>

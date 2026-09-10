@@ -57,8 +57,8 @@ export function MobileBottomNav() {
 
   return (
     <>
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-card/85 backdrop-blur-2xl border-t border-border/70 safe-area-bottom shadow-[0_-4px_24px_rgba(0,0,0,0.5)]">
-        <div className="flex items-stretch justify-around min-h-[3.6rem] px-1 py-1">
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-card/90 backdrop-blur-2xl border-t border-border/70 safe-area-bottom">
+        <div className="flex items-center justify-around h-[3.4rem] px-2">
           {primaryNav.map((item) => {
             const isActive = location.pathname === item.to;
             return (
@@ -66,25 +66,26 @@ export function MobileBottomNav() {
                 key={item.to}
                 to={item.to}
                 className={cn(
-                  "relative flex flex-col items-center justify-center gap-1 px-2 py-1 min-w-0 flex-1 touch-manipulation select-none rounded-xl transition-all duration-200",
-                  "active:scale-95",
+                  "flex flex-col items-center justify-center gap-1 py-1 min-w-0 flex-1 touch-manipulation select-none transition-all duration-150",
+                  "active:scale-[0.92]",
                   isActive
-                    ? "text-primary font-medium"
-                    : "text-muted-foreground hover:text-foreground"
+                    ? "text-primary"
+                    : "text-muted-foreground/75 hover:text-foreground"
                 )}
               >
-                <div className={cn(
-                  "relative flex items-center justify-center w-8 h-7 rounded-lg transition-all",
-                  isActive && "bg-primary/10"
+                <item.icon
+                  className={cn(
+                    "h-5 w-5 transition-colors duration-150",
+                    isActive ? "text-primary" : "text-muted-foreground/80"
+                  )}
+                  strokeWidth={isActive ? 2.3 : 1.75}
+                />
+                <span className={cn(
+                  "text-[10.5px] tracking-tight truncate max-w-full leading-none transition-colors",
+                  isActive ? "font-semibold text-primary" : "font-medium text-muted-foreground/80"
                 )}>
-                  <item.icon className={cn("h-4.5 w-4.5 transition-transform duration-200", isActive && "scale-105")} />
-                </div>
-                <span className="text-[10.5px] tracking-tight truncate max-w-full leading-none">
                   {item.label}
                 </span>
-                {isActive && (
-                  <span className="absolute -bottom-0.5 w-4 h-0.5 rounded-full bg-primary" />
-                )}
               </NavLink>
             );
           })}
@@ -93,23 +94,26 @@ export function MobileBottomNav() {
             type="button"
             onClick={() => setMoreOpen(true)}
             className={cn(
-              "relative flex flex-col items-center justify-center gap-1 px-2 py-1 min-w-0 flex-1 touch-manipulation select-none rounded-xl transition-all duration-200",
-              "active:scale-95",
+              "flex flex-col items-center justify-center gap-1 py-1 min-w-0 flex-1 touch-manipulation select-none transition-all duration-150",
+              "active:scale-[0.92]",
               moreActive
-                ? "text-primary font-medium"
-                : "text-muted-foreground hover:text-foreground"
+                ? "text-primary"
+                : "text-muted-foreground/75 hover:text-foreground"
             )}
           >
-            <div className={cn(
-              "relative flex items-center justify-center w-8 h-7 rounded-lg transition-all",
-              moreActive && "bg-primary/10"
+            <MoreHorizontal
+              className={cn(
+                "h-5 w-5 transition-colors duration-150",
+                moreActive ? "text-primary" : "text-muted-foreground/80"
+              )}
+              strokeWidth={moreActive ? 2.3 : 1.75}
+            />
+            <span className={cn(
+              "text-[10.5px] tracking-tight leading-none transition-colors",
+              moreActive ? "font-semibold text-primary" : "font-medium text-muted-foreground/80"
             )}>
-              <MoreHorizontal className={cn("h-4.5 w-4.5 transition-transform duration-200", moreActive && "scale-105")} />
-            </div>
-            <span className="text-[10.5px] tracking-tight leading-none">更多</span>
-            {moreActive && (
-              <span className="absolute -bottom-0.5 w-4 h-0.5 rounded-full bg-primary" />
-            )}
+              更多
+            </span>
           </button>
         </div>
       </nav>

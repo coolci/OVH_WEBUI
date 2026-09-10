@@ -39,19 +39,51 @@ export function useHideIp() {
 /** 把 IP / MAC / 反向 DNS 主机名等敏感字符串打码（保留长度感）。开关关闭时原样返回。 */
 export function maskSensitive(value: string, hidden: boolean): string {
   if (!hidden || !value) return value;
-  // IPv4：保留首段
-  const ipv4 = value.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (ipv4) return `${ipv4[1]}.***.***.***`;
-  // MAC：保留前 6 位（厂商段）
-  const mac = value.match(/^([0-9a-fA-F]{2}[:\-]){5}[0-9a-fA-F]{2}$/);
-  if (mac) return value.slice(0, 8) + ":**:**:**:**";
-  // OVH 反向 DNS 主机名：ns123.ip-54-38-222.eu / 8.ip-54-38-222.eu / ip-54-38-222.eu
-  // 同时把 dash 形式和 dot 形式的四段 IP 都打码
-  if (/ip[-.]\d{1,3}[-.]\d{1,3}[-.]\d{1,3}[-.]\d{1,3}/i.test(value)) {
-    return value
-      .replace(/ip-\d{1,3}-\d{1,3}-\d{1,3}-\d{1,3}/gi, "ip-***-***-***-***")
-      .replace(/ip\.\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/gi, "ip.***.***.***.***");
+  if (typeof value !== "string") value = String(value);
+  const str = value.trim();
+
+  // 1. IPv4 单 IP、带 CIDR 或端口：1.2.3.4, 1.2.3.4/24, 1.2.3.4:8080
+  const ipv4Match = str.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})((\/\d+)?(:\d+)?)$/);
+  if (ipv4Match) {
+    return `${ipv4Match[1]}.***.***.***${ipv4Match[5] || ""}`;
   }
-  // 其它：星号占满
-  return "*".repeat(Math.min(value.length, 16));
+
+  // 2. MAC 地址：00:1a:2b:3c:4d:5e
+  const macMatch = str.match(/^([0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}$/);
+  if (macMatch) {
+    return str.slice(0, 8) + ":**:**:**";
+  }
+
+  // 3. IPv6 地址：2001:41d0:1:2345::1 或 2001:41d0:1:2345::/64
+  if (str.includes(":") && /^[0-9a-fA-F:]+(\/\d+)?$/.test(str)) {
+    const parts = str.split("/");
+    const segs = parts[0].split(":");
+    const masked = segs.slice(0, 2).join(":") + ":****:****::*" + (parts[1] ? "/" + parts[1] : "");
+    return masked;
+  }
+
+  // 4. OVH 反向 DNS 主机名：含 2~4 段 IP 数字（如 ns392029.ip-37-187-28.eu / ip-54-38-222-10.eu）
+  if (/ip[-.]\d+/i.test(str)) {
+    return str
+      .replace(/ns\d+/gi, (m) => m.slice(0, 2) + "*".repeat(m.length - 2))
+      .replace(/ip((?:[-.]\d{1,3}){2,4})/gi, (m) => m.replace(/\d+/g, "***"));
+  }
+
+  // 5. VPS 主机名 / 默认 serviceName：vps-123456.vps.ovh.net, vps-123456
+  if (/^vps-[\w.-]+/i.test(str)) {
+    return str.replace(/^vps-([a-zA-Z0-9]+)/i, (_, id) => "vps-" + "*".repeat(Math.min(id.length, 8)));
+  }
+
+  // 6. 独立服务器默认服务名：ns123456...
+  if (/^ns\d+[\w.-]*/i.test(str)) {
+    return str.replace(/^ns(\d+)/i, (_, digits) => "ns" + "*".repeat(digits.length));
+  }
+
+  // 7. 文本中内嵌的 IPv4 地址
+  if (/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/.test(str)) {
+    return str.replace(/\b(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\b/g, (_m, p1) => `${p1}.***.***.***`);
+  }
+
+  return value;
 }
+

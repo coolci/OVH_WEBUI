@@ -313,6 +313,7 @@ function RenameDialog({
   currentAlias: string;
   onClose: () => void;
 }) {
+  const { hidden } = useHideIp();
   const set = useSetServerAlias();
   const [value, setValue] = useState(currentAlias);
   useEffect(() => {
@@ -332,7 +333,7 @@ function RenameDialog({
         <DialogHeader>
           <DialogTitle>设置别名</DialogTitle>
           <DialogDescription className="font-mono text-[11px]">
-            {server.serviceName}
+            {maskSensitive(server.serviceName, hidden)}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-3">
@@ -392,7 +393,7 @@ function ServerTabs({ server }: { server: OwnedServer }) {
             <div className="min-w-0 space-y-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-semibold text-base sm:text-lg text-foreground truncate">
-                  {srvLabel}
+                  {maskSensitive(srvLabel, hidden)}
                 </span>
                 {server.commercialRange && (
                   <span className="px-2 py-0.5 rounded-md text-[11px] font-mono bg-secondary text-muted-foreground border border-border/60">
@@ -401,7 +402,7 @@ function ServerTabs({ server }: { server: OwnedServer }) {
                 )}
               </div>
               <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono flex-wrap">
-                <span>{server.serviceName}</span>
+                <span>{maskSensitive(server.serviceName, hidden)}</span>
                 <span>·</span>
                 <span>{server.datacenter.toUpperCase()}</span>
                 <span>·</span>

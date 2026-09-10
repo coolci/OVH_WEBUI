@@ -131,8 +131,8 @@ function VpsControlPage() {
                       <SelectItem key={v.serviceName} value={v.serviceName}>
                         <span className="flex items-center gap-2">
                           <StatusDot tone={v.state === "running" ? "success" : v.state === "stopped" ? "warning" : "muted"} />
-                          <span className="truncate">{label}</span>
-                          <span className="text-[10px] text-muted-foreground font-mono">{v.serviceName}</span>
+                          <span className="truncate">{maskSensitive(label, hidden)}</span>
+                          <span className="text-[10px] text-muted-foreground font-mono">{maskSensitive(v.serviceName, hidden)}</span>
                         </span>
                       </SelectItem>
                     );
@@ -320,7 +320,7 @@ function VpsDetail({
             <div className="min-w-0 space-y-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-semibold text-base sm:text-lg text-foreground truncate">
-                  {vpsLabel}
+                  {maskSensitive(vpsLabel, hidden)}
                 </span>
                 {server.model && (
                   <span className="px-2 py-0.5 rounded-md text-[11px] font-mono bg-secondary text-muted-foreground border border-border/60">
@@ -329,7 +329,7 @@ function VpsDetail({
                 )}
               </div>
               <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono flex-wrap">
-                <span>{server.serviceName}</span>
+                <span>{maskSensitive(server.serviceName, hidden)}</span>
                 <span>·</span>
                 <span>IP: {ipDisplay}</span>
               </div>
@@ -538,7 +538,7 @@ function VpsDetail({
                     {ip.geolocation && <span className="text-[10px] text-muted-foreground">{ip.geolocation}</span>}
                     {ip.reverse && (
                       <span className="ml-auto text-[11px] text-muted-foreground font-mono truncate" title={ip.reverse}>
-                        ↩ {ip.reverse}
+                        ↩ {maskSensitive(ip.reverse, hidden)}
                       </span>
                     )}
                   </div>
@@ -572,7 +572,7 @@ function VpsDetail({
         <TabsContent value="maintenance" className="mt-4 space-y-4">
           <div className="border border-border rounded-2xl p-4 space-y-3">
             <h3 className="text-sm font-semibold">服务器别名</h3>
-            <p className="text-[12px] text-muted-foreground">本地别名,不影响 OVH 真实名(`{server.serviceName}`)</p>
+            <p className="text-[12px] text-muted-foreground">本地别名,不影响 OVH 真实名(`{maskSensitive(server.serviceName, hidden)}`)</p>
             <AliasEditor serviceName={server.serviceName} aliases={aliases} onSetAlias={onSetAlias} />
           </div>
 

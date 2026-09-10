@@ -21,6 +21,7 @@ import { Chip } from "@/components/common/Chip";
 import { Skeleton } from "@/components/common/Skeleton";
 import { EmptyState } from "@/components/common/EmptyState";
 import { CapabilityNotice } from "@/components/common/CapabilityNotice";
+import { useHideIp, maskSensitive } from "@/hooks/use-hide-ip";
 import { toast } from "sonner";
 
 /** 高级 Tab：旧前端的 9 个 sub-tab 全部接入 */
@@ -168,6 +169,7 @@ function BackupFtpPane({ serviceName }: { serviceName: string }) {
       </Pane>
     );
   }
+  const { hidden } = useHideIp();
   const ftp = data.backupFtp || {};
   const accessList: any[] = data.accessList || [];
   // 旧前端：quota 和 usage 都是 { value, unit } 对象
@@ -188,7 +190,7 @@ function BackupFtpPane({ serviceName }: { serviceName: string }) {
           <div className="border border-border rounded-2xl divide-y divide-border">
             {accessList.map((a, idx) => (
               <div key={idx} className="px-4 py-2.5 text-[13px]">
-                <code className="font-mono">{a.ipBlock}</code>
+                <code className="font-mono">{maskSensitive(a.ipBlock, hidden)}</code>
               </div>
             ))}
           </div>
@@ -223,6 +225,7 @@ function SecondaryDnsPane({ serviceName }: { serviceName: string }) {
 
 function VirtualMacPane({ serviceName }: { serviceName: string }) {
   const q = useServerVirtualMac(serviceName);
+  const { hidden } = useHideIp();
   if (q.isPending) return <PaneSkeleton />;
   const data = q.data || [];
   if (data.length === 0) return <EmptyState icon={Wifi} title="未分配虚拟 MAC" />;
@@ -231,9 +234,9 @@ function VirtualMacPane({ serviceName }: { serviceName: string }) {
       <div className="border border-border rounded-2xl divide-y divide-border">
         {data.map((m: any, idx: number) => (
           <div key={idx} className="px-3 sm:px-4 py-2.5 sm:py-3 grid grid-cols-1 sm:grid-cols-3 gap-1 sm:gap-2 sm:items-center text-[12px] sm:text-[13px]">
-            <code className="font-mono break-all">{m.macAddress || "—"}</code>
+            <code className="font-mono break-all">{m.macAddress ? maskSensitive(m.macAddress, hidden) : "—"}</code>
             <span className="text-muted-foreground">{m.type || "—"}</span>
-            <code className="font-mono text-muted-foreground sm:text-right break-all">{m.ipAddress || "—"}</code>
+            <code className="font-mono text-muted-foreground sm:text-right break-all">{m.ipAddress ? maskSensitive(m.ipAddress, hidden) : "—"}</code>
           </div>
         ))}
       </div>
@@ -509,6 +512,7 @@ function PaneSkeleton() {
 // ─────────────────────────────── DDoS Mitigation ───────────────────────────────
 
 function MitigationPane({ serviceName }: { serviceName: string }) {
+  const { hidden } = useHideIp();
   const list = useMitigation(serviceName);
   const enable = useEnableMitigation(serviceName);
   const disable = useDisableMitigation(serviceName);
@@ -554,7 +558,7 @@ function MitigationPane({ serviceName }: { serviceName: string }) {
         <div key={blk.ipBlock} className="border border-border rounded-2xl overflow-hidden">
           <div className="px-3.5 py-2.5 border-b border-border bg-secondary/30 flex items-center gap-2">
             <ShieldAlert className="w-3.5 h-3.5 text-muted-foreground" />
-            <code className="text-[12px] font-mono font-semibold">{blk.ipBlock}</code>
+            <code className="text-[12px] font-mono font-semibold">{maskSensitive(blk.ipBlock, hidden)}</code>
             {isV6 && <span className="text-[10px] text-muted-foreground ml-1">IPv6</span>}
             {blk.error && <span className="text-[11px] text-destructive ml-auto">{blk.error}</span>}
           </div>
@@ -587,7 +591,7 @@ function MitigationPane({ serviceName }: { serviceName: string }) {
                 const isRemoving = m.state === "removalPending";
                 return (
                   <div key={m.ipOnMitigation} className="px-3.5 py-2.5 flex items-center gap-2 text-[12px]">
-                    <code className="font-mono">{m.ipOnMitigation}</code>
+                    <code className="font-mono">{maskSensitive(m.ipOnMitigation, hidden)}</code>
                     <Chip tone={mitigationTone(m.state)}>{stateText(m.state)}</Chip>
                     {m.auto && <span className="text-[11px] text-muted-foreground">自动</span>}
                     {m.permanent && <span className="text-[11px] text-emerald-600 dark:text-emerald-400">永久</span>}

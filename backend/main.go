@@ -155,6 +155,7 @@ func main() {
 	handlers.SetMonitorRef(mon)
 	mon.LoadFromDB()
 	console.Info("监控就绪", "checkInterval", mon.CheckInterval())
+	go handlers.WarmupServiceOwners(state)
 
 	// Gin
 	if mode := os.Getenv("GIN_MODE"); mode != "" {

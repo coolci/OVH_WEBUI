@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/gin-gonic/gin"
@@ -15,18 +16,172 @@ import (
 	"github.com/ovh-webui/server/internal/types"
 )
 
+var (
+	serverOwnerCache sync.Map // map[string]string: serviceName -> accountID
+	vpsOwnerCache    sync.Map // map[string]string: vpsName -> accountID
+)
+
+func RegisterServerOwner(serviceName, accountID string) {
+	if serviceName != "" && accountID != "" {
+		serverOwnerCache.Store(serviceName, accountID)
+	}
+}
+
+func RegisterVpsOwner(serviceName, accountID string) {
+	if serviceName != "" && accountID != "" {
+		vpsOwnerCache.Store(serviceName, accountID)
+	}
+}
+
+// WarmupServiceOwners 在后台遍历所有已配置账户，预热独立服务器与 VPS 的归属映射
+func WarmupServiceOwners(state *app.State) {
+	state.AccountsMu.RLock()
+	accounts := make([]types.OVHAccount, len(state.Accounts))
+	copy(accounts, state.Accounts)
+	state.AccountsMu.RUnlock()
+
+	for _, acc := range accounts {
+		client, err := state.OVH.ClientFor(acc.ID)
+		if err != nil {
+			continue
+		}
+		var srvNames []string
+		if err := client.Get("/dedicated/server", &srvNames); err == nil {
+			for _, nm := range srvNames {
+				RegisterServerOwner(nm, acc.ID)
+			}
+		}
+		var vpsNames []string
+		if err := client.Get("/vps", &vpsNames); err == nil {
+			for _, nm := range vpsNames {
+				RegisterVpsOwner(nm, acc.ID)
+			}
+		}
+	}
+}
+
+func findAccountOwningServer(state *app.State, serviceName string) (types.OVHAccount, bool) {
+	if serviceName == "" {
+		return types.OVHAccount{}, false
+	}
+	if accID, ok := serverOwnerCache.Load(serviceName); ok {
+		if acc, found := state.FindAccount(accID.(string)); found {
+			return acc, true
+		}
+	}
+
+	state.AccountsMu.RLock()
+	accounts := make([]types.OVHAccount, len(state.Accounts))
+	copy(accounts, state.Accounts)
+	state.AccountsMu.RUnlock()
+
+	for _, acc := range accounts {
+		client, err := state.OVH.ClientFor(acc.ID)
+		if err != nil {
+			continue
+		}
+		var info map[string]interface{}
+		if err := client.Get("/dedicated/server/"+serviceName, &info); err == nil {
+			serverOwnerCache.Store(serviceName, acc.ID)
+			return acc, true
+		}
+	}
+	return types.OVHAccount{}, false
+}
+
+func findAccountOwningVps(state *app.State, serviceName string) (types.OVHAccount, bool) {
+	if serviceName == "" {
+		return types.OVHAccount{}, false
+	}
+	if accID, ok := vpsOwnerCache.Load(serviceName); ok {
+		if acc, found := state.FindAccount(accID.(string)); found {
+			return acc, true
+		}
+	}
+
+	state.AccountsMu.RLock()
+	accounts := make([]types.OVHAccount, len(state.Accounts))
+	copy(accounts, state.Accounts)
+	state.AccountsMu.RUnlock()
+
+	for _, acc := range accounts {
+		client, err := state.OVH.ClientFor(acc.ID)
+		if err != nil {
+			continue
+		}
+		var info map[string]interface{}
+		if err := client.Get("/vps/"+serviceName, &info); err == nil {
+			vpsOwnerCache.Store(serviceName, acc.ID)
+			return acc, true
+		}
+	}
+	return types.OVHAccount{}, false
+}
+
 // ovhClientFor 从请求 ?account=xxx 取账户 ID 拿对应 OVH client;
-// 空时(没传 ?account)走默认账户;凭据缺失返回 error,调用方按原 Client() 错误流程处理。
-// 大部分 handler 都是 `state.OVH.Client()` 模式,这个 helper 是 1:1 替换,
-// 把单账户改成多账户路由,语义最小化变化。
+// 空时(没传 ?account)走默认账户;针对具体服务器/VPS 时自动解析实际归属账户。
 func ovhClientFor(state *app.State, c *gin.Context) (*ovhsdk.Client, error) {
+	svc := c.Param("service_name")
+	if svc != "" {
+		path := ""
+		if c.Request != nil && c.Request.URL != nil {
+			path = c.Request.URL.Path
+		}
+		if strings.Contains(path, "/server-control/") {
+			if acc, ok := findAccountOwningServer(state, svc); ok {
+				return state.OVH.ClientFor(acc.ID)
+			}
+		} else if strings.Contains(path, "/vps-control/") {
+			if acc, ok := findAccountOwningVps(state, svc); ok {
+				return state.OVH.ClientFor(acc.ID)
+			}
+		}
+	}
 	return state.OVH.ClientFor(c.Query("account"))
 }
 
 // ovhAccountFor 从请求 ?account=xxx 取账户实体(给需要原始凭据/endpoint 的 raw HTTP 调用用)。
-// 空 → 默认账户;不存在 → ok=false。
+// 空 → 默认账户;针对具体服务器/VPS 时自动解析实际归属账户。
 func ovhAccountFor(state *app.State, c *gin.Context) (types.OVHAccount, bool) {
+	svc := c.Param("service_name")
+	if svc != "" {
+		path := ""
+		if c.Request != nil && c.Request.URL != nil {
+			path = c.Request.URL.Path
+		}
+		if strings.Contains(path, "/server-control/") {
+			if acc, ok := findAccountOwningServer(state, svc); ok {
+				return acc, true
+			}
+		} else if strings.Contains(path, "/vps-control/") {
+			if acc, ok := findAccountOwningVps(state, svc); ok {
+				return acc, true
+			}
+		}
+	}
 	return state.FindAccount(c.Query("account"))
+}
+
+// ovhRespondError 根据 OVH 错误类型返回合适的 HTTP 状态码（404 对应 404，4xx 对应 4xx，其余 500），避免把 404 误报为 500
+func ovhRespondError(c *gin.Context, err error, defaultMsg string) {
+	code := ovhAPICode(err)
+	if code == http.StatusNotFound || ovhIsNotFound(err) {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	if code >= 400 && code < 500 {
+		c.JSON(code, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	if defaultMsg != "" && err == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": defaultMsg})
+		return
+	}
+	msg := err.Error()
+	if defaultMsg != "" {
+		msg = fmt.Sprintf("%s: %s", defaultMsg, err.Error())
+	}
+	c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": msg})
 }
 
 // knownEndpoints go-ovh 支持的 endpoint 名 → REST API base URL。

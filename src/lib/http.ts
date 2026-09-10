@@ -23,6 +23,7 @@ import { toast } from "sonner";
 export const API_KEY_STORAGE = "ovh_sniper_api_key";
 export const BACKEND_URL_STORAGE = "backendUrl";
 export const SERVER_CONTROL_ACCOUNT_KEY = "ovh_active_server_control_account_id";
+export const VPS_CONTROL_ACCOUNT_KEY = "ovh_active_vps_control_account_id";
 
 // ─── storage helpers ────────────────────────────────────────
 
@@ -72,6 +73,22 @@ export function setActiveServerControlAccount(id: string): void {
     window.localStorage.removeItem(SERVER_CONTROL_ACCOUNT_KEY);
   }
   window.dispatchEvent(new Event("ovh-active-account-changed"));
+  window.dispatchEvent(new Event("ovh-active-server-account-changed"));
+}
+
+export function getActiveVpsControlAccount(): string {
+  if (typeof window === "undefined") return "";
+  return window.localStorage.getItem(VPS_CONTROL_ACCOUNT_KEY) || "";
+}
+
+export function setActiveVpsControlAccount(id: string): void {
+  if (id) {
+    window.localStorage.setItem(VPS_CONTROL_ACCOUNT_KEY, id);
+  } else {
+    window.localStorage.removeItem(VPS_CONTROL_ACCOUNT_KEY);
+  }
+  window.dispatchEvent(new Event("ovh-active-account-changed"));
+  window.dispatchEvent(new Event("ovh-active-vps-account-changed"));
 }
 
 // ─── base URL ───────────────────────────────────────────────

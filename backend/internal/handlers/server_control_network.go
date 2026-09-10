@@ -221,10 +221,7 @@ func GetMRTGData(state *app.State) gin.HandlerFunc {
 			state.Logger.Warn("[MRTG] "+reason+"，回落到已废弃(DEPRECATED)的 /dedicated/server/{svc}/mrtg", "server_control")
 			data, fbErr := legacyMRTGFallback(client, svc, period, trafficType)
 			if fbErr != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{
-					"success": false,
-					"error":   "新旧API均失败: " + reason + " / " + fbErr.Error(),
-				})
+				ovhRespondError(c, fbErr, "新旧API均失败: "+reason)
 				return
 			}
 			// 回落数据必须包成 interfaces:[{mac,data}]：前端 use-mrtg.ts 的 MrtgResponse 只读
