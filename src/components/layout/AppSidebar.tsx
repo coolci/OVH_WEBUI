@@ -11,13 +11,8 @@ import {
   ScrollText,
   Cpu,
   User,
-  UserCog,
-  BarChart3,
-  MessageSquare,
   Cloud,
   CloudLightning,
-  Network,
-  LifeBuoy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { QuickOrderDialog } from "@/components/orders/QuickOrderDialog";
@@ -29,43 +24,39 @@ interface AppSidebarProps {
 
 const navGroups = [
   {
-    title: "系统",
+    title: "概览",
     items: [
       { to: "/", icon: LayoutDashboard, label: "仪表盘" },
-      { to: "/tickets", icon: LifeBuoy, label: "服务工单" },
-      { to: "/logs", icon: ScrollText, label: "系统日志" },
-    ],
-  },
-  {
-    title: "服务器",
-    items: [
-      { to: "/servers", icon: Server, label: "服务器列表" },
-      { to: "/ip", icon: Network, label: "IP 资产" },
-      { to: "/server-control", icon: Cpu, label: "服务器控制" },
-      { to: "/vps-control", icon: Cloud, label: "VPS 控制" },
-      { to: "/performance", icon: BarChart3, label: "性能监控" },
     ],
   },
   {
     title: "抢购",
     items: [
+      { to: "/servers", icon: Server, label: "服务器列表" },
       { to: "/queue", icon: ListOrdered, label: "抢购队列" },
-      { to: "/history", icon: History, label: "购买历史" },
       { to: "/telegram-order", icon: CloudLightning, label: "云下单" },
     ],
   },
   {
     title: "监控",
     items: [
-      { to: "/monitor", icon: Activity, label: "独服监控" },
-      { to: "/vps-monitor", icon: MonitorDot, label: "VPS 监控" },
+      { to: "/monitor", icon: Activity, label: "服务器监控" },
+      { to: "/vps-monitor", icon: MonitorDot, label: "VPS 补货" },
     ],
   },
   {
-    title: "配置",
+    title: "实例",
     items: [
+      { to: "/server-control", icon: Cpu, label: "服务器控制" },
+      { to: "/vps-control", icon: Cloud, label: "VPS 控制" },
       { to: "/account", icon: User, label: "账户管理" },
-      { to: "/contact-change", icon: UserCog, label: "联系人变更" },
+    ],
+  },
+  {
+    title: "系统",
+    items: [
+      { to: "/history", icon: History, label: "抢购历史" },
+      { to: "/logs", icon: ScrollText, label: "系统日志" },
       { to: "/settings", icon: Settings, label: "系统设置" },
     ],
   },

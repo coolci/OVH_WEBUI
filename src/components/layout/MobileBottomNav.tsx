@@ -12,12 +12,7 @@ import {
   ScrollText,
   Settings,
   User,
-  BarChart3,
-  MessageSquare,
-  UserCog,
   CloudLightning,
-  Network,
-  LifeBuoy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -37,17 +32,13 @@ const primaryNav = [
 
 const moreNav = [
   { to: "/monitor", icon: Activity, label: "独服监控", group: "监控" },
-  { to: "/vps-monitor", icon: MonitorDot, label: "VPS 监控", group: "监控" },
-  { to: "/ip", icon: Network, label: "IP 资产", group: "实例" },
+  { to: "/vps-monitor", icon: MonitorDot, label: "VPS 补货", group: "监控" },
   { to: "/vps-control", icon: Cloud, label: "VPS 控制", group: "实例" },
-  { to: "/performance", icon: BarChart3, label: "性能监控", group: "实例" },
-  { to: "/history", icon: History, label: "购买历史", group: "抢购" },
+  { to: "/account", icon: User, label: "账户管理", group: "实例" },
   { to: "/telegram-order", icon: CloudLightning, label: "云下单", group: "抢购" },
-  { to: "/tickets", icon: LifeBuoy, label: "服务工单", group: "配置" },
-  { to: "/account", icon: User, label: "账户管理", group: "配置" },
-  { to: "/contact-change", icon: UserCog, label: "联系人变更", group: "配置" },
-  { to: "/logs", icon: ScrollText, label: "系统日志", group: "配置" },
-  { to: "/settings", icon: Settings, label: "系统设置", group: "配置" },
+  { to: "/history", icon: History, label: "抢购历史", group: "系统" },
+  { to: "/logs", icon: ScrollText, label: "详细日志", group: "系统" },
+  { to: "/settings", icon: Settings, label: "系统设置", group: "系统" },
 ];
 
 export function MobileBottomNav() {

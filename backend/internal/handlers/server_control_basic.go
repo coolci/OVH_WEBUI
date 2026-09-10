@@ -582,17 +582,11 @@ func InstallOS(state *app.State) gin.HandlerFunc {
 		installParams := map[string]interface{}{
 			"operatingSystem": templateName,
 		}
-		customizations := map[string]interface{}{}
-		if v, ok := body["customHostname"].(string); ok && strings.TrimSpace(v) != "" {
-			customizations["hostname"] = strings.TrimSpace(v)
+		if v, ok := body["customHostname"].(string); ok && v != "" {
+			// schema: 主机名在 dedicated.server.reinstall.Customizations.hostname，
+			// 顶层 customHostname 是旧 /install/start 的写法，reinstall 不认这个字段
+			installParams["customizations"] = map[string]interface{}{"hostname": v}
 			state.Logger.Info("设置自定义主机名: "+v, "server_control")
-		}
-		if v, ok := body["sshKey"].(string); ok && strings.TrimSpace(v) != "" {
-			customizations["sshKey"] = strings.TrimSpace(v)
-			state.Logger.Info("注入 SSH 密钥", "server_control")
-		}
-		if len(customizations) > 0 {
-			installParams["customizations"] = customizations
 		}
 
 		useZFS, _ := body["useProxmox9Zfs"].(bool)

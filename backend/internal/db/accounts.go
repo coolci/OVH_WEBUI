@@ -231,3 +231,34 @@ func (db *DB) DeleteAccount(id string) error {
 
 	return tx.Commit()
 }
+
+// RawAccount 未解密的账户凭据。只用来判断"库里到底有没有密文",
+// 不参与任何业务逻辑 —— 所以不导出具体内容,只暴露判定方法。
+type RawAccount struct {
+	appKey, appSecret, consumerKey string
+}
+
+// HasCiphertext 三个凭据里是否还有加密过的内容。
+// 用于区分「用户从没填过凭据」和「填过但当前密钥解不开」——
+// 后者绝不能被空串覆盖。
+func (r RawAccount) HasCiphertext() bool {
+	for _, v := range []string{r.appKey, r.appSecret, r.consumerKey} {
+		if secret.IsEncrypted(v) {
+			return true
+		}
+	}
+	return false
+}
+
+// GetAccountRaw 取未解密的凭据字段
+func (db *DB) GetAccountRaw(id string) (RawAccount, bool, error) {
+	var r accountRow
+	err := db.Get(&r, `SELECT * FROM ovh_accounts WHERE id = ?`, id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return RawAccount{}, false, nil
+		}
+		return RawAccount{}, false, fmt.Errorf("get account raw %s: %w", id, err)
+	}
+	return RawAccount{appKey: r.AppKey, appSecret: r.AppSecret, consumerKey: r.ConsumerKey}, true, nil
+}

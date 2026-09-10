@@ -11,6 +11,7 @@ import (
 
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/catalog"
+	"github.com/ovh-webui/server/internal/purchase"
 	"github.com/ovh-webui/server/internal/telegram"
 	"github.com/ovh-webui/server/internal/types"
 )
@@ -214,6 +215,17 @@ func UpdateQueueStatus(state *app.State) gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, gin.H{"status": "success"})
+	}
+}
+
+// RefreshOrderStatuses POST /api/purchase-history/refresh-status
+//
+// 手动刷新所有未到终态订单的支付状态(GET /me/order/{id}/status)。
+// 后台每 10 分钟也会自动刷,这里是给"我刚付完款想马上看到"的场景。
+func RefreshOrderStatuses(state *app.State) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		n := purchase.RefreshOrderStatuses(state, true)
+		c.JSON(http.StatusOK, gin.H{"success": true, "updated": n})
 	}
 }
 

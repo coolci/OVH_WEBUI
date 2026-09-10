@@ -1,6 +1,6 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Helmet } from "react-helmet-async";
-import { Clock, RefreshCw, Trash2, Search, ExternalLink, AlertCircle, Hourglass, Zap } from "lucide-react";
+import { Clock, RefreshCw, Trash2, Search, ExternalLink, AlertCircle, Hourglass } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Chip } from "@/components/common/Chip";
 import { AccountChip } from "@/components/common/AccountChip";
+import { TimingChip } from "@/components/common/TimingChip";
 import { Skeleton } from "@/components/common/Skeleton";
 import { EmptyState } from "@/components/common/EmptyState";
 import {
@@ -20,10 +21,119 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useHistory, useClearHistory, type PurchaseHistory } from "@/hooks/use-history";
-import { usePayOrder } from "@/hooks/use-payment";
+import {
+  useHistory,
+  useClearHistory,
+  useRefreshOrderStatus,
+  type PurchaseHistory,
+} from "@/hooks/use-history";
 
-/** 抢购历史：表格 + 搜索 + 状态过滤 */
+/**
+ * 订单支付状态 → 标签。取值是 OVH 的 billing.order.OrderStatusEnum,三区一致。
+ * 这才是用户真正关心的:「下单成功」只说明订单建了,付没付、过没过期看这里。
+ */
+function orderStatusView(item: PurchaseHistory): {
+  label: string;
+  tone: "success" | "warning" | "danger" | "info" | "default";
+  paid: boolean;
+  closed: boolean;
+  title: string;
+} {
+  switch (item.orderStatus) {
+    case "notPaid":
+      return {
+        label: "待付款",
+        tone: "warning",
+        paid: false,
+        closed: false,
+        title: "订单已创建尚未付款;倒计时结束前未付款会作废",
+      };
+    case "checking":
+      return {
+        label: "付款核验中",
+        tone: "info",
+        paid: true,
+        closed: false,
+        title: "OVH 已收到付款正在核验",
+      };
+    case "delivering":
+      return {
+        label: "已付款·交付中",
+        tone: "success",
+        paid: true,
+        closed: false,
+        title: "已付款 OVH 正在交付服务器",
+      };
+    case "delivered":
+      return {
+        label: "已付款·已交付",
+        tone: "success",
+        paid: true,
+        closed: true,
+        title: "已付款并交付",
+      };
+    case "cancelling":
+      return {
+        label: "取消中",
+        tone: "danger",
+        paid: false,
+        closed: true,
+        title: "订单正在取消",
+      };
+    case "cancelled":
+      return {
+        label: "已取消",
+        tone: "danger",
+        paid: false,
+        closed: true,
+        title: "订单已取消;过期未付款也会走到这里",
+      };
+    case "documentsRequested":
+      return {
+        label: "需补材料",
+        tone: "warning",
+        paid: false,
+        closed: false,
+        title: "OVH 要求补充证件/材料后才处理",
+      };
+    case "unknown":
+      return {
+        label: "状态未知",
+        tone: "default",
+        paid: false,
+        closed: false,
+        title: "OVH 返回 unknown",
+      };
+    default:
+      return {
+        label: "状态未查到",
+        tone: "default",
+        paid: false,
+        closed: false,
+        title: "还没向 OVH 读到订单状态，点「刷新状态」再试",
+      };
+  }
+}
+
+/**
+ * 成交价 + 币种展示。
+ * 币种缺失时只显示金额并在 title 里说明，绝不猜 "EUR"
+ */
+function HistoryPrice({ item, strike }: { item: PurchaseHistory; strike: boolean }) {
+  const value = item.price?.withTax;
+  if (value == null) return <span className="text-muted-foreground">—</span>;
+  const currency = (item.price?.currencyCode || "").trim();
+  return (
+    <span
+      className={`font-mono font-medium text-success ${strike ? "line-through" : ""}`}
+      title={currency ? undefined : "币种未知"}
+    >
+      {value}
+      {currency ? ` ${currency}` : <span className="text-muted-foreground"> (币种未知)</span>}
+    </span>
+  );
+}
+
 /** 订单有效期 15 天，未提供 expirationTime 时用 purchaseTime + 15d 兜底 */
 const ORDER_VALIDITY_MS = 15 * 24 * 60 * 60 * 1000;
 
@@ -47,6 +157,7 @@ function getExpirationMs(item: PurchaseHistory): number {
 function HistoryPage() {
   const list = useHistory();
   const clear = useClearHistory();
+  const refreshStatus = useRefreshOrderStatus();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "success" | "failed">("all");
   const [confirmClear, setConfirmClear] = useState(false);
@@ -76,9 +187,16 @@ function HistoryPage() {
         description="查看服务器购买历史记录"
         action={
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => list.refetch()} disabled={list.isFetching}>
-              <RefreshCw className={`w-4 h-4 ${list.isFetching ? "animate-spin" : ""}`} />
-              刷新
+            <Button
+              variant="outline"
+              onClick={() => refreshStatus.mutate()}
+              disabled={list.isFetching || refreshStatus.isPending}
+              title="向 OVH 查询未到终态订单的支付状态，然后重载列表"
+            >
+              <RefreshCw
+                className={`w-4 h-4 ${list.isFetching || refreshStatus.isPending ? "animate-spin" : ""}`}
+              />
+              刷新状态
             </Button>
             <Button variant="outline" onClick={() => setConfirmClear(true)} disabled={items.length === 0}>
               <Trash2 className="w-4 h-4" />
@@ -117,7 +235,9 @@ function HistoryPage() {
       {list.isPending ? (
         <Card>
           <CardContent className="p-4 space-y-2">
-            {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-xl" />)}
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-16 rounded-xl" />
+            ))}
           </CardContent>
         </Card>
       ) : filtered.length === 0 ? (
@@ -129,29 +249,35 @@ function HistoryPage() {
           {/* 桌面 / 平板:横向表格 */}
           <Card className="hidden md:block">
             <div className="table-scroll">
-            <table className="w-full min-w-[760px]">
-              <thead>
-                <tr className="text-left text-[11px] font-medium text-muted-foreground border-b border-border">
-                  <th className="px-4 py-3">型号</th>
-                  <th className="px-4 py-3">机房</th>
-                  <th className="px-4 py-3">配置</th>
-                  <th className="px-4 py-3">价格</th>
-                  <th className="px-4 py-3">状态</th>
-                  <th className="px-4 py-3">时间</th>
-                  <th className="px-4 py-3">剩余</th>
-                  <th className="px-4 py-3">操作</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {filtered.map((item) => <HistoryRow key={item.id} item={item} now={now} />)}
-              </tbody>
-            </table>
+              <table className="w-full min-w-[760px]">
+                <thead>
+                  <tr className="text-left text-[11px] font-medium text-muted-foreground border-b border-border">
+                    <th className="px-4 py-3">型号</th>
+                    <th className="px-4 py-3">机房</th>
+                    <th className="px-4 py-3">配置</th>
+                    <th className="px-4 py-3">价格</th>
+                    <th className="px-4 py-3">状态</th>
+                    <th className="px-4 py-3">时间</th>
+                    <th className="px-4 py-3" title="付款窗口:下单不会自动扣款,倒计时结束前未付款订单作废">
+                      付款剩余
+                    </th>
+                    <th className="px-4 py-3">操作</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {filtered.map((item) => (
+                    <HistoryRow key={item.id} item={item} now={now} />
+                  ))}
+                </tbody>
+              </table>
             </div>
           </Card>
 
           {/* 手机:卡片堆叠,每条订单一张卡 */}
           <div className="md:hidden space-y-2">
-            {filtered.map((item) => <HistoryCard key={item.id} item={item} now={now} />)}
+            {filtered.map((item) => (
+              <HistoryCard key={item.id} item={item} now={now} />
+            ))}
           </div>
         </>
       )}
@@ -163,8 +289,16 @@ function HistoryPage() {
             <DialogDescription>所有抢购历史将被删除，此操作不可撤销。</DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmClear(false)}>取消</Button>
-            <Button variant="destructive" onClick={() => { clear.mutate(); setConfirmClear(false); }}>
+            <Button variant="outline" onClick={() => setConfirmClear(false)}>
+              取消
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                clear.mutate();
+                setConfirmClear(false);
+              }}
+            >
               确认清空
             </Button>
           </DialogFooter>
@@ -175,27 +309,13 @@ function HistoryPage() {
 }
 
 function HistoryRow({ item, now }: { item: PurchaseHistory; now: number }) {
-  const pay = usePayOrder();
-  const [paying, setPaying] = useState(false);
-  // 只有成功且拿到 orderId 的行才显示倒计时
-  const showCountdown = item.status === "success" && !!item.orderId;
+  const st = orderStatusView(item);
+  // 倒计时是"付款窗口":付了、取消了、交付了都不再显示
+  const showCountdown = item.status === "success" && !st.paid && !st.closed;
   const remainingMs = showCountdown ? getExpirationMs(item) - now : 0;
   const isExpired = showCountdown && remainingMs <= 0;
   // 24 小时内进入告警色
   const isUrgent = showCountdown && !isExpired && remainingMs < 24 * 60 * 60 * 1000;
-
-  const handlePay = async () => {
-    if (!item.orderId) return;
-    setPaying(true);
-    try {
-      const res = await pay.mutateAsync({ orderId: item.orderId, accountId: item.accountId });
-      toast.success(res.message || "扣款指令已提交");
-    } catch (e: any) {
-      toast.error(e?.response?.data?.error || e?.message || "扣款失败");
-    } finally {
-      setPaying(false);
-    }
-  };
 
   return (
     <tr className={`text-[13px] hover:bg-muted ${isExpired ? "opacity-60" : ""}`}>
@@ -203,6 +323,7 @@ function HistoryRow({ item, now }: { item: PurchaseHistory; now: number }) {
         <div className="flex items-center gap-2 flex-wrap">
           {item.planCode}
           <AccountChip accountId={item.accountId} />
+          <TimingChip totalMs={item.totalMs} phases={item.timing} />
         </div>
       </td>
       <td className={`px-4 py-3 ${isExpired ? "line-through" : ""}`}>{item.datacenter.toUpperCase()}</td>
@@ -210,17 +331,13 @@ function HistoryRow({ item, now }: { item: PurchaseHistory; now: number }) {
         {item.options && item.options.length > 0 ? item.options.join(", ") : "默认配置"}
       </td>
       <td className="px-4 py-3">
-        {item.price?.withTax != null ? (
-          <span className={`font-mono font-medium text-success ${isExpired ? "line-through" : ""}`}>
-            {item.price.withTax} {item.price.currencyCode || "EUR"}
-          </span>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        )}
+        <HistoryPrice item={item} strike={isExpired} />
       </td>
       <td className="px-4 py-3">
         {item.status === "success" ? (
-          <Chip tone="success">成功</Chip>
+          <Chip tone={st.tone} title={st.title}>
+            {st.label}
+          </Chip>
         ) : (
           <Chip tone="danger">失败</Chip>
         )}
@@ -248,18 +365,6 @@ function HistoryRow({ item, now }: { item: PurchaseHistory; now: number }) {
       </td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-2">
-          {item.status === "success" && item.orderId && !isExpired && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-6 text-[11px] px-2 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/30"
-              disabled={paying || pay.isPending}
-              onClick={handlePay}
-            >
-              <Zap className="w-3 h-3 mr-1" />
-              {paying ? "扣款中…" : "立即扣款"}
-            </Button>
-          )}
           {item.status === "success" && item.orderUrl ? (
             <a
               href={item.orderUrl}
@@ -282,7 +387,9 @@ function HistoryRow({ item, now }: { item: PurchaseHistory; now: number }) {
               <AlertCircle className="w-3 h-3" />
               错误
             </button>
-          ) : "—"}
+          ) : (
+            "—"
+          )}
         </div>
       </td>
     </tr>
@@ -291,37 +398,30 @@ function HistoryRow({ item, now }: { item: PurchaseHistory; now: number }) {
 
 /** 手机端的订单卡片渲染。跟 HistoryRow 字段一一对应,但堆叠成卡片。 */
 function HistoryCard({ item, now }: { item: PurchaseHistory; now: number }) {
-  const pay = usePayOrder();
-  const [paying, setPaying] = useState(false);
-  const showCountdown = item.status === "success" && !!item.orderId;
+  const st = orderStatusView(item);
+  const showCountdown = item.status === "success" && !st.paid && !st.closed;
   const remainingMs = showCountdown ? getExpirationMs(item) - now : 0;
   const isExpired = showCountdown && remainingMs <= 0;
   const isUrgent = showCountdown && !isExpired && remainingMs < 24 * 60 * 60 * 1000;
-
-  const handlePay = async () => {
-    if (!item.orderId) return;
-    setPaying(true);
-    try {
-      const res = await pay.mutateAsync({ orderId: item.orderId, accountId: item.accountId });
-      toast.success(res.message || "扣款指令已提交");
-    } catch (e: any) {
-      toast.error(e?.response?.data?.error || e?.message || "扣款失败");
-    } finally {
-      setPaying(false);
-    }
-  };
 
   return (
     <Card className={isExpired ? "opacity-60" : ""}>
       <CardContent className="p-3 space-y-2">
         <div className="flex items-start justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2 flex-wrap min-w-0">
-            <span className={`font-mono font-semibold text-[13px] ${isExpired ? "line-through" : ""}`}>{item.planCode}</span>
+            <span className={`font-mono font-semibold text-[13px] ${isExpired ? "line-through" : ""}`}>
+              {item.planCode}
+            </span>
             <AccountChip accountId={item.accountId} />
-            <Chip tone="default" className="text-[10px]">{item.datacenter.toUpperCase()}</Chip>
+            <Chip tone="default" className="text-[10px]">
+              {item.datacenter.toUpperCase()}
+            </Chip>
+            <TimingChip totalMs={item.totalMs} phases={item.timing} />
           </div>
           {item.status === "success" ? (
-            <Chip tone="success">成功</Chip>
+            <Chip tone={st.tone} title={st.title}>
+              {st.label}
+            </Chip>
           ) : (
             <Chip tone="danger">失败</Chip>
           )}
@@ -331,13 +431,14 @@ function HistoryCard({ item, now }: { item: PurchaseHistory; now: number }) {
         </div>
         <div className="flex items-center justify-between gap-2 text-[11px]">
           <span className="text-muted-foreground font-mono">
-            {new Date(item.purchaseTime).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
+            {new Date(item.purchaseTime).toLocaleString("zh-CN", {
+              month: "2-digit",
+              day: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
           </span>
-          {item.price?.withTax != null ? (
-            <span className={`font-mono font-medium text-success ${isExpired ? "line-through" : ""}`}>
-              {item.price.withTax} {item.price.currencyCode || "EUR"}
-            </span>
-          ) : null}
+          {item.price?.withTax != null ? <HistoryPrice item={item} strike={isExpired} /> : null}
         </div>
         <div className="flex items-center justify-between gap-2 flex-wrap">
           {showCountdown ? (
@@ -348,26 +449,18 @@ function HistoryCard({ item, now }: { item: PurchaseHistory; now: number }) {
               <Hourglass className="w-3 h-3" />
               {formatCountdown(remainingMs)}
             </Chip>
-          ) : <span />}
+          ) : (
+            <span />
+          )}
           <div className="flex items-center gap-2">
-            {item.status === "success" && item.orderId && !isExpired && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-6 text-[11px] px-2 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/30"
-                disabled={paying || pay.isPending}
-                onClick={handlePay}
-              >
-                <Zap className="w-3 h-3 mr-1" />
-                {paying ? "扣款中…" : "立即扣款"}
-              </Button>
-            )}
             {item.status === "success" && item.orderUrl ? (
               <a
                 href={item.orderUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className={`inline-flex items-center gap-1 text-foreground hover:underline text-[12px] ${isExpired ? "pointer-events-none opacity-50" : ""}`}
+                className={`inline-flex items-center gap-1 text-foreground hover:underline text-[12px] ${
+                  isExpired ? "pointer-events-none opacity-50" : ""
+                }`}
               >
                 <ExternalLink className="w-3 h-3" />
                 订单
@@ -388,7 +481,6 @@ function HistoryCard({ item, now }: { item: PurchaseHistory; now: number }) {
     </Card>
   );
 }
-
 
 const Page = () => (
   <>

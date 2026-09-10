@@ -531,7 +531,6 @@ export interface ReinstallArgs {
   serviceName: string;
   templateName: string;
   customHostname?: string;
-  sshKey?: string;
   // Proxmox 9 + ZFS（仅当 templateName === 'proxmox9_64' 时）
   useProxmox9Zfs?: boolean;
   zfsRaidLevel?: 0 | 1;
@@ -552,7 +551,6 @@ export function useReinstallServer() {
       const installData: any = {
         templateName: args.templateName,
         customHostname: args.customHostname || undefined,
-        sshKey: args.sshKey || undefined,
         useProxmox9Zfs: !!args.useProxmox9Zfs,
         zfsRaidLevel: args.useProxmox9Zfs ? args.zfsRaidLevel : undefined,
         zfsVzSize: args.useProxmox9Zfs ? args.zfsVzSize : undefined,
@@ -682,7 +680,6 @@ export function useToggleMonitoring() {
     },
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: qk.serverControl.monitoring(vars.serviceName) });
-      qc.invalidateQueries({ queryKey: ["server-control", "list"] });
     },
   });
 }
@@ -696,9 +693,6 @@ export function useServerBurst(serviceName: string | null) {
     queryFn: async () => {
       try {
         const res = await api.get(`/server-control/${serviceName}/burst`);
-        if (res.data?.notAvailable || res.data?.success === false) {
-          return { burst: null, notAvailable: true, error: res.data?.error } as any;
-        }
         return { burst: res.data?.burst || null, notAvailable: false } as any;
       } catch (e: any) {
         if (e?.response?.status === 404) {
@@ -732,9 +726,6 @@ export function useServerFirewall(serviceName: string | null) {
     queryFn: async () => {
       try {
         const res = await api.get(`/server-control/${serviceName}/firewall`);
-        if (res.data?.notAvailable || res.data?.success === false) {
-          return { firewall: null, notAvailable: true, error: res.data?.error } as any;
-        }
         return { firewall: res.data?.firewall || null, notAvailable: false } as any;
       } catch (e: any) {
         if (e?.response?.status === 404) {
@@ -770,10 +761,7 @@ export function useServerBackupFtp(serviceName: string | null) {
     queryFn: async () => {
       try {
         const res = await api.get(`/server-control/${serviceName}/backup-ftp`);
-        if (res.data?.notActivated) {
-          return { notActivated: true } as any;
-        }
-        if (res.data?.notAvailable || res.data?.success === false) {
+        if (res.data?.success === false) {
           return { notAvailable: true, error: res.data?.error } as any;
         }
         // 尝试同时取 access 列表
@@ -803,15 +791,6 @@ export function useActivateBackupFtp() {
     },
     onSuccess: (_, serviceName) => {
       qc.invalidateQueries({ queryKey: qk.serverControl.backupFtp(serviceName) });
-    },
-  });
-}
-
-export function useResetBackupFtpPassword() {
-  return useMutation({
-    mutationFn: async (serviceName: string) => {
-      const res = await api.post(`/server-control/${serviceName}/backup-ftp/password`);
-      return res.data;
     },
   });
 }

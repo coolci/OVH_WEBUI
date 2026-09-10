@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import {
   Cloud, Power, PowerOff, RefreshCw, Monitor, KeyRound, HardDrive, Cpu, MemoryStick,
   MapPin, Globe, CalendarClock, CalendarPlus, Repeat, Eye, EyeOff,
-  AlertTriangle, ListTodo, Terminal, Shield,
+  AlertTriangle, ListTodo, Terminal,
 } from "lucide-react";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
@@ -39,8 +39,6 @@ import { VpsMitigationPane } from "@/components/vps-control/VpsMitigationPane";
 import { VpsTasksDialog } from "@/components/vps-control/VpsTasksDialog";
 import { RenewalDialog } from "@/components/server-control/RenewalDialog";
 import { EngagementDialog, type EngagementHooks } from "@/components/server-control/EngagementDialog";
-import { ReverseDnsDialog } from "@/components/ip/ReverseDnsDialog";
-import { FirewallDialog } from "@/components/ip/FirewallDialog";
 import { toast } from "sonner";
 
 function VpsControlPage() {
@@ -197,9 +195,6 @@ function VpsDetail({
   const [contactOpen, setContactOpen] = useState(false);
   const [engagementOpen, setEngagementOpen] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false);
-  const [selectedPtrIp, setSelectedPtrIp] = useState<string | null>(null);
-  const [selectedFwIp, setSelectedFwIp] = useState<string | null>(null);
-  const [activeAccountId] = useActiveServerControlAccount();
   const renewalMutation = useUpdateVpsRenewal(server.serviceName);
   const contactMutation = useChangeVpsContact();
 
@@ -463,40 +458,16 @@ function VpsDetail({
             ) : (
               <div className="divide-y divide-border">
                 {(ips.data || []).map((ip) => (
-                  <div key={ip.ipAddress} className="px-4 py-2.5 flex items-center justify-between gap-2 text-[13px] flex-wrap hover:bg-muted/20 transition-colors">
-                    <div className="flex items-center gap-2 flex-wrap min-w-0">
-                      <code className="font-mono font-semibold">{maskSensitive(ip.ipAddress, hidden)}</code>
-                      {ip.version && <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{ip.version}</span>}
-                      {ip.type && <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{ip.type}</span>}
-                      {ip.geolocation && <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{ip.geolocation}</span>}
-                      {ip.reverse && (
-                        <span className="text-[11px] text-muted-foreground font-mono truncate max-w-[200px]" title={ip.reverse}>
-                          ↩ {ip.reverse}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1.5 ml-auto flex-shrink-0">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 text-xs px-2 text-muted-foreground hover:text-foreground"
-                        onClick={() => setSelectedPtrIp(ip.ipAddress)}
-                        title="查看/设置反向 DNS (PTR)"
-                      >
-                        <Globe className="w-3 h-3 mr-1 text-primary" />
-                        PTR
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 text-xs px-2 text-muted-foreground hover:text-foreground"
-                        onClick={() => setSelectedFwIp(ip.ipAddress)}
-                        title="配置 Edge 硬件防火墙与过滤规则"
-                      >
-                        <Shield className="w-3 h-3 mr-1 text-blue-500" />
-                        防火墙
-                      </Button>
-                    </div>
+                  <div key={ip.ipAddress} className="px-4 py-3 flex items-center gap-2 text-[13px] flex-wrap">
+                    <code className="font-mono">{maskSensitive(ip.ipAddress, hidden)}</code>
+                    {ip.version && <span className="text-[10px] text-muted-foreground">{ip.version}</span>}
+                    {ip.type && <span className="text-[10px] text-muted-foreground">{ip.type}</span>}
+                    {ip.geolocation && <span className="text-[10px] text-muted-foreground">{ip.geolocation}</span>}
+                    {ip.reverse && (
+                      <span className="ml-auto text-[11px] text-muted-foreground font-mono truncate" title={ip.reverse}>
+                        ↩ {ip.reverse}
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>
@@ -671,22 +642,6 @@ function VpsDetail({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {selectedPtrIp && (
-        <ReverseDnsDialog
-          ip={selectedPtrIp}
-          accountId={activeAccountId}
-          onClose={() => setSelectedPtrIp(null)}
-        />
-      )}
-
-      {selectedFwIp && (
-        <FirewallDialog
-          ip={selectedFwIp}
-          accountId={activeAccountId}
-          onClose={() => setSelectedFwIp(null)}
-        />
-      )}
     </>
   );
 }

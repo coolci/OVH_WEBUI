@@ -98,6 +98,36 @@ func (in *accountInput) validate() string {
 
 // ── handlers ───────────────────────────────────────────────────────────────
 
+// maskCred 把凭据打成掩码。只保留首尾各 3 位,够用户认出"这是哪一把",
+// 又不足以拿去用。
+func maskCred(v string) string {
+	if v == "" {
+		return ""
+	}
+	if len(v) <= 8 {
+		return "••••••••"
+	}
+	return v[:3] + "••••••" + v[len(v)-3:]
+}
+
+// sanitizeAccount 去掉明文凭据,换成掩码。
+//
+// 为什么必须这么做:GET /api/accounts 以前直接下发解密后的 AppKey / AppSecret /
+// ConsumerKey 明文。配上「API_SECRET_KEY 未设时默认 123456」和当时的
+// CORS AllowAllOrigins,构成一条完整的窃取链 —— 用户开着控制台时访问任意网页,
+// 那个页面只要 fetch('http://127.0.0.1:19998/api/accounts',
+// {headers:{'X-API-Key':'123456'}}) 就能读走全部 OVH 凭据,拿去下单/重装/删机器。
+// 「只监听本地」挡不住这条路,浏览器本身就是攻击载体。
+//
+// 前端要明文只是为了编辑时回填输入框 —— 那个需求用「留空 = 保持原值」满足即可
+// (UpdateAccount 本来就是这个语义),凭据没有任何理由离开后端。
+func sanitizeAccount(a types.OVHAccount) types.OVHAccount {
+	a.AppKey = maskCred(a.AppKey)
+	a.AppSecret = maskCred(a.AppSecret)
+	a.ConsumerKey = maskCred(a.ConsumerKey)
+	return a
+}
+
 // ListAccounts GET /api/accounts
 func ListAccounts(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -106,10 +136,11 @@ func ListAccounts(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		if accs == nil {
-			accs = []types.OVHAccount{}
+		out := make([]types.OVHAccount, 0, len(accs))
+		for _, a := range accs {
+			out = append(out, sanitizeAccount(a))
 		}
-		c.JSON(http.StatusOK, gin.H{"accounts": accs, "total": len(accs)})
+		c.JSON(http.StatusOK, gin.H{"accounts": out, "total": len(out)})
 	}
 }
 
@@ -126,7 +157,7 @@ func GetAccountByID(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusNotFound, gin.H{"error": "账户不存在"})
 			return
 		}
-		c.JSON(http.StatusOK, acc)
+		c.JSON(http.StatusOK, sanitizeAccount(acc))
 	}
 }
 
@@ -184,7 +215,7 @@ func CreateAccount(state *app.State) gin.HandlerFunc {
 
 		// subsidiaryWarning 非空 = 凭据能用,但这个账户在 OVH 那边属于另一个子公司,
 		// 目录/价格/下单 region 都会按填错的那个走。给前端原样提示,别让它在下单时才炸。
-		c.JSON(http.StatusOK, gin.H{"account": acc, "valid": valid, "subsidiaryWarning": subsidiaryWarning})
+		c.JSON(http.StatusOK, gin.H{"account": sanitizeAccount(acc), "valid": valid, "subsidiaryWarning": subsidiaryWarning})
 	}
 }
 
@@ -241,6 +272,26 @@ func UpdateAccount(state *app.State) gin.HandlerFunc {
 		if in.ConsumerKey != "" {
 			acc.ConsumerKey = in.ConsumerKey
 		}
+
+		// 解不开的密文绝不能被空串覆盖回去。
+		//
+		// rowToAccount 在解密失败时返回空串(为了让 ClientFor 明确报"缺少凭据",
+		// 而不是把乱码发给 OVH 换回一句 Invalid signature)。但那个空串一路带到这里,
+		// 用户只改个名字、三个凭据都留空 → acc 里是空串 → Encrypt("") 返回 "" →
+		// UPDATE app_key='' —— 密文被永久毁掉,后来找回正确密钥也救不回来。
+		//
+		// 触发场景都不罕见:换机器只拷了 sniper.db、轮换过 OVH_DB_KEY、
+		// 恢复了旧 .env 配新 db。而 main.go 那道"新生成密钥+库里有密文就拒绝启动"
+		// 的保护在这里不生效 —— 密钥是存在的,只是不对。
+		if acc.AppKey == "" || acc.AppSecret == "" || acc.ConsumerKey == "" {
+			if raw, ok, _ := state.DB.GetAccountRaw(id); ok && raw.HasCiphertext() {
+				c.JSON(http.StatusConflict, gin.H{
+					"error": "这个账户的凭据当前解不开(密钥不匹配),为避免把密文覆盖掉,已拒绝保存。" +
+						"请先恢复正确的 OVH_DB_KEY;确实找不回就在这里重新填写完整的三个凭据",
+				})
+				return
+			}
+		}
 		acc.IsDefault = acc.IsDefault || in.SetDefault
 
 		// 校验的是「合并之后」的那一对,不是请求体里的那一对。
@@ -261,7 +312,7 @@ func UpdateAccount(state *app.State) gin.HandlerFunc {
 		_ = state.ReloadAccounts()
 
 		valid, subsidiaryWarning := verifyAccountCreds(state, acc.ID)
-		c.JSON(http.StatusOK, gin.H{"account": acc, "valid": valid, "subsidiaryWarning": subsidiaryWarning})
+		c.JSON(http.StatusOK, gin.H{"account": sanitizeAccount(acc), "valid": valid, "subsidiaryWarning": subsidiaryWarning})
 	}
 }
 
