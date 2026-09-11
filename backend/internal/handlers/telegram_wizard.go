@@ -40,6 +40,17 @@ func getPickerSession(chatID interface{}, messageID int64, mode, planCode string
 	key := pickerKey(chatID, messageID)
 	pickerMu.Lock()
 	defer pickerMu.Unlock()
+
+	// 清理 30 分钟未更新的废弃会话，防止内存泄漏
+	if len(pickerSessions) > 100 {
+		cutoff := time.Now().Add(-30 * time.Minute)
+		for k, s := range pickerSessions {
+			if s.UpdatedAt.Before(cutoff) {
+				delete(pickerSessions, k)
+			}
+		}
+	}
+
 	sess, ok := pickerSessions[key]
 	if !ok || sess.PlanCode != planCode || sess.Mode != mode {
 		sess = &dcPickerSession{
@@ -61,24 +72,135 @@ func clearPickerSession(chatID interface{}, messageID int64) {
 	pickerMu.Unlock()
 }
 
-func rememberShort(full string) string {
-	s := strings.ReplaceAll(full, "-", "")
-	if len(s) > 8 {
-		s = s[:8]
+const maxShortMemoryItems = 5000
+
+func rememberShort(state *app.State, full string, category ...string) string {
+	full = strings.TrimSpace(full)
+	if full == "" {
+		return ""
 	}
+	cat := ""
+	if len(category) > 0 {
+		cat = category[0]
+	}
+
+	// 优先在 SQLite 检查是否已有映射，避免重复生成不同 short ID
+	if state != nil && state.DB != nil {
+		if existingShort, ok, _ := state.DB.FindShortIDByFull(full); ok && existingShort != "" {
+			shortMu.Lock()
+			shortToID[existingShort] = full
+			shortMu.Unlock()
+			return existingShort
+		}
+	}
+
+	cleaned := strings.ReplaceAll(full, "-", "")
+	// 基础长度 8 位，若冲突则逐步扩展至 10、12 位
+	targetLen := 8
+	if targetLen > len(cleaned) {
+		targetLen = len(cleaned)
+	}
+	s := cleaned[:targetLen]
+
 	shortMu.Lock()
+	// 防哈希碰撞自增长度
+	for {
+		existing, exists := shortToID[s]
+		if !exists || existing == full {
+			break
+		}
+		if targetLen < len(cleaned) {
+			targetLen += 2
+			if targetLen > len(cleaned) {
+				targetLen = len(cleaned)
+			}
+			s = cleaned[:targetLen]
+		} else {
+			break
+		}
+	}
+
+	// 限制内存缓存上限，防止无界增长
+	if len(shortToID) > maxShortMemoryItems {
+		count := 0
+		for k := range shortToID {
+			delete(shortToID, k)
+			count++
+			if count >= maxShortMemoryItems/5 {
+				break
+			}
+		}
+	}
 	shortToID[s] = full
 	shortMu.Unlock()
+
+	// 持久化到 SQLite
+	if state != nil && state.DB != nil {
+		_ = state.DB.UpsertShortID(s, full, cat)
+	}
 	return s
 }
 
-func resolveShort(s string) string {
+func resolveShort(state *app.State, s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+
+	// L1: 内存快速查询
 	shortMu.Lock()
-	defer shortMu.Unlock()
-	if v, ok := shortToID[s]; ok {
+	if v, ok := shortToID[s]; ok && v != "" {
+		shortMu.Unlock()
 		return v
 	}
-	return ""
+	shortMu.Unlock()
+
+	// L2: SQLite 持久化查询（跨进程重启后仍有效）
+	if state != nil && state.DB != nil {
+		if full, ok, err := state.DB.GetShortID(s); err == nil && ok && full != "" {
+			shortMu.Lock()
+			shortToID[s] = full
+			shortMu.Unlock()
+			return full
+		}
+	}
+
+	// L3: 智能业务前缀与全量匹配兜底
+	// 3.1 账户 ID 前缀匹配
+	if state != nil {
+		state.AccountsMu.RLock()
+		for _, a := range state.Accounts {
+			cleanAcc := strings.ReplaceAll(a.ID, "-", "")
+			cleanS := strings.ReplaceAll(s, "-", "")
+			if a.ID == s || strings.HasPrefix(a.ID, s) || strings.HasPrefix(cleanAcc, cleanS) {
+				state.AccountsMu.RUnlock()
+				shortMu.Lock()
+				shortToID[s] = a.ID
+				shortMu.Unlock()
+				return a.ID
+			}
+		}
+		state.AccountsMu.RUnlock()
+	}
+
+	// 3.2 队列任务 ID 前缀匹配
+	if state != nil {
+		state.QueueMu.Lock()
+		for _, it := range state.Queue {
+			cleanTask := strings.ReplaceAll(it.ID, "-", "")
+			cleanS := strings.ReplaceAll(s, "-", "")
+			if it.ID == s || strings.HasPrefix(it.ID, s) || strings.HasPrefix(cleanTask, cleanS) {
+				state.QueueMu.Unlock()
+				shortMu.Lock()
+				shortToID[s] = it.ID
+				shortMu.Unlock()
+				return it.ID
+			}
+		}
+		state.QueueMu.Unlock()
+	}
+
+	return s
 }
 
 type wizardPlan struct {
@@ -659,7 +781,7 @@ func enqueueWizardDCs(state *app.State, chatID interface{}, messageID int64, mod
 	var btnRows [][]map[string]string
 	var cancelBtns []map[string]string
 	for _, t := range createdTasks {
-		short := rememberShort(t.ID)
+		short := rememberShort(state, t.ID, "task")
 		cancelBtns = append(cancelBtns, telegram.CallbackButton("⏹ 取消 "+strings.ToUpper(t.Datacenter), "i:T:one:"+short))
 	}
 	if len(cancelBtns) > 0 {
@@ -1036,8 +1158,8 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 			telegram.AnswerCallback(state, cbID, "按钮无效", true)
 			return true
 		}
-		btnID := resolveShort(parts[2])
-		accID := resolveShort(parts[3])
+		btnID := resolveShort(state, parts[2])
+		accID := resolveShort(state, parts[3])
 		if btnID == "" || accID == "" {
 			telegram.AnswerCallback(state, cbID, "会话已过期，请等新的上架通知", true)
 			return true
@@ -1078,7 +1200,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 		// 单项取消: i:T:one:<shortID>
 		if subAct == "one" && len(parts) >= 4 {
 			short := parts[3]
-			taskID := resolveShort(short)
+			taskID := resolveShort(state, short)
 			if taskID == "" {
 				taskID = short
 			}
@@ -1134,7 +1256,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 
 				var cancelBtns []map[string]string
 				for _, r := range remaining {
-					s := rememberShort(r.ID)
+					s := rememberShort(state, r.ID, "task")
 					cancelBtns = append(cancelBtns, telegram.CallbackButton("⏹ 取消 "+strings.ToUpper(r.Datacenter), "i:T:one:"+s))
 				}
 				var btnRows [][]map[string]string
@@ -1218,7 +1340,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 		}
 
 		// 兼容单项取消老格式: i:T:<shortID>
-		taskID := resolveShort(subAct)
+		taskID := resolveShort(state, subAct)
 		if taskID == "" {
 			taskID = subAct
 		}
@@ -1262,6 +1384,11 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 		}
 		if target == "all" {
 			state.QueueMu.Lock()
+			state.DeletedTaskIDsMu.Lock()
+			for _, it := range state.Queue {
+				state.DeletedTaskIDs[it.ID] = struct{}{}
+			}
+			state.DeletedTaskIDsMu.Unlock()
 			state.Queue = nil
 			state.QueueMu.Unlock()
 			_ = state.SaveQueue()
@@ -1269,16 +1396,18 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 			showTasks(state, chatID, messageID, true)
 			return true
 		}
-		taskID := resolveShort(target)
+		taskID := resolveShort(state, target)
 		if taskID == "" {
 			taskID = target
 		}
 		state.QueueMu.Lock()
 		found := false
+		var deletedID string
 		newQueue := make([]types.QueueItem, 0, len(state.Queue))
 		for _, it := range state.Queue {
 			if it.ID == taskID || strings.HasPrefix(it.ID, taskID) {
 				found = true
+				deletedID = it.ID
 				continue
 			}
 			newQueue = append(newQueue, it)
@@ -1286,6 +1415,11 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 		state.Queue = newQueue
 		state.QueueMu.Unlock()
 		if found {
+			if deletedID != "" {
+				state.DeletedTaskIDsMu.Lock()
+				state.DeletedTaskIDs[deletedID] = struct{}{}
+				state.DeletedTaskIDsMu.Unlock()
+			}
 			_ = state.SaveQueue()
 			telegram.AnswerCallback(state, cbID, "任务已停止", false)
 			showTasks(state, chatID, messageID, true)
@@ -1336,7 +1470,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 			telegram.AnswerCallback(state, cbID, "按钮无效", true)
 			return true
 		}
-		accID := resolveShort(parts[2])
+		accID := resolveShort(state, parts[2])
 		if accID == "" {
 			accID = parts[2]
 		}
@@ -1366,10 +1500,10 @@ func showAccountPicker(state *app.State, chatID interface{}, messageID int64, bu
 		telegram.EditMessage(state, chatID, messageID, "❌ 未配置任何 OVH 账户", telegram.EmptyInlineKeyboard())
 		return
 	}
-	btnShort := rememberShort(buttonID)
+	btnShort := rememberShort(state, buttonID, "btn")
 	btns := []map[string]string{}
 	for _, a := range accs {
-		accShort := rememberShort(a.ID)
+		accShort := rememberShort(state, a.ID, "acc")
 		data := "i:C:" + btnShort + ":" + accShort
 		if len(data) > 64 {
 			continue
@@ -1490,7 +1624,7 @@ func showTasks(state *app.State, chatID interface{}, messageID int64, edit bool)
 				statusBadge = "⏸ 已暂停"
 			}
 			b.WriteString(fmt.Sprintf("%d. 📦 %s\n   📍 %s · %s (已刷 %d 轮)\n", i+1, it.PlanCode, dcFull, statusBadge, it.RetryCount))
-			shortID := rememberShort(it.ID)
+			shortID := rememberShort(state, it.ID, "task")
 			btns = append(btns, telegram.CallbackButton(fmt.Sprintf("⏹ 停止 %s@%s", it.PlanCode, strings.ToUpper(it.Datacenter)), "i:Tk:"+shortID))
 		}
 	}
@@ -1545,7 +1679,7 @@ func showAccounts(state *app.State, chatID interface{}, messageID int64, edit bo
 		}
 		b.WriteString(fmt.Sprintf("%d. 👤 %s\n   🌐 区域: %s / %s%s\n", i+1, a.Name, zone, a.Endpoint, mark))
 		if !isActive {
-			shortID := rememberShort(a.ID)
+			shortID := rememberShort(state, a.ID, "acc")
 			btns = append(btns, telegram.CallbackButton("👉 设为当前活跃: "+a.Name, "i:S:"+shortID))
 		}
 	}

@@ -184,3 +184,15 @@ CREATE TABLE IF NOT EXISTS telegram_updates (
   processed_at REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_tg_updates_processed ON telegram_updates(processed_at);
+
+-- ===========================================
+-- telegram_short_ids: Telegram 回调短 ID 映射持久化
+-- 解决重启后内联按钮失效、会话过期、碰撞等问题
+-- ===========================================
+CREATE TABLE IF NOT EXISTS telegram_short_ids (
+  short_id   TEXT PRIMARY KEY,
+  full_id    TEXT NOT NULL,
+  category   TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_short_ids_created ON telegram_short_ids(created_at);

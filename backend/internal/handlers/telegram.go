@@ -114,7 +114,7 @@ func handleTelegramCallback(state *app.State, mon *monitor.Monitor, cb map[strin
 		return
 	case "pick_acc":
 		telegram.AnswerCallback(state, cbID, "选择账户", false)
-		rememberShort(buttonID)
+		rememberShort(state, buttonID, "btn")
 		showAccountPicker(state, chatID, msgID, buttonID)
 		return
 	case "add_to_queue":
