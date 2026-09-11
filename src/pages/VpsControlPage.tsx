@@ -16,6 +16,7 @@ import { Chip } from "@/components/common/Chip";
 import { StatusDot } from "@/components/common/StatusDot";
 import { Skeleton } from "@/components/common/Skeleton";
 import { EmptyState } from "@/components/common/EmptyState";
+import { LoadFailed, LoadFailedBanner } from "@/components/common/LoadFailed";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -27,8 +28,10 @@ import {
   useTerminateVps, useConfirmTerminateVps, useUpdateVpsTerminationPolicy,
   useVpsEngagement, useVpsEngagementAvailable, useVpsEngagementRequest,
   useCreateVpsEngagementRequest, useDeleteVpsEngagementRequest, useUpdateVpsEngagementEndRule,
+  useVpsOptions, useVpsServiceStatus,
   type OwnedVps,
 } from "@/hooks/use-vps-control";
+import { isUsEndpoint, regionLabel, regionLabelOf, endpointRegion } from "@/lib/ovh-regions";
 import { useHideIp, maskSensitive } from "@/hooks/use-hide-ip";
 import { useActiveServerControlAccount } from "@/hooks/use-active-account";
 import { useAccounts } from "@/hooks/use-accounts";
@@ -71,6 +74,7 @@ function VpsControlPage() {
   const selected = vpsList.find((v) => v.serviceName === selectedName) || null;
   const aliases = useServerAliases();
   const setAlias = useSetServerAlias();
+  const activeEndpoint = (accounts || []).find((a) => a.id === activeAccount)?.endpoint;
 
   return (
     <div className="space-y-4">
@@ -150,20 +154,36 @@ function VpsControlPage() {
         </CardContent>
       </Card>
 
-      {/* 内容区 */}
-      {!q.isPending && vpsList.length === 0 ? (
+      {/* 内容区。列表请求失败 ≠ 该账户没有 VPS，不能走空态。 */}
+      {q.isError && vpsList.length === 0 ? (
+        <Card className="surface-card rounded-xl border-border">
+          <CardContent className="p-4">
+            <LoadFailed icon={Cloud} title="VPS 列表读取失败" error={q.error} onRetry={() => q.refetch()} />
+          </CardContent>
+        </Card>
+      ) : !q.isPending && vpsList.length === 0 ? (
         <Card className="surface-card rounded-xl border-border">
           <CardContent className="py-12">
             <EmptyState icon={Cloud} title="该账户下暂无 VPS" description="可以去 OVH 官网下单,或换个有 VPS 的账户" />
           </CardContent>
         </Card>
       ) : selected ? (
-        <VpsDetail
-          server={selected}
-          aliases={aliases}
-          onSetAlias={setAlias}
-          isUS={(accounts || []).find((a) => a.id === activeAccount)?.endpoint === "ovh-us"}
-        />
+        <>
+          {q.isError && (
+            <LoadFailedBanner
+              title="VPS 列表刷新失败,下面是上次拿到的数据"
+              error={q.error}
+              onRetry={() => q.refetch()}
+            />
+          )}
+          <VpsDetail
+            server={selected}
+            aliases={aliases}
+            onSetAlias={setAlias}
+            isUS={isUsEndpoint(activeEndpoint)}
+            region={regionLabel(endpointRegion(activeEndpoint))}
+          />
+        </>
       ) : q.isPending ? (
         <Skeleton className="h-96 rounded-2xl" />
       ) : null}
@@ -173,16 +193,105 @@ function VpsControlPage() {
 
 /* ────────────── VPS 详情区 ────────────── */
 
+function VpsOptionsPanel({ serviceName, region }: { serviceName: string; region: string }) {
+  const q = useVpsOptions(serviceName);
+  const list = q.data || [];
+
+  return (
+    <div className="border border-border rounded-2xl p-4 space-y-3">
+      <h3 className="text-sm font-semibold">附加选项</h3>
+      {q.isPending ? (
+        <Skeleton className="h-12 rounded-md" />
+      ) : q.isError ? (
+        <p className="text-[12px] text-destructive">附加选项读取失败,请刷新重试</p>
+      ) : list.length === 0 ? (
+        <p className="text-[12px] text-muted-foreground">该 VPS 没有附加选项</p>
+      ) : (
+        <div className="space-y-2">
+          {list.map((opt: any) => {
+            const manageable = opt.manageEndpointsAvailable !== false;
+            return (
+              <div key={opt.option} className="border border-border rounded-xl px-3 py-2 space-y-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <code className="font-mono text-[12px]">{opt.option}</code>
+                  {opt.state && <Chip tone="default" className="text-[10px]">{opt.state}</Chip>}
+                  {!manageable && (
+                    <Chip tone="warning" className="text-[10px]">
+                      {region}无管理接口
+                    </Chip>
+                  )}
+                </div>
+                {!manageable && opt.unsupportedReason && (
+                  <p className="text-[11px] text-muted-foreground">
+                    {opt.unsupportedReason}
+                    <span className="block mt-0.5">（该选项仍在计费和生效中，退订接口不受影响）</span>
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function VpsServiceStatusPanel({ serviceName, region }: { serviceName: string; region: string }) {
+  const q = useVpsServiceStatus(serviceName);
+  const data = q.data;
+  if (q.isPending) return <Skeleton className="h-12 rounded-2xl" />;
+  if (q.isError) return null;
+
+  if (data?.unsupported) {
+    return (
+      <div className="border border-border rounded-2xl p-3 bg-secondary/30 text-[11px] text-muted-foreground">
+        网络服务探测:{data.message || `${regionLabelOf(data.region) || region}没有这个 OVH 端点`}
+      </div>
+    );
+  }
+  if (data?.unauthorized) {
+    return (
+      <div className="border border-amber-500/40 bg-amber-500/5 rounded-2xl p-3 text-[11px] text-muted-foreground">
+        {data.message || "当前凭据没有读取端口探测状态的权限"}
+      </div>
+    );
+  }
+  const entries = Object.entries(data?.status || {});
+  if (entries.length === 0) return null;
+  return (
+    <div className="border border-border rounded-2xl overflow-hidden">
+      <div className="px-4 py-3 border-b border-border flex items-center gap-2">
+        <Terminal className="w-4 h-4 text-muted-foreground" />
+        <h3 className="text-sm font-semibold">网络服务探测</h3>
+        <span className="text-[11px] text-muted-foreground ml-auto">OVH 侧端口存活,与 VPS 电源状态无关</span>
+      </div>
+      <div className="px-4 py-3 flex flex-wrap gap-x-4 gap-y-2 text-[12px]">
+        {entries.map(([k, v]) => (
+          <span key={k} className="flex items-center gap-1.5">
+            {typeof v === "boolean" ? (
+              <StatusDot tone={v ? "success" : "danger"} size="xs" />
+            ) : null}
+            <span className="text-muted-foreground">{k}</span>
+            {typeof v !== "boolean" && <span className="font-mono">{String(v)}</span>}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function VpsDetail({
   server,
   aliases,
   onSetAlias,
   isUS,
+  region,
 }: {
   server: OwnedVps;
   aliases: ReturnType<typeof useServerAliases>;
   onSetAlias: ReturnType<typeof useSetServerAlias>;
   isUS: boolean;
+  region: string;
 }) {
   const info = useVpsServiceInfo(server.serviceName);
   const ips = useVpsIps(server.serviceName);
@@ -386,6 +495,8 @@ function VpsDetail({
         </CardContent>
       </Card>
 
+      <VpsServiceStatusPanel serviceName={server.serviceName} region={region} />
+
       {/* 硬件规格 4 格卡片 (移动端 2x2, 桌面 4 列) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
         <InfoCard icon={<Cpu className="w-4 h-4 text-primary" />} label="vCore" value={String(server.vcore || "—")} />
@@ -556,6 +667,8 @@ function VpsDetail({
             {server.cluster && <> · 集群 <code className="font-mono">{server.cluster}</code></>}
             {server.slaMonitoring && <> · 已开 SLA 监控</>}
           </p>
+
+          <VpsOptionsPanel serviceName={server.serviceName} region={region} />
         </TabsContent>
 
         {/* 快照 Tab */}

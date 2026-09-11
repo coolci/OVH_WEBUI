@@ -201,7 +201,9 @@ export function useVpsStart(svc: string) {
   return useMutation({
     mutationFn: async () => (await api.post(`/vps-control/${svc}/start`)).data,
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.vpsControl.list() });
+      // 不要用 qk.vpsControl.list()：它会带上 accountId=""，和真实 key
+      // ["vps-control","list",accountId] 对不上，开机后列表状态不刷新。
+      qc.invalidateQueries({ queryKey: ["vps-control", "list"] });
       qc.invalidateQueries({ queryKey: qk.vpsControl.info(svc) });
     },
   });
@@ -212,7 +214,7 @@ export function useVpsStop(svc: string) {
   return useMutation({
     mutationFn: async () => (await api.post(`/vps-control/${svc}/stop`)).data,
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.vpsControl.list() });
+      qc.invalidateQueries({ queryKey: ["vps-control", "list"] });
       qc.invalidateQueries({ queryKey: qk.vpsControl.info(svc) });
     },
   });
@@ -223,7 +225,7 @@ export function useVpsReboot(svc: string) {
   return useMutation({
     mutationFn: async () => (await api.post(`/vps-control/${svc}/reboot`)).data,
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.vpsControl.list() });
+      qc.invalidateQueries({ queryKey: ["vps-control", "list"] });
       qc.invalidateQueries({ queryKey: qk.vpsControl.info(svc) });
       qc.invalidateQueries({ queryKey: qk.vpsControl.tasks(svc) });
     },
@@ -354,7 +356,7 @@ export function useRevertVpsSnapshot(svc: string) {
   return useMutation({
     mutationFn: async () => (await api.post(`/vps-control/${svc}/snapshot/revert`)).data,
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.vpsControl.list() });
+      qc.invalidateQueries({ queryKey: ["vps-control", "list"] });
       qc.invalidateQueries({ queryKey: qk.vpsControl.tasks(svc) });
     },
   });
@@ -458,8 +460,14 @@ export function useVpsOptions(svc: string | null) {
 export function useDeleteVpsOption(svc: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (option: string) =>
-      (await api.delete(`/vps-control/${svc}/options/${option}`)).data,
+    mutationFn: async (vars: { option: string; deleteNow?: boolean }) => {
+      const qs = vars.deleteNow ? "?deleteNow=true" : "";
+      return (await api.delete(`/vps-control/${svc}/options/${encodeURIComponent(vars.option)}${qs}`)).data as {
+        success: boolean;
+        message?: string;
+        deleteNow?: boolean;
+      };
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.vpsControl.options(svc) }),
   });
 }

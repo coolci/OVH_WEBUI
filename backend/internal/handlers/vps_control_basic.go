@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"net/url"
 	"sync"
 
 	"github.com/gin-gonic/gin"
@@ -409,7 +410,8 @@ func GetVpsIps(state *app.State) gin.HandlerFunc {
 			return
 		}
 		details := parallelGetStringKeys(client, ips, func(ip string) string {
-			return "/vps/" + svc + "/ips/" + ip
+			// IPv6 含冒号,不转义会被当成 URL 分段,详情全 404,列表只剩光秃 IP。
+			return "/vps/" + svc + "/ips/" + url.PathEscape(ip)
 		}, 8)
 		list := []gin.H{}
 		for i, ip := range ips {
@@ -452,7 +454,7 @@ func SetVpsIpReverse(state *app.State) gin.HandlerFunc {
 		// vps.Ip 里只有 reverse 可写(ipAddress / type / version / gateway /
 		// geolocation / macAddress 都是只读),所以不需要先 GET 再 merge ——
 		// 那样反而会把只读字段一起发回去,被 OVH 400 掉
-		if err := client.Put("/vps/"+svc+"/ips/"+ip,
+		if err := client.Put("/vps/"+svc+"/ips/"+url.PathEscape(ip),
 			map[string]interface{}{"reverse": body.Reverse}, nil); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 			return
