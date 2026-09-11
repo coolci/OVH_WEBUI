@@ -50,7 +50,7 @@ import { AccountSelect } from "@/components/common/AccountSelect";
 import { AccountChip } from "@/components/common/AccountChip";
 import { PlanCodeCombobox } from "@/components/common/PlanCodeCombobox";
 import { OptionGroupSection } from "@/components/common/OptionGroupSection";
-import { groupOptions, type OptionGroupKey } from "@/lib/option-groups";
+import { describeOptionCode, describeOptionCodes, groupOptions, type OptionGroupKey } from "@/lib/option-groups";
 import {
   useAvailability,
   buildAvailabilityMap,
@@ -719,8 +719,8 @@ function CreateQueueDialog({
               <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-border">
                 <span className="text-[11px] text-muted-foreground">已选:</span>
                 {parsedOptions.map((opt, i) => (
-                  <Chip key={`${opt}-${i}`} tone="default" className="font-mono">
-                    {opt}
+                  <Chip key={`${opt}-${i}`} tone="default" title={opt}>
+                    {describeOptionCode(opt)}
                   </Chip>
                 ))}
               </div>
@@ -741,7 +741,7 @@ function CreateQueueDialog({
             <div className="border border-border rounded-2xl p-3 text-[12px] text-muted-foreground">
               将创建 <span className="font-semibold text-foreground">{totalTasks}</span> 个独立任务
               （{datacenters.length} 个数据中心 × {qty} 台
-              {parsedOptions.length > 0 ? ` · 含 ${parsedOptions.length} 个可选配置` : ""}）
+              {parsedOptions.length > 0 ? ` · ${describeOptionCodes(parsedOptions)}` : ""}）
             </div>
           )}
         </div>
@@ -828,7 +828,9 @@ function QueueRow({
               <Chip tone="default">自动扣款</Chip>
             )}
             {item.options && item.options.length > 0 && (
-              <Chip tone="default">含 {item.options.length} 个可选配置</Chip>
+              <Chip tone="default" title={item.options.join("\n")}>
+                {describeOptionCodes(item.options)}
+              </Chip>
             )}
           </div>
           <div className="text-[11px] text-muted-foreground flex items-center gap-2 flex-wrap">

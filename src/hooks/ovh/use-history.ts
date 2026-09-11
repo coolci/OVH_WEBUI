@@ -19,6 +19,8 @@ export interface PurchaseHistory {
   /** 抢购到这单时一共尝试了几次（后端 attemptCount） */
   attemptCount?: number;
   expirationTime?: string;
+  /** 撤销权截止（billing.Order.retractionDate），与付款作废时间 expirationTime 不是一回事 */
+  retractionTime?: string;
   /** 各阶段墙钟耗时。抢购输了之后唯一有用的信息就是"慢在哪一步" */
   timing?: { name: string; ms: number }[];
   totalMs?: number;

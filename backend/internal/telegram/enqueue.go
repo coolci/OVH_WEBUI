@@ -84,8 +84,8 @@ func enqueuePrepared(state *app.State, item types.QueueItem, requirePrice bool) 
 	}
 }
 
-// appendAndSave 在同一把 QueueMu 下做容量检查 + 活跃去重 + 追加,然后落盘;
-// 落盘失败回滚本次追加的条目。RecentSuccessDuplicate 在锁外先滤一遍(HistoryMu)。
+// appendAndSave 在同一把 QueueMu 下做容量检查 + 活跃去重,然后交给 EnqueueItems
+// 入队并落盘。落盘失败由 EnqueueItems 整批撤回。RecentSuccessDuplicate 在锁外先滤一遍(HistoryMu)。
 func appendAndSave(state *app.State, items []types.QueueItem) ([]types.QueueItem, string) {
 	if len(items) == 0 {
 		return nil, "没有可入队的任务"
@@ -127,23 +127,9 @@ func appendAndSave(state *app.State, items []types.QueueItem) ([]types.QueueItem
 		state.QueueMu.Unlock()
 		return nil, fmt.Sprintf("队列容量不足（上限 %d），当前待添加 %d 个任务，请清理后再试", MaxQueueLen, n)
 	}
-	ids := make(map[string]struct{}, len(keep))
-	for _, it := range keep {
-		ids[it.ID] = struct{}{}
-	}
-	state.Queue = append(state.Queue, keep...)
 	state.QueueMu.Unlock()
 
-	if err := state.SaveQueue(); err != nil {
-		state.QueueMu.Lock()
-		keptQ := state.Queue[:0]
-		for _, q := range state.Queue {
-			if _, drop := ids[q.ID]; !drop {
-				keptQ = append(keptQ, q)
-			}
-		}
-		state.Queue = keptQ
-		state.QueueMu.Unlock()
+	if err := state.EnqueueItems(keep, false); err != nil {
 		state.Logger.Error("Telegram 入队落盘失败: "+err.Error(), "telegram")
 		return nil, "订单入队落盘失败，请重试"
 	}

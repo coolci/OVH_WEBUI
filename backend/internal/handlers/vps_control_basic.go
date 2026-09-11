@@ -249,9 +249,9 @@ func GetVpsServiceStatus(state *app.State) gin.HandlerFunc {
 			if code == http.StatusForbidden {
 				c.JSON(http.StatusOK, gin.H{
 					"success": true, "status": nil, "unauthorized": true,
-					"message": "当前 OVH 凭据没有读取端口探测状态的权限（需要 IAM 权限 vps:apiovh:status/get）。" +
-						"到 OVH 控制台重新生成 Consumer Key、给它 GET /vps/* 的权限即可；" +
-						"这一项不影响 VPS 的其它功能。",
+					"message": "这不是登录失败，只是当前账户的 Consumer Key 没勾「读取 VPS 端口探测」权限" +
+						"（OVH IAM：vps:apiovh:status/get）。开机/关机/快照/重装不受影响。" +
+						"到 OVH 控制台 → API 密钥，重新生成 Consumer Key 并勾选 GET /vps/* 即可。",
 				})
 				return
 			}

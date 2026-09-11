@@ -13,6 +13,9 @@ import { AccountChip } from "@/components/common/AccountChip";
 import { TimingChip } from "@/components/common/TimingChip";
 import { Skeleton } from "@/components/common/Skeleton";
 import { EmptyState } from "@/components/common/EmptyState";
+import { LoadFailed } from "@/components/common/LoadFailed";
+import { CURRENCY_UNKNOWN_HINT, formatMoney } from "@/lib/money";
+import { describeOptionCodes } from "@/lib/option-groups";
 import {
   Dialog,
   DialogContent,
@@ -117,8 +120,7 @@ function orderStatusView(item: PurchaseHistory): {
 }
 
 /**
- * 成交价 + 币种展示。
- * 币种缺失时只显示金额并在 title 里说明，绝不猜 "EUR"
+ * 成交价 + 币种。币种缺失时只显示金额并在 title 里说明，绝不补 "EUR"。
  */
 function HistoryPrice({ item, strike }: { item: PurchaseHistory; strike: boolean }) {
   const value = item.price?.withTax;
@@ -127,10 +129,10 @@ function HistoryPrice({ item, strike }: { item: PurchaseHistory; strike: boolean
   return (
     <span
       className={`font-mono font-medium text-success ${strike ? "line-through" : ""}`}
-      title={currency ? undefined : "币种未知"}
+      title={currency ? undefined : CURRENCY_UNKNOWN_HINT}
     >
-      {value}
-      {currency ? ` ${currency}` : <span className="text-muted-foreground"> (币种未知)</span>}
+      {formatMoney(value, currency || null)}
+      {!currency && <span className="text-muted-foreground"> (币种未知)</span>}
     </span>
   );
 }
@@ -251,6 +253,19 @@ function HistoryPage() {
             ))}
           </CardContent>
         </Card>
+      ) : list.isError ? (
+        <Card className="surface-card rounded-xl border-border">
+          <LoadFailed
+            icon={Clock}
+            title="抢购历史读取失败 —— 不是「你没有订单」,是我们没读到"
+            error={list.error}
+            onRetry={() => list.refetch()}
+          />
+          <p className="px-6 pb-5 text-[11px] text-muted-foreground text-center">
+            未付款的订单仍在走 15 天倒计时,别把这片空白当成"没有订单"。
+            请重试,或直接去 OVH 管理面板确认待付款的订单。
+          </p>
+        </Card>
       ) : filtered.length === 0 ? (
         <Card className="surface-card rounded-xl border-border">
           <EmptyState icon={Clock} title="没有匹配的订单" />
@@ -321,8 +336,8 @@ function HistoryPage() {
 
 function HistoryRow({ item, now }: { item: PurchaseHistory; now: number }) {
   const st = orderStatusView(item);
-  // 倒计时是"付款窗口":付了、取消了、交付了都不再显示
-  const showCountdown = item.status === "success" && !st.paid && !st.closed;
+  // 倒计时是"付款窗口":付了、取消了、交付了都不再显示。没有 orderId 就没有 OVH 订单可付。
+  const showCountdown = item.status === "success" && !!item.orderId && !st.paid && !st.closed;
   const remainingMs = showCountdown ? getExpirationMs(item) - now : 0;
   const isExpired = showCountdown && remainingMs <= 0;
   // 24 小时内进入告警色
@@ -338,8 +353,11 @@ function HistoryRow({ item, now }: { item: PurchaseHistory; now: number }) {
         </div>
       </td>
       <td className={`px-4 py-3 ${isExpired ? "line-through" : ""}`}>{item.datacenter.toUpperCase()}</td>
-      <td className={`px-4 py-3 text-muted-foreground max-w-[200px] truncate ${isExpired ? "line-through" : ""}`}>
-        {item.options && item.options.length > 0 ? item.options.join(", ") : "默认配置"}
+      <td
+        className={`px-4 py-3 text-muted-foreground max-w-[200px] truncate ${isExpired ? "line-through" : ""}`}
+        title={item.options && item.options.length > 0 ? item.options.join("\n") : undefined}
+      >
+        {item.options && item.options.length > 0 ? describeOptionCodes(item.options) : "默认配置"}
       </td>
       <td className="px-4 py-3">
         <HistoryPrice item={item} strike={isExpired} />
@@ -410,7 +428,7 @@ function HistoryRow({ item, now }: { item: PurchaseHistory; now: number }) {
 /** 手机端的订单卡片渲染。跟 HistoryRow 字段一一对应,但堆叠成卡片。 */
 function HistoryCard({ item, now }: { item: PurchaseHistory; now: number }) {
   const st = orderStatusView(item);
-  const showCountdown = item.status === "success" && !st.paid && !st.closed;
+  const showCountdown = item.status === "success" && !!item.orderId && !st.paid && !st.closed;
   const remainingMs = showCountdown ? getExpirationMs(item) - now : 0;
   const isExpired = showCountdown && remainingMs <= 0;
   const isUrgent = showCountdown && !isExpired && remainingMs < 24 * 60 * 60 * 1000;
@@ -437,8 +455,11 @@ function HistoryCard({ item, now }: { item: PurchaseHistory; now: number }) {
             <Chip tone="danger">失败</Chip>
           )}
         </div>
-        <div className={`text-[11px] text-muted-foreground break-all ${isExpired ? "line-through" : ""}`}>
-          {item.options && item.options.length > 0 ? item.options.join(", ") : "默认配置"}
+        <div
+          className={`text-[11px] text-muted-foreground break-all ${isExpired ? "line-through" : ""}`}
+          title={item.options && item.options.length > 0 ? item.options.join("\n") : undefined}
+        >
+          {item.options && item.options.length > 0 ? describeOptionCodes(item.options) : "默认配置"}
         </div>
         <div className="flex items-center justify-between gap-2 text-[11px]">
           <span className="text-muted-foreground font-mono">

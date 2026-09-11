@@ -29,6 +29,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { describeOptionCodes } from "@/lib/option-groups";
 import {
   useMonitorList,
   useMonitorStatus,
@@ -261,6 +262,15 @@ function SubRow({
                 : "监控所有数据中心"}
             </p>
             <div className="flex gap-1.5 flex-wrap items-center">
+              {sub.options && sub.options.length > 0 ? (
+                <Chip tone="default" title={sub.options.join("\n")}>
+                  只盯 {describeOptionCodes(sub.options)}
+                </Chip>
+              ) : (
+                <Chip tone="default" title="该型号的每套内存/存储组合都会各自触发通知与自动下单">
+                  盯全部配置
+                </Chip>
+              )}
               {sub.notifyAvailable && <Chip tone="success">有货提醒</Chip>}
               {sub.notifyUnavailable && <Chip tone="warning">无货提醒</Chip>}
               {sub.autoOrder && sub.autoOrderAccountId ? (

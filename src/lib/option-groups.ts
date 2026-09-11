@@ -165,3 +165,26 @@ export function formatOptionDisplay(option: ServerOption, group: OptionGroupKey)
   }
   return option.label;
 }
+
+/**
+ * 把一个裸的 addon planCode 转成人话，例如：
+ *   ram-64g-ecc-2133-24sk60      → 64 GB
+ *   softraid-2x480ssd-24sk60     → SOFTRAID 2× 480GB SSD
+ *
+ * 队列项和监控订阅存下来的是 addon planCode 快照，机型下架或目录没拉到时
+ * 拿不到 ServerOption。classifyOption / formatOptionDisplay 本来就靠 value 正则，
+ * 直接喂一个只有 value 的壳即可。认不出就原样返回 code。
+ */
+export function describeOptionCode(code: string): string {
+  const v = code.trim();
+  if (!v) return "";
+  const shell: ServerOption = { value: v, label: v };
+  const text = formatOptionDisplay(shell, classifyOption(shell));
+  return text && text !== v ? text : v;
+}
+
+/** 一组 addon planCode 的可读摘要，用于列表卡片。认不出的原样带上 */
+export function describeOptionCodes(codes: string[] | undefined): string {
+  if (!codes || codes.length === 0) return "";
+  return codes.map(describeOptionCode).join(" · ");
+}
