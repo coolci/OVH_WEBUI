@@ -122,6 +122,12 @@ export const qk = {
   },
 
   // 账户
+  accounts: {
+    list: () => ["accounts", "list"] as const,
+    proxyStatus: () => ["accounts", "proxy-status"] as const,
+    proxyTest: (id: string) => ["accounts", id, "proxy-test"] as const,
+    proxyCheck: (id: string) => ["accounts", id, "proxy-check"] as const,
+  },
   account: {
     info: (accountId?: string) => ["account", "info", accountId || ""] as const,
     refunds: (accountId?: string) => ["account", "refunds", accountId || ""] as const,

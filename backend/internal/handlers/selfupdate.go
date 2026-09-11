@@ -57,6 +57,17 @@ func GetUpdateStatus(state *app.State) gin.HandlerFunc {
 // 而 SQLite 不干净关闭会留下 -wal 文件。
 func SelfUpdate(state *app.State, restart func(exePath string)) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// 容器里不给更新。写进容器可写层的新二进制在下一次重建时就没了,
+		// 用户会看到"更新成功"之后版本号又变回去 —— 而且多半连写都写不进去
+		// (进程是降权跑的)。容器的更新方式是拉新镜像重建。
+		if updater.InContainer() {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"success":     false,
+				"error":       updater.ContainerUpdateHint,
+				"inContainer": true,
+			})
+			return
+		}
 		if Version == "dev" {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"success": false,

@@ -101,7 +101,7 @@ export function MonitorPreview() {
                 </div>
                 
                 <div className="flex flex-wrap gap-2">
-                  {(sub.datacenters?.length > 0 ? sub.datacenters : Object.keys(sub.lastStatus || {})).slice(0, 5).map(dc => {
+                  {((sub.datacenters && sub.datacenters.length > 0) ? sub.datacenters : Object.keys(sub.lastStatus || {})).slice(0, 5).map(dc => {
                     const dcName = typeof dc === 'string' ? dc : dc;
                     const status = sub.lastStatus?.[dcName] || "unknown";
                     return (

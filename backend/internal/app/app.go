@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/ovh-webui/server/internal/config"
 	"github.com/ovh-webui/server/internal/db"
 	"github.com/ovh-webui/server/internal/logger"
+	"github.com/ovh-webui/server/internal/netfp"
 	"github.com/ovh-webui/server/internal/ovh"
 	"github.com/ovh-webui/server/internal/storage"
 	"github.com/ovh-webui/server/internal/types"
@@ -148,6 +150,9 @@ type State struct {
 	saveHistoryMu sync.Mutex
 	saveQueueMu   sync.Mutex
 	saveServersMu sync.Mutex
+
+	// onProxyError 代理故障回调,由 main 接到 proxyguard。
+	onProxyError func(accountID string, err error)
 }
 
 // NewState 构造应用状态。DB 必须已 Open。
@@ -236,7 +241,9 @@ func (s *State) ReloadAccounts() error {
 	}
 	s.Accounts = accs
 	s.AccountsMu.Unlock()
-	s.OVH.InvalidateAll()
+	if s.OVH != nil {
+		s.OVH.InvalidateAll()
+	}
 	return nil
 }
 
@@ -519,4 +526,37 @@ func (s *State) SaveAll() {
 	if err := s.SaveServers(); err != nil {
 		s.Logger.Error("save servers: "+err.Error(), "system")
 	}
+}
+
+// HTTPClientFor 按账户的出站配置建一个普通 HTTP 客户端。
+//
+// 给那些**不带凭据**但仍然打 OVH 的请求用：公开目录、可用性探测等等。
+// 它们以前一律走直连 —— 于是即便每个账户都配了代理，这些请求仍然从本机
+// 真实 IP 发出去，出口隔离漏了一半。
+//
+// accountID 为空 → 默认账户的配置。账户不存在 → 直连（这些是公开接口，
+// 没有账户也该能查，不该因为找不到账户就整个功能失效）。
+//
+// 和带凭据那条路一样：配了代理却建不出来时返回错误，**不退回直连**。
+func (s *State) HTTPClientFor(accountID string, timeout time.Duration) (*http.Client, error) {
+	acc, ok := s.FindAccount(accountID)
+	if !ok {
+		return &http.Client{Timeout: timeout}, nil
+	}
+	prof, _ := netfp.LookupProfile(acc.Fingerprint)
+	return netfp.Client(netfp.Options{
+		ProxyURL: acc.ProxyURL,
+		Profile:  prof,
+		Timeout:  timeout,
+		OnProxyError: func(e error) {
+			if s.onProxyError != nil {
+				s.onProxyError(acc.ID, e)
+			}
+		},
+	})
+}
+
+// SetProxyErrorHook 注入代理故障回调，供 HTTPClientFor 建出来的客户端使用。
+func (s *State) SetProxyErrorHook(fn func(accountID string, err error)) {
+	s.onProxyError = fn
 }

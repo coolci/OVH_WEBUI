@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strconv"
@@ -16,10 +17,12 @@ import (
 )
 
 type dcPickerSession struct {
-	PlanCode  string
-	Mode      string
-	Selected  map[string]bool
-	UpdatedAt time.Time
+	PlanCode    string
+	Mode        string
+	Selected    map[string]bool
+	Options     []string
+	ConfigLabel string
+	UpdatedAt   time.Time
 }
 
 var (
@@ -367,6 +370,100 @@ func startPlanPicker(state *app.State, mon *monitor.Monitor, chatID interface{},
 	renderCategoryPicker(state, mon, chatID, 0, mode, false)
 }
 
+type wizardConfigChoice struct {
+	Label   string
+	Options []string
+	InStock int
+}
+
+func enumerateWizardConfigs(state *app.State, planCode, accountID string) []wizardConfigChoice {
+	if accountID == "" {
+		accountID = telegram.ActiveAccountID(state)
+	}
+	byConfig := catalog.CheckServerAvailabilityWithConfigs(state, planCode, accountID)
+	out := make([]wizardConfigChoice, 0, len(byConfig))
+	for _, d := range byConfig {
+		if d == nil {
+			continue
+		}
+		mem := strings.TrimSpace(d.Memory)
+		stor := strings.TrimSpace(d.Storage)
+		label := strings.TrimSpace(mem + " / " + stor)
+		if label == "/" || label == "" {
+			continue
+		}
+		inStock := 0
+		for _, status := range d.Datacenters {
+			if catalog.IsAvailableForOrder(status) {
+				inStock++
+			}
+		}
+		out = append(out, wizardConfigChoice{
+			Label:   label,
+			Options: d.Options,
+			InStock: inStock,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if (out[i].InStock > 0) != (out[j].InStock > 0) {
+			return out[i].InStock > 0
+		}
+		return out[i].Label < out[j].Label
+	})
+	return out
+}
+
+func showConfigPicker(state *app.State, mon *monitor.Monitor, chatID interface{}, messageID int64, mode, planCode string, edit bool) {
+	configs := enumerateWizardConfigs(state, planCode, "")
+	if len(configs) <= 1 {
+		sess := getPickerSession(chatID, messageID, mode, planCode)
+		if len(configs) == 1 {
+			sess.Options = configs[0].Options
+			sess.ConfigLabel = configs[0].Label
+		} else {
+			sess.Options = nil
+			sess.ConfigLabel = ""
+		}
+		showDCPicker(state, chatID, messageID, mode, planCode, edit)
+		return
+	}
+
+	var btns []map[string]string
+	for i, c := range configs {
+		if i >= 8 {
+			break
+		}
+		stockIcon := "🔴 缺货"
+		if c.InStock > 0 {
+			stockIcon = fmt.Sprintf("🟢 %d机房有货", c.InStock)
+		}
+		btnText := fmt.Sprintf("💾 %s (%s)", c.Label, stockIcon)
+		cbData := fmt.Sprintf("i:cfg:%s:%s:%d", mode, planCode, i)
+		btns = append(btns, telegram.CallbackButton(btnText, cbData))
+	}
+	rows := telegram.ChunkButtons(btns, 1)
+
+	rows = append(rows, []map[string]string{
+		telegram.CallbackButton("🌐 任意配置 (不限制配置，按机房首选)", fmt.Sprintf("i:cfg:%s:%s:any", mode, planCode)),
+	})
+	rows = append(rows, []map[string]string{
+		telegram.CallbackButton("🔙 返回系列分类", "i:cat:"+mode+":root"),
+	})
+
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("⚙️ 型号: %s\n\n", planCode))
+	b.WriteString(fmt.Sprintf("该型号共检测到 %d 种硬件配置规格，请选择您期望的配置：\n\n", len(configs)))
+	b.WriteString("💡 提示：抢购和监控会根据配置精确匹配。如果您对内存或硬盘无特殊要求，可直接选择「任意配置」。")
+
+	markup := telegram.InlineKeyboard(rows)
+	if edit && messageID > 0 {
+		if telegram.EditMessage(state, chatID, messageID, b.String(), markup) {
+			return
+		}
+	}
+	_, _ = telegram.SendToChat(state, chatID, b.String(), markup)
+}
+
 func showDCPicker(state *app.State, chatID interface{}, messageID int64, mode, planCode string, edit bool) {
 	accountID := telegram.DefaultAccountID(state)
 	validDCs, stock := validAndInStockDCs(state, planCode, accountID)
@@ -445,12 +542,20 @@ func showDCPicker(state *app.State, chatID interface{}, messageID int64, mode, p
 		})
 	}
 
-	rows = append(rows, []map[string]string{
-		telegram.CallbackButton("🔙 返回系列分类", "i:cat:"+mode+":root"),
-	})
+	var navRow []map[string]string
+	navRow = append(navRow, telegram.CallbackButton("⚙️ 更改配置", "i:cfgshow:"+mode+":"+planCode))
+	navRow = append(navRow, telegram.CallbackButton("🔙 返回系列分类", "i:cat:"+mode+":root"))
+	rows = append(rows, navRow)
 
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("📦 型号: %s\n", planCode))
+	if sess.ConfigLabel != "" {
+		b.WriteString(fmt.Sprintf("⚙️ 配置: %s\n", sess.ConfigLabel))
+	} else if len(sess.Options) > 0 {
+		b.WriteString(fmt.Sprintf("⚙️ 配置: %s\n", strings.Join(sess.Options, ", ")))
+	} else {
+		b.WriteString("⚙️ 配置: 任意/默认配置\n")
+	}
 	if mode == "m" {
 		b.WriteString("请勾选要监控的机房（🟢有现货 🔴缺货；支持多选）：\n")
 	} else {
@@ -482,12 +587,12 @@ func showDCPicker(state *app.State, chatID interface{}, messageID int64, mode, p
 	_, _ = telegram.SendToChat(state, chatID, b.String(), markup)
 }
 
-func enqueueWizardDCs(state *app.State, chatID interface{}, messageID int64, mode, planCode string, dcs []string, accountID string, autoPay bool) {
+func enqueueWizardDCs(state *app.State, chatID interface{}, messageID int64, mode, planCode string, dcs []string, accountID string, options []string, configLabel string, autoPay bool) {
 	if len(dcs) == 0 {
 		return
 	}
 	if accountID == "" {
-		accountID = telegram.DefaultAccountID(state)
+		accountID = telegram.ActiveAccountID(state)
 	}
 	quick := mode == "b"
 	chatStr := telegram.ChatIDString(chatID)
@@ -501,7 +606,7 @@ func enqueueWizardDCs(state *app.State, chatID interface{}, messageID int64, mod
 	var lastErr string
 
 	for _, dc := range dcs {
-		item := telegram.NewTelegramQueueItem(accountID, planCode, dc, nil)
+		item := telegram.NewTelegramQueueItem(accountID, planCode, dc, options)
 		item.TelegramChatID = chatStr
 		item.TelegramMessageID = messageID
 		if quick {
@@ -524,7 +629,7 @@ func enqueueWizardDCs(state *app.State, chatID interface{}, messageID int64, mod
 	}
 
 	acc, _ := state.FindAccount(accountID)
-	accLabel := acc.Name
+	accLabel := telegram.AccountLabel(acc)
 	if accLabel == "" {
 		accLabel = accountID
 	}
@@ -535,6 +640,11 @@ func enqueueWizardDCs(state *app.State, chatID interface{}, messageID int64, mod
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("⏳ 排队中…（%s）\n\n", kind))
 	b.WriteString("📦 型号: " + planCode + "\n")
+	if configLabel != "" {
+		b.WriteString("⚙️ 配置: " + configLabel + "\n")
+	} else if len(options) > 0 {
+		b.WriteString("⚙️ 配置: " + strings.Join(options, ", ") + "\n")
+	}
 	b.WriteString("📍 正在排队:\n")
 	for _, t := range createdTasks {
 		b.WriteString("  • " + telegram.DisplayDCFull(t.Datacenter) + "\n")
@@ -614,8 +724,63 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 			showStockCardWithButtons(state, mon, chatID, messageID, plan)
 			return true
 		}
+		if mode == "pr" {
+			telegram.AnswerCallback(state, cbID, "已选 "+plan, false)
+			showDCPicker(state, chatID, messageID, mode, plan, true)
+			return true
+		}
+		configs := enumerateWizardConfigs(state, plan, "")
+		if len(configs) > 1 {
+			telegram.AnswerCallback(state, cbID, "请选择配置", false)
+			showConfigPicker(state, mon, chatID, messageID, mode, plan, true)
+			return true
+		}
+		sess := getPickerSession(chatID, messageID, mode, plan)
+		if len(configs) == 1 {
+			sess.Options = configs[0].Options
+			sess.ConfigLabel = configs[0].Label
+		} else {
+			sess.Options = nil
+			sess.ConfigLabel = ""
+		}
 		telegram.AnswerCallback(state, cbID, "已选 "+plan, false)
 		showDCPicker(state, chatID, messageID, mode, plan, true)
+		return true
+	case "cfg":
+		if len(parts) < 5 {
+			telegram.AnswerCallback(state, cbID, "按钮无效", true)
+			return true
+		}
+		mode, plan, cfgIdxStr := parts[2], parts[3], parts[4]
+		sess := getPickerSession(chatID, messageID, mode, plan)
+		if cfgIdxStr == "any" {
+			sess.Options = nil
+			sess.ConfigLabel = "任意/默认配置"
+			telegram.AnswerCallback(state, cbID, "已选任意配置", false)
+		} else {
+			idx, err := strconv.Atoi(cfgIdxStr)
+			configs := enumerateWizardConfigs(state, plan, "")
+			if err == nil && idx >= 0 && idx < len(configs) {
+				sess.Options = configs[idx].Options
+				sess.ConfigLabel = configs[idx].Label
+				telegram.AnswerCallback(state, cbID, "已选: "+configs[idx].Label, false)
+			} else {
+				sess.Options = nil
+				sess.ConfigLabel = ""
+				telegram.AnswerCallback(state, cbID, "已选配置", false)
+			}
+		}
+		showDCPicker(state, chatID, messageID, mode, plan, true)
+		return true
+	case "cfgshow":
+		if len(parts) < 4 {
+			telegram.AnswerCallback(state, cbID, "按钮无效", true)
+			return true
+		}
+		mode, plan := parts[2], parts[3]
+		telegram.AnswerCallback(state, cbID, "请选择配置", false)
+		showConfigPicker(state, mon, chatID, messageID, mode, plan, true)
+		return true
 	case "D":
 		if len(parts) < 3 {
 			telegram.AnswerCallback(state, cbID, "按钮无效", true)
@@ -704,6 +869,8 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 				return true
 			}
 			sort.Strings(selectedDCs)
+			pickedOpts := append([]string{}, sess.Options...)
+			pickedCfgLabel := sess.ConfigLabel
 			clearPickerSession(chatID, messageID)
 
 			if mode == "m" {
@@ -728,8 +895,12 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 				for _, d := range selectedDCs {
 					dcLabels = append(dcLabels, telegram.DisplayDCFull(d))
 				}
-				text := fmt.Sprintf("✅ 已成功添加库存监控！\n\n📦 型号: %s\n📍 监控机房 (%d个):\n  • %s\n\n一旦官方有货上架，Bot 将第一时间向您推送补货通知！",
-					plan, len(selectedDCs), strings.Join(dcLabels, "\n  • "))
+				cfgLine := ""
+				if pickedCfgLabel != "" {
+					cfgLine = "\n⚙️ 监控配置: " + pickedCfgLabel
+				}
+				text := fmt.Sprintf("✅ 已成功添加库存监控！\n\n📦 型号: %s%s\n📍 监控机房 (%d个):\n  • %s\n\n一旦官方有货上架，Bot 将第一时间向您推送补货通知！",
+					plan, cfgLine, len(selectedDCs), strings.Join(dcLabels, "\n  • "))
 				markup := telegram.InlineKeyboard([][]map[string]string{
 					{
 						telegram.CallbackButton("📋 查看监控列表", "i:mon:list"),
@@ -740,7 +911,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 				return true
 			}
 			telegram.AnswerCallback(state, cbID, fmt.Sprintf("已选 %d 个机房，正在提交抢购…", len(selectedDCs)), false)
-			enqueueWizardDCs(state, chatID, messageID, mode, plan, selectedDCs, "", false)
+			enqueueWizardDCs(state, chatID, messageID, mode, plan, selectedDCs, "", pickedOpts, pickedCfgLabel, false)
 			return true
 		case "pr":
 			// 价格查询单选: i:D:pr:<plan>:<dc>
@@ -782,6 +953,19 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 			// 兼容旧单选: i:D:<mode>:<plan>:<dc>
 			if len(parts) >= 5 {
 				mode, plan, dc := parts[2], parts[3], parts[4]
+				sess := getPickerSession(chatID, messageID, mode, plan)
+				pickedOpts := append([]string{}, sess.Options...)
+				pickedCfgLabel := sess.ConfigLabel
+				if len(pickedOpts) == 0 {
+					avail := catalog.CheckServerAvailabilityWithConfigs(state, plan, "")
+					for _, cfg := range avail {
+						if cfg != nil && catalog.IsAvailableForOrder(cfg.Datacenters[dc]) && len(cfg.Options) > 0 {
+							pickedOpts = append([]string{}, cfg.Options...)
+							pickedCfgLabel = strings.TrimSpace(cfg.Memory + " / " + cfg.Storage)
+							break
+						}
+					}
+				}
 				if mode == "m" {
 					var dcs []string
 					dcLabel := "全部机房"
@@ -817,7 +1001,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 					return true
 				}
 				telegram.AnswerCallback(state, cbID, telegram.DisplayDC(dc), false)
-				enqueueWizardDCs(state, chatID, messageID, mode, plan, []string{dc}, "", false)
+				enqueueWizardDCs(state, chatID, messageID, mode, plan, []string{dc}, "", pickedOpts, pickedCfgLabel, false)
 				return true
 			}
 		}
@@ -833,7 +1017,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 			return true
 		}
 		telegram.AnswerCallback(state, cbID, "全选有货", false)
-		enqueueWizardDCs(state, chatID, messageID, mode, plan, dcs, "", false)
+		enqueueWizardDCs(state, chatID, messageID, mode, plan, dcs, "", nil, "", false)
 	case "Z":
 		if len(parts) < 4 {
 			telegram.AnswerCallback(state, cbID, "按钮无效", true)
@@ -846,7 +1030,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 		if len(targetDCs) == 0 {
 			targetDCs = append([]string{}, telegram.StandardDCs...)
 		}
-		enqueueWizardDCs(state, chatID, messageID, mode, plan, targetDCs, "", false)
+		enqueueWizardDCs(state, chatID, messageID, mode, plan, targetDCs, "", nil, "", false)
 	case "C":
 		if len(parts) < 4 {
 			telegram.AnswerCallback(state, cbID, "按钮无效", true)
@@ -1156,6 +1340,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 		if accID == "" {
 			accID = parts[2]
 		}
+		_ = telegram.SetActiveAccount(state, accID)
 		if state.DB != nil {
 			_ = state.DB.SetDefaultAccount(accID)
 		}
@@ -1165,7 +1350,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 		if accName == "" {
 			accName = accID
 		}
-		telegram.AnswerCallback(state, cbID, "已切换默认账户: "+accName, false)
+		telegram.AnswerCallback(state, cbID, "已切换当前活跃账户: "+accName, false)
 		showAccounts(state, chatID, messageID, true)
 	default:
 		telegram.AnswerCallback(state, cbID, "未知按钮", true)
@@ -1229,7 +1414,13 @@ func enqueueFromNotifyButton(state *app.State, mon *monitor.Monitor, cbID string
 			if len(dcs) == 0 && cached.Datacenter != "" {
 				dcs = []string{telegram.NormalizeDC(cached.Datacenter)}
 			}
-			enqueueWizardDCs(state, chatID, messageID, mode, cached.PlanCode, dcs, accountOverride, autoPay)
+			var cachedLabel string
+			if cached.ConfigInfo != nil {
+				if d, ok := cached.ConfigInfo["display"].(string); ok {
+					cachedLabel = d
+				}
+			}
+			enqueueWizardDCs(state, chatID, messageID, mode, cached.PlanCode, dcs, accountOverride, cached.Options, cachedLabel, autoPay)
 			return
 		}
 		telegram.AnswerCallback(state, cbID, "按钮已失效", true)
@@ -1251,7 +1442,20 @@ func enqueueFromNotifyButton(state *app.State, mon *monitor.Monitor, cbID string
 	if action == "sniper" {
 		mode = "b"
 	}
-	enqueueWizardDCs(state, chatID, messageID, mode, row.PlanCode, dcs, accID, autoPay)
+	var opts []string
+	if row.Options != "" {
+		_ = json.Unmarshal([]byte(row.Options), &opts)
+	}
+	var cfgLabel string
+	if row.ConfigInfo != "" {
+		var cfgMap map[string]interface{}
+		if err := json.Unmarshal([]byte(row.ConfigInfo), &cfgMap); err == nil {
+			if disp, ok := cfgMap["display"].(string); ok {
+				cfgLabel = disp
+			}
+		}
+	}
+	enqueueWizardDCs(state, chatID, messageID, mode, row.PlanCode, dcs, accID, opts, cfgLabel, autoPay)
 }
 
 func showTasks(state *app.State, chatID interface{}, messageID int64, edit bool) {
@@ -1322,22 +1526,27 @@ func showAccounts(state *app.State, chatID interface{}, messageID int64, edit bo
 		return
 	}
 
+	activeAcc, _ := telegram.ActiveAccount(state)
+
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("👤 OVH 绑定账户列表（共 %d 个）:\n\n", len(accs)))
 	btns := []map[string]string{}
 	for i, a := range accs {
-		defMark := ""
-		if a.IsDefault {
-			defMark = " 🌟 [当前默认]"
+		isActive := a.ID == activeAcc.ID
+		mark := ""
+		if isActive {
+			mark = " ✅ [当前活跃]"
+		} else if a.IsDefault {
+			mark = " 🌟 [系统默认]"
 		}
 		zone := strings.ToUpper(a.Zone)
 		if zone == "" {
 			zone = "EU"
 		}
-		b.WriteString(fmt.Sprintf("%d. 👤 %s\n   🌐 区域: %s / %s%s\n", i+1, a.Name, zone, a.Endpoint, defMark))
-		if !a.IsDefault {
+		b.WriteString(fmt.Sprintf("%d. 👤 %s\n   🌐 区域: %s / %s%s\n", i+1, a.Name, zone, a.Endpoint, mark))
+		if !isActive {
 			shortID := rememberShort(a.ID)
-			btns = append(btns, telegram.CallbackButton("⭐ 设为默认: "+a.Name, "i:S:"+shortID))
+			btns = append(btns, telegram.CallbackButton("👉 设为当前活跃: "+a.Name, "i:S:"+shortID))
 		}
 	}
 	rows := telegram.ChunkButtons(btns, 1)

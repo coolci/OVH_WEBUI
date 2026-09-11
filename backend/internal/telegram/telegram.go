@@ -261,6 +261,8 @@ func SendReply(state *app.State, chatID interface{}, text string, replyToMessage
 type OrderInfo struct {
 	PlanCode   string
 	Datacenter string
+	// AccountRef 用户在命令里显式指定的账户（如 @us, @1, @all）。
+	AccountRef string
 	Quantity   int
 	Options    []string
 }
@@ -283,6 +285,20 @@ func ParseOrderMessage(text string) *OrderInfo {
 	if len(parts) > 1 {
 		remaining = parts[1:]
 	}
+	// 先把 @账户 摘出来,它可以出现在任何位置 ——
+	// 手机上打字容易顺手打在末尾,而末尾正好是 options 的地盘。
+	// 摘早一点,下面的机房/数量/配置解析就完全不用知道它的存在。
+	kept := remaining[:0]
+	for _, p := range remaining {
+		if strings.HasPrefix(p, "@") && len(p) > 1 {
+			if result.AccountRef == "" {
+				result.AccountRef = strings.ToLower(p[1:])
+			}
+			continue
+		}
+		kept = append(kept, p)
+	}
+	remaining = kept
 	if len(remaining) == 0 {
 		return result
 	}

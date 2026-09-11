@@ -62,19 +62,18 @@ func emptyAvailabilityReason(state *app.State, accountID, planCode string, acc t
 	return base + fmt.Sprintf("\n\n%s 的目录里有 %s,所以不是区域搞错了,而是这个机型当前在所有机房都没有可售配置。", sub, planCode)
 }
 
-func ProcessOrder(state *app.State, planCode, datacenter string, quantity int, options []string) OrderResult {
+func ProcessOrder(state *app.State, accountID, planCode, datacenter string, quantity int, options []string) OrderResult {
 	if quantity < 1 {
 		quantity = 1
 	}
-	// TG /buy 没有账户维度,落默认账户 —— 但必须在这里就把它解析成具体 ID 并写进队列项。
-	// 以前 QueueItem.AccountID 留空,下单时才由 purchase 现取默认账户:
-	// 中间只要有人改过默认账户(或删掉它),这一单就会用另一个账户、另一个区的凭据去下,
-	// 而可用性/目录判断用的还是此刻这个账户的子公司,两边对不上。
-	acc, ok := state.FindAccount("")
+	acc, ok := state.FindAccount(accountID)
 	if !ok {
-		return OrderResult{Success: false, Message: "未配置任何 OVH 账户"}
+		acc, ok = ActiveAccount(state)
+		if !ok && acc.ID == "" {
+			return OrderResult{Success: false, Message: "未配置任何 OVH 账户"}
+		}
 	}
-	accountID := acc.ID
+	accountID = acc.ID
 	sub, accLabel := accountRegionLabel(acc)
 
 	availByConfig := catalog.CheckServerAvailabilityWithConfigs(state, planCode, accountID)

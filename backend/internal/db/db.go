@@ -114,8 +114,21 @@ func (db *DB) migrate() error {
 	if err := db.addColumnIfMissing("monitor_subscriptions", "auto_order_account_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
+	// options:只盯某一套配置(空=全部配置,即老行为)。
+	if err := db.addColumnIfMissing("monitor_subscriptions", "options", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
+		return err
+	}
 	if err := db.addColumnIfMissing("vps_subscriptions", "auto_order_account_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
+	}
+	// ovh_accounts 的按账户出站配置:代理地址 + 指纹。
+	for _, c := range [][2]string{
+		{"proxy_url", "TEXT NOT NULL DEFAULT ''"},
+		{"fingerprint", "TEXT NOT NULL DEFAULT ''"},
+	} {
+		if err := db.addColumnIfMissing("ovh_accounts", c[0], c[1]); err != nil {
+			return err
+		}
 	}
 	// telegram_order_buttons.account_id:一键下单按钮记住"该下到哪个账户"。
 	// 老库建表时没有这一列,而 ClaimTelegramButton / GetTelegramButton 是显式列名 SELECT +

@@ -10,6 +10,7 @@ import (
 
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/monitor"
+	"github.com/ovh-webui/server/internal/netfp"
 	"github.com/ovh-webui/server/internal/ovh"
 	"github.com/ovh-webui/server/internal/types"
 )
@@ -18,14 +19,16 @@ import (
 
 // accountInput POST/PUT body
 type accountInput struct {
-	Name        string `json:"name"`
-	Endpoint    string `json:"endpoint"` // 可空,会按 zone 推断
-	Zone        string `json:"zone"`
-	AppKey      string `json:"appKey"`
-	AppSecret   string `json:"appSecret"`
-	ConsumerKey string `json:"consumerKey"`
-	IAM         string `json:"iam"` // 可空,会自动生成 go-ovh-<zone>
-	SetDefault  bool   `json:"setDefault"`
+	Name        string  `json:"name"`
+	Endpoint    string  `json:"endpoint"` // 可空,会按 zone 推断
+	Zone        string  `json:"zone"`
+	AppKey      string  `json:"appKey"`
+	AppSecret   string  `json:"appSecret"`
+	ConsumerKey string  `json:"consumerKey"`
+	IAM         string  `json:"iam"` // 可空,会自动生成 go-ovh-<zone>
+	SetDefault  bool    `json:"setDefault"`
+	ProxyURL    *string `json:"proxyUrl"`
+	Fingerprint *string `json:"fingerprint"`
 }
 
 // endpointForZone 根据 zone 推 endpoint。
@@ -90,6 +93,18 @@ func (in *accountInput) validate() string {
 	if in.Name == "" {
 		return "缺少 name"
 	}
+	if in.ProxyURL != nil {
+		if err := netfp.ValidateProxyURL(*in.ProxyURL); err != nil {
+			// 在保存这一刻挡下来:放过去的话,用户要等到真有货那一刻才发现
+			// 出口不对,而那正是唯一不能出错的时刻。
+			return "代理地址不合法: " + err.Error()
+		}
+	}
+	if in.Fingerprint != nil {
+		if _, warn := netfp.LookupProfile(*in.Fingerprint); warn != "" {
+			return warn
+		}
+	}
 	if in.AppKey == "" || in.AppSecret == "" || in.ConsumerKey == "" {
 		return "缺少 OVH 凭据 (appKey / appSecret / consumerKey)"
 	}
@@ -111,20 +126,13 @@ func maskCred(v string) string {
 }
 
 // sanitizeAccount 去掉明文凭据,换成掩码。
-//
-// 为什么必须这么做:GET /api/accounts 以前直接下发解密后的 AppKey / AppSecret /
-// ConsumerKey 明文。配上「API_SECRET_KEY 未设时默认 123456」和当时的
-// CORS AllowAllOrigins,构成一条完整的窃取链 —— 用户开着控制台时访问任意网页,
-// 那个页面只要 fetch('http://127.0.0.1:19998/api/accounts',
-// {headers:{'X-API-Key':'123456'}}) 就能读走全部 OVH 凭据,拿去下单/重装/删机器。
-// 「只监听本地」挡不住这条路,浏览器本身就是攻击载体。
-//
-// 前端要明文只是为了编辑时回填输入框 —— 那个需求用「留空 = 保持原值」满足即可
-// (UpdateAccount 本来就是这个语义),凭据没有任何理由离开后端。
 func sanitizeAccount(a types.OVHAccount) types.OVHAccount {
 	a.AppKey = maskCred(a.AppKey)
 	a.AppSecret = maskCred(a.AppSecret)
 	a.ConsumerKey = maskCred(a.ConsumerKey)
+	// 代理串里常带 user:pass,和三个密钥同等对待 —— 只回显打过码的,
+	// 但保留主机和端口,否则用户没法确认自己配的是哪个出口。
+	a.ProxyURL = netfp.ScrubProxyURL(a.ProxyURL)
 	return a
 }
 
@@ -203,11 +211,18 @@ func CreateAccount(state *app.State) gin.HandlerFunc {
 			IsDefault:   isDefault,
 			CreatedAt:   types.NowISO(),
 		}
+		if in.ProxyURL != nil {
+			acc.ProxyURL = strings.TrimSpace(*in.ProxyURL)
+		}
+		if in.Fingerprint != nil {
+			acc.Fingerprint = strings.TrimSpace(*in.Fingerprint)
+		}
 		if err := state.DB.UpsertAccount(acc); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 		_ = state.ReloadAccounts()
+		RefreshSharedProxy(state)
 
 		// 用新凭据验证
 		valid, subsidiaryWarning := verifyAccountCreds(state, acc.ID)
@@ -249,6 +264,15 @@ func UpdateAccount(state *app.State) gin.HandlerFunc {
 		acc := existing
 		if in.Name != "" {
 			acc.Name = in.Name
+		}
+		// 代理 / 指纹用指针判"传没传":nil = 不改，"" = 改回直连。
+		// 改完下面会 Invalidate + ReloadAccounts,已缓存的 client 会带着
+		// 新的出站配置重建 —— 中途换代理、或者从直连改成走代理,都能立刻生效。
+		if in.ProxyURL != nil {
+			acc.ProxyURL = strings.TrimSpace(*in.ProxyURL)
+		}
+		if in.Fingerprint != nil {
+			acc.Fingerprint = strings.TrimSpace(*in.Fingerprint)
 		}
 		if zoneProvided {
 			acc.Zone = in.Zone
@@ -310,6 +334,7 @@ func UpdateAccount(state *app.State) gin.HandlerFunc {
 		state.OVH.Invalidate(acc.ID)
 		invalidateOrderMappingCache(acc.ID) // 换了凭据/endpoint,旧缓存里的订单可能已经不属于这个账户了
 		_ = state.ReloadAccounts()
+		RefreshSharedProxy(state)
 
 		valid, subsidiaryWarning := verifyAccountCreds(state, acc.ID)
 		c.JSON(http.StatusOK, gin.H{"account": sanitizeAccount(acc), "valid": valid, "subsidiaryWarning": subsidiaryWarning})
@@ -327,6 +352,7 @@ func DeleteAccountByID(state *app.State) gin.HandlerFunc {
 		state.OVH.Invalidate(id)
 		invalidateOrderMappingCache(id) // 订单映射按账户缓存,账户没了缓存也得走
 		_ = state.ReloadAccounts()
+		RefreshSharedProxy(state)
 		// 关联的内存数据也得清掉(queue / history / sniper_tasks)
 		reloadAfterAccountDelete(state, id)
 		state.Logger.Info("删除账户 + 级联清理: "+id, "accounts")
@@ -343,6 +369,7 @@ func SetDefaultAccountByID(state *app.State) gin.HandlerFunc {
 			return
 		}
 		_ = state.ReloadAccounts()
+		RefreshSharedProxy(state)
 		c.JSON(http.StatusOK, gin.H{"status": "success"})
 	}
 }

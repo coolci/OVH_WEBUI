@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -25,6 +26,8 @@ import (
 	"github.com/ovh-webui/server/internal/handlers"
 	"github.com/ovh-webui/server/internal/logger"
 	"github.com/ovh-webui/server/internal/monitor"
+	"github.com/ovh-webui/server/internal/netfp"
+	"github.com/ovh-webui/server/internal/proxyguard"
 	"github.com/ovh-webui/server/internal/purchase"
 	"github.com/ovh-webui/server/internal/secret"
 	"github.com/ovh-webui/server/internal/storage"
@@ -37,6 +40,11 @@ func main() {
 	// 所以路径必须和 Load() 用的完全一致 —— 分叉了就会出现
 	// "写进了 A、下次从 B 读"的情况,而那意味着重新生成一把新密钥。
 	envPath := envFilePath()
+	clearEmptyEnv(
+		"OVH_DB_KEY", "API_SECRET_KEY", "TG_ALLOWED_USER_IDS",
+		"CORS_ALLOWED_ORIGINS", "TRUSTED_PROXIES", "OVH_UPDATE_API",
+		"LISTEN_HOST", "PORT", "DATA_DIR", "CACHE_DIR", "LOGS_DIR",
+	)
 	_ = godotenv.Load(envPath)
 
 	level := slog.LevelInfo
@@ -155,6 +163,17 @@ func main() {
 	handlers.SetMonitorRef(mon)
 	mon.LoadFromDB()
 	console.Info("监控就绪", "checkInterval", mon.CheckInterval())
+
+	_ = proxyguard.Init(state)
+	proxyguard.SetReload(func() {
+		if mon != nil {
+			mon.LoadFromDB()
+		}
+	})
+	state.OVH.SetProxyErrorHook(proxyguard.Report)
+	state.SetProxyErrorHook(proxyguard.Report)
+	applySharedProxy(state)
+
 	go handlers.WarmupServiceOwners(state)
 
 	// Gin
@@ -263,6 +282,10 @@ func main() {
 
 		// Accounts (多账户管理)
 		api.GET("/accounts", handlers.ListAccounts(state))
+		api.GET("/accounts/proxy-status", handlers.ProxyStatus(state))
+		api.POST("/accounts/proxy/test", handlers.TestAccountProxy(state))
+		api.POST("/accounts/:id/proxy-test", handlers.TestAccountProxy(state))
+		api.POST("/accounts/:id/proxy-check", handlers.CheckAccountProxy(state))
 		api.GET("/accounts/:id", handlers.GetAccountByID(state))
 		api.POST("/accounts", handlers.CreateAccount(state))
 		api.PUT("/accounts/:id", handlers.UpdateAccount(state))
@@ -514,13 +537,11 @@ func main() {
 		state.Logger.Info("自动启动服务器监控", "system")
 	}
 
-	state.Logger.Info("Server started", "system")
 	// 默认监听所有网卡（双栈 IPv4+IPv6），这样 localhost / 127.0.0.1 / 局域网 IP 都能访问。
 	// Windows 上 localhost 常先解析到 ::1，单绑 127.0.0.1 会被浏览器拒连。
 	// 如果只想锁本机回环，设 LISTEN_HOST=127.0.0.1
 	host := os.Getenv("LISTEN_HOST")
 	addr := host + ":" + state.Port
-	console.Info("Listening", "addr", addr, "auth", enableAuth, "ui", hasUI(), "dataDir", paths.DataDir)
 
 	srv := &http.Server{
 		Addr:              addr,
@@ -538,16 +559,24 @@ func main() {
 	// 自己 Listen 而不是用 ListenAndServe + sleep:后者只能靠"睡几秒应该起来了"猜,
 	// 猜早了端口还没占上就宣布健康,猜晚了这几秒里被重启一次就会被误判成启动失败。
 	// 拿到 listener 就是确凿的成功信号,没有窗口。
-	ln, err := net.Listen("tcp", addr)
+	ln, err := listenWithRetry(addr, state)
 	if err != nil {
-		console.Error("listen", "err", err)
+		console.Error("启动失败:端口没能绑上", "addr", addr, "err", err)
+		state.Logger.Error("启动失败,端口 "+addr+" 没能绑上: "+err.Error(), "system")
+		state.Logger.Flush()
 		os.Exit(1)
 	}
+	console.Info("Listening", "addr", addr, "auth", enableAuth, "ui", hasUI(), "dataDir", paths.DataDir)
+	state.Logger.Info("已监听 "+addr+",开始对外服务", "system")
 	updater.MarkHealthy(state)
 
 	// 自更新完成后走这里:先停止接受新请求并等在途请求收尾,再关数据库,最后换进程映像。
 	// 顺序不能反 —— 先 exec 的话,新进程会发现端口还被自己占着。
 	gracefulRestart = func(exe string) {
+		// 必须在 Shutdown 之前置位:Shutdown 会让主 goroutine 里的 Serve 立刻返回,
+		// 而主 goroutine 要靠这个标记知道"别退出,等我 exec"。
+		restartPending.Store(true)
+
 		state.Logger.Info("[更新] 正在优雅关闭以完成重启", "version")
 		state.Logger.Flush()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -558,9 +587,24 @@ func main() {
 		if err := sqliteDB.Close(); err != nil {
 			console.Warn("close sqlite", "err", err)
 		}
+
+		state.Logger.Info("[更新] 准备用新二进制替换进程映像: "+exe, "version")
+		state.Logger.Flush()
+
 		if err := updater.Restart(exe); err != nil {
-			console.Error("restart", "err", err)
-			os.Exit(1)
+			// execve 失败(权限丢了、挂载带 noexec、ETXTBSY…)→ 退回"起个新进程再退出"。
+			// 比直接死掉强得多:用户手上这台正在跑抢购,停机就是错过补货。
+			state.Logger.Error("[更新] 替换进程映像失败: "+err.Error()+"，改用启动新进程的方式", "version")
+			state.Logger.Flush()
+			if serr := updater.Spawn(exe); serr != nil {
+				state.Logger.Error("[更新] 启动新进程也失败了: "+serr.Error()+"。请手动重启程序", "version")
+				state.Logger.Flush()
+				console.Error("restart", "err", err, "spawn", serr)
+				os.Exit(1)
+			}
+			state.Logger.Info("[更新] 新进程已拉起,当前进程退出", "version")
+			state.Logger.Flush()
+			os.Exit(0)
 		}
 	}
 
@@ -594,6 +638,33 @@ func main() {
 		_ = srv.Close()
 	}
 	console.Info("server stopped cleanly")
+
+	if restartPending.Load() {
+		time.Sleep(60 * time.Second)
+		state.Logger.Error("[更新] 等了 60 秒仍未完成重启,放弃并退出。请手动启动程序", "version")
+		state.Logger.Flush()
+		os.Exit(1)
+	}
+}
+
+// restartPending 标记"这次 Serve 退出是自更新计划内的"。
+var restartPending atomic.Bool
+
+// listenWithRetry 绑端口,短暂重试。
+func listenWithRetry(addr string, state *app.State) (net.Listener, error) {
+	var lastErr error
+	for i := 0; i < 10; i++ {
+		ln, err := net.Listen("tcp", addr)
+		if err == nil {
+			return ln, nil
+		}
+		lastErr = err
+		if i == 0 {
+			state.Logger.Warn("端口 "+addr+" 暂时绑不上,重试中: "+err.Error(), "system")
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+	return nil, lastErr
 }
 
 // mountEmbeddedUI 把嵌入的前端挂到根路径。
@@ -671,4 +742,33 @@ func isTrue(v string) bool {
 		return true
 	}
 	return false
+}
+
+// applySharedProxy 把默认账户的代理设为"公开请求"的统一出口。
+// 账户增删改之后需要重调 —— 默认账户可能换了。
+func applySharedProxy(state *app.State) {
+	acc, ok := state.FindAccount("")
+	if !ok {
+		return
+	}
+	if err := netfp.SetSharedProxy(acc.ProxyURL); err != nil {
+		state.Logger.Warn("公开请求的统一出口设置失败,将走直连: "+err.Error(), "proxy")
+		return
+	}
+	if p := netfp.SharedProxy(); p != "" {
+		state.Logger.Info("公开目录/区域探测统一走: "+p, "proxy")
+	}
+}
+
+// clearEmptyEnv 把"设了但是空串"的环境变量彻底 unset。
+//
+// 只有 unset 之后 godotenv 才会用配置文件里的值填上 ——
+// 它对已存在的变量一律跳过，不看是不是空的。
+// 容器编排（compose 的 ${VAR:-}、k8s 的空 value）很容易设出这种变量。
+func clearEmptyEnv(names ...string) {
+	for _, n := range names {
+		if v, ok := os.LookupEnv(n); ok && strings.TrimSpace(v) == "" {
+			_ = os.Unsetenv(n)
+		}
+	}
 }

@@ -3,10 +3,12 @@ package ovh
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/ovh/go-ovh/ovh"
 
 	"github.com/ovh-webui/server/internal/config"
+	"github.com/ovh-webui/server/internal/netfp"
 	"github.com/ovh-webui/server/internal/types"
 )
 
@@ -24,6 +26,10 @@ type AccountLookup func(id string) (types.OVHAccount, bool)
 type Factory struct {
 	lookup   AccountLookup
 	fallback *config.Store // 兼容老 Client() 调用,等所有 callsite 迁完可移除
+	// logf 可选日志钩子。指纹名不认识这类事要说出来,但 ovh 包不该依赖 logger。
+	logf func(format string, args ...interface{})
+	// onProxyError 代理层面失败时回调(accountID, err)。由 main 接到 proxyguard。
+	onProxyError func(accountID string, err error)
 
 	mu    sync.Mutex
 	cache map[string]*ovh.Client // accountID → client
@@ -36,6 +42,22 @@ func NewFactory(cfg *config.Store, lookup AccountLookup) *Factory {
 		fallback: cfg,
 		cache:    map[string]*ovh.Client{},
 	}
+}
+
+// SetLogf 注入日志钩子(可选)。
+func (f *Factory) SetLogf(fn func(format string, args ...interface{})) {
+	f.mu.Lock()
+	f.logf = fn
+	f.mu.Unlock()
+}
+
+// SetProxyErrorHook 注入代理故障回调。必须在任何 ClientFor 之前设好 ——
+// 已经建出来的 client 里捕获的是设置那一刻的值。
+func (f *Factory) SetProxyErrorHook(fn func(accountID string, err error)) {
+	f.mu.Lock()
+	f.onProxyError = fn
+	f.cache = map[string]*ovh.Client{} // 让已缓存的 client 重建,带上钩子
+	f.mu.Unlock()
 }
 
 // ClientFor 返回指定账户的 OVH client。accountID="" 走默认账户。
@@ -65,6 +87,40 @@ func (f *Factory) ClientFor(accountID string) (*ovh.Client, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// 按账户装出站通道:代理隔离 + 指纹。
+	//
+	// **配了代理却建不出来时直接失败,不退回直连。**
+	// 退回直连的表现是一切正常、隔离却已经没了 —— 而 OVH 的限流是按 IP 算的,
+	// 用户要等到补货那一刻被限流才会发现,那正是唯一不能出错的时刻。
+	prof, warn := netfp.LookupProfile(acc.Fingerprint)
+	if warn != "" && f.logf != nil {
+		f.logf("账户 %s: %s", acc.Name, warn)
+	}
+	accID := acc.ID
+	// 在锁内取出钩子并按值捕获:闭包是在请求时刻跑的,
+	// 那时候没有持锁,直接读 f.onProxyError 就是数据竞争。
+	hook := f.onProxyError
+	httpCli, herr := netfp.Client(netfp.Options{
+		ProxyURL: acc.ProxyURL,
+		Profile:  prof,
+		// go-ovh 默认没有超时。抢购链路上一个卡死的连接等于这一轮白等,
+		// 而下一轮要等到 retryInterval 之后。
+		Timeout: 60 * time.Second,
+		// 代理层面的失败上报给看门狗:连续失败会暂停这个账户的任务并通知用户。
+		// 注入的是回调而不是直接 import proxyguard —— 那会绕成 import 环
+		// (proxyguard 依赖 app,app 依赖 ovh)。
+		OnProxyError: func(e error) {
+			if hook != nil {
+				hook(accID, e)
+			}
+		},
+	})
+	if herr != nil {
+		return nil, fmt.Errorf("账户 %s 的出站代理配置有问题(%s): %w",
+			acc.Name, netfp.ScrubProxyURL(acc.ProxyURL), herr)
+	}
+	cli.Client = httpCli
 	f.cache[acc.ID] = cli
 	return cli, nil
 }

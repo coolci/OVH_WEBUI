@@ -5,6 +5,7 @@ package updater
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"syscall"
 )
 
@@ -56,4 +57,28 @@ func Restart(exePath string) error {
 		return fmt.Errorf("重启失败: %w", err)
 	}
 	return nil // execve 成功的话根本不会走到这里
+}
+
+// Spawn execve 走不通时的退路：起一个脱离当前进程的新实例，然后自己退出。
+//
+// execve 正常情况下更好（同 PID、同 fd，进程管理器无感），但它会因为
+// 权限位丢失、挂载带 noexec、ETXTBSY 之类的原因失败。
+// 那种时候如果就这么死掉，用户手上这台正在跑抢购的机器就停了 —— 停机就是错过补货。
+//
+// Setsid 让新进程脱离当前会话：不然父进程一退出，它会跟着收到 SIGHUP。
+func Spawn(exePath string) error {
+	cmd := exec.Command(exePath, os.Args[1:]...)
+	cmd.Env = os.Environ()
+	cmd.Dir, _ = os.Getwd()
+	// 标准流交给 /dev/null：父进程马上就退了，继承下来的 fd 随时可能失效，
+	// 而新进程自己会写日志文件。
+	if devNull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0); err == nil {
+		cmd.Stdin, cmd.Stdout, cmd.Stderr = devNull, devNull, devNull
+	}
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("启动新进程失败: %w", err)
+	}
+	// 不 Wait：我们马上就要退出，让它被 init 收养
+	return nil
 }

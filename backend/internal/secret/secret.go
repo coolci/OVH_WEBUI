@@ -12,6 +12,7 @@
 package secret
 
 import (
+	"bufio"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -122,14 +123,21 @@ func resolveKey(dataDir, envPath string) ([]byte, error) {
 		keySource = "环境变量 " + KeyEnv
 		// 允许 hex / base64 / 任意口令:统一 SHA-256 成 32 字节,
 		// 免得用户被"必须正好 32 字节"卡住而干脆不开加密
-		if b, err := hex.DecodeString(v); err == nil && len(b) == 32 {
-			return b, nil
-		}
-		if b, err := base64.StdEncoding.DecodeString(v); err == nil && len(b) == 32 {
-			return b, nil
-		}
-		sum := sha256.Sum256([]byte(v))
-		return sum[:], nil
+		return normalizeKey(v), nil
+	}
+
+	// 配置文件里已经有密钥了 —— 直接用它，**绝不能再生成一把新的**。
+	//
+	// 正常情况下这一步是多余的：main 会先 godotenv.Load 把它读进环境变量。
+	// 但那条路有两个已知的失效方式，而失效的后果是"每次启动换一把钥匙"，
+	// 之前加密的凭据永久解不开，且完全无声：
+	//   · 环境里存在一个**空的** OVH_DB_KEY（compose 的 ${VAR:-}）→
+	//     godotenv 会跳过不覆盖（main 里已经 unset 掉了，这里再兜一层）
+	//   · Load 的路径和写入的路径分叉
+	// 所以在生成之前，再直接读一次文件确认。
+	if k, ok := readKeyFromEnvFile(envPath); ok {
+		keySource = "配置文件 " + envPath
+		return k, nil
 	}
 
 	legacy := filepath.Join(dataDir, keyFile)
@@ -247,3 +255,57 @@ func Decrypt(stored string) (string, error) {
 
 // IsEncrypted 判断存储值是否已经是密文
 func IsEncrypted(stored string) bool { return strings.HasPrefix(stored, prefix) }
+
+// readKeyFromEnvFile 直接从配置文件里把密钥读出来。
+//
+// 存在的理由见 resolveKey 里的说明：不能只依赖 godotenv 把它送进环境变量，
+// 那条路失效时的后果是每次启动重新生成一把密钥。
+//
+// 文件里有多行同名 key 时取**最后一行** —— 和 shell / dotenv 的惯例一致，
+// 而且历史上已经因为上面那个 bug 追加过重复行，取最后一行才是"最新那把"。
+func readKeyFromEnvFile(envPath string) ([]byte, bool) {
+	if strings.TrimSpace(envPath) == "" {
+		return nil, false
+	}
+	f, err := os.Open(envPath)
+	if err != nil {
+		return nil, false
+	}
+	defer f.Close()
+
+	var last string
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		k, v, ok := strings.Cut(line, "=")
+		if !ok || strings.TrimSpace(k) != KeyEnv {
+			continue
+		}
+		v = strings.TrimSpace(v)
+		v = strings.Trim(v, `"'`)
+		if v != "" {
+			last = v
+		}
+	}
+	if last == "" {
+		return nil, false
+	}
+	return normalizeKey(last), true
+}
+
+// normalizeKey 和环境变量那条路用同一套解析：hex / base64 / 任意口令。
+// 两条路必须一致，否则同一个字符串在不同来源下会得到不同的密钥 ——
+// 那又是一次"凭据解不开"。
+func normalizeKey(v string) []byte {
+	if b, err := hex.DecodeString(v); err == nil && len(b) == 32 {
+		return b
+	}
+	if b, err := base64.StdEncoding.DecodeString(v); err == nil && len(b) == 32 {
+		return b
+	}
+	sum := sha256.Sum256([]byte(v))
+	return sum[:]
+}

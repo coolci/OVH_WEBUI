@@ -16,7 +16,7 @@ import (
 
 // Version 当前二进制版本。build.sh 用 -ldflags "-X github.com/ovh-webui/server/internal/handlers.Version=x.y.z" 注入。
 // 默认 "dev" 给 go run / 未注入的 build。
-var Version = "0.1.12"
+var Version = "0.1.17"
 
 // GetVersion GET /api/version  无需鉴权,前端启动时拿来显示
 func GetVersion(state *app.State) gin.HandlerFunc {
@@ -136,6 +136,18 @@ func CheckUpdate(state *app.State) gin.HandlerFunc {
 			"body":        rel.Body,
 			"prerelease":  rel.Prerelease,
 			"checkedAt":   time.Now().UTC().Format(time.RFC3339),
+			// 容器里自更新是停用的 —— 界面据此把"立即更新"换成"怎么拉新镜像",
+			// 而不是给一个点了必然失败的按钮。
+			"inContainer": updater.InContainer(),
+			"updateHint":  containerHintIfNeeded(),
 		})
 	}
+}
+
+// containerHintIfNeeded 容器里返回更新指引,否则空串。
+func containerHintIfNeeded() string {
+	if updater.InContainer() {
+		return updater.ContainerUpdateHint
+	}
+	return ""
 }

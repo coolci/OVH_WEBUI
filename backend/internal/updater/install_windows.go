@@ -41,3 +41,20 @@ func Restart(exePath string) error {
 	os.Exit(0)
 	return nil
 }
+
+// Spawn 起一个新实例但**不**退出当前进程，退出由调用方决定。
+//
+// Windows 上 Restart 本身就是"起新进程 + os.Exit"，不存在 execve 那条路，
+// 所以这里和它几乎一样。保留这个函数是为了让两个平台的调用方写法一致 ——
+// main 里那段自更新收尾逻辑不必再按平台分叉。
+func Spawn(exePath string) error {
+	cmd := exec.Command(exePath, os.Args[1:]...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Env = os.Environ()
+	cmd.Dir, _ = os.Getwd()
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("启动新版本失败: %w", err)
+	}
+	return nil
+}

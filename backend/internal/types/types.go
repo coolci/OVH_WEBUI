@@ -68,6 +68,8 @@ type OVHAccount struct {
 	IAM         string `json:"iam"`       // go-ovh-<zone-lower>
 	IsDefault   bool   `json:"isDefault"` // 默认账户（未指定时 fallback 用它）
 	CreatedAt   string `json:"createdAt"`
+	ProxyURL    string `json:"proxyUrl,omitempty"`
+	Fingerprint string `json:"fingerprint,omitempty"`
 }
 
 // QueueItem 抢购队列项
@@ -206,7 +208,8 @@ type Subscription struct {
 	Quantity           int                        `json:"quantity,omitempty"`
 	AutoOrderAccountID string                     `json:"autoOrderAccountId,omitempty"` // 空 = 触发时只通知不下单
 	// AutoPay 下单成功后用默认支付方式自动付款(显式开关,默认关)
-	AutoPay bool `json:"autoPay,omitempty"`
+	AutoPay bool     `json:"autoPay,omitempty"`
+	Options []string `json:"options,omitempty"`
 }
 
 // VPSSubscription VPS 监控订阅

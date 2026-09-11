@@ -880,3 +880,88 @@ func (m *Monitor) calcDuration(sub *Subscription, dc, configDisplay string, targ
 	}
 	return fmt.Sprintf("历时 %d秒", seconds)
 }
+
+// PlanAccount 给定 planCode，解析出「哪个账户能买到它」。
+func (m *Monitor) PlanAccount(planCode, prefer string) (accountID, region, subsidiary, reason string) {
+	if prefer != "" {
+		if acc, ok := m.state.FindAccount(prefer); ok {
+			if in, definitive := m.planInAccountCatalog(acc.ID, planCode); definitive && in {
+				r, sub := accountRegionInfo(acc)
+				return acc.ID, r, sub, ""
+			}
+		}
+	}
+	c := m.resolveQueryAccount(planCode, "")
+	return c.accountID, c.region, c.subsidiary, c.degradeReason
+}
+
+// PlanAccountFast 只查已缓存的目录，不做跨区可用性探测。
+// 给交互式路径用（Telegram 下单）：命中目录即零延迟。
+func (m *Monitor) PlanAccountFast(planCode, prefer string) (accountID, region, subsidiary string) {
+	try := func(acc types.OVHAccount) (string, string, string, bool) {
+		if in, definitive := m.planInAccountCatalog(acc.ID, planCode); definitive && in {
+			r, sub := accountRegionInfo(acc)
+			return acc.ID, r, sub, true
+		}
+		return "", "", "", false
+	}
+	if prefer != "" {
+		if acc, ok := m.state.FindAccount(prefer); ok {
+			if id, r, sub, hit := try(acc); hit {
+				return id, r, sub
+			}
+		}
+	}
+	m.state.AccountsMu.RLock()
+	accounts := make([]types.OVHAccount, len(m.state.Accounts))
+	copy(accounts, m.state.Accounts)
+	m.state.AccountsMu.RUnlock()
+	// 默认账户优先
+	for _, a := range accounts {
+		if !a.IsDefault {
+			continue
+		}
+		if id, r, sub, hit := try(a); hit {
+			return id, r, sub
+		}
+	}
+	for _, a := range accounts {
+		if a.IsDefault {
+			continue
+		}
+		if id, r, sub, hit := try(a); hit {
+			return id, r, sub
+		}
+	}
+	return "", "", ""
+}
+
+// AccountsInRegion 某个大区下的所有账户。
+func (m *Monitor) AccountsInRegion(region string) []types.OVHAccount {
+	m.state.AccountsMu.RLock()
+	defer m.state.AccountsMu.RUnlock()
+	out := []types.OVHAccount{}
+	for _, a := range m.state.Accounts {
+		if r, _ := accountRegionInfo(a); r == region {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// AccountsForPlan 所有目录里有这个 planCode 的账户。
+func (m *Monitor) AccountsForPlan(planCode string) []types.OVHAccount {
+	m.state.AccountsMu.RLock()
+	accounts := make([]types.OVHAccount, len(m.state.Accounts))
+	copy(accounts, m.state.Accounts)
+	m.state.AccountsMu.RUnlock()
+
+	out := []types.OVHAccount{}
+	for _, a := range accounts {
+		if in, definitive := m.planInAccountCatalog(a.ID, planCode); definitive && in {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
