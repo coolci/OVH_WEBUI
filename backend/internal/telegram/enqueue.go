@@ -62,11 +62,9 @@ func enqueuePrepared(state *app.State, item types.QueueItem, requirePrice bool) 
 	if item.ID == "" {
 		item = NewTelegramQueueItem(accountID, planCode, datacenter, options)
 	}
-	if item.QuickOrder {
-		item.RetryInterval = types.ClampRetryInterval(item.RetryInterval, state.Config.QuickOrderRetryInterval())
-	} else {
-		item.RetryInterval = types.ClampRetryInterval(item.RetryInterval, state.Config.RetryInterval())
-	}
+	// QuickOrder 只表示队列优先级,间隔一律走「抢购参数」里的新任务默认值。
+	// 监控自动下单那条 2 秒间隔由 quick_order 入队时自己写上,这里不当成 Telegram 指令的默认。
+	item.RetryInterval = types.ClampRetryInterval(item.RetryInterval, state.Config.RetryInterval())
 	created, errMsg := appendAndSave(state, []types.QueueItem{item})
 	if errMsg != "" {
 		return OrderResult{Success: false, Message: errMsg}

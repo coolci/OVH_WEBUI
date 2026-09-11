@@ -66,7 +66,7 @@ func NotifyTaskProgress(state *app.State, item *types.QueueItem, phase string, e
 		}
 		b.WriteString(fmt.Sprintf("\n🛑 已取消机房: %s (%s)\n", DisplayDCFull(item.Datacenter), reason))
 		b.WriteString(fmt.Sprintf("📊 任务状态: %d 个运行中\n", len(remaining)))
-		b.WriteString("\n💡 官方放货后将自动秒级提交，进度会实时更新本条消息。")
+		b.WriteString("\n💡 官方放货后将按设置的间隔自动提交，进度会实时更新本条消息。")
 
 		var cancelBtns []map[string]string
 		for _, rem := range remaining {

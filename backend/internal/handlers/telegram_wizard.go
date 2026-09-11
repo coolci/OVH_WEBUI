@@ -32,6 +32,8 @@ var (
 	pickerSessions = map[string]*dcPickerSession{}
 	narrowMu       sync.Mutex
 	narrowOffers   = map[string]*narrowOffer{}
+	cfgMu          sync.Mutex
+	cfgOffers      = map[string]*cfgOffer{}
 )
 
 const (
@@ -45,6 +47,27 @@ type narrowOffer struct {
 	PlanCode string
 	Configs  []wizardConfigChoice
 	Expires  time.Time
+}
+
+// cfgOffer 冻住配置选择器的选项。点按钮时不能再 enumerate:
+// 库存状态一变,序号就会对上另一套,看起来就是「选不中指定配置」。
+// callback_data 只放 token+序号,避开 Telegram 64 字节上限,也避开 planCode 里的冒号。
+type cfgOffer struct {
+	Mode      string
+	PlanCode  string
+	Configs   []wizardConfigChoice
+	TargetDCs []string
+	Quantity  int
+	Expires   time.Time
+}
+
+// tgBtnLabel Telegram 按钮文字上限 64 个字符,超了 API 不报错,按钮发出去点了没反应。
+func tgBtnLabel(s string) string {
+	r := []rune(s)
+	if len(r) <= 64 {
+		return s
+	}
+	return string(r[:61]) + "..."
 }
 
 func pickerKey(chatID interface{}, messageID int64) string {
@@ -600,7 +623,7 @@ func offerNarrowConfig(state *app.State, chatID interface{}, _ int64, planCode s
 		if c.InStock > 0 {
 			label += fmt.Sprintf(" ✅%d机房有货", c.InStock)
 		}
-		btns = append(btns, telegram.CallbackButton(label, fmt.Sprintf("i:mon:n:%s:%d", tok, i)))
+		btns = append(btns, telegram.CallbackButton(tgBtnLabel(label), fmt.Sprintf("i:mon:n:%s:%d", tok, i)))
 	}
 	rows := telegram.ChunkButtons(btns, 1)
 	rows = append(rows, []map[string]string{
@@ -612,21 +635,67 @@ func offerNarrowConfig(state *app.State, chatID interface{}, _ int64, planCode s
 	return true
 }
 
-func showConfigPicker(state *app.State, mon *monitor.Monitor, chatID interface{}, messageID int64, mode, planCode string, edit bool) {
+func putCfgOffer(o *cfgOffer) string {
+	tok := fmt.Sprintf("%x", time.Now().UnixNano())
+	o.Expires = time.Now().Add(narrowTTL)
+	cfgMu.Lock()
+	now := time.Now()
+	for k, v := range cfgOffers {
+		if now.After(v.Expires) {
+			delete(cfgOffers, k)
+		}
+	}
+	cfgOffers[tok] = o
+	cfgMu.Unlock()
+	return tok
+}
+
+func getCfgOffer(tok string) (*cfgOffer, bool) {
+	cfgMu.Lock()
+	defer cfgMu.Unlock()
+	o, ok := cfgOffers[tok]
+	if !ok || time.Now().After(o.Expires) {
+		delete(cfgOffers, tok)
+		return nil, false
+	}
+	return o, true
+}
+
+func showConfigPicker(state *app.State, mon *monitor.Monitor, chatID interface{}, messageID int64, mode, planCode string, edit bool, targetDCs []string, quantity int) {
 	configs := enumerateWizardConfigs(state, planCode, "")
 	if len(configs) <= 1 {
 		sess := getPickerSession(chatID, messageID, mode, planCode)
 		if len(configs) == 1 {
-			sess.Options = configs[0].Options
+			sess.Options = append([]string{}, configs[0].Options...)
 			sess.ConfigLabel = configs[0].Label
 		} else {
 			sess.Options = nil
 			sess.ConfigLabel = ""
 		}
+		if len(targetDCs) > 0 && mode != "m" {
+			qty := quantity
+			if qty < 1 {
+				qty = 1
+			}
+			opts := append([]string{}, sess.Options...)
+			label := sess.ConfigLabel
+			accID := telegram.ActiveAccountID(state)
+			for i := 0; i < qty; i++ {
+				enqueueWizardDCs(state, chatID, messageID, mode, planCode, targetDCs, accID, opts, label, false)
+			}
+			return
+		}
 		showDCPicker(state, chatID, messageID, mode, planCode, edit)
 		return
 	}
 
+	tok := putCfgOffer(&cfgOffer{
+		Mode:      mode,
+		PlanCode:  planCode,
+		Configs:   configs,
+		TargetDCs: append([]string{}, targetDCs...),
+		Quantity:  quantity,
+	})
 	var btns []map[string]string
 	for i, c := range configs {
 		if i >= 8 {
@@ -636,14 +705,13 @@ func showConfigPicker(state *app.State, mon *monitor.Monitor, chatID interface{}
 		if c.InStock > 0 {
 			stockIcon = fmt.Sprintf("🟢 %d机房有货", c.InStock)
 		}
-		btnText := fmt.Sprintf("💾 %s (%s)", c.Label, stockIcon)
-		cbData := fmt.Sprintf("i:cfg:%s:%s:%d", mode, planCode, i)
-		btns = append(btns, telegram.CallbackButton(btnText, cbData))
+		btnText := tgBtnLabel(fmt.Sprintf("💾 %s (%s)", c.Label, stockIcon))
+		btns = append(btns, telegram.CallbackButton(btnText, fmt.Sprintf("i:cfg:%s:%d", tok, i)))
 	}
 	rows := telegram.ChunkButtons(btns, 1)
 
 	rows = append(rows, []map[string]string{
-		telegram.CallbackButton("🌐 任意配置 (不限制配置，按机房首选)", fmt.Sprintf("i:cfg:%s:%s:any", mode, planCode)),
+		telegram.CallbackButton(tgBtnLabel("🌐 任意配置 (不限制配置，按机房首选)"), fmt.Sprintf("i:cfg:%s:any", tok)),
 	})
 	rows = append(rows, []map[string]string{
 		telegram.CallbackButton("🔙 返回系列分类", "i:cat:"+mode+":root"),
@@ -651,8 +719,15 @@ func showConfigPicker(state *app.State, mon *monitor.Monitor, chatID interface{}
 
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("⚙️ 型号: %s\n\n", planCode))
-	b.WriteString(fmt.Sprintf("该型号共检测到 %d 种硬件配置规格，请选择您期望的配置：\n\n", len(configs)))
-	b.WriteString("💡 提示：抢购和监控会根据配置精确匹配。如果您对内存或硬盘无特殊要求，可直接选择「任意配置」。")
+	b.WriteString(fmt.Sprintf("该型号共检测到 %d 种硬件配置规格，请点选您要盯的那一套：\n\n", len(configs)))
+	if len(targetDCs) > 0 {
+		up := make([]string, len(targetDCs))
+		for i, d := range targetDCs {
+			up[i] = telegram.DisplayDC(d)
+		}
+		b.WriteString("📍 已指定机房: " + strings.Join(up, ", ") + "\n\n")
+	}
+	b.WriteString("💡 抢购和监控按配置精确匹配。选错一套等于盯另一台机器。对内存/硬盘无要求再选「任意配置」。")
 
 	markup := telegram.InlineKeyboard(rows)
 	if edit && messageID > 0 {
@@ -768,7 +843,7 @@ func showDCPicker(state *app.State, chatID interface{}, messageID int64, mode, p
 		}
 		b.WriteString("✅ 当前有货: " + strings.Join(up, ", ") + "\n")
 	} else {
-		b.WriteString("⚠️ 当前全区缺货，选机房后将自动加入抢购队列秒级挂机。\n")
+		b.WriteString("⚠️ 当前全区缺货，选机房后将加入抢购队列按设置的间隔重试。\n")
 	}
 
 	if selectedCount > 0 {
@@ -778,12 +853,37 @@ func showDCPicker(state *app.State, chatID interface{}, messageID int64, mode, p
 	}
 
 	markup := telegram.InlineKeyboard(rows)
+	sentID := messageID
 	if edit && messageID > 0 {
 		if telegram.EditMessage(state, chatID, messageID, b.String(), markup) {
 			return
 		}
+		sentID = 0
 	}
-	_, _ = telegram.SendToChat(state, chatID, b.String(), markup)
+	if id, ok := telegram.SendToChat(state, chatID, b.String(), markup); ok && id != 0 {
+		sentID = id
+	}
+	// /buy 型号 时 messageID=0,会话写在 chat_0 上;点机房时是新消息 ID,必须把 Options 拷过去。
+	if sentID != 0 && sentID != messageID {
+		migratePickerSession(chatID, messageID, sentID, mode, planCode)
+	}
+}
+
+func migratePickerSession(chatID interface{}, fromID, toID int64, mode, planCode string) {
+	if toID == 0 || fromID == toID {
+		return
+	}
+	from, to := pickerKey(chatID, fromID), pickerKey(chatID, toID)
+	pickerMu.Lock()
+	defer pickerMu.Unlock()
+	sess, ok := pickerSessions[from]
+	if !ok || sess.PlanCode != planCode || sess.Mode != mode {
+		return
+	}
+	pickerSessions[to] = sess
+	if fromID == 0 {
+		delete(pickerSessions, from)
+	}
 }
 
 func enqueueWizardDCs(state *app.State, chatID interface{}, messageID int64, mode, planCode string, dcs []string, accountID string, options []string, configLabel string, autoPay bool) int {
@@ -811,9 +911,9 @@ func enqueueWizardDCs(state *app.State, chatID interface{}, messageID int64, mod
 		if quick {
 			item.QuickOrder = true
 			item.Priority = 100
-			item.RetryInterval = state.Config.QuickOrderRetryInterval()
 			item.MaxRetries = 20
 		}
+		item.RetryInterval = state.Config.RetryInterval()
 		item.AutoPay = autoPay
 		res := telegram.EnqueueTelegram(state, item, false)
 		if res.Success {
@@ -853,7 +953,7 @@ func enqueueWizardDCs(state *app.State, chatID interface{}, messageID int64, mod
 	if failN > 0 {
 		b.WriteString(fmt.Sprintf("⚠️ %d 个未入队：%s\n", failN, lastErr))
 	}
-	b.WriteString("\n💡 官方放货后将秒级自动提交，进度会实时更新本条消息。")
+	b.WriteString("\n💡 官方放货后将按设置的间隔自动提交，进度会实时更新本条消息。")
 
 	var btnRows [][]map[string]string
 	var cancelBtns []map[string]string
@@ -932,7 +1032,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 		configs := enumerateWizardConfigs(state, plan, "")
 		if len(configs) > 1 {
 			telegram.AnswerCallback(state, cbID, "请选择配置", false)
-			showConfigPicker(state, mon, chatID, messageID, mode, plan, true)
+			showConfigPicker(state, mon, chatID, messageID, mode, plan, true, nil, 1)
 			return true
 		}
 		sess := getPickerSession(chatID, messageID, mode, plan)
@@ -947,30 +1047,80 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 		showDCPicker(state, chatID, messageID, mode, plan, true)
 		return true
 	case "cfg":
-		if len(parts) < 5 {
+		if len(parts) < 4 {
 			telegram.AnswerCallback(state, cbID, "按钮无效", true)
 			return true
 		}
-		mode, plan, cfgIdxStr := parts[2], parts[3], parts[4]
-		sess := getPickerSession(chatID, messageID, mode, plan)
-		if cfgIdxStr == "any" {
-			sess.Options = nil
-			sess.ConfigLabel = "任意/默认配置"
-			telegram.AnswerCallback(state, cbID, "已选任意配置", false)
-		} else {
-			idx, err := strconv.Atoi(cfgIdxStr)
-			configs := enumerateWizardConfigs(state, plan, "")
-			if err == nil && idx >= 0 && idx < len(configs) {
-				sess.Options = configs[idx].Options
-				sess.ConfigLabel = configs[idx].Label
-				telegram.AnswerCallback(state, cbID, "已选: "+configs[idx].Label, false)
-			} else {
+		tok, cfgIdxStr := parts[2], parts[3]
+		// 兼容旧按钮 i:cfg:<mode>:<plan>:<idx>
+		if len(parts) >= 5 && (tok == "b" || tok == "q" || tok == "m") {
+			mode, plan := parts[2], parts[3]
+			cfgIdxStr = parts[4]
+			sess := getPickerSession(chatID, messageID, mode, plan)
+			if cfgIdxStr == "any" {
 				sess.Options = nil
-				sess.ConfigLabel = ""
-				telegram.AnswerCallback(state, cbID, "已选配置", false)
+				sess.ConfigLabel = "任意/默认配置"
+				telegram.AnswerCallback(state, cbID, "已选任意配置", false)
+			} else {
+				idx, err := strconv.Atoi(cfgIdxStr)
+				configs := enumerateWizardConfigs(state, plan, "")
+				if err == nil && idx >= 0 && idx < len(configs) {
+					sess.Options = append([]string{}, configs[idx].Options...)
+					sess.ConfigLabel = configs[idx].Label
+					telegram.AnswerCallback(state, cbID, "已选: "+configs[idx].Label, false)
+				} else {
+					telegram.AnswerCallback(state, cbID, "配置列表已变化，请重新选择", true)
+					showConfigPicker(state, mon, chatID, messageID, mode, plan, true, nil, 1)
+					return true
+				}
 			}
+			showDCPicker(state, chatID, messageID, mode, plan, true)
+			return true
 		}
-		showDCPicker(state, chatID, messageID, mode, plan, true)
+		offer, ok := getCfgOffer(tok)
+		if !ok {
+			telegram.AnswerCallback(state, cbID, "选择已过期，请重新发 /buy", true)
+			return true
+		}
+		var opts []string
+		label := "任意/默认配置"
+		if cfgIdxStr != "any" {
+			idx, err := strconv.Atoi(cfgIdxStr)
+			if err != nil || idx < 0 || idx >= len(offer.Configs) || idx >= 8 {
+				telegram.AnswerCallback(state, cbID, "选项无效", true)
+				return true
+			}
+			opts = append([]string{}, offer.Configs[idx].Options...)
+			label = offer.Configs[idx].Label
+			telegram.AnswerCallback(state, cbID, "已选: "+label, false)
+		} else {
+			telegram.AnswerCallback(state, cbID, "已选任意配置", false)
+		}
+		if len(offer.TargetDCs) > 0 && offer.Mode != "m" {
+			qty := offer.Quantity
+			if qty < 1 {
+				qty = 1
+			}
+			accID := telegram.ActiveAccountID(state)
+			if len(offer.TargetDCs) == 1 {
+				res := telegram.ProcessOrder(state, accID, offer.PlanCode, offer.TargetDCs[0], qty, opts)
+				text := res.Message
+				if res.Success {
+					text = fmt.Sprintf("✅ 已加入抢购队列\n\n📦 型号: %s\n📍 机房: %s\n⚙️ 配置: %s\n⏱ 重试间隔: %d 秒\n\n已创建 %d 个任务，按「设置 → 抢购参数」的间隔重试。",
+						offer.PlanCode, telegram.DisplayDCFull(offer.TargetDCs[0]), label, state.Config.RetryInterval(), res.CreatedOrders)
+				} else {
+					text = "❌ " + res.Message
+				}
+				_ = telegram.EditMessage(state, chatID, messageID, text, telegram.EmptyInlineKeyboard())
+				return true
+			}
+			enqueueWizardDCs(state, chatID, messageID, offer.Mode, offer.PlanCode, offer.TargetDCs, accID, opts, label, false)
+			return true
+		}
+		sess := getPickerSession(chatID, messageID, offer.Mode, offer.PlanCode)
+		sess.Options = opts
+		sess.ConfigLabel = label
+		showDCPicker(state, chatID, messageID, offer.Mode, offer.PlanCode, true)
 		return true
 	case "cfgshow":
 		if len(parts) < 4 {
@@ -979,7 +1129,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 		}
 		mode, plan := parts[2], parts[3]
 		telegram.AnswerCallback(state, cbID, "请选择配置", false)
-		showConfigPicker(state, mon, chatID, messageID, mode, plan, true)
+		showConfigPicker(state, mon, chatID, messageID, mode, plan, true, nil, 1)
 		return true
 	case "D":
 		if len(parts) < 3 {
@@ -1333,7 +1483,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 				}
 				b.WriteString(fmt.Sprintf("\n🛑 已取消机房: %s (用户主动取消)\n", telegram.DisplayDCFull(cancelledItem.Datacenter)))
 				b.WriteString(fmt.Sprintf("📊 任务状态: %d 个运行中\n", len(remaining)))
-				b.WriteString("\n💡 官方放货后将自动秒级提交，进度会实时更新本条消息。")
+				b.WriteString("\n💡 官方放货后将按设置的间隔自动提交，进度会实时更新本条消息。")
 
 				var cancelBtns []map[string]string
 				for _, r := range remaining {

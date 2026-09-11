@@ -248,6 +248,7 @@ func handleTelegramCallback(state *app.State, mon *monitor.Monitor, cb map[strin
 		RetryCount:    0,
 		LastCheckTime: 0,
 		FromTelegram:  true,
+		RetryInterval: state.Config.RetryInterval(),
 	}
 	state.QueueMu.Lock()
 	state.Queue = append(state.Queue, item)

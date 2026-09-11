@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/google/uuid"
@@ -102,7 +103,14 @@ func ProcessOrder(state *app.State, accountID, planCode, datacenter string, quan
 		return OrderResult{Success: false, Message: fmt.Sprintf("未找到匹配的配置（指定选项: %v）", options)}
 	}
 
-	// 如果未指定具体选项，默认使用第 1 个配置，避免把所有内存/硬盘组合都同时建一遍单
+	// map 遍历顺序每次都不一样。未指定配置时若直接取「第一个」,
+	// 用户会感觉「选不中指定配置」。按内存/硬盘标签稳定排序后再取。
+	sort.SliceStable(configsToOrder, func(i, j int) bool {
+		ai, aj := configsToOrder[i].data, configsToOrder[j].data
+		li := strings.TrimSpace(ai.Memory + " / " + ai.Storage)
+		lj := strings.TrimSpace(aj.Memory + " / " + aj.Storage)
+		return li < lj
+	})
 	if len(options) == 0 && len(configsToOrder) > 1 {
 		configsToOrder = configsToOrder[:1]
 	}
@@ -219,7 +227,7 @@ func ProcessOrder(state *app.State, accountID, planCode, datacenter string, quan
 
 	msgSuffix := "（当前有现货，系统将立即尝试结账）"
 	if !targetInStock {
-		msgSuffix = "（目标机房当前缺货，已加入抢购队列挂机，放货瞬间秒级开抢）"
+		msgSuffix = "（目标机房当前缺货，已加入抢购队列，将按设置的间隔重试）"
 	}
 	return OrderResult{
 		Success:       true,
