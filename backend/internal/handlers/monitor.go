@@ -34,6 +34,7 @@ func AddSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 		var body struct {
 			PlanCode           string   `json:"planCode"`
 			Datacenters        []string `json:"datacenters"`
+			Options            []string `json:"options"`
 			NotifyAvailable    *bool    `json:"notifyAvailable"`
 			NotifyUnavailable  *bool    `json:"notifyUnavailable"`
 			AutoOrder          bool     `json:"autoOrder"`
@@ -87,7 +88,7 @@ func AddSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 		region, subsidiary, regionWarning := mon.PreflightRegion(body.PlanCode, body.AutoOrderAccountID)
 
 		mon.AddSubscription(body.PlanCode, body.Datacenters, notifyAvailable, notifyUnavailable,
-			serverName, nil, nil, body.AutoOrder, body.Quantity, body.AutoOrderAccountID, body.AutoPay)
+			serverName, nil, nil, body.AutoOrder, body.Quantity, body.AutoOrderAccountID, body.AutoPay, body.Options)
 		mon.SaveToDB()
 
 		if !mon.Running() {

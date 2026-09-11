@@ -4,7 +4,7 @@ import {
   Server, RefreshCw, Search, Bell, ShoppingCart, Cpu, MemoryStick, HardDrive, Wifi,
   Filter, X,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
@@ -21,7 +21,7 @@ import { useMonitorList } from "@/hooks/use-monitor";
 import { MonitorSubscribeDialog } from "@/components/monitor/MonitorSubscribeDialog";
 import { useAccountInfo } from "@/hooks/use-account";
 import { useCreateQueueItem } from "@/hooks/use-queue";
-import { useCacheInfo } from "@/hooks/use-settings";
+import { useCacheInfo, useSettings, RETRY_INTERVAL } from "@/hooks/use-settings";
 import { useDefaultAccount } from "@/hooks/use-accounts";
 import { AccountSelect } from "@/components/common/AccountSelect";
 import { useEffect } from "react";
@@ -517,7 +517,13 @@ function DetailContent({
   }, [defaultAcc?.id, accountId]);
   const [selectedDCs, setSelectedDCs] = useState<string[]>([]);
   const [quantity, setQuantity] = useState("1");
-  const [retryInterval, setRetryInterval] = useState("60");
+  const settingsQ = useSettings();
+  const cfgDefault = settingsQ.data?.defaultRetryInterval || RETRY_INTERVAL.defaultTask;
+  const [retryInterval, setRetryInterval] = useState("");
+  const intervalTouchedRef = useRef(false);
+  useEffect(() => {
+    if (!intervalTouchedRef.current) setRetryInterval(String(cfgDefault));
+  }, [cfgDefault]);
   const qty = Math.max(1, Number(quantity) || 1);
   const totalTasks = selectedDCs.length * qty;
   const dcMap = useMemo(
@@ -676,9 +682,14 @@ function DetailContent({
                 <label className="block text-[11px] text-muted-foreground mb-1">重试间隔（秒）</label>
                 <Input
                   type="number"
-                  min={10}
+                  min={RETRY_INTERVAL.min}
+                  max={RETRY_INTERVAL.max}
                   value={retryInterval}
-                  onChange={(e) => setRetryInterval(e.target.value)}
+                  onChange={(e) => {
+                    intervalTouchedRef.current = true;
+                    setRetryInterval(e.target.value);
+                  }}
+                  placeholder={`默认 ${cfgDefault}`}
                 />
               </div>
             </div>
@@ -730,7 +741,7 @@ function DetailContent({
                 planCode: server.planCode,
                 datacenters: selectedDCs,
                 quantity: qty,
-                retryInterval: Number(retryInterval) || 60,
+                retryInterval: Number(retryInterval) || cfgDefault,
                 options: selectedValues,
               });
               if (result.success > 0) {

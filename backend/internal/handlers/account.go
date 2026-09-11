@@ -20,7 +20,10 @@ import (
 )
 
 func noOVHRespAccount(c *gin.Context) {
-	c.JSON(http.StatusBadRequest, gin.H{"error": "未配置OVH API"})
+	c.JSON(http.StatusPreconditionFailed, gin.H{
+		"error": "未配置 OVH 账户或凭据不全，请到「设置 → OVH 账户」添加",
+		"code":  "NO_OVH_ACCOUNT",
+	})
 }
 
 // ── 带失败计数的并发详情拉取 ──────────────────────────────────────────────

@@ -16,7 +16,19 @@ export interface SettingsConfig {
   notifyWebhookUrl?: string;
   /** 全局自动扣款总开关：默认关闭，只有开启后且任务指定 autoPay 时才会自动扣款 */
   autoPayEnabled?: boolean;
+  /** 新建抢购任务的默认重试间隔（秒）。网页弹窗 / TG /buy / 一键下单按钮都用它 */
+  defaultRetryInterval?: number;
+  /** 监控触发的自动下单用的重试间隔（秒）。货刚出现那一刻窗口很窄，默认比普通任务激进 */
+  quickOrderRetryInterval?: number;
 }
+
+/** 重试间隔的合法区间与默认值，与后端 types.ClampRetryInterval 一致 */
+export const RETRY_INTERVAL = {
+  min: 1,
+  max: 86400,
+  defaultTask: 60,
+  defaultQuick: 2,
+} as const;
 
 export interface TelegramPollerStatus {
   running?: boolean;

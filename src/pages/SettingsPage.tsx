@@ -4,7 +4,7 @@ import {
   Settings as SettingsIcon, KeyRound, Globe, Send, Database, Save,
   AlertTriangle, CheckCircle2, Plus, Star, RotateCw, Trash2, Pencil,
   RefreshCw, Eye, EyeOff, Cpu, Radio, Network, Fingerprint, ShieldAlert,
-  Radar, Ban, Activity
+  Radar, Ban, Activity, Timer
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -26,6 +26,7 @@ import {
   useCacheInfo,
   useClearCache,
   useTelegramPollerStatus,
+  RETRY_INTERVAL,
   type SettingsConfig,
 } from "@/hooks/use-settings";
 import { useTestNotification } from "@/hooks/use-notify-channels";
@@ -69,6 +70,7 @@ const SECTIONS = [
   { id: "password", icon: KeyRound, label: "访问密码" },
   { id: "accounts", icon: Globe, label: "OVH 账户" },
   { id: "telegram", icon: Send, label: "Telegram" },
+  { id: "purchase", icon: Timer, label: "抢购参数" },
   { id: "cache", icon: Database, label: "缓存管理" },
 ] as const;
 
@@ -88,7 +90,8 @@ function SettingsPage() {
     setApiKey(getApiSecretKey() || "");
   }, []);
 
-  const set = (k: keyof SettingsConfig, v: string) => setForm((prev) => ({ ...prev, [k]: v }));
+  const set = <K extends keyof SettingsConfig>(k: K, v: SettingsConfig[K]) =>
+    setForm((prev) => ({ ...prev, [k]: v }));
 
   const onSave = async () => {
     if (apiKey) setApiSecretKey(apiKey);
@@ -132,7 +135,7 @@ function SettingsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-4 sm:gap-6 items-start">
         {/* sub-nav: 桌面竖向左栏, 移动端 4 列等宽分段控制器 */}
         <div className="relative">
-          <nav className="grid grid-cols-4 lg:flex lg:flex-col gap-1 p-1 bg-muted/50 lg:bg-transparent rounded-xl border border-border/50 lg:border-none">
+          <nav className="grid grid-cols-5 lg:flex lg:flex-col gap-1 p-1 bg-muted/50 lg:bg-transparent rounded-xl border border-border/50 lg:border-none">
             {SECTIONS.map((s) => {
               const Icon = s.icon;
               const a = active === s.id;
@@ -188,6 +191,8 @@ function SettingsPage() {
               <AccountsSection />
             ) : active === "telegram" ? (
               <TelegramSection form={form} set={set} />
+            ) : active === "purchase" ? (
+              <PurchaseSection form={form} set={set} />
             ) : (
               <CacheSection />
             )}
@@ -228,12 +233,70 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   );
 }
 
+function PurchaseSection({
+  form,
+  set,
+}: {
+  form: SettingsConfig;
+  set: <K extends keyof SettingsConfig>(k: K, v: SettingsConfig[K]) => void;
+}) {
+  const numField = (k: "defaultRetryInterval" | "quickOrderRetryInterval", fallback: number) => (
+    <Input
+      type="text"
+      inputMode="numeric"
+      value={form[k] === undefined ? "" : String(form[k])}
+      placeholder={`默认 ${fallback}`}
+      onChange={(e) => {
+        const v = e.target.value;
+        if (v === "") return set(k, undefined);
+        if (/^\d+$/.test(v)) set(k, Number(v));
+      }}
+    />
+  );
+
+  const invalid = (v?: number) =>
+    v !== undefined && (v < RETRY_INTERVAL.min || v > RETRY_INTERVAL.max);
+
+  return (
+    <Section title="抢购参数">
+      <Field
+        label="新任务默认重试间隔（秒）"
+        hint={`网页新建任务、Telegram /buy、上架通知里的一键下单按钮都用它。留空 = ${RETRY_INTERVAL.defaultTask} 秒。范围 ${RETRY_INTERVAL.min} ~ ${RETRY_INTERVAL.max}。`}
+      >
+        {numField("defaultRetryInterval", RETRY_INTERVAL.defaultTask)}
+        {invalid(form.defaultRetryInterval) && (
+          <p className="text-[11px] text-destructive mt-1">
+            要在 {RETRY_INTERVAL.min} ~ {RETRY_INTERVAL.max} 之间
+          </p>
+        )}
+      </Field>
+
+      <Field
+        label="监控自动下单间隔（秒）"
+        hint={`监控触发的自动下单用这个。货刚出现那一刻窗口可能只有几十秒，所以默认比普通任务激进（${RETRY_INTERVAL.defaultQuick} 秒）；但太密会吃 OVH 的 429，自己权衡。`}
+      >
+        {numField("quickOrderRetryInterval", RETRY_INTERVAL.defaultQuick)}
+        {invalid(form.quickOrderRetryInterval) && (
+          <p className="text-[11px] text-destructive mt-1">
+            要在 {RETRY_INTERVAL.min} ~ {RETRY_INTERVAL.max} 之间
+          </p>
+        )}
+      </Field>
+
+      <div className="rounded-2xl border border-border bg-secondary/30 px-4 py-3 text-[12px] text-muted-foreground">
+        只影响<b className="text-foreground">之后新建</b>的任务。已经在队列里跑的任务各自带着自己的间隔，
+        要改单个任务去「抢购队列」页点那条任务的秒数。
+      </div>
+    </Section>
+  );
+}
+
 function TelegramSection({
   form,
   set,
 }: {
   form: SettingsConfig;
-  set: (k: keyof SettingsConfig, v: string) => void;
+  set: <K extends keyof SettingsConfig>(k: K, v: SettingsConfig[K]) => void;
 }) {
   const poller = useTelegramPollerStatus();
   const test = useTestNotification();

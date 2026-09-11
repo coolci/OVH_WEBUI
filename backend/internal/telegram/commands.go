@@ -27,6 +27,8 @@ var KnownCommands = map[string]string{
 	"accounts": "查看与切换 OVH 账户: /accounts",
 	"monitor":  "添加监控: /monitor <planCode> [dc...]",
 	"price":    "查询价格: /price <planCode> <dc>",
+	"interval": "查看或修改默认重试间隔: /interval [秒]",
+	"iv":       "interval 的别名",
 }
 
 // ParseBotCommand 解析以 / 开头的 Bot 命令。
@@ -91,10 +93,17 @@ func HelpMessage() string {
 • /monitor <型号> [机房...]
   └ 例: /monitor 24ska01
   └ 例: /monitor 24ska01 gra rbx
+  └ 快捷建完若有多套配置，会跟一排按钮让你一键改窄（避免每套都通知/下单）
 
 💰 价格查询
 • /price <型号> <机房>
   └ 例: /price 24ska01 gra
+
+⏱ 重试间隔
+• /interval
+  └ 查看新任务默认间隔与监控自动下单间隔
+• /interval <秒>
+  └ 改新建任务的默认间隔（已在跑的任务到网页「抢购队列」点秒数改）
 
 📋 任务管理
 • /tasks

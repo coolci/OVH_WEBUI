@@ -107,10 +107,38 @@ export function resolveAbsoluteUrl(path: string): string {
   return origin ? `${origin}${p}` : p;
 }
 
+/**
+ * 会话失效广播。
+ *
+ * AuthGate 只在首次挂载时探测一次密钥，之后再不复查。
+ * 密钥会中途失效（服务端换了 API_SECRET_KEY、或用户在另一个标签页清了它）。
+ * 以前每个 401 都单独弹一次 toast —— 项目里有多路定时轮询，
+ * 屏幕上持续堆满「身份验证失败」，而页面还停在那儿显示着不会再更新的旧数据。
+ *
+ * 现在 401 走这里：去掉本地失效的密钥、通知 AuthGate 重新弹登录覆盖层。
+ * toast 用固定 id，sonner 会替换而不是叠加。
+ */
+type AuthFailureHandler = () => void;
+let authFailureHandler: AuthFailureHandler | null = null;
+
+/** AuthGate 挂载时注册；返回取消订阅函数 */
+export function onAuthFailure(fn: AuthFailureHandler): () => void {
+  authFailureHandler = fn;
+  return () => {
+    if (authFailureHandler === fn) authFailureHandler = null;
+  };
+}
+
+function notifyAuthFailure(): void {
+  toast.error("登录状态已失效，请重新输入 API 密钥", { id: "auth-expired" });
+  clearApiSecretKey();
+  authFailureHandler?.();
+}
+
 // ─── Axios instance ─────────────────────────────────────────
 
 type ExtraConfig = AxiosRequestConfig & {
-  /** 为 true 时 401 不弹 toast（健康检查等） */
+  /** 为 true 时 401 不弹 toast、也不触发登出（健康检查等） */
   silent401?: boolean;
   /** 为 false 时不自动注入 account（默认 true） */
   injectAccount?: boolean;
@@ -174,7 +202,7 @@ function createApiClient(): AxiosInstance {
     (error: AxiosError<{ error?: string; message?: string }>) => {
       const silent = (error.config as ExtraConfig | undefined)?.silent401;
       if (error.response?.status === 401 && !silent) {
-        toast.error("身份验证失败，请检查 API 设置");
+        notifyAuthFailure();
       }
       return Promise.reject(error);
     }

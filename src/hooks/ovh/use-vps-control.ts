@@ -105,13 +105,28 @@ export function useVpsInfo(svc: string | null) {
   });
 }
 
+/** 服务端口探测结果。US 区没有这个 OVH 端点，后端返 200 + status:null + unsupported:true */
+export interface VpsServiceStatusResult {
+  status: Record<string, any> | null;
+  unsupported?: boolean;
+  unauthorized?: boolean;
+  message?: string;
+  region?: string;
+}
+
 /** VPS 网络服务存活探测(ping/dns/http/https/smtp/ssh) — 跟 info.state 不一样 */
 export function useVpsServiceStatus(svc: string | null) {
   return useQuery({
     queryKey: qk.vpsControl.status(svc || ""),
-    queryFn: async () => {
+    queryFn: async (): Promise<VpsServiceStatusResult> => {
       const res = await api.get(`/vps-control/${svc}/status`);
-      return res.data?.status as Record<string, any> | null;
+      return {
+        status: (res.data?.status ?? null) as Record<string, any> | null,
+        unsupported: res.data?.unsupported === true,
+        unauthorized: res.data?.unauthorized === true,
+        message: res.data?.message,
+        region: res.data?.region,
+      };
     },
     enabled: !!svc,
     staleTime: 30_000,

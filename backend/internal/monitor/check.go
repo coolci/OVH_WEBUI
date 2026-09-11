@@ -409,6 +409,12 @@ func (m *Monitor) CheckAvailabilityChange(sub *Subscription, traceID string) {
 		storage := configData.Storage
 		configDisplay := memory + " + " + storage
 
+		// 若订阅限定了硬件配置，过滤不匹配的配置组合
+		if len(cfg.Options) > 0 && !matchSubscriptionOptions(cfg.Options, configData.Options) {
+			m.state.Logger.Debug(fmt.Sprintf("订阅 %s: 配置 %s 不匹配订阅指定的硬件选配 %v，跳过", planCode, configDisplay, cfg.Options), "monitor")
+			continue
+		}
+
 		configTraceID := uuid.NewString()
 		m.state.Logger.Info(fmt.Sprintf("检查配置: %s [config-trace:%s]", configDisplay, configTraceID), "monitor")
 
@@ -963,5 +969,36 @@ func (m *Monitor) AccountsForPlan(planCode string) []types.OVHAccount {
 		}
 	}
 	return out
+}
+
+// matchSubscriptionOptions 检查可用配置的选项是否满足订阅要求
+func matchSubscriptionOptions(required, available []string) bool {
+	if len(required) == 0 {
+		return true
+	}
+	availSet := make(map[string]bool, len(available))
+	for _, a := range available {
+		availSet[strings.ToLower(strings.TrimSpace(a))] = true
+	}
+	for _, r := range required {
+		cleanR := strings.ToLower(strings.TrimSpace(r))
+		if cleanR == "" {
+			continue
+		}
+		if availSet[cleanR] {
+			continue
+		}
+		matched := false
+		for a := range availSet {
+			if strings.HasPrefix(a, cleanR) || strings.HasPrefix(cleanR, a) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+	return true
 }
 

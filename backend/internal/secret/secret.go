@@ -235,6 +235,7 @@ func Decrypt(stored string) (string, error) {
 	mu.RLock()
 	defer mu.RUnlock()
 	if !loaded {
+		failures.Add(1)
 		return "", errors.New("数据库里是加密的凭据,但当前没有可用的密钥(检查 " + KeyEnv + " 或 data/.dbkey)")
 	}
 	raw, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(stored, prefix))

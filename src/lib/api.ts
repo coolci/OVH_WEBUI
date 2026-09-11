@@ -451,13 +451,16 @@ export const api = {
   // ==================== OVH 账户信息 ====================
   getOvhAccountInfo,
   getOvhCreditBalance: async () => {
-    try {
-      const raw = await apiRequest<unknown>("/api/ovh/account/credit-balance");
-      const data = asArray(raw, ["data"]);
-      return { success: true, data };
-    } catch (e) {
-      return { success: false, data: [], error: e instanceof Error ? e.message : String(e) };
+    const raw = await apiRequest<unknown>("/api/ovh/account/credit-balance");
+    if (!isOkPayload(raw)) {
+      const msg =
+        raw && typeof raw === "object"
+          ? String((raw as { message?: string; error?: string }).message || (raw as { error?: string }).error || "获取信用余额失败")
+          : "获取信用余额失败";
+      throw new Error(msg);
     }
+    const data = asArray(raw, ["data"]);
+    return { success: true, data };
   },
   getOvhSubAccounts: async () => {
     try {

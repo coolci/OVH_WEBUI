@@ -173,7 +173,7 @@ func QuickOrder(state *app.State) gin.HandlerFunc {
 				h := state.History[i]
 				if h.PlanCode == body.PlanCode && h.Datacenter == body.Datacenter && h.Status == "success" &&
 					fingerprint(h.Options) == fp {
-					if t, err := time.Parse(time.RFC3339Nano, h.PurchaseTime); err == nil {
+					if t, ok := types.ParseTS(h.PurchaseTime); ok {
 						if nowTS-t.Unix() < 120 {
 							state.HistoryMu.Unlock()
 							state.Logger.Info("检测到近期成功订单，拒绝再次入队", "quick_order")
@@ -204,7 +204,7 @@ func QuickOrder(state *app.State) gin.HandlerFunc {
 			// 就再也没人补这一枪 —— 自动下单会静默停摆到库存先消失再回来。
 			// 20 次真实失败已经足够说明不是偶发抖动;确定性错误另有 Fatal 闸门当场终止。
 			MaxRetries:    20,
-			RetryInterval: 2,
+			RetryInterval: state.Config.QuickOrderRetryInterval(),
 			CreatedAt:     now,
 			UpdatedAt:     now,
 			LastCheckTime: 0,

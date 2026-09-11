@@ -71,7 +71,25 @@ func New(database *db.DB) *Store {
 	if s.cfg.IAM == "" {
 		s.cfg.IAM = "go-ovh-" + strings.ToLower(s.cfg.Zone)
 	}
+	s.cfg.DefaultRetryInterval = types.ClampRetryInterval(s.cfg.DefaultRetryInterval, types.DefaultTaskRetryInterval)
+	s.cfg.QuickOrderRetryInterval = types.ClampRetryInterval(s.cfg.QuickOrderRetryInterval, types.DefaultQuickRetryInterval)
 	return s
+}
+
+// RetryInterval 新建任务的默认重试间隔(秒),已夹到合法区间。
+func (s *Store) RetryInterval() int {
+	s.mu.RLock()
+	v := s.cfg.DefaultRetryInterval
+	s.mu.RUnlock()
+	return types.ClampRetryInterval(v, types.DefaultTaskRetryInterval)
+}
+
+// QuickOrderRetryInterval 监控自动下单的重试间隔(秒),已夹到合法区间。
+func (s *Store) QuickOrderRetryInterval() int {
+	s.mu.RLock()
+	v := s.cfg.QuickOrderRetryInterval
+	s.mu.RUnlock()
+	return types.ClampRetryInterval(v, types.DefaultQuickRetryInterval)
 }
 
 // Get 返回配置的副本（调用方不能修改后影响存储）
@@ -87,6 +105,8 @@ func (s *Store) Set(c types.Config) error {
 	if c.IAM == "" {
 		c.IAM = "go-ovh-" + strings.ToLower(c.Zone)
 	}
+	c.DefaultRetryInterval = types.ClampRetryInterval(c.DefaultRetryInterval, types.DefaultTaskRetryInterval)
+	c.QuickOrderRetryInterval = types.ClampRetryInterval(c.QuickOrderRetryInterval, types.DefaultQuickRetryInterval)
 	s.cfg = c
 	snapshot := s.cfg
 	s.mu.Unlock()

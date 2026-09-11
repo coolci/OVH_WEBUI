@@ -25,14 +25,44 @@ type Config struct {
 	// TgWebhookSecretRegistered secret 是否已经推给 Telegram（setWebhook 成功过）。
 	// false 时 webhook 处于兼容模式：不强制校验 secret，避免升级后老用户的按钮直接全挂。
 	TgWebhookSecretRegistered bool `json:"tgWebhookSecretRegistered,omitempty"`
+
+	// DefaultRetryInterval 新建抢购任务的默认重试间隔(秒)。
+	DefaultRetryInterval int `json:"defaultRetryInterval,omitempty"`
+	// QuickOrderRetryInterval 监控触发的自动下单用的重试间隔(秒)。
+	QuickOrderRetryInterval int `json:"quickOrderRetryInterval,omitempty"`
+}
+
+// 重试间隔的默认值与合法区间(秒)。
+const (
+	DefaultTaskRetryInterval  = 60
+	DefaultQuickRetryInterval = 2
+	MinRetryInterval          = 1
+	MaxRetryInterval          = 86400
+)
+
+// ClampRetryInterval 把重试间隔夹到合法区间;<= 0 视为"没设",退回 fallback。
+// 间隔为 0 时处理器 `now - last >= 0` 恒真,任务会每秒重试把 OVH 刷到 429。
+func ClampRetryInterval(v, fallback int) int {
+	if v <= 0 {
+		v = fallback
+	}
+	if v < MinRetryInterval {
+		return MinRetryInterval
+	}
+	if v > MaxRetryInterval {
+		return MaxRetryInterval
+	}
+	return v
 }
 
 // DefaultConfig 默认配置
 func DefaultConfig() Config {
 	return Config{
-		Endpoint: "ovh-eu",
-		IAM:      "go-ovh-ie",
-		Zone:     "IE",
+		Endpoint:                "ovh-eu",
+		IAM:                     "go-ovh-ie",
+		Zone:                    "IE",
+		DefaultRetryInterval:    DefaultTaskRetryInterval,
+		QuickOrderRetryInterval: DefaultQuickRetryInterval,
 	}
 }
 

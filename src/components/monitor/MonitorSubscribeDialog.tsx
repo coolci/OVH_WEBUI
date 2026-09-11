@@ -28,8 +28,12 @@ import {
   MonitorOptionsFields,
   type MonitorNotifyOptions,
 } from "./MonitorOptionsFields";
+import { OptionGroupSection } from "@/components/common/OptionGroupSection";
+import { groupOptions, type OptionGroupKey } from "@/lib/option-groups";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const ALL_DC_CODES = OVH_DATACENTERS.map((dc) => dc.code);
+const HW_GROUPS: OptionGroupKey[] = ["memory", "systemStorage", "storage", "bandwidth", "vrack"];
 
 function parseDatacenters(raw: string[] | undefined): string[] {
   if (!raw || raw.length === 0) return [...ALL_DC_CODES];
@@ -83,6 +87,8 @@ export function MonitorSubscribeDialog({
   const [planCode, setPlanCode] = useState("");
   const [selectedDCs, setSelectedDCs] = useState<string[]>([...ALL_DC_CODES]);
   const [opts, setOpts] = useState<MonitorNotifyOptions>(DEFAULT_MONITOR_OPTIONS);
+  const [restrictHw, setRestrictHw] = useState(false);
+  const [picked, setPicked] = useState<Record<string, string>>({});
 
   const planLocked = mode === "edit" || !!lockPlanCode;
   const matchedServer = useMemo(
@@ -97,15 +103,37 @@ export function MonitorSubscribeDialog({
       ),
     [matchedServer, availMap]
   );
+  const grouped = useMemo(() => groupOptions(matchedServer?.availableOptions), [matchedServer]);
+  const hasHwGroups = HW_GROUPS.some((g) => grouped[g].length > 0);
 
   useEffect(() => {
     if (!open) return;
     setPlanCode((initial?.planCode || planCodeProp || "").trim());
     setSelectedDCs(parseDatacenters(initial?.datacenters));
     setOpts(optionsFromSub(initial));
+    setRestrictHw(!!(initial?.options && initial.options.length > 0));
     // 只在打开瞬间快照，避免父组件每次 render 把正在改的表单冲掉
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const src = initial?.options || [];
+    if (src.length === 0) {
+      setPicked({});
+      return;
+    }
+    const next: Record<string, string> = {};
+    for (const g of HW_GROUPS) {
+      for (const opt of grouped[g]) {
+        if (src.some((o) => o === opt.value || opt.value.startsWith(o) || o.startsWith(opt.value))) {
+          next[g] = opt.value;
+          break;
+        }
+      }
+    }
+    setPicked(next);
+  }, [open, grouped, initial?.options]);
 
   const close = () => onOpenChange(false);
 
@@ -124,9 +152,16 @@ export function MonitorSubscribeDialog({
     const datacenters =
       selectedDCs.length === 0 || selectedDCs.length === ALL_DC_CODES.length ? [] : selectedDCs;
 
+    const hwOptions = restrictHw ? HW_GROUPS.map((g) => picked[g]).filter(Boolean) : [];
+    if (restrictHw && hwOptions.length === 0) {
+      toast.error("请选择至少一项硬件配置，或关闭「只盯指定配置」");
+      return;
+    }
+
     const payload = {
       planCode: code,
       datacenters,
+      options: hwOptions,
       notifyAvailable: opts.notifyAvailable,
       notifyUnavailable: opts.notifyUnavailable,
       autoOrder: opts.autoOrder,
@@ -208,6 +243,35 @@ export function MonitorSubscribeDialog({
                 : `将监控 ${selectedDCs.length} 个机房`}
             </p>
           </div>
+
+          {hasHwGroups && (
+            <div className="space-y-3">
+              <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-border px-3.5 py-2.5 transition-colors hover:bg-muted/40">
+                <Checkbox
+                  className="mt-0.5"
+                  checked={restrictHw}
+                  onCheckedChange={(v) => setRestrictHw(!!v)}
+                />
+                <span>
+                  <span className="block text-sm">只盯指定硬件配置</span>
+                  <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                    关闭时监控该型号下全部内存/硬盘组合。打开后只对选中的配置发通知和自动下单。
+                  </span>
+                </span>
+              </label>
+              {restrictHw &&
+                HW_GROUPS.filter((g) => grouped[g].length > 0).map((g) => (
+                  <OptionGroupSection
+                    key={g}
+                    groupKey={g}
+                    options={grouped[g]}
+                    picked={picked[g] || ""}
+                    defaultValueSet={new Set()}
+                    onPick={(value) => setPicked((p) => ({ ...p, [g]: value }))}
+                  />
+                ))}
+            </div>
+          )}
 
           <MonitorOptionsFields value={opts} onChange={setOpts} />
 

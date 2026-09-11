@@ -24,6 +24,20 @@ func fresh(t *testing.T) string {
 	return dir
 }
 
+func TestDecryptWithoutKeyCountsFailure(t *testing.T) {
+	mu.Lock()
+	aead, loaded, keyGenerated = nil, false, false
+	mu.Unlock()
+	failures.Store(0)
+	_, err := Decrypt(EncPrefix + "AAAA")
+	if err == nil {
+		t.Fatal("未初始化密钥时解密密文应失败")
+	}
+	if DecryptFailures() != 1 {
+		t.Fatalf("DecryptFailures=%d, want 1", DecryptFailures())
+	}
+}
+
 func TestEncryptDecrypt往返(t *testing.T) {
 	fresh(t)
 	for _, plain := range []string{"abc", "带中文的密钥", strings.Repeat("x", 4096), "a b\tc\n"} {

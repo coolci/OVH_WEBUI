@@ -29,6 +29,7 @@ services:
       API_SECRET_KEY: ${API_SECRET_KEY:?Set API_SECRET_KEY in .env}
       PUBLIC_BASE_URL: https://${DOMAIN:?Set DOMAIN in .env}
       TZ: ${TZ:-Asia/Shanghai}
+      OVH_ENV_FILE: /data/.env
       OVH_DB_KEY: ${OVH_DB_KEY:?Set OVH_DB_KEY in .env}
     volumes:
       - ovh_webui_data:/data

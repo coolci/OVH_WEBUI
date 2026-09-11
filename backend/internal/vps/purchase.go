@@ -155,10 +155,36 @@ func PurchaseVPS(state *app.State, sub types.VPSSubscription, dcCode string) Out
 	// 三个站点的 region / 机房取值完全不同,猜的代价是整单失败。
 	required, err := fetchRequiredConfig(client, cartID, itemID)
 	if err != nil {
-		state.Logger.Warn("[VPS下单] 拉必需配置失败(按默认继续): "+err.Error(), "vps_purchase")
+		return Outcome{Reason: "拉必需配置失败: " + err.Error()}
 	}
 
 	configs := buildVPSConfig(required, dcCode, sub.OS)
+	hasDC := false
+	for _, cfg := range configs {
+		if cfg.label == "vps_datacenter" {
+			hasDC = true
+			break
+		}
+	}
+	if !hasDC {
+		return Outcome{Reason: fmt.Sprintf("购物车未给出 vps_datacenter，拒绝在未指定机房的情况下结账（目标机房 %s）", dcCode)}
+	}
+	regionRequired := false
+	hasRegion := false
+	for _, r := range required {
+		if r.Label == "region" && r.Required {
+			regionRequired = true
+		}
+	}
+	for _, cfg := range configs {
+		if cfg.label == "region" {
+			hasRegion = true
+			break
+		}
+	}
+	if regionRequired && !hasRegion {
+		return Outcome{Reason: fmt.Sprintf("必填配置 region 无法确定（机房 %s）", dcCode)}
+	}
 	for _, cfg := range configs {
 		if err := client.Post(fmt.Sprintf("/order/cart/%s/item/%d/configuration", cartID, itemID),
 			map[string]interface{}{"label": cfg.label, "value": cfg.value}, nil); err != nil {
@@ -181,6 +207,9 @@ func PurchaseVPS(state *app.State, sub types.VPSSubscription, dcCode string) Out
 
 	orderID := numconv.ToString(checkoutResult["orderId"])
 	orderURL, _ := checkoutResult["url"].(string)
+	if orderID == "" {
+		return Outcome{Reason: "结账成功但未返回订单号"}
+	}
 	success = true
 	state.Logger.Info(fmt.Sprintf("[VPS下单] 成功: %s @ %s 订单 %s", sub.PlanCode, dcCode, orderID), "vps_purchase")
 	return Outcome{Success: true, OrderID: orderID, OrderURL: orderURL}
@@ -359,11 +388,9 @@ func autoOrderOnRestock(state *app.State, sub types.VPSSubscription, dcs []map[s
 			}
 			b.WriteString("💡 点击下方按钮直达 OVH 支付账单：")
 			var replyMarkup map[string]interface{}
-			linkURL := out.OrderURL
+			linkURL := ""
 			if acc, ok := state.FindAccount(sub.AutoOrderAccountID); ok {
-				if u := ovh.ManagerOrderURL(acc.Endpoint, out.OrderID); u != "" {
-					linkURL = u
-				}
+				linkURL = ovh.ManagerOrderURL(acc.Endpoint, out.OrderID)
 			}
 			if linkURL != "" {
 				btnText := "💳 前往 OVH 支付订单"

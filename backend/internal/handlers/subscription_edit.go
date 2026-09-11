@@ -37,6 +37,7 @@ func UpdateSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc 
 
 		var body struct {
 			Datacenters        *[]string `json:"datacenters"`
+			Options            *[]string `json:"options"`
 			NotifyAvailable    *bool     `json:"notifyAvailable"`
 			NotifyUnavailable  *bool     `json:"notifyUnavailable"`
 			AutoOrder          *bool     `json:"autoOrder"`
@@ -52,6 +53,7 @@ func UpdateSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc 
 		// 先取当前值作为默认,再用 body 里给了的字段覆盖
 		cur := mon.SubscriptionConfig(planCode)
 		datacenters := cur.Datacenters
+		options := cur.Options
 		notifyAvailable := cur.NotifyAvailable
 		notifyUnavailable := cur.NotifyUnavailable
 		autoOrder := cur.AutoOrder
@@ -61,6 +63,9 @@ func UpdateSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc 
 
 		if body.Datacenters != nil {
 			datacenters = *body.Datacenters
+		}
+		if body.Options != nil {
+			options = *body.Options
 		}
 		if body.NotifyAvailable != nil {
 			notifyAvailable = *body.NotifyAvailable
@@ -99,7 +104,7 @@ func UpdateSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc 
 
 		// AddSubscription 对已存在的 planCode 是就地改配置,不会重置 LastStatus / History
 		mon.AddSubscription(planCode, datacenters, notifyAvailable, notifyUnavailable,
-			cur.ServerName, nil, nil, autoOrder, quantity, accountID, autoPay)
+			cur.ServerName, nil, nil, autoOrder, quantity, accountID, autoPay, options)
 		mon.SaveToDB()
 		state.Logger.Info("更新服务器订阅配置: "+planCode, "monitor")
 

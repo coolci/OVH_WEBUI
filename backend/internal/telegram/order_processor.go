@@ -3,7 +3,6 @@ package telegram
 import (
 	"fmt"
 	"strings"
-	"sync"
 
 	"github.com/google/uuid"
 
@@ -169,6 +168,16 @@ func ProcessOrder(state *app.State, accountID, planCode, datacenter string, quan
 	for _, ce := range configsToOrder {
 		configOptions := append([]string{}, ce.data.Options...)
 		for _, dc := range dcsToOrder {
+			// 检查是否已有相同配置的活跃抢购任务
+			if HasActiveDuplicate(state, planCode, dc, configOptions) {
+				state.Logger.Info(fmt.Sprintf("[Telegram下单] 跳过重复活跃任务: %s@%s", planCode, dc), "telegram")
+				continue
+			}
+			// 检查近期是否已成功下单同一配置
+			if RecentSuccessDuplicate(state, planCode, dc, configOptions) {
+				state.Logger.Info(fmt.Sprintf("[Telegram下单] 跳过近期已成功下单的重复任务: %s@%s", planCode, dc), "telegram")
+				continue
+			}
 			for i := 0; i < quantity; i++ {
 				now := types.NowISO()
 				item := types.QueueItem{
@@ -180,7 +189,7 @@ func ProcessOrder(state *app.State, accountID, planCode, datacenter string, quan
 					Status:        "running",
 					CreatedAt:     now,
 					UpdatedAt:     now,
-					RetryInterval: 30,
+					RetryInterval: state.Config.RetryInterval(),
 					RetryCount:    0,
 					LastCheckTime: 0,
 					FromTelegram:  true,
@@ -190,39 +199,24 @@ func ProcessOrder(state *app.State, accountID, planCode, datacenter string, quan
 		}
 	}
 
-	batchSize := 10
-	totalBatches := (len(ordersToCreate) + batchSize - 1) / batchSize
-	state.Logger.Info(fmt.Sprintf("开始并发创建订单: 总数=%d, 批次大小=%d, 总批次数=%d",
-		len(ordersToCreate), batchSize, totalBatches), "telegram")
-	created := 0
-	var mu sync.Mutex
-	for batchIdx := 0; batchIdx < totalBatches; batchIdx++ {
-		start := batchIdx * batchSize
-		end := start + batchSize
-		if end > len(ordersToCreate) {
-			end = len(ordersToCreate)
+	if len(ordersToCreate) == 0 {
+		return OrderResult{
+			Success: false,
+			Message: "未创建任务：已存在相同配置的活跃任务或刚刚已成功下单，请勿重复提交",
 		}
-		batch := ordersToCreate[start:end]
-		var wg sync.WaitGroup
-		for _, item := range batch {
-			wg.Add(1)
-			go func(it types.QueueItem) {
-				defer wg.Done()
-				state.QueueMu.Lock()
-				state.Queue = append(state.Queue, it)
-				state.QueueMu.Unlock()
-				mu.Lock()
-				created++
-				mu.Unlock()
-			}(item)
-		}
-		wg.Wait()
-		state.Logger.Info(fmt.Sprintf("批次 %d/%d 完成: 本批次创建 %d 个订单", batchIdx+1, totalBatches, len(batch)), "telegram")
 	}
-	if created > 0 {
-		_ = state.SaveQueue()
-		state.Logger.Info(fmt.Sprintf("并发创建订单完成: 共创建 %d/%d 个订单", created, totalOrders), "telegram")
+
+	createdItems, errMsg := appendAndSave(state, ordersToCreate)
+	if errMsg != "" {
+		return OrderResult{Success: false, Message: errMsg, TotalOrders: totalOrders}
 	}
+	createdIDs := make([]string, 0, len(createdItems))
+	for _, it := range createdItems {
+		createdIDs = append(createdIDs, it.ID)
+	}
+	created := len(createdItems)
+	state.Logger.Info(fmt.Sprintf("订单创建完成: 成功加入队列 %d/%d 个任务", created, totalOrders), "telegram")
+
 	msgSuffix := "（当前有现货，系统将立即尝试结账）"
 	if !targetInStock {
 		msgSuffix = "（目标机房当前缺货，已加入抢购队列挂机，放货瞬间秒级开抢）"
@@ -232,6 +226,7 @@ func ProcessOrder(state *app.State, accountID, planCode, datacenter string, quan
 		Message:       fmt.Sprintf("已创建 %d/%d 个任务(账户 %s)%s", created, totalOrders, accLabel, msgSuffix),
 		TotalOrders:   totalOrders,
 		CreatedOrders: created,
+		ItemIDs:       createdIDs,
 	}
 }
 

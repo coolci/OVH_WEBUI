@@ -19,9 +19,14 @@ import (
 	"github.com/ovh-webui/server/internal/ovh"
 )
 
-// noOVHResp 401 帮助
+// noOVHResp 当前账户取不到 OVH 客户端时的统一响应。
+// 用 412 而不是 401：401 会让前端判定会话失效、踢回登录页。
 func noOVHResp(c *gin.Context) {
-	c.JSON(http.StatusUnauthorized, gin.H{"success": false, "error": "未配置OVH API密钥"})
+	c.JSON(http.StatusPreconditionFailed, gin.H{
+		"success": false,
+		"error":   "未配置 OVH 账户或凭据不全，请到「设置 → OVH 账户」添加",
+		"code":    "NO_OVH_ACCOUNT",
+	})
 }
 
 // ── 区域门控 ──────────────────────────────────────────────────────────────

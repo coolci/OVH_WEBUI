@@ -145,6 +145,9 @@ func (db *DB) migrate() error {
 	if err := db.addColumnIfMissing("queue", "telegram_message_id", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
+	if err := db.addColumnIfMissing("queue", "force_order", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
 	// 清理 14 天前的旧短 ID 映射，避免表无限增长
 	_, _ = db.DeleteExpiredShortIDs(time.Now().Unix() - 14*86400)
 	return nil

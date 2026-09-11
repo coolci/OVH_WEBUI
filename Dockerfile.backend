@@ -13,8 +13,8 @@ RUN go mod download
 
 COPY backend/ ./
 # CGO_ENABLED=0 → 使用 modernc.org/sqlite（driver_purego.go）
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-    go build -trimpath -ldflags="-s -w -X github.com/ovh-webui/server/internal/handlers.Version=0.1.12" -o /out/ovh-webui .
+RUN VER=$(cat VERSION) && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -trimpath -ldflags="-s -w -X github.com/ovh-webui/server/internal/handlers.Version=${VER}" -o /out/ovh-webui .
 
 # 运行时：alpine 便于 HEALTHCHECK + CA 证书
 FROM alpine:3.20
@@ -32,7 +32,8 @@ ENV PORT=19998 \
     DATA_DIR=/data \
     GIN_MODE=release \
     ENABLE_API_KEY_AUTH=true \
-    TZ=Asia/Shanghai
+    TZ=Asia/Shanghai \
+    OVH_ENV_FILE=/data/.env
 
 # 持久化：库 / 缓存 / 日志
 VOLUME ["/data"]

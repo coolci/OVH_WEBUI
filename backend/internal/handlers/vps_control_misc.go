@@ -56,7 +56,7 @@ func ChangeVpsContact(state *app.State) gin.HandlerFunc {
 }
 
 // TerminateVps POST /api/vps-control/:service_name/terminate
-// 跟 dedicated 一致:OVH 返回 string(确认 token,通过邮件验证)
+// 跟 dedicated 一致:OVH 返回 string(确认文案),真正的 token 只发到管理员邮箱。
 func TerminateVps(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		svc := c.Param("service_name")
@@ -65,13 +65,13 @@ func TerminateVps(state *app.State) gin.HandlerFunc {
 			noOVHResp(c)
 			return
 		}
-		var token string
-		if err := client.Post("/vps/"+svc+"/terminate", map[string]interface{}{}, &token); err != nil {
+		var resp string
+		if err := client.Post("/vps/"+svc+"/terminate", map[string]interface{}{}, &resp); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 			return
 		}
-		state.Logger.Warn("VPS "+svc+" 终止请求已提交,等邮件 token", "vps_control")
-		c.JSON(http.StatusOK, gin.H{"success": true, "message": "终止请求已提交,请查邮件获取 token", "token": token})
+		state.Logger.Warn("VPS "+svc+" 终止请求已提交, token 已发送至管理员邮箱", "vps_control")
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "终止请求已提交,token 已发送至管理员邮箱,请查收邮件后再确认终止", "response": resp})
 	}
 }
 

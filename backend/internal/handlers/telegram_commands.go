@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/ovh-webui/server/internal/app"
@@ -9,6 +10,7 @@ import (
 	"github.com/ovh-webui/server/internal/monitor"
 	"github.com/ovh-webui/server/internal/price"
 	"github.com/ovh-webui/server/internal/telegram"
+	"github.com/ovh-webui/server/internal/types"
 )
 
 // dispatchTelegramCommand 处理 /buy /stock 等斜杠命令，返回回复文案。
@@ -31,6 +33,8 @@ func dispatchTelegramCommand(state *app.State, mon *monitor.Monitor, cmd *telegr
 		return cmdMonitor(state, mon, cmd.Args)
 	case "price":
 		return cmdPrice(state, cmd.Args)
+	case "interval", "iv":
+		return intervalText(state, cmd.Args)
 	default:
 		return "❌ 未知命令: /" + cmd.Name + "\n\n" + telegram.HelpMessage()
 	}
@@ -214,7 +218,7 @@ func cmdMonitor(state *app.State, mon *monitor.Monitor, args []string) string {
 	if serverName != "" {
 		namePart = planCode + " (" + serverName + ")"
 	}
-	return fmt.Sprintf("✅ 已成功添加库存监控！\n\n📦 型号: %s\n📍 监控机房:\n  • %s\n\n一旦官方有货上架，Bot 将第一时间向您推送补货通知！", namePart, dcText)
+	return fmt.Sprintf("✅ 已成功添加库存监控！\n\n📦 型号: %s\n📍 监控机房:\n  • %s\n⚙️ 配置: 全部（多套配置同时补货会各自通知、各自下单）\n\n一旦官方有货上架，Bot 将第一时间向您推送补货通知！", namePart, dcText)
 }
 
 func cmdPrice(state *app.State, args []string) string {
@@ -310,6 +314,30 @@ func cmdPrice(state *app.State, args []string) string {
 	}
 	b.WriteString(fmt.Sprintf("\n💡 立即下单: /buy %s %s", planCode, dc))
 	return b.String()
+}
+
+// intervalText /interval 看或改新建任务的默认重试间隔。
+// 只改默认值:已经在跑的任务各自带着自己的间隔,要改单个任务去网页「抢购队列」里点秒数。
+func intervalText(state *app.State, args []string) string {
+	cur := state.Config.RetryInterval()
+	quick := state.Config.QuickOrderRetryInterval()
+	if len(args) == 0 {
+		return fmt.Sprintf("⏱ 新任务默认重试间隔：%d 秒\n   监控自动下单间隔：%d 秒\n\n"+
+			"改默认值：/interval <秒>（%d ~ %d）\n单个任务的间隔到网页「抢购队列」里点秒数改。",
+			cur, quick, types.MinRetryInterval, types.MaxRetryInterval)
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(args[0]))
+	if err != nil || n < types.MinRetryInterval || n > types.MaxRetryInterval {
+		return fmt.Sprintf("间隔要是 %d ~ %d 之间的整数秒，例如 /interval 60",
+			types.MinRetryInterval, types.MaxRetryInterval)
+	}
+	cfg := state.Config.Get()
+	cfg.DefaultRetryInterval = n
+	if err := state.Config.Set(cfg); err != nil {
+		return "❌ 保存失败：" + err.Error()
+	}
+	state.Logger.Info(fmt.Sprintf("Telegram 把默认重试间隔从 %d 改为 %d 秒", cur, n), "telegram")
+	return fmt.Sprintf("✅ 默认重试间隔已改为 %d 秒（之前 %d 秒）。\n只影响之后新建的任务。", n, cur)
 }
 
 // handleTelegramText 统一处理 webhook 普通文本：斜杠命令 / free-form 下单 / 帮助。
@@ -413,6 +441,14 @@ func handleTelegramText(state *app.State, mon *monitor.Monitor, text string, cha
 				showDCPicker(state, chatID, 0, "m", cmd.Args[0], false)
 				return
 			}
+			// 快捷式: /monitor <型号> <机房...> 立刻建订阅(盯全部配置)。
+			// addon planCode 二三十字符打不出来,所以建完紧跟一排按钮一键改窄。
+			reply := cmdMonitor(state, mon, cmd.Args)
+			telegram.SendReply(state, chatID, reply, int64(messageID))
+			if !strings.HasPrefix(reply, "❌") {
+				offerNarrowConfig(state, chatID, int64(messageID), strings.TrimSpace(cmd.Args[0]))
+			}
+			return
 		}
 		if cmd.Name == "price" {
 			if len(cmd.Args) == 0 {

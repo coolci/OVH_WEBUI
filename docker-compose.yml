@@ -29,6 +29,7 @@ services:
       ENABLE_API_KEY_AUTH: ${ENABLE_API_KEY_AUTH:-true}
       API_SECRET_KEY: ${API_SECRET_KEY:-change-me-to-a-long-random-string}
       TZ: ${TZ:-Asia/Shanghai}
+      OVH_ENV_FILE: /data/.env
     volumes:
       - ovh_webui_data:/data
     ports:

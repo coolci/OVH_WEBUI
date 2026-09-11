@@ -74,6 +74,10 @@ func GetInternal(state *app.State, accountID, planCode, datacenter string, optio
 	cartID, _ = cartResult["cartId"].(string)
 	state.Logger.Debug("购物车创建成功，ID: "+cartID, "price")
 
+	if err := client.Post("/order/cart/"+cartID+"/assign", nil, nil); err != nil {
+		return Result{Success: false, Error: "绑定购物车失败：" + err.Error()}
+	}
+
 	// 2. 添加基础商品。
 	// duration/pricingMode 在 order.cart.GenericProductCreation 里是必填,合法组合来自
 	// GET /order/cart/{cartId}/eco 的 prices[](order.cart.GenericProductPricing)。
@@ -258,13 +262,7 @@ func GetInternal(state *app.State, accountID, planCode, datacenter string, optio
 		state.Logger.Info(fmt.Sprintf("共添加 %d 个选项: %v", len(addedPlanCodes), addedPlanCodes), "price")
 	}
 
-	// 5. 绑定购物车。schema 里 POST /order/cart/{cartId}/assign 只有 path 参数、没有 body,
-	// 传 {} 会被算进请求签名,OVH 收紧校验时会变成 400
-	if err := client.Post("/order/cart/"+cartID+"/assign", nil, nil); err != nil {
-		state.Logger.Warn("绑定购物车失败（可能不需要）: "+err.Error(), "price")
-	}
-
-	// 6. 获取 summary。
+	// 5. 获取 summary。
 	// 这里以前还会先 GET /order/cart/{cartId}：但 order.cart.Cart.items 是 long[](纯 itemId),
 	// 按对象数组解析永远拿不到明细，白白多一次能让整次询价硬失败的调用，已删。
 	// 逐项明细改从 summary(order.Order)的 details(order.OrderDetail[]) 取。

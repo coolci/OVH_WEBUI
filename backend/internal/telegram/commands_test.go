@@ -66,6 +66,9 @@ func TestIsKnownCommand(t *testing.T) {
 	if !IsKnownCommand("buy") || !IsKnownCommand("STOCK") {
 		t.Fatal("expected known")
 	}
+	if !IsKnownCommand("interval") || !IsKnownCommand("iv") {
+		t.Fatal("expected interval aliases")
+	}
 	if IsKnownCommand("foo") {
 		t.Fatal("expected unknown")
 	}
@@ -84,7 +87,11 @@ func TestChatIDToString(t *testing.T) {
 }
 
 func TestHelpMessageNonEmpty(t *testing.T) {
-	if !strings.Contains(HelpMessage(), "/buy") {
+	help := HelpMessage()
+	if !strings.Contains(help, "/buy") {
 		t.Fatal("help should mention /buy")
+	}
+	if !strings.Contains(help, "/interval") {
+		t.Fatal("help should mention /interval")
 	}
 }

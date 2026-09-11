@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -137,6 +138,11 @@ type State struct {
 	DeletedTaskIDsMu sync.Mutex
 	DeletedTaskIDs   map[string]struct{}
 
+	// 正在跑 PurchaseServer 的任务 → 取消函数。
+	// DeletedTaskIDs 只是标记,不 cancel 的话这一轮 OVH 调用(含结账)会跑完。
+	taskCancelMu sync.Mutex
+	taskCancel   map[string]context.CancelFunc
+
 	VPSSubsMu        sync.Mutex
 	VPSSubscriptions []types.VPSSubscription
 	VPSCheckInterval int
@@ -164,6 +170,7 @@ func NewState(paths storage.Paths, cfg *config.Store, lg *logger.Logger, sqliteD
 		ServerCache:           NewServerListCache(),
 		DB:                    sqliteDB,
 		DeletedTaskIDs:        make(map[string]struct{}),
+		taskCancel:            make(map[string]context.CancelFunc),
 		Accounts:              []types.OVHAccount{},
 		Queue:                 []types.QueueItem{},
 		History:               []types.PurchaseHistoryEntry{},
@@ -398,6 +405,50 @@ func (s *State) LoadFailures() map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+// MarkTaskDeleted 标记任务已删除,并取消它正在进行的下单(如果有)。
+func (s *State) MarkTaskDeleted(id string) {
+	s.DeletedTaskIDsMu.Lock()
+	s.DeletedTaskIDs[id] = struct{}{}
+	s.DeletedTaskIDsMu.Unlock()
+
+	s.taskCancelMu.Lock()
+	cancel := s.taskCancel[id]
+	delete(s.taskCancel, id)
+	s.taskCancelMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+// IsTaskDeleted 任务是否已被标记删除。
+func (s *State) IsTaskDeleted(id string) bool {
+	s.DeletedTaskIDsMu.Lock()
+	defer s.DeletedTaskIDsMu.Unlock()
+	_, ok := s.DeletedTaskIDs[id]
+	return ok
+}
+
+// RegisterTaskCancel 登记一个任务这一轮下单的取消函数。
+func (s *State) RegisterTaskCancel(id string, cancel context.CancelFunc) {
+	s.taskCancelMu.Lock()
+	if s.taskCancel == nil {
+		s.taskCancel = make(map[string]context.CancelFunc)
+	}
+	s.taskCancel[id] = cancel
+	s.taskCancelMu.Unlock()
+}
+
+// UnregisterTaskCancel 一轮下单结束后注销并释放 ctx。
+func (s *State) UnregisterTaskCancel(id string) {
+	s.taskCancelMu.Lock()
+	cancel := s.taskCancel[id]
+	delete(s.taskCancel, id)
+	s.taskCancelMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 }
 
 // SaveQueue 把内存中 Queue 整表覆盖写入 SQLite

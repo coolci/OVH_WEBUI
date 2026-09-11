@@ -30,7 +30,22 @@ var (
 	shortToID      = map[string]string{}
 	pickerMu       sync.Mutex
 	pickerSessions = map[string]*dcPickerSession{}
+	narrowMu       sync.Mutex
+	narrowOffers   = map[string]*narrowOffer{}
 )
+
+const (
+	narrowTTL        = 10 * time.Minute
+	narrowMaxButtons = 8
+)
+
+// narrowOffer 快捷 /monitor 建完后「一键改窄配置」的待选列表。
+// 必须冻住按钮对应的配置:再 enumerate 一次顺序可能变,点下去会对上另一套。
+type narrowOffer struct {
+	PlanCode string
+	Configs  []wizardConfigChoice
+	Expires  time.Time
+}
 
 func pickerKey(chatID interface{}, messageID int64) string {
 	return fmt.Sprintf("%v_%d", chatID, messageID)
@@ -535,6 +550,68 @@ func enumerateWizardConfigs(state *app.State, planCode, accountID string) []wiza
 	return out
 }
 
+func putNarrowOffer(planCode string, configs []wizardConfigChoice) string {
+	tok := fmt.Sprintf("%x", time.Now().UnixNano())
+	narrowMu.Lock()
+	now := time.Now()
+	for k, v := range narrowOffers {
+		if now.After(v.Expires) {
+			delete(narrowOffers, k)
+		}
+	}
+	narrowOffers[tok] = &narrowOffer{
+		PlanCode: planCode,
+		Configs:  configs,
+		Expires:  now.Add(narrowTTL),
+	}
+	narrowMu.Unlock()
+	return tok
+}
+
+func takeNarrowOffer(tok string) (*narrowOffer, bool) {
+	narrowMu.Lock()
+	defer narrowMu.Unlock()
+	o, ok := narrowOffers[tok]
+	if !ok || time.Now().After(o.Expires) {
+		delete(narrowOffers, tok)
+		return nil, false
+	}
+	delete(narrowOffers, tok)
+	return o, true
+}
+
+// offerNarrowConfig 快捷式 /monitor 建完订阅后,挂一排按钮让用户一键改窄配置。
+//
+// 返回 false = 没什么可挑的(只有一套配置),调用方不用额外说什么。
+// 故意放在订阅**已经建好之后**:快捷式的价值就是一条命令立刻开始盯,
+// 不能因为多了个选择步骤把它变成又一个向导。
+func offerNarrowConfig(state *app.State, chatID interface{}, _ int64, planCode string) bool {
+	configs := enumerateWizardConfigs(state, planCode, "")
+	if len(configs) <= 1 {
+		return false
+	}
+	tok := putNarrowOffer(planCode, configs)
+	var btns []map[string]string
+	for i, c := range configs {
+		if i >= narrowMaxButtons {
+			break
+		}
+		label := c.Label
+		if c.InStock > 0 {
+			label += fmt.Sprintf(" ✅%d机房有货", c.InStock)
+		}
+		btns = append(btns, telegram.CallbackButton(label, fmt.Sprintf("i:mon:n:%s:%d", tok, i)))
+	}
+	rows := telegram.ChunkButtons(btns, 1)
+	rows = append(rows, []map[string]string{
+		telegram.CallbackButton("🌐 保持盯全部配置", fmt.Sprintf("i:mon:n:%s:all", tok)),
+	})
+	text := fmt.Sprintf("🔧 %s 有 %d 套配置，现在盯的是全部。\n要只盯一套就点一下（随时可以改回来）：",
+		planCode, len(configs))
+	_, _ = telegram.SendToChat(state, chatID, text, telegram.InlineKeyboard(rows))
+	return true
+}
+
 func showConfigPicker(state *app.State, mon *monitor.Monitor, chatID interface{}, messageID int64, mode, planCode string, edit bool) {
 	configs := enumerateWizardConfigs(state, planCode, "")
 	if len(configs) <= 1 {
@@ -709,9 +786,9 @@ func showDCPicker(state *app.State, chatID interface{}, messageID int64, mode, p
 	_, _ = telegram.SendToChat(state, chatID, b.String(), markup)
 }
 
-func enqueueWizardDCs(state *app.State, chatID interface{}, messageID int64, mode, planCode string, dcs []string, accountID string, options []string, configLabel string, autoPay bool) {
+func enqueueWizardDCs(state *app.State, chatID interface{}, messageID int64, mode, planCode string, dcs []string, accountID string, options []string, configLabel string, autoPay bool) int {
 	if len(dcs) == 0 {
-		return
+		return 0
 	}
 	if accountID == "" {
 		accountID = telegram.ActiveAccountID(state)
@@ -734,7 +811,7 @@ func enqueueWizardDCs(state *app.State, chatID interface{}, messageID int64, mod
 		if quick {
 			item.QuickOrder = true
 			item.Priority = 100
-			item.RetryInterval = 2
+			item.RetryInterval = state.Config.QuickOrderRetryInterval()
 			item.MaxRetries = 20
 		}
 		item.AutoPay = autoPay
@@ -801,6 +878,7 @@ func enqueueWizardDCs(state *app.State, chatID interface{}, messageID int64, mod
 		ids = append(ids, t.ID)
 	}
 	telegram.BindQueueTelegram(state, ids, chatStr, messageID)
+	return okN
 }
 
 func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, chatID interface{}, messageID int64, data string) bool {
@@ -1006,7 +1084,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 						}
 					}
 					state.ServerPlansMu.RUnlock()
-					mon.AddSubscription(plan, selectedDCs, true, false, serverName, nil, nil, false, 0, "", false)
+					mon.AddSubscription(plan, selectedDCs, true, false, serverName, nil, nil, false, 0, "", false, pickedOpts)
 					mon.SaveToDB()
 					if !mon.Running() {
 						mon.Start()
@@ -1030,6 +1108,9 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 					},
 				})
 				_ = telegram.EditMessage(state, chatID, messageID, text, markup)
+				if len(pickedOpts) == 0 {
+					offerNarrowConfig(state, chatID, messageID, plan)
+				}
 				return true
 			}
 			telegram.AnswerCallback(state, cbID, fmt.Sprintf("已选 %d 个机房，正在提交抢购…", len(selectedDCs)), false)
@@ -1120,6 +1201,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 						},
 					})
 					_ = telegram.EditMessage(state, chatID, messageID, text, markup)
+					offerNarrowConfig(state, chatID, messageID, plan)
 					return true
 				}
 				telegram.AnswerCallback(state, cbID, telegram.DisplayDC(dc), false)
@@ -1190,6 +1272,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 		}
 		telegram.AnswerCallback(state, cbID, "已添加 "+plan+" 全机房监控", false)
 		_ = telegram.EditMessage(state, chatID, messageID, fmt.Sprintf("✅ 已成功添加 %s 全机房库存监控，有货时将通过 Telegram 自动推送！", plan), telegram.EmptyInlineKeyboard())
+		offerNarrowConfig(state, chatID, messageID, plan)
 	case "T":
 		if len(parts) < 3 {
 			telegram.AnswerCallback(state, cbID, "按钮无效", true)
@@ -1218,9 +1301,6 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 			}
 			state.Queue = newQueue
 			if cancelledItem != nil {
-				state.DeletedTaskIDsMu.Lock()
-				state.DeletedTaskIDs[cancelledItem.ID] = struct{}{}
-				state.DeletedTaskIDsMu.Unlock()
 				// 收集与该消息关联的其余仍在排队中的任务
 				for _, it := range state.Queue {
 					if it.TelegramMessageID == cancelledItem.TelegramMessageID && (it.Status == "running" || it.Status == "pending" || it.Status == "paused") {
@@ -1234,6 +1314,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 				telegram.AnswerCallback(state, cbID, "该任务已不存在或已结束", true)
 				return true
 			}
+			state.MarkTaskDeleted(cancelledItem.ID)
 			_ = state.SaveQueue()
 			dcName := telegram.DisplayDC(cancelledItem.Datacenter)
 
@@ -1288,19 +1369,21 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 			count := 0
 			var planCode string
 			newQueue := make([]types.QueueItem, 0, len(state.Queue))
-			state.DeletedTaskIDsMu.Lock()
+			var deletedIDs []string
 			for _, it := range state.Queue {
 				if it.TelegramMessageID == targetMsgID {
 					count++
 					planCode = it.PlanCode
-					state.DeletedTaskIDs[it.ID] = struct{}{}
+					deletedIDs = append(deletedIDs, it.ID)
 					continue
 				}
 				newQueue = append(newQueue, it)
 			}
-			state.DeletedTaskIDsMu.Unlock()
 			state.Queue = newQueue
 			state.QueueMu.Unlock()
+			for _, id := range deletedIDs {
+				state.MarkTaskDeleted(id)
+			}
 			if count > 0 {
 				_ = state.SaveQueue()
 				telegram.AnswerCallback(state, cbID, fmt.Sprintf("已取消本次全部 %d 个任务", count), false)
@@ -1318,19 +1401,21 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 			state.QueueMu.Lock()
 			count := 0
 			newQueue := make([]types.QueueItem, 0, len(state.Queue))
-			state.DeletedTaskIDsMu.Lock()
+			var deletedIDs []string
 			chatStr := telegram.ChatIDString(chatID)
 			for _, it := range state.Queue {
 				if it.TelegramMessageID == messageID || (chatStr != "" && it.TelegramChatID == chatStr) {
 					count++
-					state.DeletedTaskIDs[it.ID] = struct{}{}
+					deletedIDs = append(deletedIDs, it.ID)
 					continue
 				}
 				newQueue = append(newQueue, it)
 			}
-			state.DeletedTaskIDsMu.Unlock()
 			state.Queue = newQueue
 			state.QueueMu.Unlock()
+			for _, id := range deletedIDs {
+				state.MarkTaskDeleted(id)
+			}
 			if count > 0 {
 				_ = state.SaveQueue()
 			}
@@ -1358,9 +1443,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 		state.Queue = newQueue
 		state.QueueMu.Unlock()
 		if foundItem != nil {
-			state.DeletedTaskIDsMu.Lock()
-			state.DeletedTaskIDs[foundItem.ID] = struct{}{}
-			state.DeletedTaskIDsMu.Unlock()
+			state.MarkTaskDeleted(foundItem.ID)
 			_ = state.SaveQueue()
 			telegram.AnswerCallback(state, cbID, "抢购任务已取消", false)
 			text := fmt.Sprintf("🛑 抢购任务已取消\n\n📦 型号: %s\n📍 机房: %s\nℹ️ 说明: 用户已在 Telegram 中取消了此任务",
@@ -1384,13 +1467,15 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 		}
 		if target == "all" {
 			state.QueueMu.Lock()
-			state.DeletedTaskIDsMu.Lock()
+			ids := make([]string, 0, len(state.Queue))
 			for _, it := range state.Queue {
-				state.DeletedTaskIDs[it.ID] = struct{}{}
+				ids = append(ids, it.ID)
 			}
-			state.DeletedTaskIDsMu.Unlock()
 			state.Queue = nil
 			state.QueueMu.Unlock()
+			for _, id := range ids {
+				state.MarkTaskDeleted(id)
+			}
 			_ = state.SaveQueue()
 			telegram.AnswerCallback(state, cbID, "已清空队列", false)
 			showTasks(state, chatID, messageID, true)
@@ -1416,9 +1501,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 		state.QueueMu.Unlock()
 		if found {
 			if deletedID != "" {
-				state.DeletedTaskIDsMu.Lock()
-				state.DeletedTaskIDs[deletedID] = struct{}{}
-				state.DeletedTaskIDsMu.Unlock()
+				state.MarkTaskDeleted(deletedID)
 			}
 			_ = state.SaveQueue()
 			telegram.AnswerCallback(state, cbID, "任务已停止", false)
@@ -1433,6 +1516,44 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 			return true
 		}
 		subAct := parts[2]
+		if subAct == "n" && len(parts) >= 5 {
+			tok, idxStr := parts[3], parts[4]
+			offer, ok := takeNarrowOffer(tok)
+			if !ok {
+				telegram.AnswerCallback(state, cbID, "这个选择已过期，请重新 /monitor", true)
+				return true
+			}
+			if mon == nil {
+				telegram.AnswerCallback(state, cbID, "监控模块不可用", true)
+				return true
+			}
+			var opts []string
+			label := "全部配置"
+			if idxStr != "all" {
+				idx, err := strconv.Atoi(idxStr)
+				if err != nil || idx < 0 || idx >= len(offer.Configs) || idx >= narrowMaxButtons {
+					telegram.AnswerCallback(state, cbID, "选项无效", true)
+					return true
+				}
+				opts = offer.Configs[idx].Options
+				label = offer.Configs[idx].Label
+			}
+			if !mon.SetSubscriptionOptions(offer.PlanCode, opts) {
+				telegram.AnswerCallback(state, cbID, "订阅已不在了", true)
+				telegram.SendReply(state, chatID, "这条订阅已经被删掉了，发 /monitor "+offer.PlanCode+" 重新开始。", messageID)
+				return true
+			}
+			mon.SaveToDB()
+			telegram.AnswerCallback(state, cbID, "好", false)
+			if len(opts) == 0 {
+				telegram.SendReply(state, chatID,
+					"🌐 "+offer.PlanCode+" 改回盯全部配置。\n每套配置补货都会各自通知、各自下单。", messageID)
+			} else {
+				telegram.SendReply(state, chatID,
+					"🎯 "+offer.PlanCode+" 现在只盯："+label+"\n其它配置补货不再通知，也不会下单。", messageID)
+			}
+			return true
+		}
 		if subAct == "list" {
 			telegram.AnswerCallback(state, cbID, "监控列表", false)
 			showMonitorManager(state, mon, chatID, messageID, true)
@@ -1475,10 +1596,6 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 			accID = parts[2]
 		}
 		_ = telegram.SetActiveAccount(state, accID)
-		if state.DB != nil {
-			_ = state.DB.SetDefaultAccount(accID)
-		}
-		_ = state.ReloadAccounts()
 		acc, _ := state.FindAccount(accID)
 		accName := acc.Name
 		if accName == "" {
@@ -1537,59 +1654,72 @@ func splitButtonDCs(raw string) []string {
 }
 
 func enqueueFromNotifyButton(state *app.State, mon *monitor.Monitor, cbID string, chatID interface{}, messageID int64, buttonID, action, accountOverride string, autoPay bool) {
-	row, ok, err := state.DB.GetTelegramButton(buttonID)
-	if err != nil || !ok {
-		if cached := mon.MessageUUIDCacheLookup(buttonID); cached != nil {
-			mode := "q"
-			if action == "sniper" {
-				mode = "b"
-			}
-			dcs := splitButtonDCs(cached.Datacenter)
-			if len(dcs) == 0 && cached.Datacenter != "" {
-				dcs = []string{telegram.NormalizeDC(cached.Datacenter)}
-			}
-			var cachedLabel string
-			if cached.ConfigInfo != nil {
-				if d, ok := cached.ConfigInfo["display"].(string); ok {
-					cachedLabel = d
-				}
-			}
-			enqueueWizardDCs(state, chatID, messageID, mode, cached.PlanCode, dcs, accountOverride, cached.Options, cachedLabel, autoPay)
-			return
-		}
-		telegram.AnswerCallback(state, cbID, "按钮已失效", true)
-		return
-	}
-	if time.Since(time.Unix(int64(row.CreatedAt), 0)) > telegram.ButtonTTL {
-		telegram.AnswerCallback(state, cbID, "该按钮已过期，请等待新的上架通知", true)
-		return
-	}
-	dcs := splitButtonDCs(row.Datacenter)
-	if len(dcs) == 0 {
-		dcs = []string{telegram.NormalizeDC(row.Datacenter)}
-	}
-	accID := accountOverride
-	if accID == "" {
-		accID = strings.TrimSpace(row.AccountID)
-	}
 	mode := "q"
 	if action == "sniper" {
 		mode = "b"
 	}
-	var opts []string
-	if row.Options != "" {
-		_ = json.Unmarshal([]byte(row.Options), &opts)
-	}
-	var cfgLabel string
-	if row.ConfigInfo != "" {
-		var cfgMap map[string]interface{}
-		if err := json.Unmarshal([]byte(row.ConfigInfo), &cfgMap); err == nil {
-			if disp, ok := cfgMap["display"].(string); ok {
-				cfgLabel = disp
+	claimed := false
+	var planCode, datacenter, accID, cfgLabel, optsJSON string
+
+	if buttonID != "" && state.DB != nil {
+		row, ok, err := state.DB.ClaimTelegramButton(buttonID)
+		if err != nil {
+			state.Logger.Error("认领一键下单按钮失败: "+err.Error(), "telegram")
+			telegram.AnswerCallback(state, cbID, "认领按钮失败", true)
+			return
+		}
+		if ok {
+			if time.Since(time.Unix(int64(row.CreatedAt), 0)) > telegram.ButtonTTL {
+				_ = state.DB.UnclaimTelegramButton(buttonID)
+				telegram.AnswerCallback(state, cbID, "该按钮已过期，请等待新的上架通知", true)
+				return
 			}
+			claimed = true
+			planCode, datacenter, accID = row.PlanCode, row.Datacenter, strings.TrimSpace(row.AccountID)
+			optsJSON = row.Options
+			if row.ConfigInfo != "" {
+				var cfgMap map[string]interface{}
+				if err := json.Unmarshal([]byte(row.ConfigInfo), &cfgMap); err == nil {
+					if disp, ok := cfgMap["display"].(string); ok {
+						cfgLabel = disp
+					}
+				}
+			}
+		} else if _, exists, _ := state.DB.GetTelegramButton(buttonID); exists {
+			telegram.AnswerCallback(state, cbID, "该按钮已使用过", true)
+			return
 		}
 	}
-	enqueueWizardDCs(state, chatID, messageID, mode, row.PlanCode, dcs, accID, opts, cfgLabel, autoPay)
+
+	var opts []string
+	if !claimed {
+		if cached := mon.MessageUUIDCacheLookup(buttonID); cached != nil {
+			planCode, datacenter = cached.PlanCode, cached.Datacenter
+			opts = cached.Options
+			if cached.ConfigInfo != nil {
+				if d, ok := cached.ConfigInfo["display"].(string); ok {
+					cfgLabel = d
+				}
+			}
+		} else {
+			telegram.AnswerCallback(state, cbID, "按钮已失效", true)
+			return
+		}
+	} else if optsJSON != "" {
+		_ = json.Unmarshal([]byte(optsJSON), &opts)
+	}
+
+	if accountOverride != "" {
+		accID = accountOverride
+	}
+	dcs := splitButtonDCs(datacenter)
+	if len(dcs) == 0 && datacenter != "" {
+		dcs = []string{telegram.NormalizeDC(datacenter)}
+	}
+	okN := enqueueWizardDCs(state, chatID, messageID, mode, planCode, dcs, accID, opts, cfgLabel, autoPay)
+	if claimed && okN == 0 {
+		_ = state.DB.UnclaimTelegramButton(buttonID)
+	}
 }
 
 func showTasks(state *app.State, chatID interface{}, messageID int64, edit bool) {

@@ -101,6 +101,7 @@ type Subscription struct {
 	Quantity           int               `json:"quantity,omitempty"`
 	AutoOrderAccountID string            `json:"autoOrderAccountId,omitempty"` // 空 = 触发时只通知不下单
 	AutoPay            bool              `json:"autoPay,omitempty"`            // 下单后自动付款(显式开关,默认关)
+	Options            []string          `json:"options,omitempty"`            // 硬件配置选配 (空 = 全部配置)
 
 	// —— 本轮可用性查询的诊断信息 ——
 	// 只存内存、不落库(每轮检查都会重算,持久化没有意义)。
@@ -132,6 +133,7 @@ type subCheckConfig struct {
 	Quantity           int
 	AutoOrderAccountID string
 	AutoPay            bool
+	Options            []string
 }
 
 func (s *Subscription) checkConfig() subCheckConfig {
@@ -139,6 +141,8 @@ func (s *Subscription) checkConfig() subCheckConfig {
 	defer s.mu.Unlock()
 	dcs := make([]string, len(s.Datacenters))
 	copy(dcs, s.Datacenters)
+	opts := make([]string, len(s.Options))
+	copy(opts, s.Options)
 	return subCheckConfig{
 		Datacenters:        dcs,
 		NotifyAvailable:    s.NotifyAvailable,
@@ -148,6 +152,7 @@ func (s *Subscription) checkConfig() subCheckConfig {
 		Quantity:           s.Quantity,
 		AutoOrderAccountID: s.AutoOrderAccountID,
 		AutoPay:            s.AutoPay,
+		Options:            opts,
 	}
 }
 
@@ -230,6 +235,8 @@ func (s *Subscription) snapshot() *Subscription {
 	}
 	hist := make([]HistoryEntry, len(s.History))
 	copy(hist, s.History)
+	opts := make([]string, len(s.Options))
+	copy(opts, s.Options)
 	return &Subscription{
 		PlanCode:           s.PlanCode,
 		Datacenters:        dcs,
@@ -243,6 +250,7 @@ func (s *Subscription) snapshot() *Subscription {
 		Quantity:           s.Quantity,
 		AutoOrderAccountID: s.AutoOrderAccountID,
 		AutoPay:            s.AutoPay,
+		Options:            opts,
 
 		LastCheckAt:         s.LastCheckAt,
 		LastCheckAccountID:  s.LastCheckAccountID,

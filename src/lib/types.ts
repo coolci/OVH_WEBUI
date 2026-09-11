@@ -65,6 +65,7 @@ export interface MonitorStatus {
 export interface Subscription {
   planCode: string;
   datacenters?: string[];
+  options?: string[];
   notifyAvailable?: boolean;
   notifyUnavailable?: boolean;
   serverName?: string;

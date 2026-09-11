@@ -13,7 +13,12 @@ import (
 	"unicode"
 
 	"github.com/ovh-webui/server/internal/app"
+	"github.com/ovh-webui/server/internal/netfp"
 )
+
+func tgClient(timeout time.Duration) *http.Client {
+	return netfp.Shared(timeout)
+}
 
 // tokenRe 匹配 Telegram API URL 里的 bot token 段。
 var tokenRe = regexp.MustCompile(`/bot[0-9]+:[A-Za-z0-9_-]+`)
@@ -47,7 +52,7 @@ func VerifyConfig(state *app.State) (bool, string) {
 	if chatID == "" {
 		return false, "未配置 Telegram Chat ID"
 	}
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := tgClient(10 * time.Second)
 
 	// 1) getMe 验 token
 	resp, err := client.Get("https://api.telegram.org/bot" + token + "/getMe")
@@ -116,7 +121,7 @@ func SendToChat(state *app.State, chatID interface{}, message string, replyMarku
 		return 0, false
 	}
 	req.Header.Set("Content-Type", "application/json")
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := tgClient(10 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		state.Logger.Error("发送Telegram消息时发生网络错误: "+scrub(err.Error()), "")
@@ -162,7 +167,7 @@ func EditMessage(state *app.State, chatID interface{}, messageID int64, text str
 		return false
 	}
 	req.Header.Set("Content-Type", "application/json")
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := tgClient(10 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		state.Logger.Warn("editMessageText 网络错误: "+scrub(err.Error()), "telegram")
@@ -193,7 +198,7 @@ func DeleteWebhook(token string) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := tgClient(10 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
@@ -224,7 +229,7 @@ func AnswerCallback(state *app.State, callbackQueryID, text string, showAlert bo
 		"show_alert":        showAlert,
 	}
 	body, _ := json.Marshal(payload)
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := tgClient(5 * time.Second)
 	req, _ := http.NewRequest(http.MethodPost,
 		"https://api.telegram.org/bot"+cfg.TgToken+"/answerCallbackQuery",
 		bytes.NewReader(body))
@@ -247,7 +252,7 @@ func SendReply(state *app.State, chatID interface{}, text string, replyToMessage
 		"reply_to_message_id": replyToMessageID,
 	}
 	body, _ := json.Marshal(payload)
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := tgClient(10 * time.Second)
 	req, _ := http.NewRequest(http.MethodPost,
 		"https://api.telegram.org/bot"+cfg.TgToken+"/sendMessage",
 		bytes.NewReader(body))
@@ -422,10 +427,11 @@ func SetMyCommands(state *app.State) string {
 		{Command: "queue", Description: "加入排队队列: /queue <planCode> [dc]"},
 		{Command: "monitor", Description: "添加库存监控: /monitor <planCode>"},
 		{Command: "price", Description: "查询价格: /price <planCode> <dc>"},
+		{Command: "interval", Description: "查看或修改默认重试间隔: /interval [秒]"},
 	}
 	payload, _ := json.Marshal(map[string]interface{}{"commands": commands})
 	apiURL := "https://api.telegram.org/bot" + cfg.TgToken + "/setMyCommands"
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := tgClient(10 * time.Second)
 	req, err := http.NewRequest(http.MethodPost, apiURL, bytes.NewReader(payload))
 	if err != nil {
 		return err.Error()

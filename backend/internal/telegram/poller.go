@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ovh-webui/server/internal/app"
+	"github.com/ovh-webui/server/internal/netfp"
 )
 
 // PollerStatus 轮询入站的运行快照，给设置页 / Telegram 下单页看。
@@ -31,6 +32,8 @@ var (
 	pollerKick    chan struct{}
 	pollerStarted bool
 )
+
+const kvPollOffset = "telegram_poll_offset"
 
 // SnapshotPoller 返回轮询状态副本。
 func SnapshotPoller() PollerStatus {
@@ -78,7 +81,7 @@ func StartPoller(state *app.State, onUpdate func(map[string]interface{})) {
 }
 
 func runPoller(state *app.State, onUpdate func(map[string]interface{}), kick <-chan struct{}) {
-	client := &http.Client{Timeout: 40 * time.Second}
+	client := netfp.Shared(40 * time.Second)
 	var offset int64
 	var lastToken string
 
@@ -110,7 +113,16 @@ func runPoller(state *app.State, onUpdate func(map[string]interface{}), kick <-c
 			} else {
 				state.Logger.Info("已清除 Telegram Webhook，改用 getUpdates 轮询入站", "telegram")
 			}
-			offset = 0
+			if lastToken == "" && state.DB != nil {
+				var saved int64
+				if ok, _ := state.DB.GetKV(kvPollOffset, &saved); ok && saved > 0 {
+					offset = saved
+				} else {
+					offset = 0
+				}
+			} else {
+				offset = 0
+			}
 			lastToken = token
 			if u, err := fetchBotUsername(client, token); err == nil {
 				patchPoller(func(s *PollerStatus) { s.BotUsername = u })
@@ -177,6 +189,9 @@ func runPoller(state *app.State, onUpdate func(map[string]interface{}), kick <-c
 				s.Offset = offset
 				s.LastUpdateAt = time.Now().UTC().Format(time.RFC3339)
 			})
+		}
+		if state.DB != nil && offset > 0 {
+			_ = state.DB.SetKV(kvPollOffset, offset)
 		}
 	}
 }

@@ -39,8 +39,10 @@ import {
   useRemoveQueueItem,
   useClearQueue,
   useCreateQueueItem,
+  useUpdateQueueInterval,
   type QueueItem,
 } from "@/hooks/use-queue";
+import { useSettings, RETRY_INTERVAL } from "@/hooks/use-settings";
 import { useServers } from "@/hooks/use-servers";
 import { mergeDcAvailability } from "@/lib/datacenters";
 import { DatacenterPicker } from "@/components/common/DatacenterPicker";
@@ -57,8 +59,66 @@ import {
 } from "@/hooks/use-availability";
 
 /** 抢购队列：列表 + 暂停/恢复/删除/清空 + 新建抢购任务 */
-/** 任务重试间隔默认值（秒），与后端 TASK_RETRY_INTERVAL 保持一致 */
-const DEFAULT_RETRY_INTERVAL = 60;
+/** 新建任务时的兜底间隔。真正的默认值来自设置（/api/settings.defaultRetryInterval） */
+const FALLBACK_RETRY_INTERVAL = RETRY_INTERVAL.defaultTask;
+
+/**
+ * 队列卡片上那个可点的秒数。
+ * 点一下变输入框，回车/失焦提交。改的是这一条任务自己的间隔，下一轮就生效。
+ */
+function IntervalEditor({ id, value }: { id: string; value: number }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(String(value));
+  const update = useUpdateQueueInterval();
+
+  const commit = () => {
+    setEditing(false);
+    const n = Number(draft);
+    if (!n || n === value) return setDraft(String(value));
+    if (n < RETRY_INTERVAL.min || n > RETRY_INTERVAL.max) {
+      toast.error(`重试间隔要在 ${RETRY_INTERVAL.min} ~ ${RETRY_INTERVAL.max} 秒之间`);
+      return setDraft(String(value));
+    }
+    update.mutate({ id, retryInterval: n });
+  };
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          setDraft(String(value));
+          setEditing(true);
+        }}
+        className="font-medium text-foreground underline decoration-dotted underline-offset-2 hover:text-primary"
+        title="点击修改这条任务的重试间隔"
+      >
+        {value}
+      </button>
+    );
+  }
+  return (
+    <input
+      autoFocus
+      type="text"
+      inputMode="numeric"
+      value={draft}
+      onChange={(e) => {
+        const v = e.target.value;
+        if (v === "" || /^\d*$/.test(v)) setDraft(v);
+      }}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") commit();
+        if (e.key === "Escape") {
+          setDraft(String(value));
+          setEditing(false);
+        }
+      }}
+      className="w-14 px-1 py-0.5 rounded border border-input bg-background text-base sm:text-[11px] text-center"
+    />
+  );
+}
 
 function QueuePage() {
   const queue = useQueueList();
@@ -361,11 +421,17 @@ function CreateQueueDialog({
   const variantIndex = useMemo(() => buildVariantIndex(availQ.data), [availQ.data]);
   const availMap = useMemo(() => buildAvailabilityMap(availQ.data), [availQ.data]);
   const create = useCreateQueueItem();
+  const settingsQ = useSettings();
+  const cfgDefault = settingsQ.data?.defaultRetryInterval || FALLBACK_RETRY_INTERVAL;
   const [accountId, setAccountId] = useState("");
   const [planCode, setPlanCode] = useState(initialPlanCode || "");
   const [datacenters, setDatacenters] = useState<string[]>([]);
   const [quantity, setQuantity] = useState("1");
-  const [retryInterval, setRetryInterval] = useState(String(DEFAULT_RETRY_INTERVAL));
+  const [retryInterval, setRetryInterval] = useState("");
+  const intervalTouchedRef = useRef(false);
+  useEffect(() => {
+    if (!intervalTouchedRef.current) setRetryInterval(String(cfgDefault));
+  }, [cfgDefault]);
   // 用户选的 addon,按组索引。每次切 planCode 自动清空(让用户重新选)。
   const [picked, setPicked] = useState<Partial<Record<OptionGroupKey, string>>>({});
   // 手填的额外 addon planCode(catalog 里没分组覆盖到的、或用户想加的特殊 addon)
@@ -463,7 +529,8 @@ function CreateQueueDialog({
     setPlanCode("");
     setDatacenters([]);
     setQuantity("1");
-    setRetryInterval(String(DEFAULT_RETRY_INTERVAL));
+    intervalTouchedRef.current = false;
+    setRetryInterval(String(cfgDefault));
     setPicked({});
     setExtraInput("");
     setAutoPay(false);
@@ -497,7 +564,7 @@ function CreateQueueDialog({
       planCode: planCode.trim(),
       datacenters,
       quantity: qty,
-      retryInterval: Number(retryInterval) || DEFAULT_RETRY_INTERVAL,
+      retryInterval: Number(retryInterval) || cfgDefault,
       options: parsedOptions,
       autoPay,
       force: isCustomPlan,
@@ -596,9 +663,10 @@ function CreateQueueDialog({
                 value={retryInterval}
                 onChange={(e) => {
                   const v = e.target.value;
+                  intervalTouchedRef.current = true;
                   if (v === "" || /^\d*$/.test(v)) setRetryInterval(v);
                 }}
-                placeholder={`默认: ${DEFAULT_RETRY_INTERVAL}`}
+                placeholder={`默认: ${cfgDefault}`}
               />
               <p className="text-[11px] text-muted-foreground mt-1">
                 抢购失败后等待秒数再重试
@@ -765,9 +833,23 @@ function QueueRow({
           </div>
           <div className="text-[11px] text-muted-foreground flex items-center gap-2 flex-wrap">
             <Clock className="w-3.5 h-3.5 text-muted-foreground/80" />
-            <span>
-              下次尝试 {item.retryCount > 0 ? `${item.retryInterval}秒后（第 ${item.retryCount + 1} 次）` : "即将开始"}
-            </span>
+            {item.status === "failed" ? (
+              <span>已停止重试（原因见抢购历史）</span>
+            ) : item.status === "completed" ? (
+              <span>已完成</span>
+            ) : (
+              <span className="inline-flex items-center gap-1">
+                下次尝试
+                {item.retryCount > 0 ? (
+                  <>
+                    <IntervalEditor id={item.id} value={item.retryInterval} />
+                    秒后（第 {item.retryCount + 1} 次）
+                  </>
+                ) : (
+                  "即将开始"
+                )}
+              </span>
+            )}
             <span>·</span>
             <span>{new Date(item.createdAt).toLocaleString()}</span>
           </div>

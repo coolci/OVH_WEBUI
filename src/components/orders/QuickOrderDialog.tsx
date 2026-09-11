@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Bell, Loader2, ShoppingCart, Zap } from "lucide-react";
 import { toast } from "sonner";
 
@@ -15,6 +15,7 @@ import { useServers } from "@/hooks/use-servers";
 import { useMonitorList } from "@/hooks/use-monitor";
 import { MonitorSubscribeDialog } from "@/components/monitor/MonitorSubscribeDialog";
 import { useCreateQueueItem } from "@/hooks/use-queue";
+import { useSettings, RETRY_INTERVAL } from "@/hooks/use-settings";
 import { useDefaultAccount, useAccounts } from "@/hooks/use-accounts";
 import {
   useAvailability,
@@ -44,7 +45,7 @@ type QuickOrderDialogProps = {
   onOpenChange: (open: boolean) => void;
 };
 
-const DEFAULT_RETRY_INTERVAL = 60;
+const FALLBACK_RETRY_INTERVAL = RETRY_INTERVAL.defaultTask;
 const OPTION_GROUP_ORDER: OptionGroupKey[] = [
   "cpu",
   "memory",
@@ -69,7 +70,13 @@ export function QuickOrderDialog({ open, onOpenChange }: QuickOrderDialogProps) 
   const [planCode, setPlanCode] = useState("");
   const [selectedDCs, setSelectedDCs] = useState<string[]>([]);
   const [quantity, setQuantity] = useState("1");
-  const [retryInterval, setRetryInterval] = useState(String(DEFAULT_RETRY_INTERVAL));
+  const settingsQ = useSettings();
+  const cfgDefault = settingsQ.data?.defaultRetryInterval || FALLBACK_RETRY_INTERVAL;
+  const [retryInterval, setRetryInterval] = useState("");
+  const intervalTouchedRef = useRef(false);
+  useEffect(() => {
+    if (!intervalTouchedRef.current) setRetryInterval(String(cfgDefault));
+  }, [cfgDefault]);
   const [picked, setPicked] = useState<Partial<Record<OptionGroupKey, string>>>({});
   const [autoPay, setAutoPay] = useState(false);
 
@@ -122,7 +129,8 @@ export function QuickOrderDialog({ open, onOpenChange }: QuickOrderDialogProps) 
     setPlanCode("");
     setSelectedDCs([]);
     setQuantity("1");
-    setRetryInterval(String(DEFAULT_RETRY_INTERVAL));
+    intervalTouchedRef.current = false;
+    setRetryInterval(String(cfgDefault));
     setPicked({});
     setAutoPay(false);
     setAccountId(defaultAcc?.id || "");
@@ -188,7 +196,7 @@ export function QuickOrderDialog({ open, onOpenChange }: QuickOrderDialogProps) 
       planCode: planCode.trim(),
       datacenters: selectedDCs,
       quantity: qty,
-      retryInterval: Number(retryInterval) || DEFAULT_RETRY_INTERVAL,
+      retryInterval: Number(retryInterval) || cfgDefault,
       options: selectedValues,
       autoPay,
       force: isCustomPlan,
@@ -331,9 +339,14 @@ export function QuickOrderDialog({ open, onOpenChange }: QuickOrderDialogProps) 
               <label className="mb-1 block text-[11px] text-muted-foreground">重试间隔（秒）</label>
               <Input
                 type="number"
-                min={10}
+                min={RETRY_INTERVAL.min}
+                max={RETRY_INTERVAL.max}
                 value={retryInterval}
-                onChange={(e) => setRetryInterval(e.target.value)}
+                onChange={(e) => {
+                  intervalTouchedRef.current = true;
+                  setRetryInterval(e.target.value);
+                }}
+                placeholder={`默认 ${cfgDefault}`}
               />
             </div>
           </div>

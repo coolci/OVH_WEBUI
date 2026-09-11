@@ -21,12 +21,12 @@ const (
 	// RateLimitWindow / RateLimitMaxPerWindow 单 chat 的处理频率上限
 	RateLimitWindow       = 10 * time.Second
 	RateLimitMaxPerWindow = 8
-	// 文本 /buy 扇出上限（本地增量）
-	MaxQuantityPerOrder  = 3
+	// 文本 /buy 扇出上限（与 ParseOrderMessage 的 MaxOrderQuantity 对齐）
+	MaxQuantityPerOrder  = 20
 	MaxOrdersPerRequest  = 10
 	MaxConfigsWhenNoOpts = 1
 	MaxDCsWhenNoDC       = 1
-	MaxQueueLen          = 200
+	MaxQueueLen          = 500
 )
 
 // IsAuthorizedActor 判断这条 update 的发送者是否是配置里那个 chat。
@@ -202,7 +202,7 @@ func RecentSuccessDuplicate(state *app.State, planCode, datacenter string, optio
 		h := state.History[i]
 		if h.PlanCode == planCode && h.Datacenter == datacenter && h.Status == "success" &&
 			OptionsFingerprint(h.Options) == fp {
-			if t, err := time.Parse(time.RFC3339Nano, h.PurchaseTime); err == nil {
+			if t, ok := types.ParseTS(h.PurchaseTime); ok {
 				if nowTS-t.Unix() < 120 {
 					return true
 				}
@@ -223,7 +223,7 @@ func NewTelegramQueueItem(accountID, planCode, datacenter string, options []stri
 		Status:        "running",
 		CreatedAt:     now,
 		UpdatedAt:     now,
-		RetryInterval: 30,
+		RetryInterval: 0,
 		RetryCount:    0,
 		MaxRetries:    0,
 		LastCheckTime: 0,

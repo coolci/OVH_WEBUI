@@ -33,9 +33,6 @@ func enqueuePrepared(state *app.State, item types.QueueItem, requirePrice bool) 
 	if planCode == "" || datacenter == "" {
 		return OrderResult{Success: false, Message: "缺少 planCode 或 datacenter"}
 	}
-	if !CanEnqueue(state, 1) {
-		return OrderResult{Success: false, Message: fmt.Sprintf("队列已满（上限 %d），请清理后再试", MaxQueueLen)}
-	}
 	if HasActiveDuplicate(state, planCode, datacenter, options) {
 		return OrderResult{Success: false, Message: "已存在相同配置的购买任务，请勿重复点击"}
 	}
@@ -65,32 +62,94 @@ func enqueuePrepared(state *app.State, item types.QueueItem, requirePrice bool) 
 	if item.ID == "" {
 		item = NewTelegramQueueItem(accountID, planCode, datacenter, options)
 	}
-	state.QueueMu.Lock()
-	state.Queue = append(state.Queue, item)
-	state.QueueMu.Unlock()
-	if err := state.SaveQueue(); err != nil {
-		// 落盘失败回滚内存，避免只在内存里可执行、重启却丢失
-		state.QueueMu.Lock()
-		kept := state.Queue[:0]
-		for _, q := range state.Queue {
-			if q.ID != item.ID {
-				kept = append(kept, q)
-			}
-		}
-		state.Queue = kept
-		state.QueueMu.Unlock()
-		state.Logger.Error("Telegram 入队落盘失败: "+err.Error(), "telegram")
-		return OrderResult{Success: false, Message: "入队保存失败，请重试"}
+	if item.QuickOrder {
+		item.RetryInterval = types.ClampRetryInterval(item.RetryInterval, state.Config.QuickOrderRetryInterval())
+	} else {
+		item.RetryInterval = types.ClampRetryInterval(item.RetryInterval, state.Config.RetryInterval())
+	}
+	created, errMsg := appendAndSave(state, []types.QueueItem{item})
+	if errMsg != "" {
+		return OrderResult{Success: false, Message: errMsg}
 	}
 	state.Logger.Info(fmt.Sprintf("Telegram 受控入队: %s@%s account=%s opts=%v",
 		planCode, datacenter, accountID, options), "telegram")
+	ids := make([]string, 0, len(created))
+	for _, it := range created {
+		ids = append(ids, it.ID)
+	}
 	return OrderResult{
 		Success:       true,
 		Message:       fmt.Sprintf("已加入队列: %s @ %s", planCode, strings.ToUpper(datacenter)),
 		TotalOrders:   1,
-		CreatedOrders: 1,
-		ItemIDs:       []string{item.ID},
+		CreatedOrders: len(created),
+		ItemIDs:       ids,
 	}
+}
+
+// appendAndSave 在同一把 QueueMu 下做容量检查 + 活跃去重 + 追加,然后落盘;
+// 落盘失败回滚本次追加的条目。RecentSuccessDuplicate 在锁外先滤一遍(HistoryMu)。
+func appendAndSave(state *app.State, items []types.QueueItem) ([]types.QueueItem, string) {
+	if len(items) == 0 {
+		return nil, "没有可入队的任务"
+	}
+	filtered := make([]types.QueueItem, 0, len(items))
+	for _, it := range items {
+		if RecentSuccessDuplicate(state, it.PlanCode, it.Datacenter, it.Options) {
+			continue
+		}
+		filtered = append(filtered, it)
+	}
+	if len(filtered) == 0 {
+		return nil, "刚刚已成功下过同配置订单，请勿重复提交"
+	}
+
+	state.QueueMu.Lock()
+	keep := make([]types.QueueItem, 0, len(filtered))
+	for _, it := range filtered {
+		fp := OptionsFingerprint(it.Options)
+		dup := false
+		for _, q := range state.Queue {
+			if q.PlanCode == it.PlanCode && q.Datacenter == it.Datacenter &&
+				(q.Status == "running" || q.Status == "pending" || q.Status == "paused") &&
+				OptionsFingerprint(q.Options) == fp {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			keep = append(keep, it)
+		}
+	}
+	if len(keep) == 0 {
+		state.QueueMu.Unlock()
+		return nil, "已存在相同配置的购买任务，请勿重复提交"
+	}
+	if len(state.Queue)+len(keep) > MaxQueueLen {
+		n := len(keep)
+		state.QueueMu.Unlock()
+		return nil, fmt.Sprintf("队列容量不足（上限 %d），当前待添加 %d 个任务，请清理后再试", MaxQueueLen, n)
+	}
+	ids := make(map[string]struct{}, len(keep))
+	for _, it := range keep {
+		ids[it.ID] = struct{}{}
+	}
+	state.Queue = append(state.Queue, keep...)
+	state.QueueMu.Unlock()
+
+	if err := state.SaveQueue(); err != nil {
+		state.QueueMu.Lock()
+		keptQ := state.Queue[:0]
+		for _, q := range state.Queue {
+			if _, drop := ids[q.ID]; !drop {
+				keptQ = append(keptQ, q)
+			}
+		}
+		state.Queue = keptQ
+		state.QueueMu.Unlock()
+		state.Logger.Error("Telegram 入队落盘失败: "+err.Error(), "telegram")
+		return nil, "订单入队落盘失败，请重试"
+	}
+	return keep, ""
 }
 
 // EnqueueTelegram 带进度绑定 / 极速抢 参数的入队。
@@ -100,9 +159,6 @@ func EnqueueTelegram(state *app.State, item types.QueueItem, requirePrice bool) 
 	}
 	item.PlanCode = strings.TrimSpace(item.PlanCode)
 	item.Datacenter = strings.ToLower(strings.TrimSpace(item.Datacenter))
-	if item.QuickOrder && item.RetryInterval == 0 {
-		item.RetryInterval = 2
-	}
 	if item.QuickOrder && item.Priority == 0 {
 		item.Priority = 100
 	}
