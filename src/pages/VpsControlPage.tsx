@@ -2,7 +2,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Helmet } from "react-helmet-async";
 import { useEffect, useState } from "react";
 import {
-  Cloud, Power, PowerOff, RefreshCw, Monitor, KeyRound, HardDrive, Cpu, MemoryStick,
+  Cloud, Power, PowerOff, RefreshCw, Monitor, HardDrive, Cpu, MemoryStick,
   MapPin, Globe, CalendarClock, CalendarPlus, Repeat, Eye, EyeOff,
   AlertTriangle, ListTodo, Terminal, Settings, Zap,
 } from "lucide-react";
@@ -23,12 +23,12 @@ import {
 import { Input } from "@/components/ui/input";
 import {
   useOwnedVps, useVpsServiceInfo, useVpsIps, useVpsCurrentOS,
-  useVpsStart, useVpsStop, useVpsReboot, useVpsConsoleUrl, useVpsSetPassword,
+  useVpsStart, useVpsStop, useVpsReboot, useVpsConsoleUrl,
   useUpdateVpsRenewal, useChangeVpsContact,
   useTerminateVps, useConfirmTerminateVps, useUpdateVpsTerminationPolicy,
   useVpsEngagement, useVpsEngagementAvailable, useVpsEngagementRequest,
   useCreateVpsEngagementRequest, useDeleteVpsEngagementRequest, useUpdateVpsEngagementEndRule,
-  useVpsOptions, useVpsServiceStatus,
+  useVpsOptions,
   type OwnedVps,
 } from "@/hooks/use-vps-control";
 import { isUsEndpoint, regionLabel, regionLabelOf, endpointRegion } from "@/lib/ovh-regions";
@@ -224,7 +224,7 @@ function VpsOptionsPanel({ serviceName, region }: { serviceName: string; region:
                 {!manageable && opt.unsupportedReason && (
                   <p className="text-[11px] text-muted-foreground">
                     {opt.unsupportedReason}
-                    <span className="block mt-0.5">（该选项仍在计费和生效中，退订接口不受影响）</span>
+                    <span className="block mt-0.5">（该选项仍在计费和生效中；退订请到 OVH 控制台）</span>
                   </p>
                 )}
               </div>
@@ -232,50 +232,6 @@ function VpsOptionsPanel({ serviceName, region }: { serviceName: string; region:
           })}
         </div>
       )}
-    </div>
-  );
-}
-
-function VpsServiceStatusPanel({ serviceName, region }: { serviceName: string; region: string }) {
-  const q = useVpsServiceStatus(serviceName);
-  const data = q.data;
-  if (q.isPending) return <Skeleton className="h-12 rounded-2xl" />;
-  if (q.isError) return null;
-
-  if (data?.unsupported) {
-    return (
-      <div className="border border-border rounded-2xl p-3 bg-secondary/30 text-[11px] text-muted-foreground">
-        网络服务探测:{data.message || `${regionLabelOf(data.region) || region}没有这个 OVH 端点`}
-      </div>
-    );
-  }
-  if (data?.unauthorized) {
-    return (
-      <div className="border border-amber-500/40 bg-amber-500/5 rounded-2xl p-3 text-[11px] text-muted-foreground">
-        {data.message || "当前凭据没有读取端口探测状态的权限"}
-      </div>
-    );
-  }
-  const entries = Object.entries(data?.status || {});
-  if (entries.length === 0) return null;
-  return (
-    <div className="border border-border rounded-2xl overflow-hidden">
-      <div className="px-4 py-3 border-b border-border flex items-center gap-2">
-        <Terminal className="w-4 h-4 text-muted-foreground" />
-        <h3 className="text-sm font-semibold">网络服务探测</h3>
-        <span className="text-[11px] text-muted-foreground ml-auto">OVH 侧端口存活,与 VPS 电源状态无关</span>
-      </div>
-      <div className="px-4 py-3 flex flex-wrap gap-x-4 gap-y-2 text-[12px]">
-        {entries.map(([k, v]) => (
-          <span key={k} className="flex items-center gap-1.5">
-            {typeof v === "boolean" ? (
-              <StatusDot tone={v ? "success" : "danger"} size="xs" />
-            ) : null}
-            <span className="text-muted-foreground">{k}</span>
-            {typeof v !== "boolean" && <span className="font-mono">{String(v)}</span>}
-          </span>
-        ))}
-      </div>
     </div>
   );
 }
@@ -301,13 +257,11 @@ function VpsDetail({
   const stop = useVpsStop(server.serviceName);
   const reboot = useVpsReboot(server.serviceName);
   const console_ = useVpsConsoleUrl(server.serviceName);
-  const setPwd = useVpsSetPassword(server.serviceName);
   const terminate = useTerminateVps();
   const confirmTerm = useConfirmTerminateVps();
   const vpsTermPolicy = useUpdateVpsTerminationPolicy(server.serviceName);
 
   const [reinstallOpen, setReinstallOpen] = useState(false);
-  const [setPwdOpen, setSetPwdOpen] = useState(false);
   const [stopOpen, setStopOpen] = useState(false);
   const [terminateOpen, setTerminateOpen] = useState(false);
   const [termToken, setTermToken] = useState("");
@@ -383,15 +337,6 @@ function VpsDetail({
       }
     } catch (e: any) {
       toast.error(e?.response?.data?.error || "获取失败");
-    }
-  };
-  const handleSetPwd = async () => {
-    try {
-      await setPwd.mutateAsync();
-      toast.success("新密码已发送至邮箱");
-      setSetPwdOpen(false);
-    } catch (e: any) {
-      toast.error(e?.response?.data?.error || "重置失败");
     }
   };
   const handleTerminate = async () => {
@@ -495,8 +440,6 @@ function VpsDetail({
         </CardContent>
       </Card>
 
-      <VpsServiceStatusPanel serviceName={server.serviceName} region={region} />
-
       {/* 硬件规格 4 格卡片 (移动端 2x2, 桌面 4 列) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
         <InfoCard icon={<Cpu className="w-4 h-4 text-primary" />} label="vCore" value={String(server.vcore || "—")} />
@@ -561,23 +504,12 @@ function VpsDetail({
             </Button>
           </div>
 
-          {/* Tier 2: 常用运维 (移动端 2x2, 桌面 4 等分列) */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 border-t border-border/40">
+          {/* Tier 2: 常用运维 (3 等分列) */}
+          <div className="grid grid-cols-3 gap-2 pt-1 border-t border-border/40">
             <Button variant="outline" size="sm" onClick={() => setReinstallOpen(true)} className="h-9 text-xs font-normal border-border/70 justify-center">
               <HardDrive className="w-3.5 h-3.5 mr-1.5 text-muted-foreground" />
               重装系统
             </Button>
-            {!isUS ? (
-              <Button variant="outline" size="sm" onClick={() => setSetPwdOpen(true)} className="h-9 text-xs font-normal border-border/70 justify-center">
-                <KeyRound className="w-3.5 h-3.5 mr-1.5 text-muted-foreground" />
-                重置密码
-              </Button>
-            ) : (
-              <Button variant="outline" size="sm" disabled className="h-9 text-xs font-normal border-border/70 justify-center opacity-40">
-                <KeyRound className="w-3.5 h-3.5 mr-1.5 text-muted-foreground" />
-                密码(美区禁)
-              </Button>
-            )}
             <Button variant="outline" size="sm" onClick={() => setEngagementOpen(true)} className="h-9 text-xs font-normal border-border/70 justify-center">
               <CalendarPlus className="w-3.5 h-3.5 mr-1.5 text-muted-foreground" />
               合同期
@@ -784,25 +716,6 @@ function VpsDetail({
             <Button variant="outline" onClick={() => setStopOpen(false)}>取消</Button>
             <Button variant="destructive" onClick={handleStop} disabled={stop.isPending}>
               {stop.isPending ? "提交中…" : "确认关机"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* 重置密码确认 */}
-      <Dialog open={setPwdOpen} onOpenChange={setSetPwdOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>重置 root/admin 密码?</DialogTitle>
-            <DialogDescription>OVH 会生成新密码并发送至账户邮箱</DialogDescription>
-          </DialogHeader>
-          <p className="text-[12px] text-muted-foreground">
-            如果你设置过 SSH key 登录,可以不动密码;新密码会立即覆盖旧密码,继续登录需要等邮件。
-          </p>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setSetPwdOpen(false)}>取消</Button>
-            <Button onClick={handleSetPwd} disabled={setPwd.isPending}>
-              {setPwd.isPending ? "提交中…" : "确认重置"}
             </Button>
           </DialogFooter>
         </DialogContent>

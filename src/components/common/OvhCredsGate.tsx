@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { api, setActiveServerControlAccount } from "@/lib/http";
 import { OVH_SUBSIDIARIES } from "@/lib/ovh-subsidiaries";
+import { OvhTokenGuide } from "@/components/common/OvhTokenGuide";
 
 const PREFETCH_STALE = 2 * 60 * 60_000;
 
@@ -248,6 +249,8 @@ function AccountOverlay({ onSuccess }: { onSuccess: () => void }) {
               </code>
             </p>
           </Field>
+
+          <OvhTokenGuide endpoint={endpointForZone(form.zone || "IE")} />
 
           <Field label="APP KEY *">
             <PasswordInput value={form.appKey} onChange={(v) => set("appKey", v)} placeholder="xxxxxxxxxxxxxxxx" />

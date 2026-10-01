@@ -272,7 +272,14 @@ type OrderInfo struct {
 	Options    []string
 }
 
-// 格式: plancode [datacenter] [quantity] [options(逗号分隔)]
+// 格式: <planCode> [机房] [数量] [配置...]
+//
+// 除 planCode 必须打头外,后面的部分**位置无关**,按形状认:
+//
+//	@xxx    → 账户(任意位置,手机上很容易顺手打在末尾)
+//	纯数字   → 数量
+//	3~4 字母 → 机房(不区分大小写,统一转小写)
+//	其余     → 配置(addon planCode),逗号或空格分隔都认
 func ParseOrderMessage(text string) *OrderInfo {
 	text = strings.TrimSpace(text)
 	if text == "" {
@@ -286,80 +293,92 @@ func ParseOrderMessage(text string) *OrderInfo {
 		PlanCode: parts[0],
 		Quantity: 1,
 	}
-	remaining := []string{}
-	if len(parts) > 1 {
-		remaining = parts[1:]
-	}
-	// 先把 @账户 摘出来,它可以出现在任何位置 ——
-	// 手机上打字容易顺手打在末尾,而末尾正好是 options 的地盘。
-	// 摘早一点,下面的机房/数量/配置解析就完全不用知道它的存在。
-	kept := remaining[:0]
-	for _, p := range remaining {
-		if strings.HasPrefix(p, "@") && len(p) > 1 {
-			if result.AccountRef == "" {
-				result.AccountRef = strings.ToLower(p[1:])
-			}
-			continue
-		}
-		kept = append(kept, p)
-	}
-	remaining = kept
-	if len(remaining) == 0 {
+	if len(parts) == 1 {
 		return result
 	}
 
-	// 找包含逗号的部分 = options
-	optionsStart := -1
-	for i, p := range remaining {
-		if strings.Contains(p, ",") {
-			optionsStart = i
-			break
-		}
-	}
-	if optionsStart >= 0 {
-		optsText := strings.Join(remaining[optionsStart:], " ")
-		for _, o := range strings.Split(optsText, ",") {
-			o = strings.TrimSpace(o)
-			if o != "" {
-				result.Options = append(result.Options, o)
-			}
-		}
-		remaining = remaining[:optionsStart]
+	addOption := func(s string) {
+		// 逗号分隔和空格分隔都认,混用也认。
+		// 走 types.SplitList 是为了认全角逗号 —— 中文输入法默认打出来的是「，」,
+		// 只切半角的话 `ram-64g，softraid-2x960ssd` 会变成**一个**配置项,
+		// 匹配不上任何 addon,而且不报错:单照下,只是配置悄悄没了。
+		result.Options = append(result.Options, types.SplitList(s)...)
 	}
 
-	switch len(remaining) {
-	case 1:
-		p := remaining[0]
-		if n, ok := parsePositiveInt(p); ok {
+	qtySet := false
+	for _, p := range parts[1:] {
+		switch {
+		case strings.HasPrefix(p, "@"):
+			if len(p) > 1 && result.AccountRef == "" {
+				result.AccountRef = strings.ToLower(p[1:])
+			}
+		case !qtySet && isPositiveInt(p):
+			n, _ := parsePositiveInt(p)
 			result.Quantity = clampQuantity(n)
-		} else if len(p) >= 3 && len(p) <= 4 && isAlpha(p) {
+			qtySet = true
+		case result.Datacenter == "" && isDatacenterCode(p):
 			result.Datacenter = strings.ToLower(p)
-		}
-	case 2:
-		p1, p2 := remaining[0], remaining[1]
-		if len(p1) >= 3 && len(p1) <= 4 && isAlpha(p1) {
-			result.Datacenter = strings.ToLower(p1)
-			if n, ok := parsePositiveInt(p2); ok {
-				result.Quantity = clampQuantity(n)
-			}
-		} else if n, ok := parsePositiveInt(p1); ok {
-			result.Quantity = clampQuantity(n)
-			if len(p2) >= 3 && len(p2) <= 4 && isAlpha(p2) {
-				result.Datacenter = strings.ToLower(p2)
-			}
+		case isMalformedQuantity(p):
+			// 忽略 -1 / +2 / 3.5 这种畸形数量
+		default:
+			addOption(p)
 		}
 	}
 	return result
 }
 
+// isDatacenterCode 长得像机房码:3~4 个 ASCII 字母,不区分大小写。
+func isDatacenterCode(s string) bool {
+	if len(s) < 3 || len(s) > 4 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') {
+			return false
+		}
+	}
+	return true
+}
+
+// isPositiveInt 纯十进制 ASCII 数字
+func isPositiveInt(s string) bool {
+	_, ok := parsePositiveInt(s)
+	return ok
+}
+
+// isMalformedQuantity 带符号或带小数点的数字,比如 -1 / +2 / 3.5。
+func isMalformedQuantity(s string) bool {
+	if s == "" {
+		return false
+	}
+	signed := s[0] == '+' || s[0] == '-'
+	if signed {
+		s = s[1:]
+	}
+	if s == "" {
+		return false
+	}
+	dot := false
+	digits := false
+	for i := 0; i < len(s); i++ {
+		switch c := s[i]; {
+		case c >= '0' && c <= '9':
+			digits = true
+		case c == '.':
+			dot = true
+		default:
+			return false
+		}
+	}
+	return digits && (signed || dot)
+}
+
 // MaxOrderQuantity 一条聊天消息能指定的最大数量。
-// 没有上限时 "planCode 4000000000" 会让 order_processor 先把 40 亿个
-// QueueItem append 进一个切片 —— 进程当场 OOM 被杀。
-const MaxOrderQuantity = 20
+const MaxOrderQuantity = types.MaxOrderQuantity
 
 // MaxOrderFanout 一条消息最多创建多少个抢购任务。
-// 不指定机房时任务数 = 配置数 × 有货机房数 × 数量,很容易远超用户直觉。
-const MaxOrderFanout = 60
+const MaxOrderFanout = types.MaxOrderFanout
 
 // clampQuantity 把数量夹到 [1, MaxOrderQuantity]
 func clampQuantity(n int) int {

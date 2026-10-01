@@ -20,6 +20,10 @@ type BotCommand struct {
 var KnownCommands = map[string]string{
 	"start":    "显示帮助与可用命令",
 	"help":     "显示帮助与可用命令",
+	"watch":    "盯补货抢购: /watch <planCode> [dc...] [x数量]",
+	"w":        "watch 的别名",
+	"unwatch":  "取消盯补货: /unwatch <planCode>",
+	"uw":       "unwatch 的别名",
 	"stock":    "查询库存: /stock <planCode>",
 	"queue":    "加入队列: /queue <planCode> [dc] [qty] [options]",
 	"buy":      "快速下单: /buy <planCode> [dc] [qty] [options]",
@@ -84,6 +88,10 @@ func HelpMessage() string {
   └ 选定型号后点选机房
 • /buy <型号> <机房> [数量]
   └ 例: /buy 24ska01 gra 1 (有货秒冲 / 缺货排队)
+• /watch <型号> [机房...] [x数量]
+  └ 例: /watch 24ska01 gra x1 (盯补货直接抢 1 台，不带 x 仅通知)
+• /unwatch <型号>
+  └ 取消盯该型号补货
 
 📦 库存查询
 • /stock <型号>

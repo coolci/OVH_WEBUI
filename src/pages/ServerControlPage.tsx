@@ -1,6 +1,6 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Helmet } from "react-helmet-async";
-import { Terminal, Server, RefreshCw, Eye, EyeOff, CalendarClock, CalendarPlus, Repeat, Activity, Network, CalendarRange } from "lucide-react";
+import { Terminal, Server, RefreshCw, Eye, EyeOff, CalendarClock, CalendarPlus, Repeat, Activity, Network, CalendarRange, Undo2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
@@ -17,6 +17,7 @@ import {
   useServerServiceInfo,
   useServerMonitoring,
   useToggleMonitoring,
+  useRetraction,
   type OwnedServer,
 } from "@/hooks/use-server-control";
 import { useHideIp, maskSensitive } from "@/hooks/use-hide-ip";
@@ -34,6 +35,7 @@ import { AdvancedTab } from "@/components/server-control/AdvancedTab";
 import { NetworkSpecsDialog } from "@/components/server-control/NetworkSpecsDialog";
 import { RenewalDialog } from "@/components/server-control/RenewalDialog";
 import { ReinstallDialog } from "@/components/server-control/ReinstallDialog";
+import { RetractionDialog } from "@/components/server-control/RetractionDialog";
 import { EngagementDialog } from "@/components/server-control/EngagementDialog";
 import { toast } from "sonner";
 
@@ -253,7 +255,7 @@ function ServerSelector({
               <StatusDot tone={s.state === "ok" ? "success" : "warning"} size="xs" />
               <span className="font-semibold">{maskSensitive(displayName(s), hidden)}</span>
               <span className="text-[11px] text-muted-foreground font-sans ml-1">
-                {s.commercialRange} · {s.datacenter.toUpperCase()}
+                {s.commercialRange} · {(s.datacenter || "").toUpperCase()}
               </span>
             </div>
           </SelectItem>
@@ -361,10 +363,25 @@ function RenameDialog({
   );
 }
 
+/**
+ * 撤回期的悬停说明:把起止都写出来。
+ * 撤回期是从下单起算的,机器常常下单后几天才交付。
+ */
+function retractionWindowText(r: { orderDate?: string; retractionDate?: string }): string {
+  const fmt = (v?: string) => (v ? new Date(v).toLocaleString("zh-CN") : "");
+  const end = fmt(r.retractionDate);
+  const start = fmt(r.orderDate);
+  if (!end) return "在撤回期内";
+  if (!start) return `撤回期截止 ${end}（OVH 给的日期）`;
+  return `撤回期 ${start} → ${end}\n从下单起算，不是从服务器开通起算`;
+}
+
 function ServerTabs({ server }: { server: OwnedServer }) {
   const info = useServerServiceInfo(server.serviceName);
   const monitoring = useServerMonitoring(server.serviceName);
   const toggleMon = useToggleMonitoring();
+  const retraction = useRetraction(server.serviceName);
+  const [retractOpen, setRetractOpen] = useState(false);
   const [netSpecsOpen, setNetSpecsOpen] = useState(false);
   const [renewalOpen, setRenewalOpen] = useState(false);
   const [reinstallOpen, setReinstallOpen] = useState(false);
@@ -404,7 +421,7 @@ function ServerTabs({ server }: { server: OwnedServer }) {
               <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono flex-wrap">
                 <span>{maskSensitive(server.serviceName, hidden)}</span>
                 <span>·</span>
-                <span>{server.datacenter.toUpperCase()}</span>
+                <span>{(server.datacenter || "").toUpperCase()}</span>
                 <span>·</span>
                 <span>IP: {maskSensitive(server.ip, hidden)}</span>
               </div>
@@ -415,8 +432,20 @@ function ServerTabs({ server }: { server: OwnedServer }) {
             </Chip>
           </div>
 
-          {/* 第二行: 属性胶囊 (到期/开通/续费/OS) */}
+          {/* 第二行: 属性胶囊 (撤单/到期/开通/续费/OS) */}
           <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-border/50">
+            {retraction.data?.eligible && (
+              <button
+                type="button"
+                onClick={() => setRetractOpen(true)}
+                className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border border-warning/50 bg-warning/10 hover:bg-warning/20 text-warning cursor-pointer transition-colors text-[12px] shadow-sm font-medium"
+                title={retractionWindowText(retraction.data)}
+              >
+                <Undo2 className="w-3.5 h-3.5 text-warning" />
+                <span>可撤单:</span>
+                <span>还剩 {retraction.data.daysLeft ?? "?"} 天</span>
+              </button>
+            )}
             {info.data?.expiration && (
               <span className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border border-border bg-secondary/40 text-[12px]">
                 <CalendarClock className="w-3.5 h-3.5 text-muted-foreground" />
@@ -532,6 +561,16 @@ function ServerTabs({ server }: { server: OwnedServer }) {
         open={reinstallOpen}
         onOpenChange={setReinstallOpen}
       />
+
+      {retraction.data?.eligible && (
+        <RetractionDialog
+          serviceName={server.serviceName}
+          displayName={srvLabel}
+          info={retraction.data}
+          open={retractOpen}
+          onOpenChange={setRetractOpen}
+        />
+      )}
 
       <EngagementDialog
         serviceName={server.serviceName}

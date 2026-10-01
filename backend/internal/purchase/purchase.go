@@ -1140,3 +1140,25 @@ func isTaskCancelled(state *app.State, id string) bool {
 	return true
 }
 
+// BuildOrderSuccessMessage 抢购成功通知的正文。
+func BuildOrderSuccessMessage(item *types.QueueItem, orderID, managerURL string) string {
+	payNote := "⚠️ 订单尚未付款：请尽快打开订单链接完成付款,逾期未付订单会自动作废。\n" +
+		"(下单时已按惯例放弃 14 天撤销期,付款即开通)\n"
+	if item.AutoPay {
+		payNote = "💳 已请求用账户默认支付方式自动付款,请打开订单链接核对扣款是否成功。\n" +
+			"(下单时已按惯例放弃 14 天撤销期)\n"
+	}
+	linkURL := managerURL
+	if linkURL == "" {
+		linkURL = "请在 OVH 控制面板 → 账单 → 订单 中查看"
+	}
+	msg := fmt.Sprintf("🎉 OVH 服务器下单成功！\n\n服务器型号 (Plan Code): %s\n数据中心: %s\n订单 ID: %s\n订单链接: %s\n\n%s",
+		item.PlanCode, item.Datacenter, orderID, linkURL, payNote)
+	if len(item.Options) > 0 {
+		msg += "自定义配置: " + strings.Join(item.Options, ", ") + "\n"
+	}
+	msg += "\n抢购任务ID: " + item.ID
+	return msg
+}
+
+

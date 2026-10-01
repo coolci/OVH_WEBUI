@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { api } from "@/lib/http";
 import { qk } from "@/lib/query";
 
@@ -458,9 +459,15 @@ export interface DiskGroupDisk {
   unit: string;
   technology?: string;
   interface?: string;
+  /** OVH dedicated.server.DiskTypeEnum: NVMe / SSD / SAS / SATA / Unknown */
+  diskType?: string;
 }
 export interface DiskGroup {
+  id?: number;
   raidController?: string;
+  /** 区分 SSD 和机械盘的唯一依据 —— 混合盘靠它决定系统装哪一组 */
+  diskType?: string;
+  description?: string;
   disks: DiskGroupDisk[];
 }
 
@@ -1013,3 +1020,103 @@ export function useRebootServer() {
     },
   });
 }
+
+// ───────────────────────────────── 14 天撤单 & 救援模式 ─────────────────────────────────
+
+export interface RetractionInfo {
+  eligible: boolean;
+  orderId?: number;
+  orderDate?: string;
+  retractionDate?: string;
+  hoursLeft?: number;
+  reasons?: { value: string; label: string }[];
+}
+
+export function useRetraction(serviceName: string | null) {
+  return useQuery<RetractionInfo>({
+    queryKey: ["server-control", "retraction", serviceName],
+    queryFn: async () =>
+      (await api.get<RetractionInfo>(`/server-control/${encodeURIComponent(serviceName!)}/retraction`)).data,
+    enabled: !!serviceName,
+    staleTime: 5 * 60_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+}
+
+export function useRequestRetraction(serviceName: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: { reason: string; comment: string }) =>
+      (
+        await api.post(`/server-control/${encodeURIComponent(serviceName)}/retraction`, {
+          ...p,
+          confirm: true,
+        })
+      ).data,
+    onSuccess: (d: any) => {
+      qc.invalidateQueries({ queryKey: ["server-control", "retraction"] });
+      qc.invalidateQueries({ queryKey: ["server-control", "list"] });
+      toast.success(d?.message || "撤单申请已提交");
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.error || "撤单申请失败"),
+  });
+}
+
+export interface RescueBoot {
+  bootId: number;
+  bootType?: string;
+  kernel?: string;
+  description?: string;
+}
+
+export interface RescueStatus {
+  inRescue: boolean;
+  currentBoot: number;
+  rescueMail?: string;
+  boots: RescueBoot[];
+}
+
+export function useRescueStatus(serviceName: string | null, enabled = true) {
+  return useQuery({
+    queryKey: ["server-control", "rescue", serviceName || ""],
+    queryFn: async (): Promise<RescueStatus> => {
+      const d = (await api.get(`/server-control/${serviceName}/rescue`)).data;
+      return {
+        inRescue: d?.inRescue === true,
+        currentBoot: Number(d?.currentBoot) || 0,
+        rescueMail: d?.rescueMail || "",
+        boots: Array.isArray(d?.boots) ? d.boots : [],
+      };
+    },
+    enabled: !!serviceName && enabled,
+    staleTime: 30_000,
+  });
+}
+
+export function useEnterRescue(serviceName: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (v: { email?: string; sshKey?: string; bootId?: number }) =>
+      (await api.post(`/server-control/${serviceName}/rescue`, { ...v, confirm: true })).data,
+    onSuccess: (d: any) => {
+      toast.success(d?.message || "已切到救援模式并重启");
+      qc.invalidateQueries({ queryKey: ["server-control", "rescue", serviceName] });
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.error || "进入救援模式失败"),
+  });
+}
+
+export function useExitRescue(serviceName: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () =>
+      (await api.post(`/server-control/${serviceName}/rescue/exit`, { confirm: true })).data,
+    onSuccess: (d: any) => {
+      toast.success(d?.message || "已切回硬盘启动并重启");
+      qc.invalidateQueries({ queryKey: ["server-control", "rescue", serviceName] });
+    },
+    onError: (e: any) => toast.error(e?.response?.data?.error || "退出救援模式失败"),
+  });
+}
+

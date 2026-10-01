@@ -21,10 +21,14 @@ func dispatchTelegramCommand(state *app.State, mon *monitor.Monitor, cmd *telegr
 	switch cmd.Name {
 	case "start", "help":
 		return telegram.HelpMessage()
+	case "watch", "w":
+		return watchText(state, mon, cmd.Args)
+	case "unwatch", "uw":
+		return unwatchText(state, mon, cmd.Args)
 	case "stock":
 		return cmdStock(state, cmd.Args)
 	case "queue", "buy":
-		return cmdBuyOrQueue(state, cmd.Args, cmd.Name)
+		return cmdBuyOrQueue(state, mon, cmd.Args, cmd.Name)
 	case "tasks":
 		return "📋 请在与 Bot 的私聊或群内发送 /tasks 即可直接交互管理抢购任务。"
 	case "accounts":
@@ -161,14 +165,14 @@ func startTelegramOrder(state *app.State, mon *monitor.Monitor, chatID interface
 	return false
 }
 
-func cmdBuyOrQueue(state *app.State, args []string, cmdName string) string {
+func cmdBuyOrQueue(state *app.State, mon *monitor.Monitor, args []string, cmdName string) string {
 	if len(args) < 1 {
 		return "用法: /" + cmdName + " <planCode> [datacenter] [quantity] [options]\n例: /" + cmdName + " 24ska01 gra"
 	}
-	return cmdBuyOrQueueInfo(state, telegram.ParseOrderArgs(args), cmdName)
+	return cmdBuyOrQueueInfo(state, mon, telegram.ParseOrderArgs(args), cmdName)
 }
 
-func cmdBuyOrQueueInfo(state *app.State, info *telegram.OrderInfo, cmdName string) string {
+func cmdBuyOrQueueInfo(state *app.State, mon *monitor.Monitor, info *telegram.OrderInfo, cmdName string) string {
 	if info == nil || info.PlanCode == "" {
 		return "❌ 无法解析参数\n用法: /" + cmdName + " <planCode> [datacenter] [quantity] [options]"
 	}
@@ -181,14 +185,14 @@ func cmdBuyOrQueueInfo(state *app.State, info *telegram.OrderInfo, cmdName strin
 		cmdName, info.PlanCode, info.Datacenter, info.Quantity, info.Options, info.AccountRef), "telegram")
 
 	if info.AccountRef != "" {
-		accs, err := resolveAccountRef(state, nil, info.AccountRef, info.PlanCode)
+		accs, err := resolveAccountRef(state, mon, info.AccountRef, info.PlanCode)
 		if err != "" {
 			return "❌ " + err
 		}
 		return runOrder(state, info, accs)
 	}
 
-	resolved := resolveOrderAccount(state, nil, info.PlanCode)
+	resolved := resolveOrderAccount(state, mon, info.PlanCode)
 	if resolved.Reason != "" {
 		return "❌ " + resolved.Reason
 	}
@@ -207,8 +211,9 @@ func cmdBuyOrQueueInfo(state *app.State, info *telegram.OrderInfo, cmdName strin
 		if cmdName == "buy" {
 			title = "⚡ 快速下单已入队"
 		}
-		return fmt.Sprintf("%s\n\n📦 型号: %s\n📍 机房: %s\n🔢 数量: %d\n⚙️ 配置: %s\n👤 账户: %s\n⏱ 重试间隔: %d 秒\n\n已成功创建 %d/%d 个抢购任务，将按「设置 → 抢购参数」的间隔重试。",
-			title, info.PlanCode, dcText, info.Quantity, optsText, telegram.AccountLabel(acc), state.Config.RetryInterval(), result.CreatedOrders, result.TotalOrders)
+		accExplain := explainAccountChoice(resolved, info.PlanCode)
+		return fmt.Sprintf("%s\n\n📦 型号: %s\n📍 机房: %s\n🔢 数量: %d\n⚙️ 配置: %s\n%s\n⏱ 重试间隔: %d 秒\n\n已成功创建 %d/%d 个抢购任务，将按「设置 → 抢购参数」的间隔重试。",
+			title, info.PlanCode, dcText, info.Quantity, optsText, accExplain, state.Config.RetryInterval(), result.CreatedOrders, result.TotalOrders)
 	}
 	return "❌ 任务创建失败\n\n" + result.Message
 }
@@ -553,7 +558,7 @@ func handleTelegramText(state *app.State, mon *monitor.Monitor, text string, cha
 			if startTelegramOrder(state, mon, chatID, cmd.Name, info) {
 				return
 			}
-			telegram.SendReply(state, chatID, cmdBuyOrQueueInfo(state, info, cmd.Name), int64(messageID))
+			telegram.SendReply(state, chatID, cmdBuyOrQueueInfo(state, mon, info, cmd.Name), int64(messageID))
 			return
 		}
 		reply := dispatchTelegramCommand(state, mon, cmd)
@@ -630,8 +635,9 @@ func handleTelegramText(state *app.State, mon *monitor.Monitor, text string, cha
 		if len(orderInfo.Options) > 0 {
 			optsText = strings.Join(orderInfo.Options, ", ")
 		}
-		reply = fmt.Sprintf("📥 已成功创建 %d/%d 个抢购任务\n\n📦 型号: %s\n📍 机房: %s\n🔢 数量: %d\n⚙️ 配置: %s\n👤 账户: %s\n⏱ 重试间隔: %d 秒\n\n将按「设置 → 抢购参数」的间隔重试。锁单成功≠已付款。",
-			result.CreatedOrders, result.TotalOrders, orderInfo.PlanCode, dcText, telegram.ClampQuantity(orderInfo.Quantity), optsText, telegram.AccountLabel(acc), state.Config.RetryInterval())
+		accExplain := explainAccountChoice(resolved, orderInfo.PlanCode)
+		reply = fmt.Sprintf("📥 已成功创建 %d/%d 个抢购任务\n\n📦 型号: %s\n📍 机房: %s\n🔢 数量: %d\n⚙️ 配置: %s\n%s\n⏱ 重试间隔: %d 秒\n\n将按「设置 → 抢购参数」的间隔重试。锁单成功≠已付款。",
+			result.CreatedOrders, result.TotalOrders, orderInfo.PlanCode, dcText, telegram.ClampQuantity(orderInfo.Quantity), optsText, accExplain, state.Config.RetryInterval())
 	} else {
 		reply = "❌ 任务创建失败\n\n" + result.Message
 	}

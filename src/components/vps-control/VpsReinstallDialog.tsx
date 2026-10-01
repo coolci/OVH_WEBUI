@@ -26,7 +26,6 @@ export function VpsReinstallDialog({
   const reinstall = useReinstallVps(serviceName);
 
   const [templateId, setTemplateId] = useState<number | string | null>(null);
-  const [language, setLanguage] = useState<string>("en");
   const [doNotSendPassword, setDoNotSendPassword] = useState(false);
   const [sshKeyNames, setSshKeyNames] = useState<string>(""); // 逗号分隔
   const [confirmName, setConfirmName] = useState("");
@@ -36,17 +35,13 @@ export function VpsReinstallDialog({
     [templates.data, templateId],
   );
 
-  // 切模板时同步语言到该模板默认语言。templateId 可能是 number(EU) 或 string(US imageId),
+  // 切模板时 templateId 可能是 number(EU) 或 string(US imageId),
   // Select 的 value 只能是 string,这里按需 cast
   const handleTemplateChange = (v: string) => {
     // 尝试转 number,纯数字则按 EU long 处理,否则当 US imageId 字符串
     const asNum = Number(v);
     const id: number | string = !Number.isNaN(asNum) && String(asNum) === v ? asNum : v;
     setTemplateId(id);
-    const tpl = (templates.data || []).find((t) => String(t.id) === v);
-    if (tpl) {
-      setLanguage(tpl.locale || tpl.availableLanguage?.[0] || "en");
-    }
   };
 
   const handleSubmit = async () => {
@@ -65,7 +60,6 @@ export function VpsReinstallDialog({
     try {
       await reinstall.mutateAsync({
         templateId,
-        language,
         sshKey: sshKey.length > 0 ? sshKey : undefined,
         doNotSendPassword,
       });
@@ -139,32 +133,16 @@ export function VpsReinstallDialog({
                 </SelectContent>
               </Select>
             )}
-            {selected && (
+            {selected && (selected.locale || (selected.availableLanguage || []).length > 0) && (
               <p className="text-[11px] text-muted-foreground mt-1.5">
-                模板 ID: {selected.id} · 默认语言: {selected.locale} · 支持{" "}
-                {(selected.availableLanguage || []).length} 种语言
+                模板 ID: {selected.id}
+                {selected.locale ? ` · 默认语言: ${selected.locale}` : ""}
+                {(selected.availableLanguage || []).length > 0
+                  ? ` · 支持 ${selected.availableLanguage.length} 种语言`
+                  : ""}
               </p>
             )}
           </div>
-
-          {/* 语言 */}
-          {selected && selected.availableLanguage && selected.availableLanguage.length > 0 && (
-            <div>
-              <label className="text-[12px] font-semibold block mb-1.5">语言</label>
-              <Select value={language} onValueChange={setLanguage}>
-                <SelectTrigger className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {selected.availableLanguage.map((l) => (
-                    <SelectItem key={l} value={l}>
-                      {l}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
 
           {/* SSH key */}
           <div>

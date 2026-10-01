@@ -286,10 +286,8 @@ export function useReinstallVps(svc: string) {
   return useMutation({
     mutationFn: async (vars: {
       templateId: number | string;
-      language?: string;
       sshKey?: string[];
       doNotSendPassword?: boolean;
-      softwareId?: number[];
     }) => (await api.post(`/vps-control/${svc}/reinstall`, vars)).data,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.vpsControl.tasks(svc) });

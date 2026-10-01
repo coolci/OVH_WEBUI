@@ -82,7 +82,7 @@ export function OverviewTab({ server }: { server: OwnedServer }) {
         <InfoCard icon={<Cpu className="w-4 h-4" />} label="处理器" value={cpuText} loading={hw.isPending} />
         <InfoCard icon={<MemoryStick className="w-4 h-4" />} label="内存" value={memText} loading={hw.isPending} />
         <InfoCard icon={<HardDrive className="w-4 h-4" />} label="磁盘" value={diskText} loading={hw.isPending} />
-        <InfoCard icon={<MapPin className="w-4 h-4" />} label="数据中心" value={server.datacenter.toUpperCase()} />
+        <InfoCard icon={<MapPin className="w-4 h-4" />} label="数据中心" value={(server.datacenter || "").toUpperCase()} />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">

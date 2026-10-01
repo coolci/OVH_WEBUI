@@ -19,14 +19,20 @@ import (
 
 // accountInput POST/PUT body
 type accountInput struct {
-	Name        string  `json:"name"`
-	Endpoint    string  `json:"endpoint"` // 可空,会按 zone 推断
-	Zone        string  `json:"zone"`
-	AppKey      string  `json:"appKey"`
-	AppSecret   string  `json:"appSecret"`
-	ConsumerKey string  `json:"consumerKey"`
-	IAM         string  `json:"iam"` // 可空,会自动生成 go-ovh-<zone>
-	SetDefault  bool    `json:"setDefault"`
+	Name        string `json:"name"`
+	Endpoint    string `json:"endpoint"` // 可空,会按 zone 推断
+	Zone        string `json:"zone"`
+	AppKey      string `json:"appKey"`
+	AppSecret   string `json:"appSecret"`
+	ConsumerKey string `json:"consumerKey"`
+	IAM         string `json:"iam"` // 可空,会自动生成 go-ovh-<zone>
+	SetDefault  bool   `json:"setDefault"`
+
+	// ProxyURL / Fingerprint 用指针,为了把"没传"和"传了空串"分开。
+	//
+	// 别的字段用"空 = 保留原值"的约定,但那样代理就**永远清不掉** ——
+	// 用户想从"走代理"改回"直连",发空串会被当成没传。
+	// nil = 不改，"" = 清掉（改回直连），非空 = 换成这个。
 	ProxyURL    *string `json:"proxyUrl"`
 	Fingerprint *string `json:"fingerprint"`
 }
@@ -113,6 +119,7 @@ func (in *accountInput) validate() string {
 
 // ── handlers ───────────────────────────────────────────────────────────────
 
+// ListAccounts GET /api/accounts
 // maskCred 把凭据打成掩码。只保留首尾各 3 位,够用户认出"这是哪一把",
 // 又不足以拿去用。
 func maskCred(v string) string {
@@ -126,6 +133,16 @@ func maskCred(v string) string {
 }
 
 // sanitizeAccount 去掉明文凭据,换成掩码。
+//
+// 为什么必须这么做:GET /api/accounts 以前直接下发解密后的 AppKey / AppSecret /
+// ConsumerKey 明文。配上「API_SECRET_KEY 未设时默认 123456」和当时的
+// CORS AllowAllOrigins,构成一条完整的窃取链 —— 用户开着控制台时访问任意网页,
+// 那个页面只要 fetch('http://127.0.0.1:19998/api/accounts',
+// {headers:{'X-API-Key':'123456'}}) 就能读走全部 OVH 凭据,拿去下单/重装/删机器。
+// 「只监听本地」挡不住这条路,浏览器本身就是攻击载体。
+//
+// 前端要明文只是为了编辑时回填输入框 —— 那个需求用「留空 = 保持原值」满足即可
+// (UpdateAccount 本来就是这个语义),凭据没有任何理由离开后端。
 func sanitizeAccount(a types.OVHAccount) types.OVHAccount {
 	a.AppKey = maskCred(a.AppKey)
 	a.AppSecret = maskCred(a.AppSecret)
@@ -136,7 +153,6 @@ func sanitizeAccount(a types.OVHAccount) types.OVHAccount {
 	return a
 }
 
-// ListAccounts GET /api/accounts
 func ListAccounts(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		accs, err := state.DB.ListAccounts()
@@ -422,11 +438,33 @@ func SetMonitorRef(m *monitor.Monitor) { monitorRef = m }
 func reloadAfterAccountDelete(state *app.State, accountID string) {
 	if items, err := state.DB.ListQueue(); err == nil {
 		state.QueueMu.Lock()
+		// 被级联删掉的任务里,可能有正跑在 PurchaseServer 中段的。
+		// 光用新列表覆盖内存,那些协程收不到任何信号:
+		// 队列处理器每轮是拿 state.Queue 的**快照**去复核"还在不在队列里"的,
+		// 而它们已经不在快照里了 —— 那条复核永远轮不到它们。
+		// 结果是协程拿着已删账户的凭据把整条建车链路跑完,一路 401/403。
+		// 删单、清空队列、TG /cancel 三个入口都调了 MarkTaskDeleted,
+		// 只有这里漏了。MarkTaskDeleted 会 cancel 它们的 ctx,
+		// 正在进行的 OVH 调用当场中断。
+		alive := make(map[string]struct{}, len(items))
+		for _, it := range items {
+			alive[it.ID] = struct{}{}
+		}
+		gone := []string{}
+		for _, it := range state.Queue {
+			if _, ok := alive[it.ID]; !ok {
+				gone = append(gone, it.ID)
+			}
+		}
 		state.Queue = items
 		if state.Queue == nil {
 			state.Queue = []types.QueueItem{}
 		}
 		state.QueueMu.Unlock()
+		// 出锁再标记:MarkTaskDeleted 会同步调 cancel,不该占着 QueueMu
+		for _, id := range gone {
+			state.MarkTaskDeleted(id)
+		}
 	}
 	if items, err := state.DB.ListHistory(); err == nil {
 		state.HistoryMu.Lock()

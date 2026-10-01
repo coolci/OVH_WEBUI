@@ -14,6 +14,7 @@ import (
 	ovhsdk "github.com/ovh/go-ovh/ovh"
 
 	"github.com/ovh-webui/server/internal/app"
+	"github.com/ovh-webui/server/internal/ovh"
 )
 
 // netOVHStatusCode 取 OVH 返回的 HTTP 状态码；不是 OVH API 错误(DNS/超时等传输层错误)时返回 0。
@@ -62,21 +63,8 @@ func normalizeMRTGQuery(c *gin.Context) (period string, trafficType string, err 
 	return period, trafficType, nil
 }
 
-// legacyMRTGFallback 打 /dedicated/server/{svc}/mrtg。
-// ⚠️ 该端点在 EU / US / CA 三区 schema 里都存在且都标了 DEPRECATED，官方 replacement 正是
-// /dedicated/server/{svc}/networkInterfaceController(+/{mac}/mrtg)——那两条也是三区齐全。
-// 即三区在流量图这条链路上没有能力差异，不需要区域门控；仅作兜底，随时可能被 OVH 下线，
-// 所以调用方必须在响应里把 deprecated 标出来。
-func legacyMRTGFallback(client *ovhsdk.Client, svc, period, trafficType string) ([]map[string]interface{}, error) {
-	q := url.Values{}
-	q.Set("period", period)
-	q.Set("type", trafficType)
-	var data []map[string]interface{}
-	if err := client.Get("/dedicated/server/"+svc+"/mrtg?"+q.Encode(), &data); err != nil {
-		return nil, err
-	}
-	return data, nil
-}
+// (旧版 legacyMRTGFallback 已删:它打的 /dedicated/server/{svc}/mrtg 三区 DEPRECATED,
+//  按约定废弃端点不再调用 —— 新端点拿不到网卡时如实报错/报空,不静默兜底。)
 
 // perNICMRTG 按 schema 推荐路径逐张网卡取流量图：/networkInterfaceController/{mac}/mrtg。
 func perNICMRTG(client *ovhsdk.Client, svc string, macs []string, period, trafficType string) []gin.H {
@@ -146,7 +134,7 @@ func GetNetworkInterfaces(state *app.State) gin.HandlerFunc {
 				return
 			}
 			state.Logger.Error("[网卡] 获取网卡列表失败: "+err.Error(), "server_control")
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		// 并发拉每张网卡详情。用带 error 的版本:失败原因要原样带给前端,
@@ -203,38 +191,28 @@ func GetMRTGData(state *app.State) gin.HandlerFunc {
 		}
 		period, trafficType, qErr := normalizeMRTGQuery(c)
 		if qErr != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": qErr.Error()})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": ovh.Explain(qErr)})
 			return
 		}
 		state.Logger.Info(fmt.Sprintf("[MRTG] 获取流量数据: %s - %s - %s", svc, period, trafficType), "server_control")
 
 		var macs []string
 		listErr := client.Get("/dedicated/server/"+svc+"/networkInterfaceController", &macs)
-		// networkInterfaceController 是 BETA 端点：既可能报错，也可能 200 回空数组。
-		// 两种情况都得回落到旧端点，否则用户拿到的是一张没有任何提示的空流量图，
-		// 分不清「本来就没数据」还是「接口坏了」。
-		if listErr != nil || len(macs) == 0 {
-			reason := "网卡列表为空"
-			if listErr != nil {
-				reason = listErr.Error()
-			}
-			state.Logger.Warn("[MRTG] "+reason+"，回落到已废弃(DEPRECATED)的 /dedicated/server/{svc}/mrtg", "server_control")
-			data, fbErr := legacyMRTGFallback(client, svc, period, trafficType)
-			if fbErr != nil {
-				ovhRespondError(c, fbErr, "新旧API均失败: "+reason)
-				return
-			}
-			// 回落数据必须包成 interfaces:[{mac,data}]：前端 use-mrtg.ts 的 MrtgResponse 只读
-			// interfaces，放在顶层 data 里等于回落了个寂寞（用户看到的还是空图）。
-			// mac 留空表示「这条曲线来自旧端点，OVH 没告诉我们是哪张网卡」，
-			// 与同文件 GetTrafficStatistics 的 statistics:[{mac:"",data}] 包法保持一致。
+		// 旧端点 /dedicated/server/{svc}/mrtg 三区 DEPRECATED(deletion 2018 年就到期),
+		// 按约定不再回落。网卡列表拿不到就如实报错 —— 空流量图配一条明确错误,
+		// 比静默画一张空图或打一条废弃接口强。
+		if listErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"error":   "网卡列表读取失败,无法取流量图: " + ovh.Explain(listErr),
+			})
+			return
+		}
+		if len(macs) == 0 {
 			c.JSON(http.StatusOK, gin.H{
-				"success":    true,
-				"period":     period,
-				"type":       trafficType,
-				"interfaces": []gin.H{{"mac": "", "data": data}},
-				"deprecated": true,
-				"message":    "网卡列表接口无数据，已回落到 OVH 已废弃的旧版流量接口（该接口随时可能被 OVH 下线）",
+				"success": true, "period": period, "type": trafficType,
+				"interfaces": []gin.H{},
+				"message":    "OVH 未返回任何网卡(可能是极老机型未接入 networkInterfaceController),因此没有流量图数据",
 			})
 			return
 		}
@@ -288,7 +266,7 @@ func ConfigureOLAAggregation(state *app.State) gin.HandlerFunc {
 			"name":                     body.Name,
 			"virtualNetworkInterfaces": body.VirtualNetworkInterfaces,
 		}, &result); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		state.Logger.Info(fmt.Sprintf("[OLA] 网络聚合配置任务已创建: Task#%v", result["taskId"]), "server_control")
@@ -318,7 +296,7 @@ func ResetOLAConfiguration(state *app.State) gin.HandlerFunc {
 		if err := client.Post("/dedicated/server/"+svc+"/ola/reset", map[string]interface{}{
 			"virtualNetworkInterface": body.VirtualNetworkInterface,
 		}, &result); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		state.Logger.Info(fmt.Sprintf("[OLA] 网络接口重置任务已创建: Task#%v", result["taskId"]), "server_control")
@@ -361,7 +339,7 @@ func OLAGroup(state *app.State) gin.HandlerFunc {
 			"name":                     body.Name,
 			"virtualNetworkInterfaces": body.VirtualNetworkInterfaces,
 		}, &result); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		state.Logger.Info(fmt.Sprintf("创建OLA组成功: %s, Task#%v", svc, result["taskId"]), "server_control")
@@ -397,7 +375,7 @@ func OLAUngroup(state *app.State) gin.HandlerFunc {
 		if err := client.Post("/dedicated/server/"+svc+"/ola/reset", map[string]interface{}{
 			"virtualNetworkInterface": body.VirtualNetworkInterface,
 		}, &task); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		tasks := []map[string]interface{}{task}
@@ -448,7 +426,7 @@ func GetIPMIAccessTypes(state *app.State) gin.HandlerFunc {
 				return
 			}
 			state.Logger.Error("[IPMI] 查询支持的控制台类型失败: "+err.Error(), "server_control")
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		supportedList := []string{}
@@ -491,7 +469,7 @@ func GetIPMIConsole(state *app.State) gin.HandlerFunc {
 		state.Logger.Info("[IPMI] 获取服务器 "+svc+" IPMI信息", "server_control")
 		var ipmi map[string]interface{}
 		if err := client.Get("/dedicated/server/"+svc+"/features/ipmi", &ipmi); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		// dedicated.server.Ipmi.activated 是必填 boolean，但 schema 没说清它是「IPMI 功能可用」
@@ -605,7 +583,7 @@ func GetIPMIConsole(state *app.State) gin.HandlerFunc {
 			// 之前 Go 静默 continue 会掩盖 OVH 真错误，最终用 "超时" 假面具吞掉
 			if err := client.Get(fmt.Sprintf("/dedicated/server/%s/task/%v", svc, taskID), &ts); err != nil {
 				state.Logger.Error(fmt.Sprintf("[IPMI] 查询任务 %v 状态失败: %s", taskID, err.Error()), "server_control")
-				c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+				c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 				return
 			}
 			status, _ := ts["status"].(string)
@@ -627,7 +605,7 @@ func GetIPMIConsole(state *app.State) gin.HandlerFunc {
 		// 这一步的错误以前被 `_ =` 吞掉，前端只能拿到 success:true + console:null，日志里也查不到原因
 		if err := client.Get("/dedicated/server/"+svc+"/features/ipmi/access?type="+url.QueryEscape(accessType), &consoleAccess); err != nil {
 			state.Logger.Error("[IPMI] 获取控制台地址失败: "+err.Error(), "server_control")
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "获取控制台地址失败: " + err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "获取控制台地址失败: " + ovh.Explain(err)})
 			return
 		}
 		// dedicated.server.IpmiAccessValue.value 是「可空」string：任务 done 了 OVH 也可能还没生成地址
@@ -669,35 +647,27 @@ func GetTrafficStatistics(state *app.State) gin.HandlerFunc {
 		// 这里靠 normalizeMRTGQuery 统一收敛到合法枚举（默认 daily）。
 		period, typeParam, qErr := normalizeMRTGQuery(c)
 		if qErr != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": qErr.Error()})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": ovh.Explain(qErr)})
 			return
 		}
 		state.Logger.Info(fmt.Sprintf("[Stats] 获取服务器 %s 流量统计: %s - %s", svc, period, typeParam), "server_control")
 
 		var macs []string
 		listErr := client.Get("/dedicated/server/"+svc+"/networkInterfaceController", &macs)
-		if listErr != nil || len(macs) == 0 {
-			reason := "网卡列表为空"
-			if listErr != nil {
-				reason = listErr.Error()
-			}
-			state.Logger.Warn("[Stats] "+reason+"，回落到已废弃(DEPRECATED)的 /dedicated/server/{svc}/mrtg", "server_control")
-			data, fbErr := legacyMRTGFallback(client, svc, period, typeParam)
-			if fbErr != nil {
-				state.Logger.Error("[Stats] 新旧流量接口均失败: "+reason+" / "+fbErr.Error(), "server_control")
-				c.JSON(http.StatusInternalServerError, gin.H{
-					"success": false,
-					"error":   "获取流量统计失败: " + fbErr.Error(),
-				})
-				return
-			}
+		// 同 GetMRTGData:不再回落废弃的 /mrtg,拿不到网卡就如实说
+		if listErr != nil {
+			state.Logger.Error("[Stats] 网卡列表读取失败: "+listErr.Error(), "server_control")
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"error":   "网卡列表读取失败,无法取流量统计: " + ovh.Explain(listErr),
+			})
+			return
+		}
+		if len(macs) == 0 {
 			c.JSON(http.StatusOK, gin.H{
-				"success":    true,
-				"statistics": []gin.H{{"mac": "", "data": data}},
-				"period":     period,
-				"type":       typeParam,
-				"deprecated": true,
-				"message":    "网卡列表接口无数据，已回落到 OVH 已废弃的旧版流量接口（该接口随时可能被 OVH 下线）",
+				"success": true, "period": period, "type": typeParam,
+				"statistics": []gin.H{},
+				"message":    "OVH 未返回任何网卡(可能是极老机型未接入 networkInterfaceController),因此没有流量统计数据",
 			})
 			return
 		}
@@ -725,7 +695,7 @@ func GetNetworkInterfaceStats(state *app.State) gin.HandlerFunc {
 		state.Logger.Info("[Network] 获取服务器 "+svc+" 网络接口信息", "server_control")
 		var macs []string
 		if err := client.Get("/dedicated/server/"+svc+"/networkInterfaceController", &macs); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		// 并发拉每张网卡详情
