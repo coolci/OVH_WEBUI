@@ -43,6 +43,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 type QuickOrderDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  initialPlanCode?: string;
 };
 
 const FALLBACK_RETRY_INTERVAL = RETRY_INTERVAL.defaultTask;
@@ -57,7 +58,7 @@ const OPTION_GROUP_ORDER: OptionGroupKey[] = [
 ];
 
 /** 侧栏快速下单：与服务器列表「抢购 / 监控」同一套机房、选配、入队逻辑。 */
-export function QuickOrderDialog({ open, onOpenChange }: QuickOrderDialogProps) {
+export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickOrderDialogProps) {
   const serversQ = useServers();
   const availQ = useAvailability();
   const create = useCreateQueueItem();
@@ -126,7 +127,7 @@ export function QuickOrderDialog({ open, onOpenChange }: QuickOrderDialogProps) 
 
   useEffect(() => {
     if (!open) return;
-    setPlanCode("");
+    setPlanCode(initialPlanCode || "");
     setSelectedDCs([]);
     setQuantity("1");
     intervalTouchedRef.current = false;
@@ -134,7 +135,7 @@ export function QuickOrderDialog({ open, onOpenChange }: QuickOrderDialogProps) 
     setPicked({});
     setAutoPay(false);
     setAccountId(defaultAcc?.id || "");
-  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, initialPlanCode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!server) {

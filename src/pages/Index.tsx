@@ -18,9 +18,9 @@ import {
   Calendar,
   Zap,
   Activity,
-  Globe2,
   ShieldCheck,
   Radar,
+  RefreshCw,
   type LucideIcon,
   Sparkles,
 } from "lucide-react";
@@ -31,6 +31,7 @@ import { Chip } from "@/components/common/Chip";
 import { StatusDot } from "@/components/common/StatusDot";
 import { EmptyState } from "@/components/common/EmptyState";
 import { QuickOrderDialog } from "@/components/orders/QuickOrderDialog";
+import { MonitorSubscribeDialog } from "@/components/monitor/MonitorSubscribeDialog";
 import { Skeleton } from "@/components/common/Skeleton";
 import { MetricRing } from "@/components/common/MetricRing";
 import { useStats } from "@/hooks/use-stats";
@@ -39,10 +40,10 @@ import { useSystemMetrics, useAppVersion, useUpdateCheck } from "@/hooks/use-sys
 import { useMonitorList } from "@/hooks/use-monitor";
 import { useTelegramPollerStatus } from "@/hooks/use-settings";
 import { useAccounts } from "@/hooks/use-accounts";
-import { OVH_DATACENTERS } from "@/lib/datacenters";
+import { isDcInStock } from "@/lib/datacenters";
 import { cn } from "@/lib/utils";
 
-/** 仪表盘 v2.0: 运维中控指挥条 + 4 KPI 指标卡 + 核心机房热力雷达 + 活跃队列/系统状态 + 资源波形监控 */
+/** 仪表盘 v2.0: 运维中控指挥条 + 4 KPI 指标卡 + 实时盯盘与补货信号雷达 + 活跃队列/系统状态 + 资源波形监控 */
 function DashboardPage() {
   const stats = useStats();
   const queue = useQueueList();
@@ -65,6 +66,19 @@ function DashboardPage() {
   const successRate = totalAttempts > 0 ? Math.round((successCount / totalAttempts) * 100) : 100;
 
   const [quickOrderOpen, setQuickOrderOpen] = useState(false);
+  const [quickOrderPlanCode, setQuickOrderPlanCode] = useState<string | undefined>(undefined);
+  const [subscribeOpen, setSubscribeOpen] = useState(false);
+  const [subscribePlanCode, setSubscribePlanCode] = useState<string | undefined>(undefined);
+
+  const handleOpenQuickOrder = (planCode?: string) => {
+    setQuickOrderPlanCode(planCode);
+    setQuickOrderOpen(true);
+  };
+
+  const handleOpenSubscribe = (planCode?: string) => {
+    setSubscribePlanCode(planCode);
+    setSubscribeOpen(true);
+  };
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -88,7 +102,7 @@ function DashboardPage() {
               </Link>
             </Button>
             <Button
-              onClick={() => setQuickOrderOpen(true)}
+              onClick={() => handleOpenQuickOrder()}
               size="sm"
               className="h-8 gap-1.5 text-xs font-medium rounded-lg shadow-sm"
             >
@@ -205,42 +219,225 @@ function DashboardPage() {
         />
       </div>
 
-      {/* OVH 核心机房热力雷达矩阵 */}
+      {/* 实时盯盘与补货信号雷达 */}
       <Card className="surface-card rounded-2xl border-border/80 overflow-hidden shadow-sm">
         <CardHeader className="p-4 sm:p-5 pb-3 border-b border-border/40 flex flex-row items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Globe2 className="w-4 h-4 text-primary" />
-            <CardTitle className="text-sm font-semibold">OVH 全球核心机房热力雷达</CardTitle>
+          <div className="flex items-center gap-2.5">
+            <div className="relative flex items-center justify-center">
+              <span className={cn(
+                "animate-ping absolute inline-flex h-3 w-3 rounded-full opacity-75",
+                stats.data?.monitorRunning ? "bg-emerald-400" : "bg-muted"
+              )} />
+              <Radar className={cn(
+                "w-4 h-4 relative",
+                stats.data?.monitorRunning ? "text-primary" : "text-muted-foreground"
+              )} />
+            </div>
+            <div>
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <span>实时盯盘与补货信号雷达</span>
+                <span className={cn(
+                  "text-[10px] px-2 py-0.5 rounded-full font-mono font-medium border",
+                  stats.data?.monitorRunning
+                    ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
+                    : "bg-muted text-muted-foreground border-border"
+                )}>
+                  {stats.data?.monitorRunning ? "探针实时轮询中" : "监控引擎待机"}
+                </span>
+              </CardTitle>
+            </div>
           </div>
-          <Link
-            to="/servers"
-            className="text-xs text-muted-foreground hover:text-primary transition-colors inline-flex items-center gap-1 font-medium"
-          >
-            在服务器列表中筛选
-            <ChevronRight className="w-3 h-3" />
-          </Link>
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void monitorList.refetch()}
+              disabled={monitorList.isFetching}
+              className="h-7 w-7 p-0 rounded-lg border-border/80 hover:bg-secondary flex-shrink-0"
+              title="刷新探针状态"
+            >
+              <RefreshCw className={cn("h-3 w-3", monitorList.isFetching && "animate-spin")} />
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => handleOpenSubscribe()}
+              className="h-7 text-xs gap-1 px-2.5 rounded-lg border-border/80 hover:bg-secondary font-medium"
+            >
+              <Plus className="w-3 h-3" />
+              <span>添加盯盘</span>
+            </Button>
+            <Link
+              to="/monitor"
+              className="text-xs text-muted-foreground hover:text-primary transition-colors inline-flex items-center gap-0.5 font-medium ml-1"
+            >
+              全部监控
+              <ChevronRight className="w-3 h-3" />
+            </Link>
+          </div>
         </CardHeader>
         <CardContent className="p-4 sm:p-5">
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5">
-            {OVH_DATACENTERS.map((dc) => (
-              <Link
-                key={dc.code}
-                to={`/servers?dc=${dc.code}`}
-                className="group flex flex-col p-2.5 rounded-xl border border-border/60 hover:border-primary/50 bg-secondary/20 hover:bg-secondary/40 transition-all duration-150"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-mono text-xs font-bold uppercase tracking-wider text-foreground group-hover:text-primary transition-colors">
-                    {dc.code}
-                  </span>
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500/80 group-hover:bg-primary group-hover:scale-125 transition-all" />
+          {monitorList.isPending ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-28 rounded-xl" />
+              ))}
+            </div>
+          ) : (monitorList.data || []).length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {(monitorList.data || []).map((sub) => {
+                const targetDcs = (sub.datacenters && sub.datacenters.length > 0) ? sub.datacenters : ["gra", "rbx", "sbg", "bhs"];
+                const inStockDcList = Object.entries(sub.lastStatus || {}).filter(([_, status]) => isDcInStock(status));
+                const hasStock = inStockDcList.length > 0;
+
+                return (
+                  <div
+                    key={sub.planCode}
+                    className={cn(
+                      "p-3.5 rounded-xl border transition-all duration-200 flex flex-col justify-between gap-2.5",
+                      hasStock
+                        ? "border-emerald-500/50 bg-emerald-500/10 shadow-sm"
+                        : "border-border/70 hover:border-primary/40 bg-secondary/20 hover:bg-secondary/35"
+                    )}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="font-mono text-sm font-bold text-foreground truncate">
+                            {sub.planCode}
+                          </span>
+                          {sub.serverName && (
+                            <span className="text-[11px] text-muted-foreground truncate">
+                              ({sub.serverName})
+                            </span>
+                          )}
+                        </div>
+                        {sub.autoOrder ? (
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 flex items-center gap-1 font-semibold flex-shrink-0">
+                            <Zap className="w-2.5 h-2.5" />
+                            自抢 x{sub.quantity || 1}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-secondary text-muted-foreground border border-border flex items-center gap-1 font-medium flex-shrink-0">
+                            <Bell className="w-2.5 h-2.5" />
+                            仅通知
+                          </span>
+                        )}
+                      </div>
+
+                      {/* 目标机房探针状态 */}
+                      <div className="flex items-center gap-1.5 flex-wrap mt-2">
+                        {targetDcs.slice(0, 6).map((dc) => {
+                          const status = sub.lastStatus?.[dc.toLowerCase()];
+                          const inStock = isDcInStock(status);
+                          return (
+                            <span
+                              key={dc}
+                              className={cn(
+                                "text-[10px] font-mono uppercase px-1.5 py-0.5 rounded border transition-colors flex items-center gap-1",
+                                inStock
+                                  ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border-emerald-500/40 font-bold"
+                                  : "bg-background/60 text-muted-foreground/80 border-border/60"
+                              )}
+                              title={status ? `${dc.toUpperCase()}: ${status}` : `${dc.toUpperCase()}: 持续探测中`}
+                            >
+                              <span className={cn(
+                                "w-1.5 h-1.5 rounded-full",
+                                inStock ? "bg-emerald-500 animate-pulse" : "bg-muted-foreground/40"
+                              )} />
+                              {dc}
+                              {inStock && <span className="text-[9px] font-normal">({status})</span>}
+                            </span>
+                          );
+                        })}
+                        {targetDcs.length > 6 && (
+                          <span className="text-[10px] text-muted-foreground font-mono">
+                            +{targetDcs.length - 6}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2 border-t border-border/40 text-[11px]">
+                      {hasStock ? (
+                        <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-semibold text-xs">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>发现现货补货！</span>
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground/75 font-mono text-[10.5px]">
+                          持续盯盘中 · 待放货
+                        </span>
+                      )}
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleOpenSubscribe(sub.planCode)}
+                          className="h-6 text-[11px] px-2 rounded-md font-medium text-muted-foreground hover:text-foreground"
+                        >
+                          设置
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant={hasStock ? "default" : "secondary"}
+                          onClick={() => handleOpenQuickOrder(sub.planCode)}
+                          className={cn(
+                            "h-6 text-[11px] px-2.5 rounded-md font-medium",
+                            hasStock && "bg-emerald-600 hover:bg-emerald-500 text-white"
+                          )}
+                        >
+                          {hasStock ? "立即秒抢" : "下单"}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            /* 雷达空态巡航视窗 */
+            <div className="py-6 sm:py-8 flex flex-col items-center justify-center text-center">
+              <div className="relative flex items-center justify-center w-12 h-12 rounded-full bg-primary/10 text-primary mb-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary/20 opacity-75" />
+                <Radar className="w-6 h-6" />
+              </div>
+              <h3 className="text-sm font-semibold text-foreground">监控雷达处于巡航待机状态</h3>
+              <p className="text-xs text-muted-foreground mt-1 max-w-md">
+                当前未挂载任何盯盘任务。添加型号后，后台将 24h 持续探测 OVH 库存，一旦放货秒速通知或自动下单。
+              </p>
+
+              {/* 热门抢购型号推荐池 */}
+              <div className="mt-4 pt-4 border-t border-border/50 w-full max-w-xl">
+                <div className="text-[11px] font-medium text-muted-foreground mb-2 flex items-center justify-center gap-1">
+                  <Sparkles className="w-3 h-3 text-amber-500" />
+                  <span>一键上架热门盯盘型号:</span>
                 </div>
-                <div className="mt-1 flex items-baseline justify-between text-[11px] text-muted-foreground">
-                  <span className="truncate font-medium">{dc.name}</span>
-                  <span className="text-[10px] opacity-70 ml-1 font-mono">{dc.region}</span>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {[
+                    { code: "24ska01", name: "KS-LE-1 爆款", desc: "高性价比独服" },
+                    { code: "24ska02", name: "KS-LE-2 进阶", desc: "大内存计算" },
+                    { code: "24sk602", name: "Rise 系列", desc: "高频主频" },
+                    { code: "24sk40", name: "Eco 入门", desc: "低价轻量" },
+                  ].map((item) => (
+                    <button
+                      key={item.code}
+                      type="button"
+                      onClick={() => handleOpenSubscribe(item.code)}
+                      className="p-2 rounded-xl border border-border/70 hover:border-primary/50 bg-secondary/30 hover:bg-secondary/60 text-left transition-colors group touch-manipulation"
+                    >
+                      <div className="font-mono text-xs font-bold text-foreground group-hover:text-primary transition-colors">
+                        {item.code}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground mt-0.5 truncate">
+                        {item.name}
+                      </div>
+                    </button>
+                  ))}
                 </div>
-              </Link>
-            ))}
-          </div>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -408,7 +605,27 @@ function DashboardPage() {
         </Card>
       </div>
 
-      <QuickOrderDialog open={quickOrderOpen} onOpenChange={setQuickOrderOpen} />
+      <QuickOrderDialog
+        open={quickOrderOpen}
+        onOpenChange={(v) => {
+          setQuickOrderOpen(v);
+          if (!v) setQuickOrderPlanCode(undefined);
+        }}
+        initialPlanCode={quickOrderPlanCode}
+      />
+
+      <MonitorSubscribeDialog
+        open={subscribeOpen}
+        onOpenChange={(v) => {
+          setSubscribeOpen(v);
+          if (!v) setSubscribePlanCode(undefined);
+        }}
+        mode={subscribePlanCode && (monitorList.data || []).some((s) => s.planCode === subscribePlanCode) ? "edit" : "create"}
+        planCode={subscribePlanCode}
+        serverName={(monitorList.data || []).find((s) => s.planCode === subscribePlanCode)?.serverName}
+        lockPlanCode={!!subscribePlanCode && (monitorList.data || []).some((s) => s.planCode === subscribePlanCode)}
+        initial={(monitorList.data || []).find((s) => s.planCode === subscribePlanCode) || null}
+      />
     </div>
   );
 }
