@@ -14,6 +14,7 @@ import (
 
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/netfp"
+	"github.com/ovh-webui/server/internal/types"
 )
 
 func tgClient(timeout time.Duration) *http.Client {

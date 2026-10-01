@@ -338,12 +338,15 @@ func GetVpsTasks(state *app.State) gin.HandlerFunc {
 		if len(sorted) > 10 {
 			sorted = sorted[:10]
 		}
-		paths := make([]string, len(sorted))
+		keys := make([]interface{}, len(sorted))
 		for i, id := range sorted {
-			paths[i] = fmt.Sprintf("/vps/%s/tasks/%d", svc, id)
+			keys[i] = id
+		}
+		pathFn := func(k interface{}) string {
+			return fmt.Sprintf("/vps/%s/tasks/%v", svc, k)
 		}
 		// 并发拉取最近 10 条任务详情
-		details := parallelGetDetails(client, paths, 5)
+		details := parallelGetDetails(client, keys, pathFn, 5)
 		list := []map[string]interface{}{}
 		for _, d := range details {
 			if d != nil {

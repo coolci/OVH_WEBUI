@@ -65,6 +65,16 @@ func invalidateOrderMappingCache(accountID string) {
 	orderMappingMu.Unlock()
 }
 
+// cachedOrderMapping 获取指定账户已缓存的订单映射（未命中或过期返回 false）
+func cachedOrderMapping(accountID string) (map[string]interface{}, bool) {
+	orderMappingMu.Lock()
+	defer orderMappingMu.Unlock()
+	if e, hit := orderMappingCache[accountID]; hit && time.Since(e.at) < orderMappingDuration {
+		return e.mapping, true
+	}
+	return nil, false
+}
+
 // GetOrderMapping GET /api/server-control/order-mapping
 func GetOrderMapping(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {

@@ -112,7 +112,7 @@ func retractableOrderFor(state *app.State, c *gin.Context, client *ovhsdk.Client
 	}
 
 	// 订单映射碰巧热着就先用它,省掉下面整套扫描
-	if mapping, err := orderMappingFor(state, c); err == nil {
+	if mapping, hit := cachedOrderMapping(accountID); hit {
 		if raw, ok := mapping[serviceName]; ok {
 			if info, ok := raw.(map[string]interface{}); ok {
 				if id, ok := toOrderID(info["orderId"]); ok {

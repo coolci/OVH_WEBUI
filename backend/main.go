@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net"
@@ -409,8 +410,6 @@ func main() {
 			sc.GET("/:service_name/virtual-mac", handlers.GetVirtualMACList(state))
 			sc.POST("/:service_name/virtual-mac", handlers.CreateVirtualMAC(state))
 			sc.GET("/:service_name/virtual-network-interface", handlers.GetVirtualNetworkInterfaces(state))
-			sc.POST("/:service_name/virtual-network-interface/:uuid/enable", handlers.EnableVirtualNetworkInterface(state))
-			sc.POST("/:service_name/virtual-network-interface/:uuid/disable", handlers.DisableVirtualNetworkInterface(state))
 			sc.GET("/:service_name/vrack", handlers.GetVRackList(state))
 			sc.DELETE("/:service_name/vrack/:vrack", handlers.RemoveFromVRack(state))
 			sc.GET("/:service_name/orderable/bandwidth", handlers.GetOrderableBandwidth(state))
