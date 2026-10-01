@@ -42,6 +42,7 @@ import { useTelegramPollerStatus } from "@/hooks/use-settings";
 import { useAccounts } from "@/hooks/use-accounts";
 import { isDcInStock } from "@/lib/datacenters";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 /** 仪表盘 v2.0: 运维中控指挥条 + 4 KPI 指标卡 + 实时盯盘与补货信号雷达 + 活跃队列/系统状态 + 资源波形监控 */
 function DashboardPage() {
@@ -69,6 +70,7 @@ function DashboardPage() {
   const [quickOrderPlanCode, setQuickOrderPlanCode] = useState<string | undefined>(undefined);
   const [subscribeOpen, setSubscribeOpen] = useState(false);
   const [subscribePlanCode, setSubscribePlanCode] = useState<string | undefined>(undefined);
+  const [monitorRefreshing, setMonitorRefreshing] = useState(false);
 
   const handleOpenQuickOrder = (planCode?: string) => {
     setQuickOrderPlanCode(planCode);
@@ -78,6 +80,16 @@ function DashboardPage() {
   const handleOpenSubscribe = (planCode?: string) => {
     setSubscribePlanCode(planCode);
     setSubscribeOpen(true);
+  };
+
+  const handleRefreshMonitor = async () => {
+    setMonitorRefreshing(true);
+    try {
+      await Promise.all([monitorList.refetch(), stats.refetch()]);
+      toast.success("已刷新最新盯盘与探针状态");
+    } finally {
+      setTimeout(() => setMonitorRefreshing(false), 450);
+    }
   };
 
   return (
@@ -251,12 +263,12 @@ function DashboardPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => void monitorList.refetch()}
-              disabled={monitorList.isFetching}
+              onClick={handleRefreshMonitor}
+              disabled={monitorRefreshing || monitorList.isFetching}
               className="h-7 w-7 p-0 rounded-lg border-border/80 hover:bg-secondary flex-shrink-0"
               title="刷新探针状态"
             >
-              <RefreshCw className={cn("h-3 w-3", monitorList.isFetching && "animate-spin")} />
+              <RefreshCw className={cn("h-3 w-3", (monitorRefreshing || monitorList.isFetching) && "animate-spin")} />
             </Button>
             <Button
               size="sm"

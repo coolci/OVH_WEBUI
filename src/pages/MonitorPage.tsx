@@ -30,6 +30,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { describeOptionCodes } from "@/lib/option-groups";
+import { toast } from "sonner";
 import {
   useMonitorList,
   useMonitorStatus,
@@ -50,6 +51,17 @@ function MonitorPage() {
   const [openAdd, setOpenAdd] = useState(false);
   const [editSub, setEditSub] = useState<MonitorSubscription | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await Promise.all([list.refetch(), status.refetch()]);
+      toast.success("已刷新监控状态与订阅列表");
+    } finally {
+      setTimeout(() => setIsRefreshing(false), 450);
+    }
+  };
 
   const subs = list.data || [];
 
@@ -73,11 +85,15 @@ function MonitorPage() {
               variant="outline"
               size="sm"
               className="h-8 w-8 p-0 rounded-lg border-border/80 hover:bg-secondary flex-shrink-0"
-              onClick={() => list.refetch()}
-              disabled={list.isFetching}
-              title="刷新订阅状态"
+              onClick={handleRefresh}
+              disabled={isRefreshing || list.isFetching || status.isFetching}
+              title="刷新订阅与监控状态"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${list.isFetching ? "animate-spin" : ""}`} />
+              <RefreshCw
+                className={`w-3.5 h-3.5 ${
+                  isRefreshing || list.isFetching || status.isFetching ? "animate-spin" : ""
+                }`}
+              />
             </Button>
           </div>
         }

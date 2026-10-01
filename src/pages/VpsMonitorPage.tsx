@@ -86,6 +86,17 @@ function VPSMonitorPage() {
   const [openAdd, setOpenAdd] = useState(false);
   const [editSub, setEditSub] = useState<VPSSubscription | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await Promise.all([list.refetch(), status.refetch()]);
+      toast.success("已刷新 VPS 监控与订阅状态");
+    } finally {
+      setTimeout(() => setIsRefreshing(false), 450);
+    }
+  };
 
   const subs = list.data || [];
   const running = !!status.data?.running;
@@ -110,11 +121,15 @@ function VPSMonitorPage() {
               variant="outline"
               size="sm"
               className="h-8 w-8 p-0 rounded-lg border-border/80 hover:bg-secondary flex-shrink-0"
-              onClick={() => list.refetch()}
-              disabled={list.isFetching}
+              onClick={handleRefresh}
+              disabled={isRefreshing || list.isFetching || status.isFetching}
               title="刷新订阅与库存状态"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${list.isFetching ? "animate-spin" : ""}`} />
+              <RefreshCw
+                className={`w-3.5 h-3.5 ${
+                  isRefreshing || list.isFetching || status.isFetching ? "animate-spin" : ""
+                }`}
+              />
             </Button>
           </div>
         }
