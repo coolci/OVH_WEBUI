@@ -48,6 +48,7 @@ function ServerControlPage() {
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const [activeAccount, setActiveAccount] = useActiveServerControlAccount();
   const { data: accounts } = useAccounts();
+  const aliases = useServerAliases();
   const servers = q.data || EMPTY_SERVERS;
 
   // 首次没选过账户 → 自动选默认账户
@@ -152,6 +153,38 @@ function ServerControlPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* 设备列表横向切换卡片 (多服务器速览) */}
+      {servers.length > 1 && (
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1 -mt-2">
+          {servers.map((s) => {
+            const isCurrent = s.serviceName === selectedName;
+            const name = aliasOf(aliases, s.serviceName, s.name);
+            return (
+              <button
+                key={s.serviceName}
+                onClick={() => setSelectedName(s.serviceName)}
+                className={cn(
+                  "flex items-center gap-2.5 px-3 py-2 rounded-xl border text-xs text-left transition-all duration-150 flex-shrink-0 touch-manipulation",
+                  isCurrent
+                    ? "border-primary bg-primary/10 text-foreground font-medium shadow-sm"
+                    : "border-border/70 hover:border-border bg-card/60 hover:bg-secondary/40 text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <StatusDot tone={s.state === "ok" ? "success" : "warning"} size="xs" />
+                <div className="min-w-0">
+                  <div className="font-semibold font-mono text-foreground leading-tight">
+                    {maskSensitive(name, hidden)}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground/80 mt-0.5 font-sans">
+                    {(s.datacenter || "").toUpperCase()} · {s.commercialRange || "OVH"}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {q.isPending ? (
         <Skeleton className="h-[500px] rounded-xl" />

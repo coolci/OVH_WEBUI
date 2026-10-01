@@ -377,7 +377,27 @@ const TelegramOrderPage = () => {
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-medium">服务器型号 *</Label>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium">服务器型号 *</Label>
+                    <div className="flex items-center gap-1 flex-wrap">
+                      <span className="text-[10px] text-muted-foreground mr-0.5">常用:</span>
+                      {["24ska01", "24ska02", "24sk602", "24sk40"].map((code) => (
+                        <button
+                          key={code}
+                          type="button"
+                          onClick={() => setPlanCode(code)}
+                          className={cn(
+                            "px-1.5 py-0.5 rounded text-[10px] font-mono border transition-colors",
+                            planCode === code
+                              ? "bg-primary text-primary-foreground border-primary font-bold shadow-sm"
+                              : "bg-secondary/60 hover:bg-secondary border-border text-muted-foreground hover:text-foreground"
+                          )}
+                        >
+                          {code}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <PlanCodeCombobox
                     value={planCode}
                     onChange={setPlanCode}
@@ -488,37 +508,45 @@ const TelegramOrderPage = () => {
               </CardContent>
             </Card>
 
-            {/* Result Panel */}
-            <Card className="surface-card rounded-xl border-border flex flex-col">
-              <CardHeader className="p-4 sm:p-5 pb-3 border-b border-border/40">
-                <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <MessageSquare className="w-4 h-4 text-primary" />
-                  <span>执行结果</span>
-                </CardTitle>
+            {/* Result Panel (Terminal Simulator) */}
+            <Card className="surface-card rounded-2xl border-border flex flex-col overflow-hidden shadow-sm">
+              <CardHeader className="p-3 sm:p-4 pb-2.5 border-b border-border/40 flex flex-row items-center justify-between bg-secondary/30">
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 mr-1">
+                    <span className="w-2.5 h-2.5 rounded-full bg-destructive/60" />
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500/60" />
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/60" />
+                  </div>
+                  <span className="text-xs font-mono font-medium text-foreground/80">tg-console</span>
+                </div>
+                <span className="text-[10px] font-mono text-muted-foreground uppercase bg-secondary px-2 py-0.5 rounded border border-border/60">
+                  {selectedMode}
+                </span>
               </CardHeader>
-              <CardContent className="p-4 sm:p-5 flex-1 flex flex-col justify-center">
+              <CardContent className="p-4 sm:p-5 flex-1 flex flex-col justify-start">
                 {lastResult ? (
                   <div className="space-y-3 w-full">
+                    {/* Terminal Input Line */}
+                    <div className="flex items-center gap-2 text-xs font-mono text-muted-foreground pb-2 border-b border-border/50">
+                      <span className="text-primary font-bold">›</span>
+                      <span className="text-foreground font-semibold">{lastResult.command || generateCommand()}</span>
+                    </div>
+
                     <div className={cn(
-                      "p-3.5 rounded-xl border",
+                      "p-3.5 rounded-xl border font-mono text-xs",
                       lastResult.success 
-                        ? "bg-primary/10 border-primary/30" 
-                        : "bg-destructive/10 border-destructive/30"
+                        ? "bg-primary/5 border-primary/25 text-foreground" 
+                        : "bg-destructive/10 border-destructive/25 text-destructive"
                     )}>
-                      <div className="flex items-center gap-2 mb-1.5">
+                      <div className="flex items-center gap-2 mb-2 font-sans font-semibold">
                         {lastResult.success ? (
                           <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />
                         ) : (
                           <Info className="h-4 w-4 text-destructive flex-shrink-0" />
                         )}
-                        <span className={cn(
-                          "text-xs font-semibold",
-                          lastResult.success ? "text-primary" : "text-destructive"
-                        )}>
-                          {lastResult.success ? "操作成功" : "操作失败"}
-                        </span>
+                        <span>{lastResult.success ? "Bot 响应正常" : "执行异常"}</span>
                       </div>
-                      <p className="text-xs text-foreground/90 leading-relaxed break-words">
+                      <p className="whitespace-pre-wrap leading-relaxed text-[11px] sm:text-xs">
                         {lastResult.message || lastResult.error}
                       </p>
                     </div>
@@ -540,9 +568,13 @@ const TelegramOrderPage = () => {
                     )}
                   </div>
                 ) : (
-                  <div className="text-center py-10 text-muted-foreground">
-                    <MessageSquare className="h-10 w-10 mx-auto mb-2.5 opacity-20" />
-                    <p className="text-xs">执行操作后结果将显示在这里</p>
+                  <div className="text-center py-12 text-muted-foreground font-mono">
+                    <MessageSquare className="h-10 w-10 mx-auto mb-3 opacity-20" />
+                    <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground/80">
+                      <span className="text-primary font-bold">›</span>
+                      <span>等待指令触发</span>
+                      <span className="inline-block w-1.5 h-3.5 bg-primary/70 cursor-blink ml-0.5" />
+                    </div>
                   </div>
                 )}
               </CardContent>

@@ -123,7 +123,7 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
 
       <div className="shrink-0 border-t border-sidebar-border p-3 space-y-2">
         {/* 致敬开源作者 */}
-        <div className="rounded-xl border border-white/10 bg-gradient-to-br from-card/90 to-muted/40 p-2.5 shadow-sm relative overflow-hidden group">
+        <div className="rounded-xl border border-border/70 dark:border-white/10 bg-gradient-to-br from-card/90 to-muted/40 p-2.5 shadow-sm relative overflow-hidden group">
           <div className="flex items-center gap-2.5">
             <img
               src="/author-avatar.png"

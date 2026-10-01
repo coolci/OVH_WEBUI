@@ -171,7 +171,7 @@ export function MobileBottomNav() {
 
             {/* 开源作者致敬卡片 */}
             <div className="pt-2 border-t border-border/70">
-              <div className="rounded-xl border border-white/10 bg-gradient-to-br from-card to-muted/40 p-3 relative overflow-hidden">
+              <div className="rounded-xl border border-border/70 dark:border-white/10 bg-gradient-to-br from-card to-muted/40 p-3 relative overflow-hidden">
                 <div className="flex items-center gap-3">
                   <img
                     src="/author-avatar.png"

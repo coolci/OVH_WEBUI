@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { HelmetProvider } from "react-helmet-async";
+import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { AuthGate } from "@/components/common/AuthGate";
 import { OvhCredsGate } from "@/components/common/OvhCredsGate";
 import { ActiveAccountSync } from "@/components/common/ActiveAccountSync";
@@ -34,39 +35,41 @@ const queryClient = new QueryClient({
 
 const App = () => (
   <HelmetProvider>
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner position="top-center" />
-        <BrowserRouter
-          future={{
-            v7_startTransition: true,
-            v7_relativeSplatPath: true,
-          }}
-        >
-          <AuthGate>
-            <OvhCredsGate>
-              <ActiveAccountSync />
-              <Routes>
-                <Route path="/" element={<Index />} />
-                <Route path="/servers" element={<ServersPage />} />
-                <Route path="/queue" element={<QueuePage />} />
-                <Route path="/history" element={<HistoryPage />} />
-                <Route path="/monitor" element={<MonitorPage />} />
-                <Route path="/vps-monitor" element={<VpsMonitorPage />} />
-                <Route path="/logs" element={<LogsPage />} />
-                <Route path="/settings" element={<SettingsPage />} />
-                <Route path="/account" element={<AccountPage />} />
-                <Route path="/server-control" element={<ServerControlPage />} />
-                <Route path="/vps-control" element={<VpsControlPage />} />
-                <Route path="/telegram-order" element={<TelegramOrderPage />} />
-                <Route path="*" element={<NotFound />} />
-              </Routes>
-            </OvhCredsGate>
-          </AuthGate>
-        </BrowserRouter>
-      </TooltipProvider>
-    </QueryClientProvider>
+    <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner position="top-center" />
+          <BrowserRouter
+            future={{
+              v7_startTransition: true,
+              v7_relativeSplatPath: true,
+            }}
+          >
+            <AuthGate>
+              <OvhCredsGate>
+                <ActiveAccountSync />
+                <Routes>
+                  <Route path="/" element={<Index />} />
+                  <Route path="/servers" element={<ServersPage />} />
+                  <Route path="/queue" element={<QueuePage />} />
+                  <Route path="/history" element={<HistoryPage />} />
+                  <Route path="/monitor" element={<MonitorPage />} />
+                  <Route path="/vps-monitor" element={<VpsMonitorPage />} />
+                  <Route path="/logs" element={<LogsPage />} />
+                  <Route path="/settings" element={<SettingsPage />} />
+                  <Route path="/account" element={<AccountPage />} />
+                  <Route path="/server-control" element={<ServerControlPage />} />
+                  <Route path="/vps-control" element={<VpsControlPage />} />
+                  <Route path="/telegram-order" element={<TelegramOrderPage />} />
+                  <Route path="*" element={<NotFound />} />
+                </Routes>
+              </OvhCredsGate>
+            </AuthGate>
+          </BrowserRouter>
+        </TooltipProvider>
+      </QueryClientProvider>
+    </ThemeProvider>
   </HelmetProvider>
 );
 

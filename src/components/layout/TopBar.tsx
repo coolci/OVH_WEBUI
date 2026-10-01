@@ -7,11 +7,14 @@ import {
   AlertTriangle,
   Info,
   XCircle,
+  User,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useBackendConnection } from "@/hooks/useApi";
 import { useRecentLogs } from "@/hooks/use-logs";
+import { useAccounts } from "@/hooks/use-accounts";
+import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import {
   Popover,
   PopoverContent,
@@ -70,6 +73,9 @@ export function TopBar() {
   const [readNotifications, setReadNotifications] = useState<Set<string>>(new Set());
   const location = useLocation();
   const { isConnected, isChecking } = useBackendConnection();
+  const accountsQ = useAccounts();
+  const defaultAccount = (accountsQ.data || []).find((a) => a.isDefault) || accountsQ.data?.[0];
+
   // 通知铃铛：只拉最近 20 条，15s 轮询，后台标签页自动停
   const { data: logsData, isLoading, refetch } = useRecentLogs(20, true);
 
@@ -96,14 +102,26 @@ export function TopBar() {
         </span>
       </div>
 
-      <div className="flex items-center gap-2 flex-shrink-0">
+      <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+        {/* 默认账户快捷徽标 */}
+        {defaultAccount && (
+          <Link
+            to="/account"
+            className="hidden lg:inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full border border-border/70 hover:border-primary/40 bg-secondary/35 hover:bg-secondary/70 text-muted-foreground hover:text-foreground transition-all duration-150"
+            title={`默认下单账户: ${defaultAccount.name} (${defaultAccount.zone || "OVH"})`}
+          >
+            <User className="h-3 w-3 text-primary" />
+            <span className="font-medium truncate max-w-[120px]">{defaultAccount.name}</span>
+          </Link>
+        )}
+
         <div
           className={cn(
             "flex items-center gap-1.5 text-[10.5px] sm:text-[11px] px-2.5 py-0.5 rounded-full border transition-colors",
             isChecking
               ? "border-border/60 text-muted-foreground bg-secondary/30"
               : isConnected
-                ? "border-emerald-500/25 text-emerald-400 bg-emerald-500/10"
+                ? "border-emerald-500/25 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10"
                 : "border-destructive/30 text-destructive bg-destructive/10"
           )}
           title={isConnected ? "后端服务在线" : "后端连接已断开"}
@@ -111,7 +129,7 @@ export function TopBar() {
           {isChecking ? (
             <Loader2 className="h-2.5 w-2.5 animate-spin" />
           ) : isConnected ? (
-            <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400" />
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400" />
           ) : (
             <WifiOff className="h-2.5 w-2.5" />
           )}
@@ -123,6 +141,9 @@ export function TopBar() {
         <span className="hidden md:inline text-[11px] font-mono text-muted-foreground/75 tabular-nums tracking-tight">
           {time.toLocaleTimeString("zh-CN", { hour12: false })}
         </span>
+
+        {/* 外观主题切换 */}
+        <ThemeToggle />
 
         {/* 通知 */}
         <Popover open={isNotificationOpen} onOpenChange={setIsNotificationOpen}>
