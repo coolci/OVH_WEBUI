@@ -240,7 +240,7 @@ export function EngagementDialog({
 
       {/* 二次确认子弹窗 */}
       <Dialog open={!!confirmMode} onOpenChange={(v) => !v && setConfirmMode(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md max-h-[90dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>确认订阅承诺期?</DialogTitle>
             <DialogDescription>提交前请阅读流程</DialogDescription>

@@ -695,7 +695,7 @@ export function ReinstallDialog({
     {/* 智能配置确认。不直接套用 —— 分区是不可逆操作的入口,
         必须先让用户看清"装在哪个组、为什么、另一个组会怎样"。 */}
     <Dialog open={showSmart} onOpenChange={setShowSmart}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Wand2 className="w-4 h-4" />

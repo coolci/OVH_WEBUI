@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -101,13 +102,29 @@ func buildTelegramCommandArgs(mode, planCode, dc string, quantity int, options [
 			}
 		}
 		return args, ""
+	case "watch":
+		args := []string{planCode}
+		if dc != "" {
+			for _, part := range strings.FieldsFunc(dc, func(r rune) bool {
+				return r == ',' || r == ' ' || r == ';'
+			}) {
+				part = strings.TrimSpace(part)
+				if part != "" {
+					args = append(args, part)
+				}
+			}
+		}
+		if quantity > 0 {
+			args = append(args, fmt.Sprintf("x%d", quantity))
+		}
+		return args, ""
 	case "price":
 		if dc == "" {
 			return nil, "price 模式需要 datacenter"
 		}
 		return []string{planCode, dc}, ""
 	default:
-		return nil, "未知 mode: " + mode + "（支持 stock/queue/buy/monitor/price）"
+		return nil, "未知 mode: " + mode + "（支持 stock/queue/buy/monitor/price/watch）"
 	}
 }
 

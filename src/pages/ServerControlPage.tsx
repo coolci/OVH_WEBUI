@@ -39,6 +39,8 @@ import { RetractionDialog } from "@/components/server-control/RetractionDialog";
 import { EngagementDialog } from "@/components/server-control/EngagementDialog";
 import { toast } from "sonner";
 
+const EMPTY_SERVERS: OwnedServer[] = [];
+
 /** 服务器控制中心：顶部下拉切换服务器 + 4 tab 详情 */
 function ServerControlPage() {
   const q = useOwnedServers();
@@ -46,7 +48,7 @@ function ServerControlPage() {
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const [activeAccount, setActiveAccount] = useActiveServerControlAccount();
   const { data: accounts } = useAccounts();
-  const servers = q.data || [];
+  const servers = q.data || EMPTY_SERVERS;
 
   // 首次没选过账户 → 自动选默认账户
   useEffect(() => {

@@ -177,8 +177,8 @@ function AccountOverlay({ onSuccess }: { onSuccess: () => void }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[90] bg-background/95 backdrop-blur-sm flex items-center justify-center px-4 py-8 overflow-y-auto">
-      <div className="w-full max-w-lg border border-border rounded-2xl bg-background p-7 space-y-5">
+    <div className="fixed inset-0 z-[90] bg-background/95 backdrop-blur-sm flex justify-center px-4 py-8 overflow-y-auto">
+      <div className="w-full max-w-lg my-auto border border-border rounded-2xl bg-background p-7 space-y-5">
         <div className="flex items-center gap-2.5">
           <div className="w-10 h-10 rounded-xl bg-secondary flex items-center justify-center">
             <Globe className="w-5 h-5" />

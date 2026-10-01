@@ -182,7 +182,7 @@ export function MonitorSubscribeDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="sm:max-w-2xl"
+        className="sm:max-w-2xl max-h-[90dvh] flex flex-col overflow-hidden"
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
         <DialogHeader>
@@ -197,7 +197,8 @@ export function MonitorSubscribeDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={submit} className="space-y-4">
+        <form onSubmit={submit} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          <div className="flex-1 overflow-y-auto -mx-6 px-6 space-y-4 py-1">
           {mode === "create" && tgBlocked && (
             <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3.5 py-2.5">
               <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-600" />
@@ -274,8 +275,9 @@ export function MonitorSubscribeDialog({
           )}
 
           <MonitorOptionsFields value={opts} onChange={setOpts} />
+          </div>
 
-          <DialogFooter>
+          <DialogFooter className="pt-3">
             <Button type="button" variant="outline" onClick={close} disabled={pending}>
               取消
             </Button>

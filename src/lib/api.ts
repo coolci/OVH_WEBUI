@@ -573,9 +573,10 @@ export const api = {
         { mode: "monitor", description: "添加监控", example: "/monitor planCode" },
         { mode: "price", description: "查价格", example: "/price planCode dc" },
         { mode: "buy", description: "快速下单", example: "/buy planCode dc" },
+        { mode: "watch", description: "盯盘补货", example: "/watch planCode [dc] [x数量]" },
       ],
     }),
-  /** 网页端执行与 Bot 相同的 /stock /queue /buy /monitor /price 语义 */
+  /** 网页端执行与 Bot 相同的 /stock /queue /buy /monitor /price /watch 语义 */
   telegramQuickOrder: (order: Record<string, unknown>) =>
     apiRequest<any>("/api/telegram/quick-order", {
       method: "POST",

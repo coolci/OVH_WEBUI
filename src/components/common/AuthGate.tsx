@@ -187,9 +187,17 @@ async function verifyKey(key: string): Promise<boolean> {
     });
     if (res.status === 200) return true;
     if (res.status === 401) return false;
+    if (res.status === 429) {
+      const msg = res.data?.message || res.data?.error || "连续错误次数过多，请求已被限制，请稍后再试";
+      throw new Error(msg);
+    }
     throw new Error(`后端返回 ${res.status}`);
   } catch (e: any) {
     if (e?.response?.status === 401) return false;
+    if (e?.response?.status === 429) {
+      const msg = e.response.data?.message || e.response.data?.error || "连续错误次数过多，请求已被限制，请稍后再试";
+      throw new Error(msg);
+    }
     throw e;
   }
 }

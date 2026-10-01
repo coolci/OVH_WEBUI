@@ -1227,7 +1227,8 @@ function AccountDialog({ acc, onClose }: { acc?: OVHAccount; onClose: () => void
     try {
       const id = await save();
       if (id) onClose();
-    } catch {
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error || e?.message || "保存账户失败");
     }
   };
 
@@ -1235,7 +1236,8 @@ function AccountDialog({ acc, onClose }: { acc?: OVHAccount; onClose: () => void
     try {
       const id = await save();
       if (id) await test.mutateAsync(id);
-    } catch {
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error || e?.message || "操作失败");
     }
   };
 

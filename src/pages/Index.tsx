@@ -363,7 +363,7 @@ function SystemRow({
 }) {
   const dotTone = ok ? "success" : warnOff ? "warning" : neutralOff ? "muted" : "danger";
   return (
-    <div className="flex justify-between items-center px-3 py-2.5 rounded-lg hover:bg-white/[0.04] transition-colors">
+    <div className="flex justify-between items-center px-3 py-2.5 rounded-lg hover:bg-muted/50 dark:hover:bg-white/[0.04] transition-colors">
       <div className="inline-flex items-center gap-2 text-[13px] font-medium text-foreground/90">
         <span className="text-muted-foreground/80">{icon}</span>
         <span>{label}</span>

@@ -14,6 +14,7 @@ import {
   Eye,
   DollarSign,
   Zap,
+  Radar,
   Copy,
   CheckCircle2,
   Info,
@@ -39,7 +40,7 @@ import { mergeDcAvailability } from "@/lib/datacenters";
 
 
 interface OrderMode {
-  mode: 'stock' | 'queue' | 'monitor' | 'price' | 'buy';
+  mode: 'stock' | 'queue' | 'monitor' | 'price' | 'buy' | 'watch';
   name: string;
   description: string;
   icon: React.ReactNode;
@@ -97,6 +98,14 @@ const orderModes: OrderMode[] = [
     icon: <Zap className="h-5 w-5" />,
     example: '/buy 24ska01 gra',
     color: 'text-red-500'
+  },
+  {
+    mode: 'watch',
+    name: '盯盘补货',
+    description: '缺货自动盯盘，支持补货通知或自动抢购',
+    icon: <Radar className="h-5 w-5" />,
+    example: '/watch 24ska01 gra x1',
+    color: 'text-purple-500'
   }
 ];
 
@@ -210,7 +219,7 @@ const TelegramOrderPage = () => {
         mode: selectedMode,
         planCode,
         datacenter: datacenter || undefined,
-        quantity: selectedMode === 'buy' ? quantity : undefined,
+        quantity: selectedMode === 'buy' || selectedMode === 'watch' ? quantity : undefined,
       });
       
       setLastResult(result);
@@ -232,11 +241,13 @@ const TelegramOrderPage = () => {
 
   const generateCommand = () => {
     let cmd = `/${selectedMode} ${planCode}`;
-    if (datacenter && (selectedMode === 'queue' || selectedMode === 'price' || selectedMode === 'buy')) {
+    if (datacenter && (selectedMode === 'queue' || selectedMode === 'price' || selectedMode === 'buy' || selectedMode === 'watch')) {
       cmd += ` ${datacenter}`;
     }
     if (selectedMode === 'buy' && quantity > 1) {
       cmd += ` ${quantity}`;
+    } else if (selectedMode === 'watch' && quantity > 0) {
+      cmd += ` x${quantity}`;
     }
     return cmd;
   };
@@ -248,6 +259,7 @@ const TelegramOrderPage = () => {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const allowDatacenter = selectedMode === 'queue' || selectedMode === 'price' || selectedMode === 'buy' || selectedMode === 'watch';
   const needsDatacenter = selectedMode === 'queue' || selectedMode === 'price' || selectedMode === 'buy';
   const isPollerConnected = !!poller.data?.running;
 
@@ -318,7 +330,7 @@ const TelegramOrderPage = () => {
           />
 
           {/* Mode Selection Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 sm:gap-3">
             {orderModes.map((mode) => (
               <button
                 key={mode.mode}
@@ -327,8 +339,7 @@ const TelegramOrderPage = () => {
                   "surface-card rounded-xl p-3 sm:p-4 text-left transition-all duration-200 border border-border/80 hover:border-border",
                   selectedMode === mode.mode 
                     ? "border-primary bg-primary/10 text-foreground" 
-                    : "text-muted-foreground hover:text-foreground",
-                  mode.mode === 'buy' && "col-span-2 sm:col-span-1"
+                    : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 <div className={cn("mb-1.5 sm:mb-2", mode.color)}>
@@ -375,16 +386,29 @@ const TelegramOrderPage = () => {
                   />
                 </div>
 
-                {needsDatacenter && (
+                {allowDatacenter && (
                   <div className="space-y-1.5">
-                    <Label className="text-xs font-medium">选择机房 *</Label>
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-medium">
+                        选择机房 {needsDatacenter ? "*" : "（可选，不选则盯所有机房）"}
+                      </Label>
+                      {selectedMode === 'watch' && datacenter && (
+                        <button
+                          type="button"
+                          onClick={() => setDatacenter('')}
+                          className="text-[11px] text-muted-foreground hover:text-primary transition-colors"
+                        >
+                          清除机房限制
+                        </button>
+                      )}
+                    </div>
                     <DatacenterPicker
                       multiple={false}
                       value={datacenter ? [datacenter] : []}
                       onChange={(codes) => setDatacenter(codes[0] || "")}
                       availability={dcAvailability}
                       disabled={!planCode.trim()}
-                      placeholder="请先选择服务器型号，再点选机房。"
+                      placeholder={selectedMode === 'watch' ? "默认盯全部机房，也可点选指定机房。" : "请先选择服务器型号，再点选机房。"}
                     />
                   </div>
                 )}
@@ -399,6 +423,25 @@ const TelegramOrderPage = () => {
                       max={10}
                       value={quantity}
                       onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
+                      className="h-8 rounded-lg text-xs bg-background/50 border-border/80"
+                    />
+                  </div>
+                )}
+
+                {/* Quantity (for watch mode) */}
+                {selectedMode === 'watch' && (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-medium">自动抢购数量（可选）</Label>
+                      <span className="text-[11px] text-muted-foreground">0 为仅通知，≥1 补货自动下单</span>
+                    </div>
+                    <Input 
+                      type="number"
+                      min={0}
+                      max={10}
+                      value={quantity}
+                      onChange={(e) => setQuantity(Math.max(0, parseInt(e.target.value) || 0))}
+                      placeholder="0 = 仅发通知，1 = 自动抢 1 台"
                       className="h-8 rounded-lg text-xs bg-background/50 border-border/80"
                     />
                   </div>
@@ -623,6 +666,13 @@ const TelegramOrderPage = () => {
                         badgeClass: "border-amber-500/30 text-amber-400 bg-amber-500/10",
                       },
                       {
+                        command: "/watch",
+                        format: "/watch <型号> [机房...] [x数量]",
+                        description: "盯盘补货（缺货自动盯盘，带 x1 自动下单，不带仅通知）",
+                        example: "/watch 24ska01 gra x1",
+                        badgeClass: "border-indigo-500/30 text-indigo-400 bg-indigo-500/10",
+                      },
+                      {
                         command: "/tasks",
                         format: "/tasks",
                         description: "查看当前挂机抢购任务队列，支持一键取消",
@@ -704,6 +754,13 @@ const TelegramOrderPage = () => {
                     description: "查询指定型号在特定机房的实际落地价格",
                     example: "/price 24ska01 gra",
                     badgeClass: "border-amber-500/30 text-amber-400 bg-amber-500/10",
+                  },
+                  {
+                    command: "/watch",
+                    format: "/watch <型号> [机房...] [x数量]",
+                    description: "盯盘补货（缺货自动盯盘，带 x1 自动下单，不带仅通知）",
+                    example: "/watch 24ska01 gra x1",
+                    badgeClass: "border-indigo-500/30 text-indigo-400 bg-indigo-500/10",
                   },
                   {
                     command: "/tasks",

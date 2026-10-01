@@ -94,7 +94,7 @@ export function summarizeGroups(diskGroups: Record<string, DiskGroup>): GroupSum
         label: `${disks.length}×${cap}${disks[0]?.unit || "GB"} ${diskTypeLabel(type)}`,
       };
     })
-    .filter((g) => g.id > 0 && g.diskCount > 0)
+    .filter((g) => g.id >= 0 && g.diskCount > 0)
     .sort((a, b) => a.id - b.id);
 }
 

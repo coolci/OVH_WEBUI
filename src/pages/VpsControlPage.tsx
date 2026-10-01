@@ -44,13 +44,15 @@ import { RenewalDialog } from "@/components/server-control/RenewalDialog";
 import { EngagementDialog, type EngagementHooks } from "@/components/server-control/EngagementDialog";
 import { toast } from "sonner";
 
+const EMPTY_VPS_LIST: OwnedVps[] = [];
+
 function VpsControlPage() {
   const q = useOwnedVps();
   const { hidden, toggle } = useHideIp();
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const [activeAccount, setActiveAccount] = useActiveServerControlAccount();
   const { data: accounts } = useAccounts();
-  const vpsList = q.data || [];
+  const vpsList = q.data || EMPTY_VPS_LIST;
 
   useEffect(() => {
     if (!activeAccount && accounts && accounts.length > 0) {
@@ -193,9 +195,11 @@ function VpsControlPage() {
 
 /* ────────────── VPS 详情区 ────────────── */
 
+const EMPTY_OPTIONS: any[] = [];
+
 function VpsOptionsPanel({ serviceName, region }: { serviceName: string; region: string }) {
   const q = useVpsOptions(serviceName);
-  const list = q.data || [];
+  const list = q.data || EMPTY_OPTIONS;
 
   return (
     <div className="border border-border rounded-2xl p-4 space-y-3">
@@ -263,6 +267,7 @@ function VpsDetail({
 
   const [reinstallOpen, setReinstallOpen] = useState(false);
   const [stopOpen, setStopOpen] = useState(false);
+  const [rebootOpen, setRebootOpen] = useState(false);
   const [terminateOpen, setTerminateOpen] = useState(false);
   const [termToken, setTermToken] = useState("");
   const [renewalOpen, setRenewalOpen] = useState(false);
@@ -318,10 +323,10 @@ function VpsDetail({
     }
   };
   const handleReboot = async () => {
-    if (!confirm("确认重启 VPS?")) return;
     try {
       await reboot.mutateAsync();
       toast.success("重启任务已提交");
+      setRebootOpen(false);
     } catch (e: any) {
       toast.error(e?.response?.data?.error || "重启失败");
     }
@@ -485,7 +490,7 @@ function VpsDetail({
             <Button
               variant="outline"
               size="sm"
-              onClick={handleReboot}
+              onClick={() => setRebootOpen(true)}
               disabled={reboot.isPending || !isRunning}
               className="h-10 text-xs font-medium border-border/80"
             >
@@ -716,6 +721,25 @@ function VpsDetail({
             <Button variant="outline" onClick={() => setStopOpen(false)}>取消</Button>
             <Button variant="destructive" onClick={handleStop} disabled={stop.isPending}>
               {stop.isPending ? "提交中…" : "确认关机"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 重启确认 */}
+      <Dialog open={rebootOpen} onOpenChange={setRebootOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>确认重启 VPS？</DialogTitle>
+            <DialogDescription>向 VPS 发送重启指令进行热重启</DialogDescription>
+          </DialogHeader>
+          <p className="text-[12px] text-muted-foreground">
+            重启期间网络连接将短暂中断，通常在 1-2 分钟内恢复正常。
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRebootOpen(false)}>取消</Button>
+            <Button variant="destructive" onClick={handleReboot} disabled={reboot.isPending}>
+              {reboot.isPending ? "重启中…" : "确认重启"}
             </Button>
           </DialogFooter>
         </DialogContent>

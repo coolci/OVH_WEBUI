@@ -233,23 +233,23 @@ function InterfaceChart({
   upload: MrtgInterface;
   period: MrtgPeriod;
 }) {
-  const chartData = useMemo(
-    () =>
-      download.data.map((dp, i) => {
-        const up = upload.data[i];
-        return {
-          time: new Date(dp.timestamp * 1000).toLocaleString("zh-CN", {
-            month: "2-digit",
-            day: "2-digit",
-            hour: "2-digit",
-            minute: "2-digit",
-          }),
-          download: dp.value?.value || 0,
-          upload: up?.value?.value || 0,
-        };
-      }),
-    [download, upload]
-  );
+  const chartData = useMemo(() => {
+    const dlData = download?.data || [];
+    const upData = upload?.data || [];
+    return dlData.map((dp, i) => {
+      const up = upData[i];
+      return {
+        time: new Date(dp.timestamp * 1000).toLocaleString("zh-CN", {
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+        download: dp.value?.value || 0,
+        upload: up?.value?.value || 0,
+      };
+    });
+  }, [download, upload]);
 
   const stats = useMemo(() => {
     const dl = chartData.map((d) => d.download);

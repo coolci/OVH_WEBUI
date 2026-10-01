@@ -130,7 +130,7 @@ export function PowerTab({ server }: { server: OwnedServer }) {
 
       {/* 硬重启二次确认弹窗 */}
       <Dialog open={rebootOpen} onOpenChange={(v) => !rebooting && setRebootOpen(v)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md max-h-[90dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-warning">
               <AlertTriangle className="w-5 h-5 text-amber-500" />
