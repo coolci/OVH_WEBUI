@@ -43,6 +43,7 @@ import { VpsTasksDialog } from "@/components/vps-control/VpsTasksDialog";
 import { RenewalDialog } from "@/components/server-control/RenewalDialog";
 import { EngagementDialog, type EngagementHooks } from "@/components/server-control/EngagementDialog";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 const EMPTY_VPS_LIST: OwnedVps[] = [];
 

@@ -38,6 +38,7 @@ import { ReinstallDialog } from "@/components/server-control/ReinstallDialog";
 import { RetractionDialog } from "@/components/server-control/RetractionDialog";
 import { EngagementDialog } from "@/components/server-control/EngagementDialog";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 const EMPTY_SERVERS: OwnedServer[] = [];
 
@@ -48,7 +49,7 @@ function ServerControlPage() {
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const [activeAccount, setActiveAccount] = useActiveServerControlAccount();
   const { data: accounts } = useAccounts();
-  const aliases = useServerAliases();
+  const { data: aliases } = useServerAliases();
   const servers = q.data || EMPTY_SERVERS;
 
   // 首次没选过账户 → 自动选默认账户
@@ -478,7 +479,14 @@ function ServerTabs({ server }: { server: OwnedServer }) {
               >
                 <Undo2 className="w-3.5 h-3.5 text-warning" />
                 <span>可撤单:</span>
-                <span>还剩 {retraction.data.daysLeft ?? "?"} 天</span>
+                <span>
+                  还剩{" "}
+                  {typeof retraction.data.hoursLeft === "number"
+                    ? retraction.data.hoursLeft > 48
+                      ? `${Math.ceil(retraction.data.hoursLeft / 24)} 天`
+                      : `${retraction.data.hoursLeft} 小时`
+                    : retraction.data.daysLeft ? `${retraction.data.daysLeft} 天` : "在期内"}
+                </span>
               </button>
             )}
             {info.data?.expiration && (

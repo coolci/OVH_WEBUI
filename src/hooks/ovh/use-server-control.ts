@@ -1029,6 +1029,7 @@ export interface RetractionInfo {
   orderDate?: string;
   retractionDate?: string;
   hoursLeft?: number;
+  daysLeft?: number;
   reasons?: { value: string; label: string }[];
 }
 
