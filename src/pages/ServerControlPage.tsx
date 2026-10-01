@@ -109,7 +109,7 @@ function ServerControlPage() {
         }
       />
 
-      {/* 账户 + 服务器 选择卡片 (移动端 App 风格) */}
+      {/* 账户 + 服务器 选择卡片 */}
       <Card className="surface-card rounded-xl border-border">
         <CardContent className="p-3 sm:p-4">
           <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-4">
@@ -157,7 +157,7 @@ function ServerControlPage() {
 
       {/* 设备列表横向切换卡片 (多服务器速览) */}
       {servers.length > 1 && (
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1 -mt-2">
+        <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar pb-1 -mt-2">
           {servers.map((s) => {
             const isCurrent = s.serviceName === selectedName;
             const name = aliasOf(aliases, s.serviceName, s.name);
@@ -166,18 +166,18 @@ function ServerControlPage() {
                 key={s.serviceName}
                 onClick={() => setSelectedName(s.serviceName)}
                 className={cn(
-                  "flex items-center gap-2.5 px-3 py-2 rounded-xl border text-xs text-left transition-all duration-150 flex-shrink-0 touch-manipulation",
+                  "flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border text-xs text-left transition-all duration-200 flex-shrink-0 touch-manipulation",
                   isCurrent
-                    ? "border-primary bg-primary/10 text-foreground font-medium shadow-sm"
-                    : "border-border/70 hover:border-border bg-card/60 hover:bg-secondary/40 text-muted-foreground hover:text-foreground"
+                    ? "border-primary/60 bg-primary/8 text-foreground font-medium shadow-sm shadow-primary/10 ring-1 ring-primary/20"
+                    : "border-border/60 hover:border-border bg-card/80 hover:bg-card text-muted-foreground hover:text-foreground hover:shadow-sm"
                 )}
               >
                 <StatusDot tone={s.state === "ok" ? "success" : "warning"} size="xs" />
                 <div className="min-w-0">
-                  <div className="font-semibold font-mono text-foreground leading-tight">
+                  <div className="font-semibold font-mono text-foreground leading-tight truncate max-w-[220px]">
                     {maskSensitive(name, hidden)}
                   </div>
-                  <div className="text-[10px] text-muted-foreground/80 mt-0.5 font-sans">
+                  <div className="text-[10px] text-muted-foreground/70 mt-0.5 font-sans">
                     {(s.datacenter || "").toUpperCase()} · {s.commercialRange || "OVH"}
                   </div>
                 </div>
