@@ -71,7 +71,8 @@ if ((Test-Path $EnvFile) -and (-not $ForceEnv)) {
       $out.Add($line)
     }
   }
-  $out | Set-Content -Path $EnvFile -Encoding UTF8
+  $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+  [System.IO.File]::WriteAllLines($EnvFile, $out, $utf8NoBom)
   Write-Host "  wrote backend/.env with random API_SECRET_KEY"
 }
 
@@ -97,7 +98,8 @@ if ((Test-Path $RootEnvExample) -and ((-not (Test-Path $RootEnv)) -or $ForceEnv)
       $rout.Add($line)
     }
   }
-  $rout | Set-Content -Path $RootEnv -Encoding UTF8
+  $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+  [System.IO.File]::WriteAllLines($RootEnv, $rout, $utf8NoBom)
   Write-Host "  wrote root .env"
 } elseif (Test-Path $RootEnv) {
   Write-Host "  keep existing root .env"
