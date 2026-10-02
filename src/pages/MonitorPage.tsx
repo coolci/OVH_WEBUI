@@ -1,6 +1,7 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Helmet } from "react-helmet-async";
 import {
+  Activity,
   Bell,
   BellOff,
   RefreshCw,
@@ -12,6 +13,7 @@ import {
   Pencil,
 } from "lucide-react";
 import { useState } from "react";
+import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -68,7 +70,7 @@ function MonitorPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        icon={Bell}
+        icon={Activity}
         title="服务器监控"
         description="自动监控服务器可用性变化并推送通知"
         action={
@@ -84,16 +86,18 @@ function MonitorPage() {
             <Button
               variant="outline"
               size="sm"
-              className="h-8 w-8 p-0 rounded-lg border-border/80 hover:bg-secondary flex-shrink-0"
+              className="h-8 text-xs gap-1.5 border-border/80 hover:bg-secondary px-2.5 sm:px-3 rounded-lg"
               onClick={handleRefresh}
               disabled={isRefreshing || list.isFetching || status.isFetching}
               title="刷新订阅与监控状态"
             >
               <RefreshCw
-                className={`w-3.5 h-3.5 ${
-                  isRefreshing || list.isFetching || status.isFetching ? "animate-spin" : ""
-                }`}
+                className={cn(
+                  "w-3.5 h-3.5",
+                  (isRefreshing || list.isFetching || status.isFetching) && "animate-spin"
+                )}
               />
+              <span className="hidden sm:inline">刷新</span>
             </Button>
           </div>
         }
@@ -273,8 +277,8 @@ function SubRow({
               )}
             </div>
             <p className="text-xs text-muted-foreground mb-1.5">
-              {sub.datacenters.length > 0
-                ? `监控数据中心: ${sub.datacenters.join(", ")}`
+              {(sub.datacenters?.length ?? 0) > 0
+                ? `监控数据中心: ${sub.datacenters?.join(", ")}`
                 : "监控所有数据中心"}
             </p>
             <div className="flex gap-1.5 flex-wrap items-center">

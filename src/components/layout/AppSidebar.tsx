@@ -8,7 +8,7 @@ import {
   Activity,
   MonitorDot,
   Settings,
-  ScrollText,
+  FileText,
   Cpu,
   User,
   Cloud,
@@ -58,7 +58,7 @@ const navGroups = [
     title: "系统",
     items: [
       { to: "/history", icon: History, label: "抢购历史" },
-      { to: "/logs", icon: ScrollText, label: "系统日志" },
+      { to: "/logs", icon: FileText, label: "系统日志" },
       { to: "/settings", icon: Settings, label: "系统设置" },
     ],
   },

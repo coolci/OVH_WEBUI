@@ -14,6 +14,7 @@ import {
   Eye,
   DollarSign,
   Zap,
+  CloudLightning,
   Radar,
   Copy,
   CheckCircle2,
@@ -274,7 +275,7 @@ const TelegramOrderPage = () => {
         <div className="space-y-4 sm:space-y-6">
           {/* Header */}
           <PageHeader
-            icon={Zap}
+            icon={CloudLightning}
             title="云下单"
             description="网页演练云端与 Bot 相同的快捷命令 · 设置填写 Token 和 Chat ID"
             action={
@@ -592,9 +593,9 @@ const TelegramOrderPage = () => {
                     variant="ghost"
                     size="sm"
                     onClick={clearHistory}
-                    className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive gap-1"
+                    className="h-7 px-2.5 text-xs text-muted-foreground hover:text-destructive gap-1.5 rounded-lg"
                   >
-                    <Trash2 className="h-3 w-3" />
+                    <Trash2 className="w-3.5 h-3.5" />
                     <span>清空</span>
                   </Button>
                 )}

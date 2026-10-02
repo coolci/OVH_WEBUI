@@ -9,7 +9,7 @@ import {
   MonitorDot,
   Cloud,
   History,
-  ScrollText,
+  FileText,
   Settings,
   User,
   CloudLightning,
@@ -33,13 +33,13 @@ const primaryNav = [
 ];
 
 const moreNav = [
-  { to: "/monitor", icon: Activity, label: "独服监控", group: "监控" },
+  { to: "/monitor", icon: Activity, label: "服务器监控", group: "监控" },
   { to: "/vps-monitor", icon: MonitorDot, label: "VPS 补货", group: "监控" },
   { to: "/vps-control", icon: Cloud, label: "VPS 控制", group: "实例" },
   { to: "/account", icon: User, label: "账户管理", group: "实例" },
   { to: "/telegram-order", icon: CloudLightning, label: "云下单", group: "抢购" },
   { to: "/history", icon: History, label: "抢购历史", group: "系统" },
-  { to: "/logs", icon: ScrollText, label: "详细日志", group: "系统" },
+  { to: "/logs", icon: FileText, label: "系统日志", group: "系统" },
   { to: "/settings", icon: Settings, label: "系统设置", group: "系统" },
 ];
 

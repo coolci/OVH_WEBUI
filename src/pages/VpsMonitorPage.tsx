@@ -2,6 +2,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Helmet } from "react-helmet-async";
 import { Link } from "react-router-dom";
 import {
+  MonitorDot,
   Cloud,
   Bell,
   BellOff,
@@ -105,7 +106,7 @@ function VPSMonitorPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        icon={Cloud}
+        icon={MonitorDot}
         title="VPS 补货通知"
         description="选择 VPS 型号，自动监控所有数据中心的库存变化"
         action={
@@ -121,16 +122,18 @@ function VPSMonitorPage() {
             <Button
               variant="outline"
               size="sm"
-              className="h-8 w-8 p-0 rounded-lg border-border/80 hover:bg-secondary flex-shrink-0"
+              className="h-8 text-xs gap-1.5 border-border/80 hover:bg-secondary px-2.5 sm:px-3 rounded-lg"
               onClick={handleRefresh}
               disabled={isRefreshing || list.isFetching || status.isFetching}
               title="刷新订阅与库存状态"
             >
               <RefreshCw
-                className={`w-3.5 h-3.5 ${
-                  isRefreshing || list.isFetching || status.isFetching ? "animate-spin" : ""
-                }`}
+                className={cn(
+                  "w-3.5 h-3.5",
+                  (isRefreshing || list.isFetching || status.isFetching) && "animate-spin"
+                )}
               />
+              <span className="hidden sm:inline">刷新</span>
             </Button>
           </div>
         }
@@ -340,8 +343,8 @@ function VPSRow({
               <Chip tone="default">{sub.ovhSubsidiary}</Chip>
             </div>
             <p className="text-xs text-muted-foreground mb-1.5">
-              {sub.datacenters.length > 0
-                ? `监控数据中心: ${sub.datacenters.join(", ")}`
+              {(sub.datacenters?.length ?? 0) > 0
+                ? `监控数据中心: ${sub.datacenters?.join(", ")}`
                 : "监控所有数据中心"}
             </p>
             <div className="flex gap-1.5 flex-wrap items-center">

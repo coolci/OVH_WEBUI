@@ -2,7 +2,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Helmet } from "react-helmet-async";
 import {
   Settings as SettingsIcon, KeyRound, Globe, Send, Database, Save,
-  AlertTriangle, CheckCircle2, Plus, Star, RotateCw, Trash2, Pencil,
+  AlertTriangle, CheckCircle2, Plus, Star, Trash2, Pencil,
   RefreshCw, Eye, EyeOff, Cpu, Radio, Network, Fingerprint, ShieldAlert,
   Radar, Ban, Activity, Timer
 } from "lucide-react";
@@ -699,29 +699,30 @@ function AccountCard({
             )}
           </div>
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
           <Button
             variant="outline"
             size="sm"
             onClick={() => setChecking(true)}
             title="实测这个账户到 OVH 的连通性与延迟"
+            className="h-8 text-xs gap-1.5 border-border/80 px-2.5 rounded-lg"
           >
             <Activity className={cn("w-3.5 h-3.5", check.isPending && "animate-pulse")} />
-            {check.isPending ? "检测中…" : "链路检测"}
+            <span>{check.isPending ? "检测中…" : "链路检测"}</span>
           </Button>
-          <Button variant="ghost" size="icon" onClick={() => verify.mutate(acc.id)} disabled={verify.isPending} title="重新验证凭据">
-            <RotateCw className={cn("w-4 h-4", verify.isPending && "animate-spin")} />
+          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg" onClick={() => verify.mutate(acc.id)} disabled={verify.isPending} title="重新验证凭据">
+            <RefreshCw className={cn("w-3.5 h-3.5", verify.isPending && "animate-spin")} />
           </Button>
           {!acc.isDefault && (
-            <Button variant="ghost" size="icon" onClick={() => setDefault.mutate(acc.id)} disabled={setDefault.isPending} title="设为默认">
-              <Star className="w-4 h-4" />
+            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg" onClick={() => setDefault.mutate(acc.id)} disabled={setDefault.isPending} title="设为默认">
+              <Star className="w-3.5 h-3.5" />
             </Button>
           )}
-          <Button variant="ghost" size="icon" onClick={onEdit} title="编辑">
-            <Pencil className="w-4 h-4" />
+          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg" onClick={onEdit} title="编辑">
+            <Pencil className="w-3.5 h-3.5" />
           </Button>
-          <Button variant="ghost" size="icon" onClick={() => setConfirming(true)} title="删除" className="text-destructive hover:text-destructive">
-            <Trash2 className="w-4 h-4" />
+          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => setConfirming(true)} title="删除">
+            <Trash2 className="w-3.5 h-3.5" />
           </Button>
         </div>
       </div>

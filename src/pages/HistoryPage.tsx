@@ -1,6 +1,6 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Helmet } from "react-helmet-async";
-import { Clock, RefreshCw, Trash2, Search, ExternalLink, AlertCircle, Hourglass } from "lucide-react";
+import { History, RefreshCw, Trash2, Search, ExternalLink, AlertCircle, Hourglass } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -185,36 +185,37 @@ function HistoryPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        icon={Clock}
+        icon={History}
         title="抢购历史"
         description="查看服务器购买历史记录"
         action={
           <div className="flex items-center gap-2">
             <Button
-              variant="outline"
               size="sm"
-              className="h-8 text-xs gap-1.5 border-border/80 hover:bg-secondary px-2.5 sm:px-3 rounded-lg"
+              className="h-8 gap-1.5 text-xs font-medium rounded-lg shadow-sm px-3"
               onClick={() => refreshStatus.mutate()}
               disabled={list.isFetching || refreshStatus.isPending}
               title="向 OVH 查询未到终态订单的支付状态，然后重载列表"
             >
               <RefreshCw
-                className={`w-3.5 h-3.5 ${list.isFetching || refreshStatus.isPending ? "animate-spin" : ""}`}
+                className={cn(
+                  "w-3.5 h-3.5",
+                  (list.isFetching || refreshStatus.isPending) && "animate-spin"
+                )}
               />
-              <span className="hidden sm:inline">刷新状态</span>
+              <span>刷新</span>
             </Button>
-            {items.length > 0 && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 text-xs gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 px-2.5 sm:px-3 rounded-lg"
-                onClick={() => setConfirmClear(true)}
-                title="清空所有历史"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">清空</span>
-              </Button>
-            )}
+            <Button
+              variant="soft-destructive"
+              size="sm"
+              className="h-8 gap-1.5 text-xs font-medium rounded-lg px-3"
+              onClick={() => setConfirmClear(true)}
+              disabled={items.length === 0}
+              title="清空所有历史"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>清空</span>
+            </Button>
           </div>
         }
       />
@@ -256,7 +257,7 @@ function HistoryPage() {
       ) : list.isError ? (
         <Card className="surface-card rounded-xl border-border">
           <LoadFailed
-            icon={Clock}
+            icon={History}
             title="抢购历史读取失败 —— 不是「你没有订单」,是我们没读到"
             error={list.error}
             onRetry={() => list.refetch()}
@@ -268,7 +269,7 @@ function HistoryPage() {
         </Card>
       ) : filtered.length === 0 ? (
         <Card className="surface-card rounded-xl border-border">
-          <EmptyState icon={Clock} title="没有匹配的订单" />
+          <EmptyState icon={History} title="没有匹配的订单" />
         </Card>
       ) : (
         <>

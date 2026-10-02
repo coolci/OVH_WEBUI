@@ -95,13 +95,13 @@ function VpsControlPage() {
         icon={Cloud}
         action={
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5 border-border/80 hover:bg-secondary" onClick={toggle}>
+            <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5 px-3 rounded-lg" onClick={toggle}>
               {hidden ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
               <span>{hidden ? "显示 IP" : "隐藏 IP"}</span>
             </Button>
-            <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5 border-border/80 hover:bg-secondary" onClick={() => q.refetch()} disabled={q.isFetching}>
-              <RefreshCw className={"w-3.5 h-3.5" + (q.isFetching ? " animate-spin" : "")} />
-              <span className="hidden sm:inline">刷新</span>
+            <Button size="sm" className="h-8 gap-1.5 text-xs font-medium rounded-lg shadow-sm px-3" onClick={() => q.refetch()} disabled={q.isFetching} title="刷新 VPS 状态">
+              <RefreshCw className={cn("w-3.5 h-3.5", q.isFetching && "animate-spin")} />
+              <span>刷新</span>
             </Button>
           </div>
         }

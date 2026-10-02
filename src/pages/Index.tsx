@@ -3,7 +3,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Helmet } from "react-helmet-async";
 import { Link } from "react-router-dom";
 import {
-  BarChart3,
+  LayoutDashboard,
   ClipboardList,
   Server,
   CheckCircle2,
@@ -21,8 +21,9 @@ import {
   ShieldCheck,
   Radar,
   RefreshCw,
-  type LucideIcon,
   Sparkles,
+  Cpu,
+  type LucideIcon,
 } from "lucide-react";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -44,7 +45,16 @@ import { isDcInStock } from "@/lib/datacenters";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
-/** 仪表盘 v2.0: 运维中控指挥条 + 4 KPI 指标卡 + 实时盯盘与补货信号雷达 + 活跃队列/系统状态 + 资源波形监控 */
+/**
+ * 仪表盘 v3.0 (Obsidian Slate 旗舰中枢)
+ *
+ * 核心升级：
+ * 1. 移动端/桌面端全自适应中控感知条（移动端严格 2x2 对称网格，宽屏三段式流线布局）。
+ * 2. 4 KPI 核心指标卡对齐 md:grid-cols-4 栅格，消灭断点错位。
+ * 3. 实时盯盘雷达与活跃队列视窗强化补货动效与快捷操作。
+ * 4. 硬件遥测（CPU/内存/磁盘）整合为一体化仪表舱，彻底解决移动端三张大卡堆叠刷屏的缺陷。
+ * 5. 全站图标尺寸（w-3.5 h-3.5 / w-4 h-4）与微交互完全规范化。
+ */
 function DashboardPage() {
   const stats = useStats();
   const queue = useQueueList();
@@ -70,7 +80,7 @@ function DashboardPage() {
   const [quickOrderPlanCode, setQuickOrderPlanCode] = useState<string | undefined>(undefined);
   const [subscribeOpen, setSubscribeOpen] = useState(false);
   const [subscribePlanCode, setSubscribePlanCode] = useState<string | undefined>(undefined);
-  const [monitorRefreshing, setMonitorRefreshing] = useState(false);
+  const [isRefreshingAll, setIsRefreshingAll] = useState(false);
 
   const handleOpenQuickOrder = (planCode?: string) => {
     setQuickOrderPlanCode(planCode);
@@ -82,33 +92,50 @@ function DashboardPage() {
     setSubscribeOpen(true);
   };
 
-  const handleRefreshMonitor = async () => {
-    setMonitorRefreshing(true);
+  const handleRefreshAll = async () => {
+    setIsRefreshingAll(true);
     try {
-      await Promise.all([monitorList.refetch(), stats.refetch()]);
-      toast.success("已刷新最新盯盘与探针状态");
+      await Promise.all([
+        stats.refetch(),
+        queue.refetch(),
+        monitorList.refetch(),
+        sys.refetch(),
+        poller.refetch(),
+      ]);
+      toast.success("仪表盘核心数据已刷新至最新状态");
     } finally {
-      setTimeout(() => setMonitorRefreshing(false), 450);
+      setTimeout(() => setIsRefreshingAll(false), 500);
     }
   };
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      {/* 页面主标题区 */}
+      {/* 1. 页面顶栏操作区 */}
       <PageHeader
-        icon={BarChart3}
+        icon={LayoutDashboard}
         title="仪表盘"
         description="OVH 智能抢购与基础设施运行中枢"
         action={
           <div className="flex items-center gap-2">
             <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRefreshAll}
+              disabled={isRefreshingAll}
+              className="h-8 gap-1.5 text-xs font-medium rounded-lg border-border/80 hover:bg-secondary px-2.5 sm:px-3 touch-manipulation"
+              title="全局刷新指标"
+            >
+              <RefreshCw className={cn("w-3.5 h-3.5", isRefreshingAll && "animate-spin")} />
+              <span className="hidden sm:inline">刷新数据</span>
+            </Button>
+            <Button
               asChild
               variant="outline"
               size="sm"
-              className="h-8 gap-1.5 text-xs font-medium rounded-lg border-border/80 hover:bg-secondary"
+              className="h-8 gap-1.5 text-xs font-medium rounded-lg border-border/80 hover:bg-secondary px-2.5 sm:px-3 touch-manipulation"
             >
               <Link to="/monitor">
-                <Radar className="h-3.5 w-3.5 text-primary" />
+                <Radar className="w-3.5 h-3.5 text-primary" />
                 <span className="hidden sm:inline">盯盘监控</span>
                 <span className="sm:hidden">盯盘</span>
               </Link>
@@ -116,61 +143,132 @@ function DashboardPage() {
             <Button
               onClick={() => handleOpenQuickOrder()}
               size="sm"
-              className="h-8 gap-1.5 text-xs font-medium rounded-lg shadow-sm"
+              className="h-8 gap-1.5 text-xs font-medium rounded-lg shadow-sm px-3 touch-manipulation"
             >
-              <Zap className="h-3.5 w-3.5" />
-              快速下单
+              <Zap className="w-3.5 h-3.5" />
+              <span>快速下单</span>
             </Button>
           </div>
         }
       />
 
-      {/* 顶部运维中控指挥条 */}
-      <div className="surface-card rounded-2xl p-3.5 sm:p-4 border border-border/80 bg-card/75 backdrop-blur-md shadow-sm">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex items-center gap-2 pr-3.5 border-r border-border/70">
+      {/* 2. 运维中控指挥条 (响应式对称布局) */}
+      <div className="surface-card rounded-2xl p-3 sm:p-4 border border-border/80 bg-card/75 backdrop-blur-md shadow-sm">
+        {/* 桌面端流线布局 (md 及以上) */}
+        <div className="hidden md:flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4 flex-1 min-w-0">
+            {/* 系统在线状态徽章 */}
+            <div className="flex items-center gap-2 pr-4 border-r border-border/70 flex-shrink-0">
               <span className="relative flex h-2.5 w-2.5">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
                 <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
               </span>
-              <span className="text-xs font-semibold tracking-tight text-foreground">
+              <span className="text-xs font-semibold tracking-tight text-foreground whitespace-nowrap">
                 系统全勤在线
               </span>
             </div>
 
-            <div className="flex items-center gap-3.5 sm:gap-5 text-xs text-muted-foreground flex-wrap">
-              <div className="inline-flex items-center gap-1.5" title="抢购队列处理器状态">
+            {/* 4 大核心调度服务状态 */}
+            <div className="flex items-center gap-4 lg:gap-6 text-xs text-muted-foreground min-w-0 flex-1">
+              <div className="inline-flex items-center gap-1.5 truncate" title="抢购队列处理器状态">
                 <StatusDot tone={stats.data?.queueProcessorRunning ? "success" : "warning"} size="xs" />
-                <span>队列调度: <strong className="font-mono text-foreground font-medium">{stats.data?.queueProcessorRunning ? "运行中" : "就绪"}</strong></span>
+                <span className="whitespace-nowrap">队列调度:</span>
+                <strong className="font-mono text-foreground font-medium">
+                  {stats.data?.queueProcessorRunning ? "运行中" : "就绪"}
+                </strong>
               </div>
-              <div className="inline-flex items-center gap-1.5" title="库存监控引擎状态">
+
+              <div className="inline-flex items-center gap-1.5 truncate" title="库存监控引擎状态">
                 <StatusDot tone={stats.data?.monitorRunning ? "success" : "muted"} size="xs" />
-                <span>盯盘引擎: <strong className="font-mono text-foreground font-medium">{stats.data?.monitorRunning ? "监测中" : "待启动"}</strong></span>
+                <span className="whitespace-nowrap">盯盘引擎:</span>
+                <strong className="font-mono text-foreground font-medium">
+                  {stats.data?.monitorRunning ? "监测中" : "待启动"}
+                </strong>
               </div>
-              <div className="inline-flex items-center gap-1.5" title="Telegram Bot 轮询状态">
+
+              <div className="inline-flex items-center gap-1.5 truncate" title="Telegram Bot 轮询状态">
                 <StatusDot tone={poller.data?.running ? "success" : "warning"} size="xs" />
-                <span>Telegram: <strong className="font-mono text-foreground font-medium">{poller.data?.running ? `@${poller.data.botUsername || "在线"}` : "未连接"}</strong></span>
+                <span className="whitespace-nowrap">Telegram:</span>
+                <strong className="font-mono text-foreground font-medium truncate">
+                  {poller.data?.running ? `@${poller.data.botUsername || "在线"}` : "未连接"}
+                </strong>
               </div>
+
               {defaultAccount && (
-                <div className="inline-flex items-center gap-1.5" title="当前默认下单扣费账户">
-                  <ShieldCheck className="w-3.5 h-3.5 text-primary" />
-                  <span>默认账户: <strong className="font-medium text-foreground">{defaultAccount.name}</strong></span>
+                <div className="inline-flex items-center gap-1.5 truncate" title="当前默认下单扣费账户">
+                  <ShieldCheck className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+                  <span className="whitespace-nowrap">默认账户:</span>
+                  <strong className="font-medium text-foreground truncate">{defaultAccount.name}</strong>
                 </div>
               )}
             </div>
           </div>
 
-          <div className="flex items-center gap-2 self-end lg:self-auto text-[11px] text-muted-foreground font-mono">
-            <span>活跃型号: <strong className="text-primary font-bold">{monitorCount}</strong></span>
+          {/* 右侧数量统计 */}
+          <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono flex-shrink-0 pl-3 border-l border-border/70">
+            <span>盯盘: <strong className="text-primary font-bold">{monitorCount}</strong></span>
             <span className="opacity-40">/</span>
-            <span>库存服务器: <strong className="text-foreground font-medium">{stats.data?.totalServers ?? 0}</strong></span>
+            <span>现货: <strong className="text-foreground font-medium">{stats.data?.totalServers ?? 0}</strong></span>
+          </div>
+        </div>
+
+        {/* 移动端对称 2x2 网格布局 (< md) */}
+        <div className="md:hidden space-y-2.5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+              </span>
+              <span className="text-xs font-semibold tracking-tight text-foreground">
+                系统全勤在线
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-mono">
+              <span>盯盘: <strong className="text-primary">{monitorCount}</strong></span>
+              <span className="opacity-40">·</span>
+              <span>现货: <strong className="text-foreground">{stats.data?.totalServers ?? 0}</strong></span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 pt-2 border-t border-border/50 text-xs">
+            <div className="flex items-center gap-1.5 p-1.5 rounded-lg bg-secondary/30 border border-border/60 min-w-0">
+              <StatusDot tone={stats.data?.queueProcessorRunning ? "success" : "warning"} size="xs" />
+              <span className="text-[11px] text-muted-foreground whitespace-nowrap">队列:</span>
+              <span className="font-mono text-[11px] font-medium text-foreground truncate">
+                {stats.data?.queueProcessorRunning ? "运行中" : "就绪"}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5 p-1.5 rounded-lg bg-secondary/30 border border-border/60 min-w-0">
+              <StatusDot tone={stats.data?.monitorRunning ? "success" : "muted"} size="xs" />
+              <span className="text-[11px] text-muted-foreground whitespace-nowrap">盯盘:</span>
+              <span className="font-mono text-[11px] font-medium text-foreground truncate">
+                {stats.data?.monitorRunning ? "监测中" : "待启动"}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5 p-1.5 rounded-lg bg-secondary/30 border border-border/60 min-w-0">
+              <StatusDot tone={poller.data?.running ? "success" : "warning"} size="xs" />
+              <span className="text-[11px] text-muted-foreground whitespace-nowrap">TG:</span>
+              <span className="font-mono text-[11px] font-medium text-foreground truncate">
+                {poller.data?.running ? `@${poller.data.botUsername || "在线"}` : "未连接"}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5 p-1.5 rounded-lg bg-secondary/30 border border-border/60 min-w-0">
+              <ShieldCheck className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+              <span className="text-[11px] text-muted-foreground whitespace-nowrap">账户:</span>
+              <span className="text-[11px] font-medium text-foreground truncate">
+                {defaultAccount?.name || "未配置"}
+              </span>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* 4 大现代化 KPI 卡片 */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      {/* 3. 4 大现代化 KPI 卡片 (对齐 md:grid-cols-4) */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3.5">
         <KpiCard
           label="活跃队列"
           value={stats.data?.activeQueues}
@@ -203,7 +301,7 @@ function DashboardPage() {
               </span>
             )
           }
-          hint={`历史总轮询捕获记录`}
+          hint="历史总轮询捕获记录"
           icon={CheckCircle2}
           linkTo="/history"
           linkText="查看记录"
@@ -231,11 +329,11 @@ function DashboardPage() {
         />
       </div>
 
-      {/* 实时盯盘与补货信号雷达 */}
+      {/* 4. 实时盯盘与补货信号雷达 */}
       <Card className="surface-card rounded-2xl border-border/80 overflow-hidden shadow-sm">
-        <CardHeader className="p-4 sm:p-5 pb-3 border-b border-border/40 flex flex-row items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="relative flex items-center justify-center">
+        <CardHeader className="p-3.5 sm:p-5 pb-3 border-b border-border/40 flex flex-row items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="relative flex items-center justify-center flex-shrink-0">
               <span className={cn(
                 "animate-ping absolute inline-flex h-3 w-3 rounded-full opacity-75",
                 stats.data?.monitorRunning ? "bg-emerald-400" : "bg-muted"
@@ -245,11 +343,11 @@ function DashboardPage() {
                 stats.data?.monitorRunning ? "text-primary" : "text-muted-foreground"
               )} />
             </div>
-            <div>
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <span>实时盯盘与补货信号雷达</span>
+            <div className="min-w-0">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2 flex-wrap">
+                <span className="truncate">实时盯盘与补货信号雷达</span>
                 <span className={cn(
-                  "text-[10px] px-2 py-0.5 rounded-full font-mono font-medium border",
+                  "text-[10px] px-2 py-0.5 rounded-full font-mono font-medium border flex-shrink-0",
                   stats.data?.monitorRunning
                     ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
                     : "bg-muted text-muted-foreground border-border"
@@ -259,36 +357,39 @@ function DashboardPage() {
               </CardTitle>
             </div>
           </div>
-          <div className="flex items-center gap-1.5 sm:gap-2">
+
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
             <Button
               variant="outline"
               size="sm"
-              onClick={handleRefreshMonitor}
-              disabled={monitorRefreshing || monitorList.isFetching}
-              className="h-7 w-7 p-0 rounded-lg border-border/80 hover:bg-secondary flex-shrink-0"
+              onClick={() => monitorList.refetch()}
+              disabled={monitorList.isFetching}
+              className="h-8 w-8 p-0 rounded-lg border-border/80 hover:bg-secondary flex-shrink-0"
               title="刷新探针状态"
             >
-              <RefreshCw className={cn("h-3 w-3", (monitorRefreshing || monitorList.isFetching) && "animate-spin")} />
+              <RefreshCw className={cn("w-3.5 h-3.5", monitorList.isFetching && "animate-spin")} />
             </Button>
             <Button
               size="sm"
               variant="outline"
               onClick={() => handleOpenSubscribe()}
-              className="h-7 text-xs gap-1 px-2.5 rounded-lg border-border/80 hover:bg-secondary font-medium"
+              className="h-8 text-xs gap-1.5 px-2.5 sm:px-3 rounded-lg border-border/80 hover:bg-secondary font-medium"
             >
-              <Plus className="w-3 h-3" />
-              <span>添加盯盘</span>
+              <Plus className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">添加盯盘</span>
+              <span className="sm:hidden">添加</span>
             </Button>
             <Link
               to="/monitor"
               className="text-xs text-muted-foreground hover:text-primary transition-colors inline-flex items-center gap-0.5 font-medium ml-1"
             >
-              全部监控
-              <ChevronRight className="w-3 h-3" />
+              <span className="hidden sm:inline">全部监控</span>
+              <ChevronRight className="w-3.5 h-3.5" />
             </Link>
           </div>
         </CardHeader>
-        <CardContent className="p-4 sm:p-5">
+
+        <CardContent className="p-3.5 sm:p-5">
           {monitorList.isPending ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {Array.from({ length: 3 }).map((_, i) => (
@@ -326,12 +427,12 @@ function DashboardPage() {
                         </div>
                         {sub.autoOrder ? (
                           <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 flex items-center gap-1 font-semibold flex-shrink-0">
-                            <Zap className="w-2.5 h-2.5" />
+                            <Zap className="w-3 h-3" />
                             自抢 x{sub.quantity || 1}
                           </span>
                         ) : (
                           <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-secondary text-muted-foreground border border-border flex items-center gap-1 font-medium flex-shrink-0">
-                            <Bell className="w-2.5 h-2.5" />
+                            <Bell className="w-3 h-3" />
                             仅通知
                           </span>
                         )}
@@ -386,7 +487,7 @@ function DashboardPage() {
                           size="sm"
                           variant="ghost"
                           onClick={() => handleOpenSubscribe(sub.planCode)}
-                          className="h-6 text-[11px] px-2 rounded-md font-medium text-muted-foreground hover:text-foreground"
+                          className="h-7 text-[11px] px-2 rounded-md font-medium text-muted-foreground hover:text-foreground"
                         >
                           设置
                         </Button>
@@ -395,11 +496,12 @@ function DashboardPage() {
                           variant={hasStock ? "default" : "secondary"}
                           onClick={() => handleOpenQuickOrder(sub.planCode)}
                           className={cn(
-                            "h-6 text-[11px] px-2.5 rounded-md font-medium",
+                            "h-7 text-[11px] px-2.5 rounded-md font-medium gap-1",
                             hasStock && "bg-emerald-600 hover:bg-emerald-500 text-white"
                           )}
                         >
-                          {hasStock ? "立即秒抢" : "下单"}
+                          {hasStock && <Zap className="w-3 h-3" />}
+                          <span>{hasStock ? "立即秒抢" : "下单"}</span>
                         </Button>
                       </div>
                     </div>
@@ -422,7 +524,7 @@ function DashboardPage() {
               {/* 热门抢购型号推荐池 */}
               <div className="mt-4 pt-4 border-t border-border/50 w-full max-w-xl">
                 <div className="text-[11px] font-medium text-muted-foreground mb-2 flex items-center justify-center gap-1">
-                  <Sparkles className="w-3 h-3 text-amber-500" />
+                  <Sparkles className="w-3.5 h-3.5 text-amber-500" />
                   <span>一键上架热门盯盘型号:</span>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -453,18 +555,19 @@ function DashboardPage() {
         </CardContent>
       </Card>
 
-      {/* 中部：活跃队列 + 系统状态 */}
+      {/* 5. 核心两栏作业区：活跃队列 + 系统状态 */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* 左侧 2 列: 活跃抢购队列 */}
         <Card className="surface-card rounded-2xl overflow-hidden lg:col-span-2 border-border/80 shadow-sm">
-          <CardContent className="p-4 sm:p-6">
-            <div className="flex items-center justify-between mb-4">
+          <CardContent className="p-3.5 sm:p-5">
+            <div className="flex items-center justify-between mb-3.5">
               <div className="flex items-center gap-2">
                 <ClipboardList className="w-4 h-4 text-primary" />
-                <h2 className="text-[15px] font-semibold">活跃抢购队列</h2>
+                <h2 className="text-[14px] sm:text-[15px] font-semibold text-foreground">活跃抢购队列</h2>
               </div>
-              <Link to="/queue" className="text-xs text-muted-foreground hover:text-primary transition-colors inline-flex items-center gap-1 font-medium">
+              <Link to="/queue" className="text-xs text-muted-foreground hover:text-primary transition-colors inline-flex items-center gap-0.5 font-medium">
                 查看全部 ({queue.data?.length || 0})
-                <ChevronRight className="w-3 h-3" />
+                <ChevronRight className="w-3.5 h-3.5" />
               </Link>
             </div>
             {queue.isPending ? (
@@ -478,9 +581,9 @@ function DashboardPage() {
                 icon={Calendar}
                 title="暂无活跃抢购任务"
                 action={
-                  <Button asChild size="sm" className="h-8 text-xs font-medium rounded-lg">
+                  <Button asChild size="sm" className="h-8 text-xs font-medium rounded-lg gap-1.5">
                     <Link to="/queue">
-                      <Plus className="w-3.5 h-3.5 mr-1" />
+                      <Plus className="w-3.5 h-3.5" />
                       创建抢购任务
                     </Link>
                   </Button>
@@ -491,12 +594,12 @@ function DashboardPage() {
                 {activeQueue.map((q) => (
                   <div
                     key={q.id}
-                    className="flex items-center justify-between gap-3 rounded-xl px-4 py-3 bg-secondary/30 border border-border/70 hover:border-primary/40 transition-colors"
+                    className="flex items-center justify-between gap-3 rounded-xl px-3.5 py-2.5 bg-secondary/30 border border-border/70 hover:border-primary/40 transition-colors"
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="font-semibold text-sm font-mono text-foreground">{q.planCode}</span>
-                        <span className="text-[10px] font-mono uppercase bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.5 rounded">
+                        <span className="font-semibold text-xs sm:text-sm font-mono text-foreground">{q.planCode}</span>
+                        <span className="text-[10px] font-mono uppercase bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.5 rounded leading-none">
                           {q.datacenter}
                         </span>
                       </div>
@@ -521,38 +624,38 @@ function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* 系统运行状态 */}
+        {/* 右侧 1 列: 系统运行状态 */}
         <Card className="surface-card rounded-2xl overflow-hidden border-border/80 shadow-sm">
-          <CardContent className="p-4 sm:p-6">
-            <div className="flex items-center gap-2 mb-4">
+          <CardContent className="p-3.5 sm:p-5">
+            <div className="flex items-center gap-2 mb-3.5">
               <CheckCheck className="w-4 h-4 text-primary" />
-              <h2 className="text-[15px] font-semibold">系统运行状态</h2>
+              <h2 className="text-[14px] sm:text-[15px] font-semibold text-foreground">核心服务感知</h2>
             </div>
             <div className="space-y-1">
               <SystemRow
                 icon={<Link2 className="w-3.5 h-3.5" />}
-                label="API 连接"
+                label="OVH API 连通"
                 ok={!!stats.data}
-                onText="已连接"
+                onText="正常通信"
                 offText="未连接"
               />
               <SystemRow
                 icon={<Bot className="w-3.5 h-3.5" />}
-                label="自动抢购调度"
+                label="抢购调度引擎"
                 ok={(stats.data?.activeQueues || 0) > 0}
                 onText="活跃轮询中"
-                offText="空闲待机"
+                offText="就绪待命"
                 neutralOff
               />
               <SystemRow
                 icon={<Bell className="w-3.5 h-3.5" />}
-                label="库存监控引擎"
+                label="库存监测引擎"
                 ok={!!stats.data?.monitorRunning}
                 onText="实时运行中"
                 offText="待启用"
                 warnOff
               />
-              <div className="flex justify-between items-center px-3 py-2.5 mt-2 border-t border-border/70 pt-3">
+              <div className="flex justify-between items-center px-3 py-2 mt-1.5 border-t border-border/70 pt-2.5">
                 <div className="inline-flex items-center gap-2 text-xs text-muted-foreground">
                   <Info className="w-3.5 h-3.5" />
                   系统版本
@@ -578,45 +681,56 @@ function DashboardPage() {
         </Card>
       </div>
 
-      {/* 系统硬件监控: CPU / 内存 / 磁盘 三个圆环 */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card className="surface-card rounded-2xl overflow-hidden border-border/80 shadow-sm">
-          <CardContent className="p-0">
-            <MetricRing
-              label="CPU"
-              subLabel={sys.data ? `${sys.data.cpu.cores} 核心` : "—"}
-              percent={sys.data?.cpu.percent ?? 0}
-            />
-          </CardContent>
-        </Card>
-        <Card className="surface-card rounded-2xl overflow-hidden border-border/80 shadow-sm">
-          <CardContent className="p-0">
-            <MetricRing
-              label="内存"
-              subLabel={
-                sys.data
-                  ? `${formatBytesShort(sys.data.memory.usedBytes)} / ${formatBytesShort(sys.data.memory.totalBytes)}`
-                  : "—"
-              }
-              percent={sys.data?.memory.percent ?? 0}
-            />
-          </CardContent>
-        </Card>
-        <Card className="surface-card rounded-2xl overflow-hidden border-border/80 shadow-sm">
-          <CardContent className="p-0">
-            <MetricRing
-              label={sys.data?.disk.path || "磁盘"}
-              subLabel={
-                sys.data
-                  ? `${formatBytesShort(sys.data.disk.usedBytes)} / ${formatBytesShort(sys.data.disk.totalBytes)}`
-                  : "—"
-              }
-              percent={sys.data?.disk.percent ?? 0}
-            />
-          </CardContent>
-        </Card>
-      </div>
+      {/* 6. 系统硬件遥测舱 (一体化 3 仪表舱，移动端横向对称，宽屏 3 等分) */}
+      <Card className="surface-card rounded-2xl overflow-hidden border-border/80 shadow-sm">
+        <CardHeader className="p-3.5 sm:p-4 pb-2 border-b border-border/40 flex flex-row items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Cpu className="w-4 h-4 text-primary" />
+            <CardTitle className="text-xs sm:text-sm font-semibold">系统资源与硬件遥测</CardTitle>
+          </div>
+          <span className="text-[11px] text-muted-foreground font-mono">
+            {sys.data ? `${sys.data.cpu.cores} 核心 · ${formatBytesShort(sys.data.memory.totalBytes)} 内存` : "遥测就绪"}
+          </span>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-border/60">
+            <div className="p-1 sm:p-2">
+              <MetricRing
+                label="CPU 占用"
+                subLabel={sys.data ? `${sys.data.cpu.cores} 核心活跃` : "—"}
+                percent={sys.data?.cpu.percent ?? 0}
+                size={84}
+              />
+            </div>
+            <div className="p-1 sm:p-2">
+              <MetricRing
+                label="物理内存"
+                subLabel={
+                  sys.data
+                    ? `${formatBytesShort(sys.data.memory.usedBytes)} / ${formatBytesShort(sys.data.memory.totalBytes)}`
+                    : "—"
+                }
+                percent={sys.data?.memory.percent ?? 0}
+                size={84}
+              />
+            </div>
+            <div className="p-1 sm:p-2">
+              <MetricRing
+                label={sys.data?.disk.path ? `磁盘 (${sys.data.disk.path})` : "磁盘使用"}
+                subLabel={
+                  sys.data
+                    ? `${formatBytesShort(sys.data.disk.usedBytes)} / ${formatBytesShort(sys.data.disk.totalBytes)}`
+                    : "—"
+                }
+                percent={sys.data?.disk.percent ?? 0}
+                size={84}
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
+      {/* 弹窗 */}
       <QuickOrderDialog
         open={quickOrderOpen}
         onOpenChange={(v) => {
@@ -661,8 +775,8 @@ function Sparkline({ points, color = "currentColor" }: { points: number[]; color
   const min = Math.min(...points);
   const max = Math.max(...points);
   const range = max - min || 1;
-  const width = 56;
-  const height = 22;
+  const width = 52;
+  const height = 20;
   const path = points
     .map((p, i) => {
       const x = (i / (points.length - 1)) * width;
@@ -705,26 +819,26 @@ function KpiCard({
 }) {
   return (
     <Card className="surface-card group hover:border-primary/40 transition-all duration-200 rounded-2xl overflow-hidden border-border/80 shadow-sm hover:-translate-y-0.5">
-      <CardContent className="p-3.5 sm:p-5">
-        <div className="flex items-center justify-between mb-2 sm:mb-3">
+      <CardContent className="p-3 sm:p-4.5">
+        <div className="flex items-center justify-between mb-2">
           <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider text-muted-foreground/80">{label}</span>
-          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-secondary/60 border border-border/60 flex items-center justify-center transition-transform duration-200 group-hover:scale-105">
-            <Icon className="w-4 h-4 sm:w-5 sm:h-5 text-foreground/90" strokeWidth={1.8} />
+          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-secondary/60 border border-border/60 flex items-center justify-center transition-transform duration-200 group-hover:scale-105 flex-shrink-0">
+            <Icon className="w-4 h-4 text-foreground/90" strokeWidth={1.8} />
           </div>
         </div>
         <div className="flex items-baseline justify-between">
-          <div className="flex items-baseline">
+          <div className="flex items-baseline min-w-0">
             {loading ? (
-              <Skeleton className="w-16 h-8 sm:h-9 rounded-lg" />
+              <Skeleton className="w-16 h-7 sm:h-8 rounded-lg" />
             ) : (
-              <span className="text-2xl sm:text-3xl font-bold font-mono leading-none tracking-tight text-foreground">
+              <span className="text-xl sm:text-2xl lg:text-3xl font-bold font-mono leading-none tracking-tight text-foreground truncate">
                 {value ?? 0}
               </span>
             )}
             {extra}
           </div>
           {sparkPoints && (
-            <div className="hidden xs:block">
+            <div className="hidden xs:block flex-shrink-0 ml-1">
               <Sparkline points={sparkPoints} color={sparkColor} />
             </div>
           )}
@@ -736,10 +850,10 @@ function KpiCard({
         )}
         <Link
           to={linkTo}
-          className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-primary transition-colors"
+          className="mt-2.5 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-primary transition-colors"
         >
           {linkText}
-          <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
+          <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
         </Link>
       </CardContent>
     </Card>
@@ -788,8 +902,8 @@ function SystemRow({
 }) {
   const dotTone = ok ? "success" : warnOff ? "warning" : neutralOff ? "muted" : "danger";
   return (
-    <div className="flex justify-between items-center px-3 py-2.5 rounded-xl hover:bg-muted/50 dark:hover:bg-white/[0.04] transition-colors">
-      <div className="inline-flex items-center gap-2 text-[13px] font-medium text-foreground/90">
+    <div className="flex justify-between items-center px-3 py-2 rounded-xl hover:bg-muted/50 dark:hover:bg-white/[0.04] transition-colors">
+      <div className="inline-flex items-center gap-2 text-xs sm:text-[13px] font-medium text-foreground/90">
         <span className="text-muted-foreground/80">{icon}</span>
         <span>{label}</span>
       </div>

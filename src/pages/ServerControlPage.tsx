@@ -1,6 +1,6 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Helmet } from "react-helmet-async";
-import { Terminal, Server, RefreshCw, Eye, EyeOff, CalendarClock, CalendarPlus, Repeat, Activity, Network, CalendarRange, Undo2 } from "lucide-react";
+import { Cpu, Terminal, Server, RefreshCw, Eye, EyeOff, CalendarClock, CalendarPlus, Repeat, Activity, Network, CalendarRange, Undo2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
@@ -87,7 +87,7 @@ function ServerControlPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        icon={Terminal}
+        icon={Cpu}
         title="服务器控制"
         description={
           activeAcc
@@ -98,15 +98,15 @@ function ServerControlPage() {
           <div className="flex items-center gap-2">
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="outline" size="sm" className="h-8 w-8 p-0 border-border/80 hover:bg-secondary" onClick={toggle} aria-label={hidden ? "显示 IP / MAC" : "隐藏 IP"}>
+                <Button variant="outline" size="sm" className="h-8 w-8 p-0 rounded-lg" onClick={toggle} aria-label={hidden ? "显示 IP / MAC" : "隐藏 IP"}>
                   {hidden ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{hidden ? "已隐藏敏感信息 · 点击显示" : "隐藏 IP"}</TooltipContent>
             </Tooltip>
-            <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5 border-border/80 hover:bg-secondary" onClick={() => q.refetch()} disabled={q.isFetching}>
-              <RefreshCw className={`w-3.5 h-3.5 ${q.isFetching ? "animate-spin" : ""}`} />
-              <span className="hidden sm:inline">刷新</span>
+            <Button size="sm" className="h-8 gap-1.5 text-xs font-medium rounded-lg shadow-sm px-3" onClick={() => q.refetch()} disabled={q.isFetching} title="刷新服务器状态">
+              <RefreshCw className={cn("w-3.5 h-3.5", q.isFetching && "animate-spin")} />
+              <span>刷新</span>
             </Button>
           </div>
         }

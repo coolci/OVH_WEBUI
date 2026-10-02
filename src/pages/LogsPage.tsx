@@ -121,21 +121,22 @@ function LogsPage() {
         action={
           <div className="flex items-center gap-2">
             <Button
-              variant="outline"
               size="sm"
-              className="h-8 text-xs gap-1.5 border-border/80 hover:bg-secondary"
+              className="h-8 gap-1.5 text-xs font-medium rounded-lg shadow-sm px-3"
               onClick={() => logs.refetch()}
               disabled={logs.isFetching}
+              title="刷新系统日志"
             >
               <RefreshCw className={cn("w-3.5 h-3.5", logs.isFetching && "animate-spin")} />
-              <span className="hidden sm:inline">刷新</span>
+              <span>刷新</span>
             </Button>
             <Button
-              variant="outline"
+              variant="soft-destructive"
               size="sm"
-              className="h-8 text-xs gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10"
+              className="h-8 gap-1.5 text-xs font-medium rounded-lg px-3"
               onClick={() => setConfirmClear(true)}
               disabled={items.length === 0}
+              title="清空所有日志"
             >
               <Trash2 className="w-3.5 h-3.5" />
               <span>清空</span>

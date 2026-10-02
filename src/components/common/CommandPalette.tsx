@@ -2,18 +2,19 @@ import { useEffect, useState } from "react";
 import { Command } from "cmdk";
 import { useNavigate } from "react-router-dom";
 import {
-  BarChart3,
+  LayoutDashboard,
   Server,
-  ClipboardList,
-  Bell,
+  ListOrdered,
+  Activity,
+  MonitorDot,
+  Cpu,
   Cloud,
-  Terminal,
   User,
-  Clock,
+  History,
   FileText,
   Settings,
   Search,
-  Cpu,
+  CloudLightning,
 } from "lucide-react";
 
 interface NavEntry {
@@ -25,17 +26,18 @@ interface NavEntry {
 }
 
 const NAV_ENTRIES: NavEntry[] = [
-  { to: "/", label: "仪表盘", group: "概览", icon: BarChart3, shortcut: "G D" },
+  { to: "/", label: "仪表盘", group: "概览", icon: LayoutDashboard, shortcut: "G D" },
   { to: "/servers", label: "服务器列表", group: "抢购", icon: Server, shortcut: "G S" },
-  { to: "/queue", label: "抢购队列", group: "抢购", icon: ClipboardList, shortcut: "G Q" },
-  { to: "/monitor", label: "服务器监控", group: "监控", icon: Bell, shortcut: "G M" },
-  { to: "/vps-monitor", label: "VPS 补货", group: "监控", icon: Cloud, shortcut: "G V" },
-  { to: "/server-control", label: "服务器控制", group: "实例", icon: Terminal, shortcut: "G C" },
-  { to: "/vps-control", label: "VPS 控制", group: "实例", icon: Cpu },
+  { to: "/queue", label: "抢购队列", group: "抢购", icon: ListOrdered, shortcut: "G Q" },
+  { to: "/telegram-order", label: "云下单", group: "抢购", icon: CloudLightning, shortcut: "G T" },
+  { to: "/monitor", label: "服务器监控", group: "监控", icon: Activity, shortcut: "G M" },
+  { to: "/vps-monitor", label: "VPS 补货", group: "监控", icon: MonitorDot, shortcut: "G V" },
+  { to: "/server-control", label: "服务器控制", group: "实例", icon: Cpu, shortcut: "G C" },
+  { to: "/vps-control", label: "VPS 控制", group: "实例", icon: Cloud },
   { to: "/account", label: "账户管理", group: "实例", icon: User },
-  { to: "/history", label: "抢购历史", group: "系统", icon: Clock, shortcut: "G H" },
-  { to: "/logs", label: "详细日志", group: "系统", icon: FileText, shortcut: "G L" },
-  { to: "/settings", label: "API 设置", group: "系统", icon: Settings },
+  { to: "/history", label: "抢购历史", group: "系统", icon: History, shortcut: "G H" },
+  { to: "/logs", label: "系统日志", group: "系统", icon: FileText, shortcut: "G L" },
+  { to: "/settings", label: "系统设置", group: "系统", icon: Settings },
 ];
 
 /**

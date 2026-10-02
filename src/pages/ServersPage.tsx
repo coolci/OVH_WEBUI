@@ -164,9 +164,8 @@ function ServersPage() {
           <div className="flex items-center gap-2">
             <CacheBadge />
             <Button
-              variant="outline"
               size="sm"
-              className="h-8 sm:h-9 text-xs gap-1.5 border-border/70 hover:bg-secondary/60"
+              className="h-8 gap-1.5 text-xs font-medium rounded-lg shadow-sm px-3"
               onClick={() => {
                 // 一键刷三件套：目录强刷（清后端缓存）、catalog（价格）refetch、可用性 refetch
                 q.forceRefresh();
@@ -174,15 +173,15 @@ function ServersPage() {
                 availQ.refetch();
               }}
               disabled={q.isRefreshing || catalogQ.isRefetching || availQ.isRefetching}
+              title="一键强刷目录与价格库存"
             >
               <RefreshCw
-                className={`w-3.5 h-3.5 ${
-                  q.isRefreshing || catalogQ.isRefetching || availQ.isRefetching
-                    ? "animate-spin"
-                    : ""
-                }`}
+                className={cn(
+                  "w-3.5 h-3.5",
+                  (q.isRefreshing || catalogQ.isRefetching || availQ.isRefetching) && "animate-spin"
+                )}
               />
-              <span className="hidden sm:inline">刷新</span>
+              <span>刷新</span>
             </Button>
           </div>
         }

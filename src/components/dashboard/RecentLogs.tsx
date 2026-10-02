@@ -1,5 +1,5 @@
 import { TerminalCard } from "@/components/ui/terminal-card";
-import { ScrollText, ArrowRight, AlertCircle, Info, AlertTriangle, Loader2 } from "lucide-react";
+import { FileText, ArrowRight, AlertCircle, Info, AlertTriangle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
@@ -45,7 +45,7 @@ export function RecentLogs() {
   return (
     <TerminalCard
       title="系统日志"
-      icon={<ScrollText className="h-4 w-4" />}
+      icon={<FileText className="h-4 w-4" />}
       headerAction={
         <Link to="/logs">
           <Button variant="ghost" size="sm" className="text-xs text-accent hover:text-accent">
@@ -60,7 +60,7 @@ export function RecentLogs() {
         </div>
       ) : displayLogs.length === 0 ? (
         <div className="text-center py-8 text-muted-foreground">
-          <ScrollText className="h-8 w-8 mx-auto mb-2 opacity-50" />
+          <FileText className="h-8 w-8 mx-auto mb-2 opacity-50" />
           <p className="text-sm">暂无日志</p>
         </div>
       ) : (

@@ -1,7 +1,7 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Helmet } from "react-helmet-async";
 import {
-  ClipboardList,
+  ListOrdered,
   RefreshCw,
   Trash2,
   PauseCircle,
@@ -189,7 +189,7 @@ function QueuePage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        icon={ClipboardList}
+        icon={ListOrdered}
         title="抢购队列"
         description="管理自动抢购服务器的队列"
         action={
@@ -205,12 +205,13 @@ function QueuePage() {
             <Button
               variant="outline"
               size="sm"
-              className="h-8 w-8 p-0 rounded-lg border-border/80 hover:bg-secondary flex-shrink-0"
+              className="h-8 text-xs gap-1.5 border-border/80 hover:bg-secondary px-2.5 sm:px-3 rounded-lg"
               onClick={() => queue.refetch()}
               disabled={queue.isFetching}
               title="刷新队列数据"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${queue.isFetching ? "animate-spin" : ""}`} />
+              <RefreshCw className={cn("w-3.5 h-3.5", queue.isFetching && "animate-spin")} />
+              <span className="hidden sm:inline">刷新</span>
             </Button>
           </div>
         }
@@ -332,7 +333,7 @@ function QueuePage() {
       ) : items.length === 0 ? (
         <Card className="surface-card rounded-xl border-border">
           <EmptyState
-            icon={ClipboardList}
+            icon={ListOrdered}
             title="暂无任务"
             description="点击右上角“新建抢购任务”开始抢购"
           />
