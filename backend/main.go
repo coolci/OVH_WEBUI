@@ -456,10 +456,11 @@ func main() {
 			vc.POST("/:service_name/console", handlers.VpsGetConsoleUrl(state))
 			vc.POST("/:service_name/password", handlers.VpsSetPassword(state))
 
-			// 重装系统
+			// 重装/重建系统 (PRD: OVH废弃 /reinstall 转向 /rebuild)
 			vc.GET("/:service_name/current-os", handlers.GetVpsCurrentOS(state))
 			vc.GET("/:service_name/templates", handlers.GetVpsTemplates(state))
 			vc.POST("/:service_name/reinstall", handlers.ReinstallVps(state))
+			vc.POST("/:service_name/rebuild", handlers.ReinstallVps(state))
 
 			// 任务
 			vc.GET("/:service_name/tasks", handlers.GetVpsTasks(state))

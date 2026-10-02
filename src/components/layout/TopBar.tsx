@@ -95,11 +95,13 @@ export function TopBar() {
   return (
     <div className="flex-1 flex items-center justify-between gap-2 min-w-0">
       <div className="flex min-w-0 items-center gap-2">
-        <span className="hidden sm:inline text-[11px] text-muted-foreground/65">控制台</span>
-        <span className="hidden sm:inline text-[11px] text-muted-foreground/35">/</span>
-        <span className="truncate text-[13px] font-semibold tracking-tight text-foreground sm:text-[14px]">
-          {currentPath}
-        </span>
+        <div className="flex items-center gap-1.5 text-xs">
+          <span className="text-muted-foreground/70 font-medium">控制台</span>
+          <span className="text-border font-mono">/</span>
+          <span className="truncate text-xs sm:text-sm font-semibold tracking-tight text-foreground">
+            {currentPath}
+          </span>
+        </div>
       </div>
 
       <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
@@ -107,7 +109,7 @@ export function TopBar() {
         {defaultAccount && (
           <Link
             to="/account"
-            className="hidden lg:inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full border border-border/70 hover:border-primary/40 bg-secondary/35 hover:bg-secondary/70 text-muted-foreground hover:text-foreground transition-all duration-150"
+            className="hidden lg:inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-lg border border-border/70 hover:border-primary/40 bg-secondary/35 hover:bg-secondary/70 text-muted-foreground hover:text-foreground transition-all duration-150"
             title={`默认下单账户: ${defaultAccount.name} (${defaultAccount.zone || "OVH"})`}
           >
             <User className="h-3 w-3 text-primary" />
@@ -117,7 +119,7 @@ export function TopBar() {
 
         <div
           className={cn(
-            "flex items-center gap-1.5 text-[10.5px] sm:text-[11px] px-2.5 py-0.5 rounded-full border transition-colors",
+            "flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-lg border transition-colors font-medium",
             isChecking
               ? "border-border/60 text-muted-foreground bg-secondary/30"
               : isConnected
@@ -133,14 +135,16 @@ export function TopBar() {
           ) : (
             <WifiOff className="h-2.5 w-2.5" />
           )}
-          <span className="font-medium tracking-tight">
+          <span className="tracking-tight">
             {isChecking ? "检测中" : isConnected ? "在线" : "离线"}
           </span>
         </div>
 
-        <span className="hidden md:inline text-[11px] font-mono text-muted-foreground/75 tabular-nums tracking-tight">
-          {time.toLocaleTimeString("zh-CN", { hour12: false })}
-        </span>
+        {/* 实时时钟 */}
+        <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-border/60 bg-muted/30 text-[11px] font-mono text-muted-foreground tabular-nums">
+          <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary/70 animate-pulse" />
+          <span>{time.toLocaleTimeString("zh-CN", { hour12: false })}</span>
+        </div>
 
         {/* 外观主题切换 */}
         <ThemeToggle />

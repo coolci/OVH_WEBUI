@@ -8,10 +8,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/common/Skeleton";
-import { useVpsTemplates, useReinstallVps, useVpsCurrentOS, type VpsTemplate } from "@/hooks/use-vps-control";
+import { useVpsTemplates, useRebuildVps, useVpsCurrentOS, type VpsTemplate } from "@/hooks/use-vps-control";
 import { toast } from "sonner";
 
-/** VPS 重装系统:模板列表 + 语言 + SSH key 选项 + 二次确认 */
+/** VPS 重建/重装系统: 采用 OVH /vps/{serviceName}/rebuild 端点 */
 export function VpsReinstallDialog({
   serviceName,
   open,
@@ -23,7 +23,7 @@ export function VpsReinstallDialog({
 }) {
   const templates = useVpsTemplates(open ? serviceName : null);
   const currentOS = useVpsCurrentOS(open ? serviceName : null);
-  const reinstall = useReinstallVps(serviceName);
+  const rebuild = useRebuildVps(serviceName);
 
   const [templateId, setTemplateId] = useState<number | string | null>(null);
   const [doNotSendPassword, setDoNotSendPassword] = useState(false);
@@ -58,18 +58,19 @@ export function VpsReinstallDialog({
       .map((s) => s.trim())
       .filter(Boolean);
     try {
-      await reinstall.mutateAsync({
+      await rebuild.mutateAsync({
+        imageId: templateId,
         templateId,
         sshKey: sshKey.length > 0 ? sshKey : undefined,
         doNotSendPassword,
       });
-      toast.success("重装任务已提交,通常 5-10 分钟完成");
+      toast.success("系统重建任务已提交，通常 5-10 分钟完成");
       onOpenChange(false);
       setTemplateId(null);
       setConfirmName("");
       setSshKeyNames("");
     } catch (e: any) {
-      toast.error(e?.response?.data?.error || "重装失败");
+      toast.error(e?.response?.data?.error || "系统重建失败");
     }
   };
 
@@ -78,10 +79,12 @@ export function VpsReinstallDialog({
       <DialogContent className="w-[95vw] sm:w-full sm:max-w-xl max-h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <HardDrive className="w-5 h-5" />
-            重装系统
+            <HardDrive className="w-5 h-5 text-primary" />
+            系统重建 / 重装 (Rebuild OS)
           </DialogTitle>
-          <DialogDescription>{serviceName}</DialogDescription>
+          <DialogDescription>
+            <span className="font-mono text-xs">{serviceName}</span> · 采用 OVH 官方推荐的镜像重建机制
+          </DialogDescription>
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto -mx-6 px-6 space-y-4">
@@ -189,9 +192,9 @@ export function VpsReinstallDialog({
           <Button
             variant="destructive"
             onClick={handleSubmit}
-            disabled={reinstall.isPending || !templateId || confirmName !== serviceName}
+            disabled={rebuild.isPending || !templateId || confirmName !== serviceName}
           >
-            {reinstall.isPending ? "提交中…" : "确认重装"}
+            {rebuild.isPending ? "提交中…" : "确认重建系统"}
           </Button>
         </DialogFooter>
       </DialogContent>

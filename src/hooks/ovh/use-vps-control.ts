@@ -281,19 +281,36 @@ export function useVpsTemplates(svc: string | null) {
   });
 }
 
-export function useReinstallVps(svc: string) {
+export interface VpsRebuildInput {
+  imageId?: string | number;
+  templateId?: string | number; // 兼容旧名
+  sshKey?: string[];
+  doNotSendPassword?: boolean;
+}
+
+/** VPS 重建系统: 走 /vps-control/:svc/rebuild (OVH /rebuild 端点) */
+export function useRebuildVps(svc: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (vars: {
-      templateId: number | string;
-      sshKey?: string[];
-      doNotSendPassword?: boolean;
-    }) => (await api.post(`/vps-control/${svc}/reinstall`, vars)).data,
+    mutationFn: async (vars: VpsRebuildInput) => {
+      const payload = {
+        imageId: vars.imageId || vars.templateId,
+        templateId: vars.templateId || vars.imageId,
+        sshKey: vars.sshKey,
+        doNotSendPassword: vars.doNotSendPassword,
+      };
+      return (await api.post(`/vps-control/${svc}/rebuild`, payload)).data;
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.vpsControl.tasks(svc) });
+      qc.invalidateQueries({ queryKey: qk.vpsControl.currentOS(svc) });
+      qc.invalidateQueries({ queryKey: qk.vpsControl.info(svc) });
     },
   });
 }
+
+/** 兼容旧命名 */
+export const useReinstallVps = useRebuildVps;
 
 /* ────────────── Tasks ────────────── */
 

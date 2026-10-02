@@ -1,12 +1,14 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	ovhsdk "github.com/ovh/go-ovh/ovh"
 
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/monitor"
@@ -241,12 +243,38 @@ func CreateAccount(state *app.State) gin.HandlerFunc {
 		RefreshSharedProxy(state)
 
 		// 用新凭据验证
-		valid, subsidiaryWarning := verifyAccountCreds(state, acc.ID)
-		state.Logger.Info("创建账户: "+acc.Name+" ("+acc.Zone+"/"+ovh.SubsidiaryRegion(acc.Zone)+" 区) valid="+boolStr(valid), "accounts")
+		res := verifyAccountCreds(state, acc.ID)
+		accUpdated, _ := state.FindAccount(acc.ID)
+		if accUpdated.ID == "" {
+			accUpdated = acc
+		}
+		state.Logger.Info("创建账户: "+acc.Name+" ("+acc.Zone+"/"+ovh.SubsidiaryRegion(acc.Zone)+" 区) cred_state="+res.CredState, "accounts")
 
-		// subsidiaryWarning 非空 = 凭据能用,但这个账户在 OVH 那边属于另一个子公司,
-		// 目录/价格/下单 region 都会按填错的那个走。给前端原样提示,别让它在下单时才炸。
-		c.JSON(http.StatusOK, gin.H{"account": sanitizeAccount(acc), "valid": valid, "subsidiaryWarning": subsidiaryWarning})
+		if res.CredState == "invalid" {
+			// PRD F01.3.3 / D-01: 校验失败置 cred_state=invalid 并在数据库保存方便修改，但返回 HTTP 422 + remediation
+			c.JSON(http.StatusUnprocessableEntity, gin.H{
+				"type":              "https://api.ovh.com/errors#cred_invalid",
+				"title":             "OVH 凭据校验失败",
+				"status":            http.StatusUnprocessableEntity,
+				"error":             "凭据校验失败: " + res.Detail,
+				"detail":            res.Detail,
+				"account":           sanitizeAccount(accUpdated),
+				"valid":             false,
+				"credState":         res.CredState,
+				"remediation":       res.Remediation,
+				"ovhQueryId":        res.OVHQueryID,
+				"subsidiaryWarning": res.SubsidiaryWarning,
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"account":           sanitizeAccount(accUpdated),
+			"valid":             res.Valid,
+			"credState":         res.CredState,
+			"subsidiaryWarning": res.SubsidiaryWarning,
+			"remediation":       res.Remediation,
+		})
 	}
 }
 
@@ -352,8 +380,34 @@ func UpdateAccount(state *app.State) gin.HandlerFunc {
 		_ = state.ReloadAccounts()
 		RefreshSharedProxy(state)
 
-		valid, subsidiaryWarning := verifyAccountCreds(state, acc.ID)
-		c.JSON(http.StatusOK, gin.H{"account": sanitizeAccount(acc), "valid": valid, "subsidiaryWarning": subsidiaryWarning})
+		res := verifyAccountCreds(state, acc.ID)
+		accUpdated, _ := state.FindAccount(acc.ID)
+		if accUpdated.ID == "" {
+			accUpdated = acc
+		}
+		if res.CredState == "invalid" {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{
+				"type":              "https://api.ovh.com/errors#cred_invalid",
+				"title":             "OVH 凭据校验失败",
+				"status":            http.StatusUnprocessableEntity,
+				"error":             "凭据校验失败: " + res.Detail,
+				"detail":            res.Detail,
+				"account":           sanitizeAccount(accUpdated),
+				"valid":             false,
+				"credState":         res.CredState,
+				"remediation":       res.Remediation,
+				"ovhQueryId":        res.OVHQueryID,
+				"subsidiaryWarning": res.SubsidiaryWarning,
+			})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"account":           sanitizeAccount(accUpdated),
+			"valid":             res.Valid,
+			"credState":         res.CredState,
+			"subsidiaryWarning": res.SubsidiaryWarning,
+			"remediation":       res.Remediation,
+		})
 	}
 }
 
@@ -394,36 +448,110 @@ func SetDefaultAccountByID(state *app.State) gin.HandlerFunc {
 func VerifyAccount(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
-		valid, subsidiaryWarning := verifyAccountCreds(state, id)
-		c.JSON(http.StatusOK, gin.H{"valid": valid, "subsidiaryWarning": subsidiaryWarning})
+		res := verifyAccountCreds(state, id)
+		c.JSON(http.StatusOK, gin.H{
+			"valid":             res.Valid,
+			"credState":         res.CredState,
+			"subsidiaryWarning": res.SubsidiaryWarning,
+			"remediation":       res.Remediation,
+			"detail":            res.Detail,
+			"ovhQueryId":        res.OVHQueryID,
+		})
 	}
 }
 
 // ── 内部工具 ───────────────────────────────────────────────────────────────
 
+type CredentialVerificationResult struct {
+	Valid             bool     `json:"valid"`
+	CredState         string   `json:"credState"` // "verified", "invalid", "unverified"
+	SubsidiaryWarning string   `json:"subsidiaryWarning,omitempty"`
+	Remediation       []string `json:"remediation,omitempty"`
+	Detail            string   `json:"detail,omitempty"`
+	OVHQueryID        string   `json:"ovhQueryId,omitempty"`
+}
+
 // verifyAccountCreds 用账户凭据调 OVH /me 验证有效。
-// 第二个返回值是子公司错配说明(空 = 没问题):/me 的 ovhSubsidiary 才是 OVH 认的归属,
-// 而账户里存的 zone 决定了目录站点和下单 region —— 两者不一致时凭据本身有效(valid=true),
-// 但这个账户的目录、价格、库存全是另一个子公司的。详见 SubsidiaryMismatchNote。
-func verifyAccountCreds(state *app.State, accountID string) (bool, string) {
+// PRD D-01: 精确提取错误码并输出 remediation 与证据。
+func verifyAccountCreds(state *app.State, accountID string) CredentialVerificationResult {
 	cli, err := state.OVH.ClientFor(accountID)
 	if err != nil {
-		return false, ""
+		detail := err.Error()
+		_ = state.DB.UpdateAccountCredState(accountID, "invalid", types.NowISO(), detail)
+		return CredentialVerificationResult{
+			Valid:       false,
+			CredState:   "invalid",
+			Detail:      detail,
+			Remediation: []string{"reissue_token"},
+		}
 	}
 	var me map[string]interface{}
 	if err := cli.Get("/me", &me); err != nil {
-		state.Logger.Warn("verify account "+accountID+": "+err.Error(), "accounts")
-		return false, ""
+		detail := ovh.Explain(err)
+		state.Logger.Warn("verify account "+accountID+": "+detail, "accounts")
+
+		credState := "invalid"
+		var remediations []string
+		var queryID string
+
+		var apiErr *ovhsdk.APIError
+		if errors.As(err, &apiErr) {
+			queryID = apiErr.QueryID
+			lower := strings.ToLower(apiErr.Message)
+			switch {
+			case apiErr.Code == 403 && (strings.Contains(lower, "application key is invalid") || strings.Contains(lower, "app key")):
+				credState = "invalid"
+				remediations = []string{"check_zone", "reissue_token"}
+			case apiErr.Code == 400 && strings.Contains(lower, "invalid signature"):
+				credState = "invalid"
+				remediations = []string{"check_app_secret", "activate_consumer_key", "check_clock"}
+			case apiErr.Code == 403 && (strings.Contains(lower, "not granted") || strings.Contains(lower, "not been granted")):
+				credState = "invalid"
+				remediations = []string{"grant_rights"}
+			case apiErr.Code == 401 || apiErr.Code == 403:
+				credState = "invalid"
+				remediations = []string{"reissue_token"}
+			case apiErr.Code >= 500:
+				credState = "unverified"
+				remediations = []string{"retry_later"}
+			default:
+				credState = "invalid"
+				remediations = []string{"reissue_token"}
+			}
+		} else {
+			credState = "unverified"
+			remediations = []string{"retry_later"}
+		}
+
+		_ = state.DB.UpdateAccountCredState(accountID, credState, types.NowISO(), detail)
+		_ = state.ReloadAccounts()
+
+		return CredentialVerificationResult{
+			Valid:       false,
+			CredState:   credState,
+			Detail:      detail,
+			Remediation: remediations,
+			OVHQueryID:  queryID,
+		}
 	}
+
 	acc, ok := state.FindAccount(accountID)
-	if !ok {
-		return true, ""
+	note := ""
+	if ok {
+		note = SubsidiaryMismatchNote(acc, me)
+		if note != "" {
+			state.Logger.Warn("账户 "+acc.Name+" 子公司配置与 OVH 实际归属不一致:"+note, "accounts")
+		}
 	}
-	note := SubsidiaryMismatchNote(acc, me)
-	if note != "" {
-		state.Logger.Warn("账户 "+acc.Name+" 子公司配置与 OVH 实际归属不一致:"+note, "accounts")
+
+	_ = state.DB.UpdateAccountCredState(accountID, "verified", types.NowISO(), "")
+	_ = state.ReloadAccounts()
+
+	return CredentialVerificationResult{
+		Valid:             true,
+		CredState:         "verified",
+		SubsidiaryWarning: note,
 	}
-	return true, note
 }
 
 // reloadAfterAccountDelete 删账户后,把内存里关联的 queue/history/sniper_tasks

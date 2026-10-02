@@ -35,6 +35,7 @@ import { cn } from "@/lib/utils";
 import { OVH_SUBSIDIARIES } from "@/lib/ovh-subsidiaries";
 import { OvhTokenGuide } from "@/components/common/OvhTokenGuide";
 import { apiBaseUrlForEndpoint } from "@/lib/ovh-regions";
+import { formatDate, formatDateTime } from "@/lib/format-os";
 import {
   useAccounts,
   useCreateAccount,
@@ -645,6 +646,21 @@ function AccountCard({
             <span className={cn("inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium", accountChipColor(acc.zone))}>
               {acc.zone}
             </span>
+            {acc.credState === "invalid" ? (
+              <Chip tone="danger">
+                <AlertTriangle className="w-3 h-3" />
+                凭据失效
+              </Chip>
+            ) : acc.credState === "verified" ? (
+              <Chip tone="success">
+                <CheckCircle2 className="w-3 h-3" />
+                已验证
+              </Chip>
+            ) : (
+              <Chip tone="warning">
+                未校验
+              </Chip>
+            )}
             {acc.isDefault && (
               <Chip tone="success">
                 <Star className="w-3 h-3" />
@@ -657,7 +673,7 @@ function AccountCard({
             <span>·</span>
             <span>{acc.iam}</span>
             <span>·</span>
-            <span>建于 {new Date(acc.createdAt).toLocaleDateString("zh-CN")}</span>
+            <span>建于 {formatDate(acc.createdAt)}</span>
           </div>
           <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
             {acc.proxyUrl ? (
@@ -740,6 +756,18 @@ function AccountCard({
         <p className="text-[11px] text-warning border border-warning/40 bg-warning/5 rounded-xl px-3 py-2">
           ⚠ 子公司配置与 OVH 实际归属不一致：{subsidiaryWarning}
         </p>
+      )}
+
+      {acc.credState === "invalid" && (
+        <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-3.5 py-2.5 text-[11px] space-y-1">
+          <p className="font-semibold text-destructive flex items-center gap-1.5">
+            <AlertTriangle className="w-3.5 h-3.5" />
+            凭据验证未通过，该账户已进入保护停用态(不可用于监控与下单)
+          </p>
+          <p className="text-muted-foreground leading-relaxed">
+            {acc.verificationReason || acc.credEvidence || "凭据可能已过期或权限规则未包含所需接口，请点击右侧「编辑」更新凭据并重新授权。"}
+          </p>
+        </div>
       )}
 
       <LinkCheckDialog acc={acc} open={checking} onOpenChange={setChecking} check={check} />

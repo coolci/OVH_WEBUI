@@ -55,11 +55,13 @@ export function VpsSnapshotPane({ serviceName }: { serviceName: string }) {
     }
   };
 
+  const [deleteOpen, setDeleteOpen] = useState(false);
+
   const handleDelete = async () => {
-    if (!confirm("确认删除当前快照?快照本身会删除,VPS 当前状态不受影响。")) return;
     try {
       await remove.mutateAsync();
       toast.success("快照已删除");
+      setDeleteOpen(false);
     } catch (e: any) {
       toast.error(e?.response?.data?.error || "删除失败");
     }
@@ -140,7 +142,7 @@ export function VpsSnapshotPane({ serviceName }: { serviceName: string }) {
             <RotateCcw className="w-3.5 h-3.5 mr-1" />
             回滚到此快照
           </Button>
-          <Button size="sm" variant="outline" onClick={handleDelete} disabled={remove.isPending}>
+          <Button size="sm" variant="outline" onClick={() => setDeleteOpen(true)} disabled={remove.isPending}>
             <Trash2 className="w-3.5 h-3.5 mr-1" />
             删除快照
           </Button>
@@ -221,6 +223,40 @@ export function VpsSnapshotPane({ serviceName }: { serviceName: string }) {
               disabled={revert.isPending || revertConfirm !== serviceName}
             >
               {revert.isPending ? "回滚中…" : "确认回滚"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 删除快照确认 */}
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-destructive" />
+              删除当前快照？
+            </DialogTitle>
+            <DialogDescription>
+              确定要删除快照 #{s.id} 吗？删除后将无法恢复，且无法再回滚至此版本。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="border border-destructive/40 bg-destructive/5 rounded-xl p-3 space-y-1 text-[12px]">
+            <p className="font-semibold text-destructive">删除快照不会影响当前运行中的 VPS：</p>
+            <ul className="list-disc pl-5 text-muted-foreground space-y-0.5">
+              <li>释放免费档快照配额，以便后续创建新快照</li>
+              <li>历史快照数据将永久清除</li>
+            </ul>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteOpen(false)}>
+              取消
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={remove.isPending}
+            >
+              {remove.isPending ? "删除中…" : "确认删除"}
             </Button>
           </DialogFooter>
         </DialogContent>

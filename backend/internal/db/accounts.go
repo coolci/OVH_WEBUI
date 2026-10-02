@@ -9,18 +9,21 @@ import (
 )
 
 type accountRow struct {
-	ID          string `db:"id"`
-	Name        string `db:"name"`
-	Endpoint    string `db:"endpoint"`
-	Zone        string `db:"zone"`
-	AppKey      string `db:"app_key"`
-	AppSecret   string `db:"app_secret"`
-	ConsumerKey string `db:"consumer_key"`
-	IAM         string `db:"iam"`
-	IsDefault   int    `db:"is_default"`
-	CreatedAt   string `db:"created_at"`
-	ProxyURL    string `db:"proxy_url"`
-	Fingerprint string `db:"fingerprint"`
+	ID            string `db:"id"`
+	Name          string `db:"name"`
+	Endpoint      string `db:"endpoint"`
+	Zone          string `db:"zone"`
+	AppKey        string `db:"app_key"`
+	AppSecret     string `db:"app_secret"`
+	ConsumerKey   string `db:"consumer_key"`
+	IAM           string `db:"iam"`
+	IsDefault     int    `db:"is_default"`
+	CreatedAt     string `db:"created_at"`
+	ProxyURL      string `db:"proxy_url"`
+	Fingerprint   string `db:"fingerprint"`
+	CredState     string `db:"cred_state"`
+	CredCheckedAt string `db:"cred_checked_at"`
+	CredEvidence  string `db:"cred_evidence"`
 }
 
 // rowToAccount 出库时解密三个凭据字段。
@@ -36,20 +39,28 @@ func rowToAccount(r accountRow) types.OVHAccount {
 		}
 		return out
 	}
+	credState := r.CredState
+	if credState == "" {
+		credState = "unverified"
+	}
 	return types.OVHAccount{
-		ID:          r.ID,
-		Name:        r.Name,
-		Endpoint:    r.Endpoint,
-		Zone:        r.Zone,
-		AppKey:      dec(r.AppKey),
-		AppSecret:   dec(r.AppSecret),
-		ConsumerKey: dec(r.ConsumerKey),
-		IAM:         r.IAM,
-		IsDefault:   r.IsDefault == 1,
-		CreatedAt:   r.CreatedAt,
+		ID:                 r.ID,
+		Name:               r.Name,
+		Endpoint:           r.Endpoint,
+		Zone:               r.Zone,
+		AppKey:             dec(r.AppKey),
+		AppSecret:          dec(r.AppSecret),
+		ConsumerKey:        dec(r.ConsumerKey),
+		IAM:                r.IAM,
+		IsDefault:          r.IsDefault == 1,
+		CreatedAt:          r.CreatedAt,
 		// 代理串带凭据,和三个 API 密钥一样是加密存的
-		ProxyURL:    dec(r.ProxyURL),
-		Fingerprint: r.Fingerprint,
+		ProxyURL:           dec(r.ProxyURL),
+		Fingerprint:        r.Fingerprint,
+		CredState:          credState,
+		CredCheckedAt:      r.CredCheckedAt,
+		CredEvidence:       r.CredEvidence,
+		VerificationReason: r.CredEvidence,
 	}
 }
 
@@ -59,19 +70,26 @@ func accountToRow(a types.OVHAccount) accountRow {
 	if a.IsDefault {
 		bi = 1
 	}
+	credState := a.CredState
+	if credState == "" {
+		credState = "unverified"
+	}
 	return accountRow{
-		ID:          a.ID,
-		Name:        a.Name,
-		Endpoint:    a.Endpoint,
-		Zone:        a.Zone,
-		AppKey:      secret.Encrypt(a.AppKey),
-		AppSecret:   secret.Encrypt(a.AppSecret),
-		ConsumerKey: secret.Encrypt(a.ConsumerKey),
-		IAM:         a.IAM,
-		IsDefault:   bi,
-		CreatedAt:   a.CreatedAt,
-		ProxyURL:    secret.Encrypt(a.ProxyURL),
-		Fingerprint: a.Fingerprint,
+		ID:            a.ID,
+		Name:          a.Name,
+		Endpoint:      a.Endpoint,
+		Zone:          a.Zone,
+		AppKey:        secret.Encrypt(a.AppKey),
+		AppSecret:     secret.Encrypt(a.AppSecret),
+		ConsumerKey:   secret.Encrypt(a.ConsumerKey),
+		IAM:           a.IAM,
+		IsDefault:     bi,
+		CreatedAt:     a.CreatedAt,
+		ProxyURL:      secret.Encrypt(a.ProxyURL),
+		Fingerprint:   a.Fingerprint,
+		CredState:     credState,
+		CredCheckedAt: a.CredCheckedAt,
+		CredEvidence:  a.CredEvidence,
 	}
 }
 
@@ -123,6 +141,12 @@ func (db *DB) CountAccounts() (int, error) {
 	return n, nil
 }
 
+// UpdateAccountCredState 更新账户凭据校验状态 (PRD D-01)
+func (db *DB) UpdateAccountCredState(id, credState, checkedAt, evidence string) error {
+	_, err := db.Exec(`UPDATE ovh_accounts SET cred_state = ?, cred_checked_at = ?, cred_evidence = ? WHERE id = ?`, credState, checkedAt, evidence, id)
+	return err
+}
+
 // UpsertAccount 插入或更新账户;若 is_default=1 则会把其它账户的 is_default 清 0(只有一个默认)
 func (db *DB) UpsertAccount(a types.OVHAccount) error {
 	tx, err := db.Beginx()
@@ -139,20 +163,23 @@ func (db *DB) UpsertAccount(a types.OVHAccount) error {
 	r := accountToRow(a)
 	_, err = tx.NamedExec(`
 		INSERT INTO ovh_accounts
-		(id, name, endpoint, zone, app_key, app_secret, consumer_key, iam, is_default, created_at, proxy_url, fingerprint)
+		(id, name, endpoint, zone, app_key, app_secret, consumer_key, iam, is_default, created_at, proxy_url, fingerprint, cred_state, cred_checked_at, cred_evidence)
 		VALUES
-		(:id, :name, :endpoint, :zone, :app_key, :app_secret, :consumer_key, :iam, :is_default, :created_at, :proxy_url, :fingerprint)
+		(:id, :name, :endpoint, :zone, :app_key, :app_secret, :consumer_key, :iam, :is_default, :created_at, :proxy_url, :fingerprint, :cred_state, :cred_checked_at, :cred_evidence)
 		ON CONFLICT(id) DO UPDATE SET
-		  name         = excluded.name,
-		  endpoint     = excluded.endpoint,
-		  zone         = excluded.zone,
-		  app_key      = excluded.app_key,
-		  app_secret   = excluded.app_secret,
-		  consumer_key = excluded.consumer_key,
-		  iam          = excluded.iam,
-		  is_default   = excluded.is_default,
-		  proxy_url    = excluded.proxy_url,
-		  fingerprint  = excluded.fingerprint
+		  name            = excluded.name,
+		  endpoint        = excluded.endpoint,
+		  zone            = excluded.zone,
+		  app_key         = excluded.app_key,
+		  app_secret      = excluded.app_secret,
+		  consumer_key    = excluded.consumer_key,
+		  iam             = excluded.iam,
+		  is_default      = excluded.is_default,
+		  proxy_url       = excluded.proxy_url,
+		  fingerprint     = excluded.fingerprint,
+		  cred_state      = excluded.cred_state,
+		  cred_checked_at = excluded.cred_checked_at,
+		  cred_evidence   = excluded.cred_evidence
 	`, r)
 	if err != nil {
 		return fmt.Errorf("upsert account %s: %w", a.ID, err)

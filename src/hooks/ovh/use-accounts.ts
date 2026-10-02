@@ -22,6 +22,12 @@ export interface OVHAccount {
   proxyUrl?: string;
   /** 出站指纹配置名。空 = default */
   fingerprint?: string;
+
+  /** 凭据状态 (PRD D-01) */
+  credState?: "unverified" | "verified" | "invalid" | "expired";
+  credCheckedAt?: string;
+  credEvidence?: string;
+  verificationReason?: string;
 }
 
 export interface AccountInput {
@@ -72,7 +78,7 @@ export function useCreateAccount() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: AccountInput) => {
-      const res = await api.post<{ account: OVHAccount; valid: boolean }>("/accounts", input);
+      const res = await api.post<{ account: OVHAccount; valid: boolean; credState?: string; remediation?: string[] }>("/accounts", input);
       return res.data;
     },
     onSuccess: (data) => {
@@ -88,10 +94,18 @@ export function useCreateAccount() {
       if (data.valid) {
         toast.success(`账户 ${data.account.name} 创建成功`);
       } else {
-        toast.warning(`账户创建失败或 OVH 验证未通过，请检查凭据`);
+        toast.warning(`账户已添加，但 OVH 验证未通过，请检查凭据`);
       }
     },
-    onError: (e: any) => toast.error(e?.response?.data?.error || "创建失败"),
+    onError: (e: any) => {
+      // D-01: 校验失败也会入库置 invalid，刷新列表保证界面可见可修改
+      qc.invalidateQueries({ queryKey: ACCOUNTS_KEY });
+      qc.invalidateQueries({ queryKey: qk.accounts.proxyStatus() });
+      const errData = e?.response?.data;
+      const remediations = errData?.remediation?.join(" / ");
+      const msg = errData?.detail || errData?.error || "创建失败";
+      toast.error(remediations ? `${msg} (建议: ${remediations})` : msg);
+    },
   });
 }
 
@@ -100,22 +114,24 @@ export function useUpdateAccount() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, input }: { id: string; input: Partial<AccountInput> }) => {
-      const res = await api.put<{ account: OVHAccount; valid: boolean }>(`/accounts/${id}`, input);
+      const res = await api.put<{ account: OVHAccount; valid: boolean; credState?: string }>(`/accounts/${id}`, input);
       return res.data;
     },
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ACCOUNTS_KEY });
       qc.invalidateQueries({ queryKey: qk.accounts.proxyStatus() });
-      // 出站配置可能刚改过,上一次测到的出口 IP 就不再对应现在生效的配置了。
-      // 留着它等于拿旧 IP 冒充新配置的结果 —— 而这个 IP 正是用户用来判断
-      // "隔离到底生没生效"的唯一依据,宁可空着让他重测一次。
       qc.removeQueries({ queryKey: qk.accounts.proxyTest(vars.id) });
-      // 链路检测同理:那份延迟数字是旧代理跑出来的,留着会让用户拿旧链路的成绩
-      // 给新代理背书 —— 而他改代理的目的往往正是嫌慢。
       qc.removeQueries({ queryKey: qk.accounts.proxyCheck(vars.id) });
       toast.success("账户已更新");
     },
-    onError: (e: any) => toast.error(e?.response?.data?.error || "更新失败"),
+    onError: (e: any) => {
+      qc.invalidateQueries({ queryKey: ACCOUNTS_KEY });
+      qc.invalidateQueries({ queryKey: qk.accounts.proxyStatus() });
+      const errData = e?.response?.data;
+      const remediations = errData?.remediation?.join(" / ");
+      const msg = errData?.detail || errData?.error || "更新失败";
+      toast.error(remediations ? `${msg} (建议: ${remediations})` : msg);
+    },
   });
 }
 

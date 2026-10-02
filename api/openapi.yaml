@@ -1,0 +1,352 @@
+openapi: 3.1.0
+info:
+  title: OVH_WEBUI Enterprise API
+  description: Enterprise refactored API for OVH_WEBUI based on PRD-OVH_WEBUI-v3
+  version: 3.0.0
+servers:
+  - url: /api
+    description: Current API prefix
+
+paths:
+  /health:
+    get:
+      summary: Health check endpoint
+      operationId: GetHealth
+      tags:
+        - F11
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  version:
+                    type: string
+                    example: 3.0.0
+
+  /accounts:
+    get:
+      summary: List all configured OVH accounts
+      operationId: ListAccounts
+      tags:
+        - F01
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: List of accounts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Account'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      summary: Create a new OVH account
+      operationId: CreateAccount
+      tags:
+        - F01
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAccountRequest'
+      responses:
+        '201':
+          description: Account created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /accounts/{id}:
+    get:
+      summary: Get account by ID
+      operationId: GetAccountByID
+      tags:
+        - F01
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Account details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      summary: Update account by ID
+      operationId: UpdateAccount
+      tags:
+        - F01
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAccountRequest'
+      responses:
+        '200':
+          description: Account updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      summary: Delete account by ID
+      operationId: DeleteAccountByID
+      tags:
+        - F01
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Account deleted successfully
+
+  /accounts/{id}/verify:
+    post:
+      summary: Explicitly verify account credentials with OVH API
+      operationId: VerifyAccountCredentials
+      tags:
+        - F01
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Verification result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CredentialVerificationResult'
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+  responses:
+    BadRequest:
+      description: Bad request or input validation failure
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Unauthorized:
+      description: Authentication failure
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    NotFound:
+      description: Resource not found
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    UnprocessableEntity:
+      description: Business validation or credential failure
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+
+  schemas:
+    Problem:
+      type: object
+      required:
+        - type
+        - title
+        - status
+        - code
+        - requestId
+      properties:
+        type:
+          type: string
+          format: uri
+          example: "about:blank"
+        title:
+          type: string
+          example: "Credential verification failed"
+        status:
+          type: integer
+          example: 422
+        code:
+          type: string
+          example: "OVH_SIGNATURE_INVALID"
+        detail:
+          type: string
+          example: "Signature rejected by ovh-eu; check Application Secret / Consumer Key activation."
+        raw:
+          type: string
+          nullable: true
+          example: "OVHcloud API error (status code 400): Client::BadRequest: \"Invalid signature\""
+        ovhQueryId:
+          type: string
+          nullable: true
+          example: "EU.ext-1.abc"
+        requestId:
+          type: string
+          format: uuid
+        remediation:
+          type: array
+          items:
+            type: object
+            properties:
+              action:
+                type: string
+                example: "reissue_consumer_key"
+              message:
+                type: string
+                example: "重新签发 Consumer Key，并点开 OVH 返回的授权链接完成激活"
+              url:
+                type: string
+                format: uri
+                nullable: true
+
+    Account:
+      type: object
+      required:
+        - id
+        - name
+        - subsidiary
+        - endpoint
+        - iam
+        - credentialState
+      properties:
+        id:
+          type: string
+          example: "acc_1a2b3c"
+        name:
+          type: string
+          example: "主账号-FR"
+        subsidiary:
+          type: string
+          example: "FR"
+        endpoint:
+          type: string
+          enum: [ovh-eu, ovh-us, ovh-ca]
+          example: "ovh-eu"
+        iam:
+          type: string
+          enum: [go-ovh-fr, go-ovh-us, go-ovh-ca]
+          example: "go-ovh-fr"
+        appKey:
+          type: string
+          example: "ak_****"
+        isDefault:
+          type: boolean
+          example: true
+        credentialState:
+          type: string
+          enum: [unverified, verified, invalid]
+          example: "verified"
+        lastVerifiedAt:
+          type: string
+          format: date-time
+          nullable: true
+        verificationReason:
+          type: string
+          nullable: true
+
+    CreateAccountRequest:
+      type: object
+      required:
+        - name
+        - subsidiary
+        - appKey
+        - appSecret
+        - consumerKey
+      properties:
+        name:
+          type: string
+        subsidiary:
+          type: string
+        appKey:
+          type: string
+        appSecret:
+          type: string
+        consumerKey:
+          type: string
+
+    UpdateAccountRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        appKey:
+          type: string
+        appSecret:
+          type: string
+        consumerKey:
+          type: string
+
+    CredentialVerificationResult:
+      type: object
+      required:
+        - valid
+        - state
+      properties:
+        valid:
+          type: boolean
+        state:
+          type: string
+          enum: [verified, invalid]
+        reason:
+          type: string
+          nullable: true
+        evidence:
+          type: object
+          properties:
+            nichandle:
+              type: string
+            ovhSubsidiary:
+              type: string
+            checkedAt:
+              type: string
+              format: date-time

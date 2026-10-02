@@ -56,6 +56,7 @@ import {
   type VPSSubscription,
 } from "@/hooks/use-vps-monitor";
 import { useTelegramVerify } from "@/hooks/use-telegram";
+import { OsIcon } from "@/components/server-control/OsIcon";
 
 /** VPS 补货通知 */
 
@@ -344,8 +345,18 @@ function VPSRow({
                 : "监控所有数据中心"}
             </p>
             <div className="flex gap-1.5 flex-wrap items-center">
-              {sub.monitorLinux && <Chip tone="info">Linux</Chip>}
-              {sub.monitorWindows && <Chip tone="info">Windows</Chip>}
+              {sub.monitorLinux && (
+                <Chip tone="info" className="gap-1 items-center">
+                  <OsIcon templateName="linux" size={13} className="rounded-sm" />
+                  <span>Linux</span>
+                </Chip>
+              )}
+              {sub.monitorWindows && (
+                <Chip tone="info" className="gap-1 items-center">
+                  <OsIcon templateName="windows" size={13} className="rounded-sm" />
+                  <span>Windows</span>
+                </Chip>
+              )}
               {sub.notifyAvailable && <Chip tone="success">有货提醒</Chip>}
               {sub.notifyUnavailable && <Chip tone="warning">无货提醒</Chip>}
               {sub.autoOrder && sub.autoOrderAccountId ? (

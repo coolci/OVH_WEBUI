@@ -267,27 +267,32 @@ func ReinstallVps(state *app.State) gin.HandlerFunc {
 		acc, _ := ovhAccountFor(state, c)
 
 		var body struct {
-			TemplateID        interface{} `json:"templateId"` // 兼容旧字段名;语义是 imageId(string),数字会被转成字符串
+			ImageID           interface{} `json:"imageId"`
+			TemplateID        interface{} `json:"templateId"` // 兼容旧字段名;语义是 imageId(string)
 			SSHKey            []string    `json:"sshKey"`
 			DoNotSendPassword bool        `json:"doNotSendPassword"`
 		}
 		_ = c.ShouldBindJSON(&body)
-		if body.TemplateID == nil {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少 templateId"})
+		rawID := body.ImageID
+		if rawID == nil {
+			rawID = body.TemplateID
+		}
+		if rawID == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少 imageId (或 templateId)"})
 			return
 		}
 
 		// imageId 必须是 string;数字(旧缓存)转字符串
-		imageID, ok := body.TemplateID.(string)
+		imageID, ok := rawID.(string)
 		if !ok {
-			if tid, isNum := numconv.ToInt64(body.TemplateID); isNum {
+			if tid, isNum := numconv.ToInt64(rawID); isNum {
 				imageID = strconv.FormatInt(tid, 10)
 			} else {
-				imageID = fmt.Sprintf("%v", body.TemplateID)
+				imageID = fmt.Sprintf("%v", rawID)
 			}
 		}
 		if imageID == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "templateId 不能为空"})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "imageId 不能为空"})
 			return
 		}
 		// sshKey 在 vps.rebuild.post 里是单个 string(key 名),不是数组;language /

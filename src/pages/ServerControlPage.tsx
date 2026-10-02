@@ -37,6 +37,8 @@ import { RenewalDialog } from "@/components/server-control/RenewalDialog";
 import { ReinstallDialog } from "@/components/server-control/ReinstallDialog";
 import { RetractionDialog } from "@/components/server-control/RetractionDialog";
 import { EngagementDialog } from "@/components/server-control/EngagementDialog";
+import { DeviceMetaCapsules } from "@/components/common/DeviceMetaCapsules";
+import { DeviceSwitcherCard } from "@/components/common/DeviceSwitcherCard";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -47,6 +49,7 @@ function ServerControlPage() {
   const q = useOwnedServers();
   const { hidden, toggle } = useHideIp();
   const [selectedName, setSelectedName] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<null | OwnedServer>(null);
   const [activeAccount, setActiveAccount] = useActiveServerControlAccount();
   const { data: accounts } = useAccounts();
   const { data: aliases } = useServerAliases();
@@ -109,83 +112,40 @@ function ServerControlPage() {
         }
       />
 
-      {/* 账户 + 服务器 选择卡片 */}
-      <Card className="surface-card rounded-xl border-border">
-        <CardContent className="p-3 sm:p-4">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-4">
-            {/* 账户选择 */}
-            <div className="flex items-center gap-2 flex-1 min-w-0">
-              <span className="text-xs font-medium text-muted-foreground whitespace-nowrap w-9 sm:w-auto flex-shrink-0">
-                账户
-              </span>
-              <Select value={activeAccount || ""} onValueChange={(v) => setActiveAccount(v || "")}>
-                <SelectTrigger className="h-9 rounded-lg w-full text-xs border-border/80 bg-background/50 touch-manipulation">
-                  <SelectValue placeholder="选择账户" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(accounts || []).map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.name} · {a.zone}
-                      {a.isDefault && <span className="ml-2 text-[10px] text-muted-foreground">(默认)</span>}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+      {/* 一体化设备导航控制台 */}
+      <DeviceSwitcherCard
+        deviceType="server"
+        accounts={(accounts || []).map((a) => ({
+          id: a.id,
+          name: a.name,
+          zone: a.zone,
+          isDefault: a.isDefault,
+        }))}
+        activeAccount={activeAccount || ""}
+        onAccountChange={(v) => setActiveAccount(v || "")}
+        items={servers.map((s) => ({
+          serviceName: s.serviceName,
+          name: aliasOf(aliases, s.serviceName, s.name),
+          rawName: s.serviceName,
+          datacenter: s.datacenter,
+          subtext: s.commercialRange || "OVH 独服",
+          state: s.state,
+        }))}
+        selectedName={selectedName || undefined}
+        onSelectName={(name) => setSelectedName(name)}
+        isFetching={q.isFetching}
+        hidden={hidden}
+        onRename={(serviceName) => {
+          const s = servers.find((item) => item.serviceName === serviceName);
+          if (s) setRenaming(s);
+        }}
+      />
 
-            {/* 服务器选择 */}
-            <div className="flex items-center gap-2 flex-[2] min-w-0">
-              <span className="text-xs font-medium text-muted-foreground whitespace-nowrap w-9 sm:w-auto flex-shrink-0">
-                服务器
-              </span>
-              <ServerSelector
-                servers={servers}
-                selected={selected}
-                onChange={(name) => setSelectedName(name)}
-                hidden={hidden}
-              />
-            </div>
-
-            {/* 设备统计 */}
-            <div className="text-[11px] text-muted-foreground flex items-center justify-between sm:justify-end gap-2 flex-shrink-0 pt-1.5 sm:pt-0 border-t sm:border-t-0 border-border/40">
-              <span>共 {servers.length} 台服务器</span>
-              {q.isFetching && <span className="text-primary font-medium animate-pulse">同步中…</span>}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* 设备列表横向切换卡片 (多服务器速览) */}
-      {servers.length > 1 && (
-        <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar pb-1 -mt-2">
-          {servers.map((s) => {
-            const isCurrent = s.serviceName === selectedName;
-            const name = aliasOf(aliases, s.serviceName, s.name);
-            return (
-              <button
-                key={s.serviceName}
-                onClick={() => setSelectedName(s.serviceName)}
-                className={cn(
-                  "flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border text-xs text-left transition-all duration-200 flex-shrink-0 touch-manipulation",
-                  isCurrent
-                    ? "border-primary/60 bg-primary/8 text-foreground font-medium shadow-sm shadow-primary/10 ring-1 ring-primary/20"
-                    : "border-border/60 hover:border-border bg-card/80 hover:bg-card text-muted-foreground hover:text-foreground hover:shadow-sm"
-                )}
-              >
-                <StatusDot tone={s.state === "ok" ? "success" : "warning"} size="xs" />
-                <div className="min-w-0">
-                  <div className="font-semibold font-mono text-foreground leading-tight truncate max-w-[220px]">
-                    {maskSensitive(name, hidden)}
-                  </div>
-                  <div className="text-[10px] text-muted-foreground/70 mt-0.5 font-sans">
-                    {(s.datacenter || "").toUpperCase()} · {s.commercialRange || "OVH"}
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      )}
+      <RenameDialog
+        server={renaming}
+        currentAlias={renaming ? aliases?.[renaming.serviceName] || "" : ""}
+        onClose={() => setRenaming(null)}
+      />
 
       {q.isPending ? (
         <Skeleton className="h-[500px] rounded-xl" />
@@ -204,142 +164,7 @@ function ServerControlPage() {
   );
 }
 
-/**
- * 顶部服务器选择器：胶囊样式 Select。
- * - 显示用 alias(有则用之,否则用原 name / service_name)
- * - 右键单击列表项弹"重命名"小菜单 → 进入 alias 编辑对话框
- */
-function ServerSelector({
-  servers,
-  selected,
-  onChange,
-  hidden,
-}: {
-  servers: OwnedServer[];
-  selected: OwnedServer | null;
-  onChange: (serviceName: string) => void;
-  hidden: boolean;
-}) {
-  const { data: aliases } = useServerAliases();
-  const [ctxMenu, setCtxMenu] = useState<null | { server: OwnedServer; x: number; y: number }>(null);
-  const [renaming, setRenaming] = useState<null | OwnedServer>(null);
 
-  // 全局点击 / Esc 关闭 context menu
-  useEffect(() => {
-    if (!ctxMenu) return;
-    const handler = () => setCtxMenu(null);
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setCtxMenu(null); };
-    window.addEventListener("click", handler);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("click", handler);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [ctxMenu]);
-
-  const displayName = (s: OwnedServer) => aliasOf(aliases, s.serviceName, s.name);
-
-  return (
-    <>
-    <Select value={selected?.serviceName || ""} onValueChange={onChange}>
-      <SelectTrigger
-        className="rounded-lg w-full h-9 font-mono text-xs border-border/80 bg-background/50 focus:border-primary touch-manipulation"
-        // 拦截右键 pointerdown(button=2),不让 Radix Select 打开下拉
-        onPointerDown={(e) => {
-          if (e.button === 2) {
-            e.preventDefault();
-            e.stopPropagation();
-          }
-        }}
-        // 右键当前选中那个胶囊 → 设别名(最直观)
-        onContextMenu={(e) => {
-          if (!selected) return;
-          e.preventDefault();
-          e.stopPropagation();
-          setCtxMenu({ server: selected, x: e.clientX, y: e.clientY });
-        }}
-        title="左键打开列表;右键给当前服务器设别名"
-      >
-        <SelectValue placeholder="选择服务器">
-          {selected && (
-            <div className="flex items-center gap-2">
-              <StatusDot tone={selected.state === "ok" ? "success" : "warning"} size="xs" />
-              <span className="font-semibold">{maskSensitive(displayName(selected), hidden)}</span>
-              <span className="text-[11px] text-muted-foreground font-sans ml-1">
-                {selected.commercialRange} · {selected.datacenter.toUpperCase()}
-              </span>
-            </div>
-          )}
-        </SelectValue>
-      </SelectTrigger>
-      <SelectContent className="max-h-[400px]">
-        {servers.map((s) => (
-          <SelectItem
-            key={s.serviceName}
-            value={s.serviceName}
-            className="font-mono"
-          >
-            {/* 内层 div 兜底右键 —— Radix SelectItem 自己的 onContextMenu 偶尔被吞 */}
-            <div
-              className="flex items-center gap-2"
-              onContextMenu={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setCtxMenu({ server: s, x: e.clientX, y: e.clientY });
-              }}
-            >
-              <StatusDot tone={s.state === "ok" ? "success" : "warning"} size="xs" />
-              <span className="font-semibold">{maskSensitive(displayName(s), hidden)}</span>
-              <span className="text-[11px] text-muted-foreground font-sans ml-1">
-                {s.commercialRange} · {(s.datacenter || "").toUpperCase()}
-              </span>
-            </div>
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-
-    {/* 右键菜单:固定定位到鼠标位置,点空白 / Esc 关 */}
-    {ctxMenu && (
-      <div
-        className="fixed z-[200] min-w-[140px] rounded-lg border border-border bg-popover shadow-md py-1 text-sm"
-        style={{ left: ctxMenu.x, top: ctxMenu.y }}
-        onClick={(e) => e.stopPropagation()}
-        onContextMenu={(e) => e.preventDefault()}
-      >
-        <button
-          type="button"
-          className="w-full text-left px-3 py-1.5 hover:bg-muted text-foreground"
-          onClick={() => {
-            setRenaming(ctxMenu.server);
-            setCtxMenu(null);
-          }}
-        >
-          设置别名
-        </button>
-        {aliases?.[ctxMenu.server.serviceName] && (
-          <button
-            type="button"
-            className="w-full text-left px-3 py-1.5 hover:bg-muted text-destructive"
-            onClick={() => {
-              setRenaming(ctxMenu.server);
-              setCtxMenu(null);
-            }}
-          >
-            清除别名…
-          </button>
-        )}
-      </div>
-    )}
-
-    <RenameDialog
-      server={renaming}
-      currentAlias={renaming ? aliases?.[renaming.serviceName] || "" : ""}
-      onClose={() => setRenaming(null)}
-    />
-    </>
-  );
-}
 
 /** 服务器别名编辑对话框。alias 留空 + 保存 = 删除别名,恢复显示原 service_name。 */
 function RenameDialog({
@@ -468,64 +293,18 @@ function ServerTabs({ server }: { server: OwnedServer }) {
             </Chip>
           </div>
 
-          {/* 第二行: 属性胶囊 (撤单/到期/开通/续费/OS) */}
-          <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-border/50">
-            {retraction.data?.eligible && (
-              <button
-                type="button"
-                onClick={() => setRetractOpen(true)}
-                className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border border-warning/50 bg-warning/10 hover:bg-warning/20 text-warning cursor-pointer transition-colors text-[12px] shadow-sm font-medium"
-                title={retractionWindowText(retraction.data)}
-              >
-                <Undo2 className="w-3.5 h-3.5 text-warning" />
-                <span>可撤单:</span>
-                <span>
-                  还剩{" "}
-                  {typeof retraction.data.hoursLeft === "number"
-                    ? retraction.data.hoursLeft > 48
-                      ? `${Math.ceil(retraction.data.hoursLeft / 24)} 天`
-                      : `${retraction.data.hoursLeft} 小时`
-                    : retraction.data.daysLeft ? `${retraction.data.daysLeft} 天` : "在期内"}
-                </span>
-              </button>
-            )}
-            {info.data?.expiration && (
-              <span className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border border-border bg-secondary/40 text-[12px]">
-                <CalendarClock className="w-3.5 h-3.5 text-muted-foreground" />
-                <span className="text-muted-foreground">到期:</span>
-                <span className="font-medium">{new Date(info.data.expiration).toLocaleDateString("zh-CN")}</span>
-              </span>
-            )}
-            {info.data?.creation && (
-              <span className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border border-border bg-secondary/40 text-[12px]">
-                <CalendarPlus className="w-3.5 h-3.5 text-muted-foreground" />
-                <span className="text-muted-foreground">开通:</span>
-                <span className="font-medium">{new Date(info.data.creation).toLocaleDateString("zh-CN")}</span>
-              </span>
-            )}
-            {info.data && (
-              <button
-                type="button"
-                onClick={() => setRenewalOpen(true)}
-                className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border border-border bg-background hover:bg-muted cursor-pointer transition-colors text-[12px]"
-                title="点击管理续费策略"
-              >
-                <Repeat className="w-3.5 h-3.5 text-muted-foreground" />
-                <span className="text-muted-foreground">续费:</span>
-                <span className="font-medium">{formatRenewal(info.data)}</span>
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => setReinstallOpen(true)}
-              className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border border-border bg-background hover:bg-muted cursor-pointer transition-colors text-[12px]"
-              title="点击进入重装系统"
-            >
-              <Terminal className="w-3.5 h-3.5 text-muted-foreground" />
-              <span className="text-muted-foreground">OS:</span>
-              <span className="font-medium truncate max-w-[140px] sm:max-w-[200px]">{server.os || "—"}</span>
-            </button>
-          </div>
+          {/* 第二行: 属性胶囊 (撤单/系统/到期/开通/续费) */}
+          <DeviceMetaCapsules
+            retraction={retraction.data}
+            onRetractClick={() => setRetractOpen(true)}
+            os={{ rawName: server.os }}
+            onOsClick={() => setReinstallOpen(true)}
+            osClickTitle="点击进入重装系统"
+            expiration={info.data?.expiration}
+            creation={info.data?.creation}
+            renewal={info.data}
+            onRenewalClick={() => setRenewalOpen(true)}
+          />
         </CardContent>
       </Card>
 

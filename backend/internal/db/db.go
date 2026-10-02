@@ -121,10 +121,13 @@ func (db *DB) migrate() error {
 	if err := db.addColumnIfMissing("vps_subscriptions", "auto_order_account_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
-	// ovh_accounts 的按账户出站配置:代理地址 + 指纹。
+	// ovh_accounts 的按账户出站配置与凭据状态(PRD §2.2 / D-01)
 	for _, c := range [][2]string{
 		{"proxy_url", "TEXT NOT NULL DEFAULT ''"},
 		{"fingerprint", "TEXT NOT NULL DEFAULT ''"},
+		{"cred_state", "TEXT NOT NULL DEFAULT 'unverified'"},
+		{"cred_checked_at", "TEXT NOT NULL DEFAULT ''"},
+		{"cred_evidence", "TEXT NOT NULL DEFAULT ''"},
 	} {
 		if err := db.addColumnIfMissing("ovh_accounts", c[0], c[1]); err != nil {
 			return err

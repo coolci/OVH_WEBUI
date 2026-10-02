@@ -2,7 +2,6 @@ import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface PageHeaderProps {
-  /** Kept optional so existing call sites compile; not rendered. */
   icon?: LucideIcon;
   title: string;
   description?: string;
@@ -10,31 +9,34 @@ interface PageHeaderProps {
   className?: string;
 }
 
-/** Page title: responsive, clean accent bar, never crushed on mobile, spacious on desktop. */
-export function PageHeader({ title, description, action, className }: PageHeaderProps) {
+/** Standardized enterprise page header with icon badge, title hierarchy, and responsive actions. */
+export function PageHeader({ icon: Icon, title, description, action, className }: PageHeaderProps) {
   return (
     <div
       className={cn(
-        "flex items-center justify-between gap-2.5 sm:gap-4 pb-1 sm:pb-2",
+        "flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 pb-2 sm:pb-3 border-b border-border/40",
         className
       )}
     >
-      <div className="relative min-w-0 pl-3 sm:pl-3.5 flex-1 pr-1">
-        <span
-          aria-hidden
-          className="absolute left-0 top-1 bottom-1 w-0.5 rounded-full bg-primary"
-        />
-        <h1 className="text-base sm:text-lg font-bold leading-tight tracking-tight text-foreground whitespace-nowrap flex-shrink-0">
-          {title}
-        </h1>
-        {description && (
-          <p className="mt-0.5 text-xs text-muted-foreground truncate">
-            {description}
-          </p>
+      <div className="flex items-center gap-3 min-w-0">
+        {Icon && (
+          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0 shadow-sm">
+            <Icon className="w-4 h-4 sm:w-5 sm:h-5" strokeWidth={2} />
+          </div>
         )}
+        <div className="min-w-0 flex-1">
+          <h1 className="text-base sm:text-lg font-bold tracking-tight text-foreground leading-tight truncate">
+            {title}
+          </h1>
+          {description && (
+            <p className="mt-0.5 text-xs text-muted-foreground/85 leading-normal truncate">
+              {description}
+            </p>
+          )}
+        </div>
       </div>
       {action && (
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex items-center gap-2 self-start sm:self-auto flex-shrink-0">
           {action}
         </div>
       )}

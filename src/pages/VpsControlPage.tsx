@@ -42,6 +42,10 @@ import { VpsMitigationPane } from "@/components/vps-control/VpsMitigationPane";
 import { VpsTasksDialog } from "@/components/vps-control/VpsTasksDialog";
 import { RenewalDialog } from "@/components/server-control/RenewalDialog";
 import { EngagementDialog, type EngagementHooks } from "@/components/server-control/EngagementDialog";
+import { DeviceMetaCapsules } from "@/components/common/DeviceMetaCapsules";
+import { DeviceSwitcherCard } from "@/components/common/DeviceSwitcherCard";
+import { InfoCard } from "@/components/common/InfoCard";
+import { formatDate } from "@/lib/format-os";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -67,9 +71,13 @@ function VpsControlPage() {
     setSelectedName(null);
   }, [activeAccount]);
 
-  // 自动选第一台
+  // 自动选第一台（首次加载或列表变更/当前选中失效后）
   useEffect(() => {
-    if (!selectedName && vpsList.length > 0) {
+    if (vpsList.length === 0) {
+      setSelectedName(null);
+      return;
+    }
+    if (!selectedName || !vpsList.some((v) => v.serviceName === selectedName)) {
       setSelectedName(vpsList[0].serviceName);
     }
   }, [vpsList, selectedName]);
@@ -99,95 +107,28 @@ function VpsControlPage() {
         }
       />
 
-      {/* 账户 + VPS 选择 */}
-      <Card className="surface-card rounded-xl border-border">
-        <CardContent className="p-3 sm:p-4">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-4">
-            {/* 账户选择 */}
-            <div className="flex items-center gap-2 flex-1 min-w-0">
-              <span className="text-xs font-medium text-muted-foreground whitespace-nowrap w-9 sm:w-auto flex-shrink-0">
-                账户
-              </span>
-              <Select value={activeAccount || ""} onValueChange={(v) => setActiveAccount(v || "")}>
-                <SelectTrigger className="h-9 rounded-lg w-full text-xs border-border/80 bg-background/50 touch-manipulation">
-                  <SelectValue placeholder="选择账户" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(accounts || []).map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* VPS 选择 */}
-            <div className="flex items-center gap-2 flex-[2] min-w-0">
-              <span className="text-xs font-medium text-muted-foreground whitespace-nowrap w-9 sm:w-auto flex-shrink-0">
-                VPS
-              </span>
-              <Select value={selectedName || ""} onValueChange={setSelectedName}>
-                <SelectTrigger className="h-9 rounded-lg w-full text-xs border-border/80 bg-background/50 touch-manipulation">
-                  <SelectValue placeholder={vpsList.length === 0 ? "无 VPS" : "选择 VPS"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {vpsList.map((v) => {
-                    const label = aliasOf(aliases.data, v.serviceName, v.displayName || v.serviceName);
-                    return (
-                      <SelectItem key={v.serviceName} value={v.serviceName}>
-                        <span className="flex items-center gap-2">
-                          <StatusDot tone={v.state === "running" ? "success" : v.state === "stopped" ? "warning" : "muted"} />
-                          <span className="truncate">{maskSensitive(label, hidden)}</span>
-                          <span className="text-[10px] text-muted-foreground font-mono">{maskSensitive(v.serviceName, hidden)}</span>
-                        </span>
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* 设备统计 */}
-            <div className="text-[11px] text-muted-foreground flex items-center justify-between sm:justify-end gap-2 flex-shrink-0 pt-1.5 sm:pt-0 border-t sm:border-t-0 border-border/40">
-              <span>共 {vpsList.length} 台 VPS</span>
-              {q.isFetching && <span className="text-primary font-medium animate-pulse">同步中…</span>}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* 设备列表横向切换卡片 (多 VPS 速览) */}
-      {vpsList.length > 1 && (
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1 -mt-2">
-          {vpsList.map((v) => {
-            const isCurrent = v.serviceName === selectedName;
-            const label = aliasOf(aliases.data, v.serviceName, v.displayName || v.serviceName);
-            return (
-              <button
-                key={v.serviceName}
-                onClick={() => setSelectedName(v.serviceName)}
-                className={cn(
-                  "flex items-center gap-2.5 px-3 py-2 rounded-xl border text-xs text-left transition-all duration-150 flex-shrink-0 touch-manipulation",
-                  isCurrent
-                    ? "border-primary bg-primary/10 text-foreground font-medium shadow-sm"
-                    : "border-border/70 hover:border-border bg-card/60 hover:bg-secondary/40 text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <StatusDot tone={v.state === "running" ? "success" : v.state === "stopped" ? "warning" : "muted"} size="xs" />
-                <div className="min-w-0">
-                  <div className="font-semibold font-mono text-foreground leading-tight">
-                    {maskSensitive(label, hidden)}
-                  </div>
-                  <div className="text-[10px] text-muted-foreground/80 mt-0.5 font-sans">
-                    {v.zone || v.cluster || "VPS"} · {maskSensitive(v.serviceName, hidden)}
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      )}
+      {/* 一体化 VPS 设备导航控制台 */}
+      <DeviceSwitcherCard
+        deviceType="vps"
+        accounts={(accounts || []).map((a) => ({
+          id: a.id,
+          name: a.name,
+        }))}
+        activeAccount={activeAccount || ""}
+        onAccountChange={(v) => setActiveAccount(v || "")}
+        items={vpsList.map((v) => ({
+          serviceName: v.serviceName,
+          name: aliasOf(aliases.data, v.serviceName, v.displayName || v.serviceName),
+          rawName: v.serviceName,
+          datacenter: (v.zone || v.cluster || "VPS").toUpperCase(),
+          subtext: v.model ? `${v.model}${v.vcore ? ` · ${v.vcore}C` : ""}${v.memoryMB ? `/${(v.memoryMB / 1024).toFixed(0)}G` : ""}` : "OVH VPS",
+          state: v.state,
+        }))}
+        selectedName={selectedName || undefined}
+        onSelectName={(name) => setSelectedName(name)}
+        isFetching={q.isFetching}
+        hidden={hidden}
+      />
 
       {/* 内容区。列表请求失败 ≠ 该账户没有 VPS，不能走空态。 */}
       {q.isError && vpsList.length === 0 ? (
@@ -309,6 +250,14 @@ function VpsDetail({
   const [tasksOpen, setTasksOpen] = useState(false);
   const renewalMutation = useUpdateVpsRenewal(server.serviceName);
   const contactMutation = useChangeVpsContact();
+
+  // 切换机器时关闭正在打开的操作弹窗并清空 token，彻底杜绝跨 VPS 误操作 (Bug #2, Bug #5)
+  useEffect(() => {
+    setStopOpen(false);
+    setRebootOpen(false);
+    setTerminateOpen(false);
+    setTermToken("");
+  }, [server.serviceName]);
 
   // 把 VPS engagement hooks 打包成 EngagementHooks bundle 传给共用对话框
   const vpsEngagementHooks: EngagementHooks = {
@@ -432,54 +381,24 @@ function VpsDetail({
             </Chip>
           </div>
 
-          {/* 第二行: 属性胶囊 (系统/到期/续费) */}
-          <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-border/50">
-            {currentOS.data && (
-              <button
-                type="button"
-                onClick={() => setReinstallOpen(true)}
-                className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border border-border bg-background hover:bg-muted cursor-pointer transition-colors text-[12px]"
-                title="点击进入重装系统"
-              >
-                <Terminal className="w-3.5 h-3.5 text-muted-foreground" />
-                <span className="text-muted-foreground">系统:</span>
-                <span className="font-medium truncate max-w-[140px] sm:max-w-[200px]">{currentOS.data.name}</span>
-              </button>
-            )}
-            {info.data?.expiration && (
-              <span className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border border-border bg-secondary/40 text-[12px]">
-                <CalendarClock className="w-3.5 h-3.5 text-muted-foreground" />
-                <span className="text-muted-foreground">到期:</span>
-                <span className="font-medium">{new Date(info.data.expiration).toLocaleDateString("zh-CN")}</span>
-              </span>
-            )}
-            {info.data && (
-              <button
-                type="button"
-                onClick={() => setRenewalOpen(true)}
-                className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border border-border bg-background hover:bg-muted cursor-pointer transition-colors text-[12px]"
-                title="点击管理续费策略"
-              >
-                <Repeat className="w-3.5 h-3.5 text-muted-foreground" />
-                <span className="text-muted-foreground">续费:</span>
-                <span className="font-medium">
-                  {info.data.renewalDeleteAtExpiration
-                    ? "到期注销"
-                    : info.data.renewalForced
-                      ? "强制自动"
-                      : info.data.renewalType
-                        ? "自动"
-                        : "手动"}
-                  {info.data.renewalPeriod > 0 ? ` · ${info.data.renewalPeriod}月` : ""}
-                </span>
-              </button>
-            )}
-          </div>
+          {/* 第二行: 属性胶囊 (系统/到期/开通/续费) */}
+          <DeviceMetaCapsules
+            os={{
+              rawName: currentOS.data?.name,
+              distribution: currentOS.data?.distribution,
+            }}
+            onOsClick={() => setReinstallOpen(true)}
+            osClickTitle="点击进入系统重建 / 重装"
+            expiration={info.data?.expiration}
+            creation={info.data?.creation}
+            renewal={info.data}
+            onRenewalClick={() => setRenewalOpen(true)}
+          />
         </CardContent>
       </Card>
 
-      {/* 硬件规格 4 格卡片 (移动端 2x2, 桌面 4 列) */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
+      {/* 硬件规格 4 格卡片 (移动端 2x2, 平板/桌面 4 列) */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3">
         <InfoCard icon={<Cpu className="w-4 h-4 text-primary" />} label="vCore" value={String(server.vcore || "—")} />
         <InfoCard
           icon={<MemoryStick className="w-4 h-4 text-primary" />}
@@ -546,7 +465,7 @@ function VpsDetail({
           <div className="grid grid-cols-3 gap-2 pt-1 border-t border-border/40">
             <Button variant="outline" size="sm" onClick={() => setReinstallOpen(true)} className="h-9 text-xs font-normal border-border/70 justify-center">
               <HardDrive className="w-3.5 h-3.5 mr-1.5 text-muted-foreground" />
-              重装系统
+              系统重建
             </Button>
             <Button variant="outline" size="sm" onClick={() => setEngagementOpen(true)} className="h-9 text-xs font-normal border-border/70 justify-center">
               <CalendarPlus className="w-3.5 h-3.5 mr-1.5 text-muted-foreground" />
@@ -632,7 +551,7 @@ function VpsDetail({
           <p className="text-[11px] text-muted-foreground px-1">
             {server.model && <>型号 <code className="font-mono">{server.model}</code></>}
             {info.data?.creation && (
-              <> · 开通 {new Date(info.data.creation).toLocaleDateString("zh-CN")}</>
+              <> · 开通 {formatDate(info.data.creation)}</>
             )}
             {server.cluster && <> · 集群 <code className="font-mono">{server.cluster}</code></>}
             {server.slaMonitoring && <> · 已开 SLA 监控</>}
@@ -798,20 +717,6 @@ function VpsDetail({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
-  );
-}
-
-function InfoCard({
-  icon, label, value,
-}: { icon: React.ReactNode; label: string; value: string }) {
-  return (
-    <div className="surface-card border border-border rounded-xl px-3.5 py-3 flex items-center gap-3 min-w-0">
-      <div className="w-9 h-9 rounded-lg bg-secondary border border-border/60 flex items-center justify-center text-foreground flex-shrink-0">{icon}</div>
-      <div className="min-w-0">
-        <div className="text-[11px] text-muted-foreground">{label}</div>
-        <div className="text-[13px] font-semibold truncate text-foreground" title={value}>{value}</div>
-      </div>
     </div>
   );
 }
@@ -984,6 +889,12 @@ function AliasEditor({
   onSetAlias: ReturnType<typeof useSetServerAlias>;
 }) {
   const [v, setV] = useState(aliasOf(aliases.data, serviceName, ""));
+
+  // 机器切换时同步重置输入框内容，避免继承前一台机器别名 (Bug #3)
+  useEffect(() => {
+    setV(aliasOf(aliases.data, serviceName, ""));
+  }, [serviceName, aliases.data]);
+
   return (
     <div className="flex gap-2">
       <Input value={v} onChange={(e) => setV(e.target.value)} placeholder="给这台 VPS 起个易记的名字" />

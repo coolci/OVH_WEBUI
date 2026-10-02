@@ -18,6 +18,7 @@ try {
     if (!localStorage.getItem(API_KEY_STORAGE)) {
       setApiSecretKey(existing);
     }
+    localStorage.removeItem("apiSecretKey");
   } else if (import.meta.env.DEV) {
     const fromEnv = String(import.meta.env.VITE_DEV_API_KEY || "").trim();
     if (fromEnv) {

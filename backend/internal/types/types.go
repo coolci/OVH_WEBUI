@@ -39,15 +39,8 @@ const (
 	MinRetryInterval          = 1
 	MaxRetryInterval          = 86400
 
-	// MaxOrderQuantity 单个机房最多下几台。
-	// 没有上限时 "planCode 4000000000" 会让入队方先把 40 亿个 QueueItem
-	// append 进一个切片 —— 进程当场 OOM 被杀。
-	MaxOrderQuantity = 20
-	// MaxOrderFanout 一次操作最多创建多少个抢购任务。
-	// 不指定机房时任务数 = 配置数 × 机房数 × 数量,很容易远超用户直觉。
-	MaxOrderFanout = 60
-	// MaxQueueItems 队列里最多存多少条任务。
-	MaxQueueItems = 200
+	// MaxQueueItems 队列上限(兼容旧代码，别名指向 MaxQueueSize 500)
+	MaxQueueItems = MaxQueueSize
 )
 
 // ClampRetryInterval 把重试间隔夹到合法区间;<= 0 视为"没设",退回 fallback。
@@ -107,9 +100,13 @@ type OVHAccount struct {
 	ConsumerKey string `json:"consumerKey"`
 	IAM         string `json:"iam"`       // go-ovh-<zone-lower>
 	IsDefault   bool   `json:"isDefault"` // 默认账户（未指定时 fallback 用它）
-	CreatedAt   string `json:"createdAt"`
-	ProxyURL    string `json:"proxyUrl,omitempty"`
-	Fingerprint string `json:"fingerprint,omitempty"`
+	CreatedAt          string `json:"createdAt"`
+	ProxyURL           string `json:"proxyUrl,omitempty"`
+	Fingerprint        string `json:"fingerprint,omitempty"`
+	CredState          string `json:"credState,omitempty"`          // unverified / verified / invalid / expired (D-01)
+	CredCheckedAt      string `json:"credCheckedAt,omitempty"`
+	CredEvidence       string `json:"credEvidence,omitempty"`
+	VerificationReason string `json:"verificationReason,omitempty"`
 }
 
 // QueueItem 抢购队列项

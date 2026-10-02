@@ -1,6 +1,7 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Helmet } from "react-helmet-async";
-import { User, Mail, RefreshCw, FileText, Inbox, ShieldCheck, ShoppingCart, ExternalLink, type LucideIcon } from "lucide-react";
+import { User, Mail, RefreshCw, FileText, Inbox, ShieldCheck, ShoppingCart, ExternalLink, CalendarClock, type LucideIcon } from "lucide-react";
+import { formatDate, formatDateTime } from "@/lib/format-os";
 import { useState } from "react";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
@@ -212,7 +213,7 @@ function OrdersTab() {
                 (o.priceWithTax?.value != null
                   ? `${o.priceWithTax.value} ${o.priceWithTax.currencyCode || ""}`
                   : "—");
-              const dateStr = o.date ? new Date(String(o.date)).toLocaleString("zh-CN") : "—";
+              const dateStr = formatDateTime(o.date);
               return (
                 <div
                   key={String(id)}
@@ -222,12 +223,13 @@ function OrdersTab() {
                     <div className="flex items-center gap-2 flex-wrap mb-1">
                       <span className="font-mono text-sm font-semibold">#{id}</span>
                       {o.expirationDate && (
-                        <Chip tone="default">
-                          到期 {new Date(String(o.expirationDate)).toLocaleDateString("zh-CN")}
+                        <Chip tone="default" className="font-mono text-[11px] gap-1">
+                          <CalendarClock className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                          <span>到期 {formatDate(o.expirationDate)}</span>
                         </Chip>
                       )}
                     </div>
-                    <p className="text-[11px] text-muted-foreground">{dateStr}</p>
+                    <p className="text-[11px] text-muted-foreground font-mono">{dateStr}</p>
                   </div>
                   <div className="flex items-center gap-3 sm:text-right flex-shrink-0">
                     <p className="text-base sm:text-lg font-bold font-mono text-foreground">{priceText}</p>

@@ -137,6 +137,8 @@ function translateTaskType(t: string): string {
     provisioningAdditionalIp: "分配额外 IP",
     reOpenVm: "重新开机",
     rebootVm: "重启",
+    rebuild: "系统重建",
+    rebuildVm: "系统重建",
     reinstallVm: "重装系统",
     removeVeeamBackup: "移除 Veeam 备份",
     rescheduleAutoBackup: "调整自动备份",

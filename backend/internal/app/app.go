@@ -467,7 +467,15 @@ func (s *State) EnqueueItems(items []types.QueueItem, prepend bool) error {
 	if len(items) == 0 {
 		return nil
 	}
+	if len(items) > types.MaxOrderFanout {
+		return fmt.Errorf("单次入队任务数超出上限 %d (尝试入队 %d)", types.MaxOrderFanout, len(items))
+	}
 	s.QueueMu.Lock()
+	if len(s.Queue)+len(items) > types.MaxQueueSize {
+		cur := len(s.Queue)
+		s.QueueMu.Unlock()
+		return fmt.Errorf("队列容量超出上限 %d (当前 %d，尝试新增 %d)", types.MaxQueueSize, cur, len(items))
+	}
 	if prepend {
 		s.Queue = append(append([]types.QueueItem{}, items...), s.Queue...)
 	} else {

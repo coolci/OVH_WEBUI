@@ -7,6 +7,7 @@ import {
 } from "@/hooks/use-server-control";
 import { useHideIp, maskSensitive } from "@/hooks/use-hide-ip";
 import { Skeleton } from "@/components/common/Skeleton";
+import { InfoCard } from "@/components/common/InfoCard";
 import { MrtgTrafficChart } from "./MrtgTrafficChart";
 
 /** IP type 展示：dedicated/failover + IPv4/IPv6，避免 raw unknown */
@@ -139,36 +140,6 @@ export function OverviewTab({ server }: { server: OwnedServer }) {
       </div>
 
       <MrtgTrafficChart serviceName={server.serviceName} />
-    </div>
-  );
-}
-
-function InfoCard({
-  icon,
-  label,
-  value,
-  loading,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  loading?: boolean;
-}) {
-  return (
-    <div className="border border-border rounded-xl px-3.5 py-3 flex items-center gap-3 min-w-0">
-      <div className="w-9 h-9 rounded-lg bg-secondary flex items-center justify-center flex-shrink-0">
-        {icon}
-      </div>
-      <div className="min-w-0">
-        <div className="text-[11px] text-muted-foreground">{label}</div>
-        {loading ? (
-          <Skeleton className="h-4 w-24 mt-1" />
-        ) : (
-          <div className="text-[13px] font-semibold truncate" title={value}>
-            {value}
-          </div>
-        )}
-      </div>
     </div>
   );
 }
