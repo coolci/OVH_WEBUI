@@ -25,6 +25,7 @@ import { Chip } from "@/components/common/Chip";
 import { StatusDot } from "@/components/common/StatusDot";
 import { EmptyState } from "@/components/common/EmptyState";
 import { Skeleton } from "@/components/common/Skeleton";
+import { LoadFailed } from "@/components/common/LoadFailed";
 import {
   Dialog,
   DialogContent,
@@ -146,7 +147,8 @@ function QueuePage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
-  const items = queue.data || [];
+  const rawQueue = queue.data;
+  const items = useMemo(() => rawQueue || [], [rawQueue]);
   const runningCount = items.filter((it) => it.status === "running").length;
   const pausedCount = items.filter((it) => it.status === "paused").length;
   const failedCount = items.filter((it) => it.status === "failed").length;
@@ -197,21 +199,20 @@ function QueuePage() {
             <Button
               onClick={() => setShowCreateDialog(true)}
               size="sm"
-              className="h-8 text-xs font-medium gap-1.5 px-3 rounded-lg"
+              className="h-8 text-xs font-medium gap-1.5 px-3 rounded-lg shadow-sm"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>新建抢购</span>
             </Button>
             <Button
-              variant="outline"
               size="sm"
-              className="h-8 text-xs gap-1.5 border-border/80 hover:bg-secondary px-2.5 sm:px-3 rounded-lg"
+              className="h-8 text-xs font-medium gap-1.5 rounded-lg shadow-sm px-3"
               onClick={() => queue.refetch()}
               disabled={queue.isFetching}
               title="刷新队列数据"
             >
               <RefreshCw className={cn("w-3.5 h-3.5", queue.isFetching && "animate-spin")} />
-              <span className="hidden sm:inline">刷新</span>
+              <span>刷新</span>
             </Button>
           </div>
         }
@@ -311,9 +312,9 @@ function QueuePage() {
               </Button>
             )}
             <Button
-              variant="ghost"
+              variant="soft-destructive"
               size="sm"
-              className="h-7 text-xs gap-1 px-2 rounded-lg text-muted-foreground hover:text-destructive"
+              className="h-7 text-xs gap-1 px-2.5 rounded-lg"
               onClick={() => setShowClearDialog(true)}
               title="清空所有队列任务"
             >
@@ -330,6 +331,15 @@ function QueuePage() {
             <Skeleton key={i} className="h-20 rounded-xl" />
           ))}
         </div>
+      ) : queue.isError ? (
+        <Card className="surface-card rounded-xl border-border">
+          <LoadFailed
+            icon={ListOrdered}
+            title="抢购队列读取失败"
+            error={queue.error}
+            onRetry={() => queue.refetch()}
+          />
+        </Card>
       ) : items.length === 0 ? (
         <Card className="surface-card rounded-xl border-border">
           <EmptyState

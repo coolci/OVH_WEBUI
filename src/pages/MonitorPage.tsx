@@ -12,7 +12,7 @@ import {
   Plus,
   Pencil,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
@@ -22,6 +22,7 @@ import { AccountChip } from "@/components/common/AccountChip";
 import { StatusDot } from "@/components/common/StatusDot";
 import { EmptyState } from "@/components/common/EmptyState";
 import { Skeleton } from "@/components/common/Skeleton";
+import { LoadFailed } from "@/components/common/LoadFailed";
 import { MonitorSubscribeDialog } from "@/components/monitor/MonitorSubscribeDialog";
 import {
   Dialog,
@@ -65,7 +66,10 @@ function MonitorPage() {
     }
   };
 
-  const subs = list.data || [];
+  const subs = useMemo(
+    () => (Array.isArray(list.data) ? list.data : []),
+    [list.data]
+  );
 
   return (
     <div className="space-y-6">
@@ -77,16 +81,15 @@ function MonitorPage() {
           <div className="flex items-center gap-2">
             <Button
               size="sm"
-              className="h-8 text-xs gap-1.5 font-medium px-3 rounded-lg"
+              className="h-8 text-xs gap-1.5 font-medium px-3 rounded-lg shadow-sm"
               onClick={() => setOpenAdd(true)}
             >
               <Plus className="w-3.5 h-3.5" />
               <span>添加订阅</span>
             </Button>
             <Button
-              variant="outline"
               size="sm"
-              className="h-8 text-xs gap-1.5 border-border/80 hover:bg-secondary px-2.5 sm:px-3 rounded-lg"
+              className="h-8 text-xs gap-1.5 font-medium rounded-lg shadow-sm px-3"
               onClick={handleRefresh}
               disabled={isRefreshing || list.isFetching || status.isFetching}
               title="刷新订阅与监控状态"
@@ -97,7 +100,7 @@ function MonitorPage() {
                   (isRefreshing || list.isFetching || status.isFetching) && "animate-spin"
                 )}
               />
-              <span className="hidden sm:inline">刷新</span>
+              <span>刷新</span>
             </Button>
           </div>
         }
@@ -141,6 +144,15 @@ function MonitorPage() {
             <Skeleton key={i} className="h-24 rounded-2xl" />
           ))}
         </div>
+      ) : list.isError ? (
+        <Card className="surface-card rounded-xl border-border">
+          <LoadFailed
+            icon={Activity}
+            title="监控订阅列表读取失败"
+            error={list.error}
+            onRetry={() => list.refetch()}
+          />
+        </Card>
       ) : subs.length === 0 ? (
         <Card className="surface-card rounded-xl border-border">
           <EmptyState
@@ -160,9 +172,9 @@ function MonitorPage() {
               </span>
             </div>
             <Button
-              variant="ghost"
+              variant="soft-destructive"
               size="sm"
-              className="h-7 text-xs text-muted-foreground hover:text-destructive gap-1 px-2 rounded-lg"
+              className="h-7 text-xs gap-1 px-2.5 rounded-lg"
               onClick={() => setConfirmClear(true)}
               title="清空所有服务器订阅"
             >
@@ -327,8 +339,14 @@ function SubRow({
                 <HistoryIcon className="w-4 h-4" />
               )}
             </Button>
-            <Button variant="ghost" size="icon" onClick={onDelete} aria-label="删除">
-              <X className="w-4 h-4" />
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+              onClick={onDelete}
+              aria-label="删除"
+            >
+              <Trash2 className="w-4 h-4" />
             </Button>
           </div>
         </div>
@@ -345,6 +363,10 @@ function SubRow({
 
 function HistoryPanel({ planCode }: { planCode: string }) {
   const history = useMonitorHistory(planCode);
+  const entries = useMemo(
+    () => (Array.isArray(history.data) ? history.data : []),
+    [history.data]
+  );
 
   if (history.isPending) {
     return (
@@ -356,7 +378,13 @@ function HistoryPanel({ planCode }: { planCode: string }) {
     );
   }
 
-  const entries = history.data || [];
+  if (history.isError) {
+    return (
+      <p className="text-xs text-destructive/80 text-center py-3">
+        变化历史读取失败
+      </p>
+    );
+  }
 
   return (
     <div>

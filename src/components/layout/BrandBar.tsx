@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { Zap } from "lucide-react";
 import { useAppVersion } from "@/hooks/use-system-metrics";
+import { Button } from "@/components/ui/button";
 
 /** Sidebar header: type-only wordmark + quick order. */
 export function BrandBar({ onQuickOrder }: { onQuickOrder: () => void }) {
@@ -34,14 +35,14 @@ export function BrandBar({ onQuickOrder }: { onQuickOrder: () => void }) {
         </div>
       </Link>
 
-      <button
-        type="button"
+      <Button
         onClick={onQuickOrder}
-        className="mt-2.5 flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-primary/25 bg-primary/10 text-xs font-semibold text-primary shadow-sm transition-all hover:bg-primary/15 hover:border-primary/40 active:scale-[0.98]"
+        size="sm"
+        className="mt-2.5 w-full h-8 gap-1.5 text-xs font-semibold rounded-lg shadow-sm"
       >
         <Zap className="h-3.5 w-3.5" strokeWidth={2} />
         快速下单
-      </button>
+      </Button>
     </div>
   );
 }

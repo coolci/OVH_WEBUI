@@ -131,7 +131,7 @@ function ServersPage() {
     ? monitorList.data?.find((s) => s.planCode === monitorTarget.planCode)
     : undefined;
 
-  const list = q.data || [];
+  const list = useMemo(() => q.data || [], [q.data]);
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
     let out = list;
@@ -146,7 +146,7 @@ function ServersPage() {
         if (map) {
           return Object.values(map).some((v) => v && v !== "unavailable" && v !== "unknown");
         }
-        return srv.datacenters.some((dc) => dc.availability && dc.availability !== "unavailable" && dc.availability !== "unknown");
+        return srv.datacenters?.some((dc) => dc.availability && dc.availability !== "unavailable" && dc.availability !== "unknown") ?? false;
       });
     }
     return out;
@@ -513,7 +513,7 @@ function DetailContent({
   const [accountId, setAccountId] = useState("");
   useEffect(() => {
     if (!accountId && defaultAcc) setAccountId(defaultAcc.id);
-  }, [defaultAcc?.id, accountId]);
+  }, [defaultAcc, accountId]);
   const [selectedDCs, setSelectedDCs] = useState<string[]>([]);
   const [quantity, setQuantity] = useState("1");
   const settingsQ = useSettings();

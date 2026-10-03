@@ -7,6 +7,7 @@ import { CommandPalette } from "@/components/common/CommandPalette";
 import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -51,7 +52,9 @@ export const AppLayout = forwardRef<HTMLDivElement, AppLayoutProps>(({ children 
 
           <main className="flex-1 overflow-y-auto overflow-x-hidden p-3.5 sm:p-5 md:p-6 lg:p-8 pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] lg:pb-8 overscroll-y-contain">
             <div className="matrix-fade-in max-w-[1520px] mx-auto w-full space-y-1">
-              {children}
+              <ErrorBoundary>
+                {children}
+              </ErrorBoundary>
             </div>
           </main>
 

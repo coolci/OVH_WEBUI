@@ -143,7 +143,7 @@ const TelegramOrderPage = () => {
     [matchedServer, availMap]
   );
 
-  const currentMode = orderModes.find(m => m.mode === selectedMode)!;
+  const currentMode = orderModes.find(m => m.mode === selectedMode) || orderModes[0];
 
   // Load command history from localStorage
   useEffect(() => {
@@ -306,14 +306,14 @@ const TelegramOrderPage = () => {
                   </span>
                 )}
                 <Button
-                  variant="outline"
                   size="sm"
                   onClick={() => void poller.refetch()}
                   disabled={poller.isFetching}
-                  className="h-8 w-8 p-0 rounded-lg border-border/80 hover:bg-secondary flex-shrink-0"
+                  className="h-8 gap-1.5 px-3 rounded-lg shadow-sm flex-shrink-0 text-xs font-medium"
                   title="刷新 Bot 状态"
                 >
                   <RefreshCw className={cn("h-3.5 w-3.5", poller.isFetching && "animate-spin")} />
+                  <span>刷新</span>
                 </Button>
                 <Button
                   variant="outline"

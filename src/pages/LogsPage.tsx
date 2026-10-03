@@ -68,7 +68,8 @@ function LogsPage() {
   });
   const clear = useClearLogs();
 
-  const items = logs.data?.logs || [];
+  const rawLogs = logs.data?.logs;
+  const items = useMemo(() => rawLogs || [], [rawLogs]);
   const total = logs.data?.total ?? items.length;
   const truncated = logs.data?.truncated ?? false;
 

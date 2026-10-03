@@ -172,7 +172,8 @@ function HistoryPage() {
     return () => clearInterval(id);
   }, []);
 
-  const items = list.data || [];
+  const rawItems = list.data;
+  const items = useMemo(() => rawItems || [], [rawItems]);
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
     return items.filter((i) => {

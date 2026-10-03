@@ -15,7 +15,7 @@ import {
   Pencil,
   AlertTriangle,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -36,6 +36,7 @@ import { Chip } from "@/components/common/Chip";
 import { StatusDot } from "@/components/common/StatusDot";
 import { EmptyState } from "@/components/common/EmptyState";
 import { Skeleton } from "@/components/common/Skeleton";
+import { LoadFailed } from "@/components/common/LoadFailed";
 import {
   Dialog,
   DialogContent,
@@ -113,16 +114,15 @@ function VPSMonitorPage() {
           <div className="flex items-center gap-2">
             <Button
               size="sm"
-              className="h-8 text-xs gap-1.5 px-3 font-medium rounded-lg"
+              className="h-8 text-xs gap-1.5 px-3 font-medium rounded-lg shadow-sm"
               onClick={() => setOpenAdd(true)}
             >
               <Plus className="w-3.5 h-3.5" />
               <span>添加订阅</span>
             </Button>
             <Button
-              variant="outline"
               size="sm"
-              className="h-8 text-xs gap-1.5 border-border/80 hover:bg-secondary px-2.5 sm:px-3 rounded-lg"
+              className="h-8 text-xs gap-1.5 font-medium rounded-lg shadow-sm px-3"
               onClick={handleRefresh}
               disabled={isRefreshing || list.isFetching || status.isFetching}
               title="刷新订阅与库存状态"
@@ -133,7 +133,7 @@ function VPSMonitorPage() {
                   (isRefreshing || list.isFetching || status.isFetching) && "animate-spin"
                 )}
               />
-              <span className="hidden sm:inline">刷新</span>
+              <span>刷新</span>
             </Button>
           </div>
         }
@@ -211,6 +211,15 @@ function VPSMonitorPage() {
             <Skeleton key={i} className="h-24 rounded-xl" />
           ))}
         </div>
+      ) : list.isError ? (
+        <Card className="surface-card rounded-xl border-border">
+          <LoadFailed
+            icon={Cloud}
+            title="VPS 监控订阅列表读取失败"
+            error={list.error}
+            onRetry={() => list.refetch()}
+          />
+        </Card>
       ) : subs.length === 0 ? (
         <Card className="surface-card rounded-xl border-border">
           <EmptyState
@@ -230,9 +239,9 @@ function VPSMonitorPage() {
               </span>
             </div>
             <Button
-              variant="ghost"
+              variant="soft-destructive"
               size="sm"
-              className="h-7 text-xs text-muted-foreground hover:text-destructive gap-1 px-2 rounded-lg"
+              className="h-7 text-xs gap-1 px-2.5 rounded-lg"
               onClick={() => setConfirmClear(true)}
               title="清空全部 VPS 订阅"
             >
@@ -488,7 +497,8 @@ function AddVPSDialog({
   const tgBlocked = tgVerify.data ? !tgVerify.data.ok : false;
   const [ovhSubsidiary, setOvhSubsidiary] = useState("IE");
   const modelsQ = useVPSModels(ovhSubsidiary);
-  const models = modelsQ.data?.models || [];
+  const rawModels = modelsQ.data?.models;
+  const models = useMemo(() => rawModels || [], [rawModels]);
   const [vpsModel, setVpsModel] = useState("");
   const [datacenters, setDatacenters] = useState("");
   const [monitorLinux, setMonitorLinux] = useState(true);

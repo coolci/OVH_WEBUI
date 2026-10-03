@@ -3,6 +3,7 @@ import { Helmet } from "react-helmet-async";
 import { User, Mail, RefreshCw, FileText, Inbox, ShieldCheck, ShoppingCart, ExternalLink, CalendarClock, type LucideIcon } from "lucide-react";
 import { formatDate, formatDateTime } from "@/lib/format-os";
 import { useState } from "react";
+import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -23,7 +24,23 @@ function AccountPage() {
   const info = useAccountInfo();
   return (
     <div className="space-y-6">
-      <PageHeader icon={User} title="账户管理" description="查看和管理您的 OVH 账户信息" />
+      <PageHeader
+        icon={User}
+        title="账户管理"
+        description="查看和管理您的 OVH 账户信息"
+        action={
+          <Button
+            size="sm"
+            className="h-8 text-xs font-medium gap-1.5 rounded-lg shadow-sm px-3"
+            onClick={() => info.refetch()}
+            disabled={info.isFetching}
+            title="刷新账户信息"
+          >
+            <RefreshCw className={cn("w-3.5 h-3.5", info.isFetching && "animate-spin")} />
+            <span>刷新</span>
+          </Button>
+        }
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <KpiCard
@@ -118,9 +135,14 @@ function EmailsTab() {
       <Card className="surface-card rounded-xl border-border overflow-hidden shadow-sm">
         <div className="px-4 py-3 border-b border-border/60 flex items-center justify-between">
           <span className="text-sm font-semibold">邮件列表</span>
-          <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5 border-border/80 hover:bg-secondary" onClick={() => emails.refetch()} disabled={emails.isFetching}>
-            <RefreshCw className={`w-3.5 h-3.5 ${emails.isFetching ? "animate-spin" : ""}`} />
-            <span className="hidden sm:inline">刷新</span>
+          <Button
+            size="sm"
+            className="h-8 text-xs font-medium gap-1.5 rounded-lg shadow-sm px-3"
+            onClick={() => emails.refetch()}
+            disabled={emails.isFetching}
+          >
+            <RefreshCw className={cn("w-3.5 h-3.5", emails.isFetching && "animate-spin")} />
+            <span>刷新</span>
           </Button>
         </div>
         {emails.isPending ? (
@@ -186,14 +208,13 @@ function OrdersTab() {
             最近订单
           </h3>
           <Button
-            variant="outline"
             size="sm"
-            className="h-8 text-xs gap-1.5 border-border/80 hover:bg-secondary"
+            className="h-8 text-xs font-medium gap-1.5 rounded-lg shadow-sm px-3"
             onClick={() => orders.refetch()}
             disabled={orders.isFetching}
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${orders.isFetching ? "animate-spin" : ""}`} />
-            <span className="hidden sm:inline">刷新</span>
+            <RefreshCw className={cn("w-3.5 h-3.5", orders.isFetching && "animate-spin")} />
+            <span>刷新</span>
           </Button>
         </div>
         {orders.isPending ? (
@@ -272,9 +293,14 @@ function RefundsTab() {
       <CardContent className="p-4 sm:p-5">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-semibold">退款记录</h3>
-          <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5 border-border/80 hover:bg-secondary" onClick={() => refunds.refetch()} disabled={refunds.isFetching}>
-            <RefreshCw className={`w-3.5 h-3.5 ${refunds.isFetching ? "animate-spin" : ""}`} />
-            <span className="hidden sm:inline">刷新</span>
+          <Button
+            size="sm"
+            className="h-8 text-xs font-medium gap-1.5 rounded-lg shadow-sm px-3"
+            onClick={() => refunds.refetch()}
+            disabled={refunds.isFetching}
+          >
+            <RefreshCw className={cn("w-3.5 h-3.5", refunds.isFetching && "animate-spin")} />
+            <span>刷新</span>
           </Button>
         </div>
         {refunds.isPending ? (

@@ -8,6 +8,7 @@ import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { AuthGate } from "@/components/common/AuthGate";
 import { OvhCredsGate } from "@/components/common/OvhCredsGate";
 import { ActiveAccountSync } from "@/components/common/ActiveAccountSync";
+import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
@@ -49,21 +50,23 @@ const App = () => (
             <AuthGate>
               <OvhCredsGate>
                 <ActiveAccountSync />
-                <Routes>
-                  <Route path="/" element={<Index />} />
-                  <Route path="/servers" element={<ServersPage />} />
-                  <Route path="/queue" element={<QueuePage />} />
-                  <Route path="/history" element={<HistoryPage />} />
-                  <Route path="/monitor" element={<MonitorPage />} />
-                  <Route path="/vps-monitor" element={<VpsMonitorPage />} />
-                  <Route path="/logs" element={<LogsPage />} />
-                  <Route path="/settings" element={<SettingsPage />} />
-                  <Route path="/account" element={<AccountPage />} />
-                  <Route path="/server-control" element={<ServerControlPage />} />
-                  <Route path="/vps-control" element={<VpsControlPage />} />
-                  <Route path="/telegram-order" element={<TelegramOrderPage />} />
-                  <Route path="*" element={<NotFound />} />
-                </Routes>
+                <ErrorBoundary>
+                  <Routes>
+                    <Route path="/" element={<Index />} />
+                    <Route path="/servers" element={<ServersPage />} />
+                    <Route path="/queue" element={<QueuePage />} />
+                    <Route path="/history" element={<HistoryPage />} />
+                    <Route path="/monitor" element={<MonitorPage />} />
+                    <Route path="/vps-monitor" element={<VpsMonitorPage />} />
+                    <Route path="/logs" element={<LogsPage />} />
+                    <Route path="/settings" element={<SettingsPage />} />
+                    <Route path="/account" element={<AccountPage />} />
+                    <Route path="/server-control" element={<ServerControlPage />} />
+                    <Route path="/vps-control" element={<VpsControlPage />} />
+                    <Route path="/telegram-order" element={<TelegramOrderPage />} />
+                    <Route path="*" element={<NotFound />} />
+                  </Routes>
+                </ErrorBoundary>
               </OvhCredsGate>
             </AuthGate>
           </BrowserRouter>
