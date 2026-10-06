@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -206,9 +207,9 @@ func main() {
 	// 分开跑时只有本机的 dev server 需要。所以白名单化,
 	// 额外来源用 CORS_ALLOWED_ORIGINS 显式声明(逗号分隔)。
 	r.Use(cors.New(cors.Config{
-		AllowOrigins: allowedOrigins(state.Port),
-		AllowMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
-		AllowHeaders: []string{"Content-Type", "Authorization", "X-API-Key", "X-Request-Time"},
+		AllowOriginFunc: isOriginAllowed,
+		AllowMethods:    []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
+		AllowHeaders:    []string{"Content-Type", "Authorization", "X-API-Key", "X-Request-Time"},
 		// X-Partial-Failures:部分明细拉取失败的计数(账单/退款/邮件等走响应头下发),
 		// 跨源部署时不列进 ExposeHeaders 浏览器就读不到,前端的"部分失败"提示会恒不显示
 		ExposeHeaders:    []string{"X-Cache-Warning", "X-Partial-Failures", "X-Cache-Age-Seconds"},
@@ -897,19 +898,44 @@ func isTrue(v string) bool {
 	return false
 }
 
-// allowedOrigins CORS 白名单:本机的前端来源 + 用户显式声明的。
-//
-// 默认只有 localhost / 127.0.0.1 的后端端口和 Vite dev 端口。
-// 反向代理或跨机访问的场景用 CORS_ALLOWED_ORIGINS 加(逗号分隔完整来源,
-// 如 https://ovh.example.com)。
+// isOriginAllowed CORS 来源校验:
+// 放行本机(localhost / 127.0.0.1 / ::1)、内网私有 IP (192.168.x.x, 10.x.x.x, 172.16-31.x.x，支持任意前端端口如 8080/19997 等)，
+// 以及用户显式在 CORS_ALLOWED_ORIGINS 里声明的来源。
+func isOriginAllowed(origin string) bool {
+	if origin == "" {
+		return true
+	}
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	hostname := strings.ToLower(u.Hostname())
+	if hostname == "localhost" || hostname == "127.0.0.1" || hostname == "::1" {
+		return true
+	}
+	if ip := net.ParseIP(hostname); ip != nil {
+		if ip.IsLoopback() || ip.IsPrivate() {
+			return true
+		}
+	}
+	for _, o := range strings.Split(os.Getenv("CORS_ALLOWED_ORIGINS"), ",") {
+		if o = strings.TrimSpace(o); o != "" && strings.EqualFold(o, origin) {
+			return true
+		}
+	}
+	return false
+}
+
+// allowedOrigins 兼容保留函数
 func allowedOrigins(port string) []string {
 	if port == "" {
 		port = "19998"
 	}
 	out := []string{}
-	for _, host := range []string{"localhost", "127.0.0.1"} {
-		for _, p := range []string{port, "19997"} { // 19997 = Vite dev server
+	for _, host := range []string{"localhost", "127.0.0.1", "[::1]"} {
+		for _, p := range []string{port, "8080", "5173", "19997", "3000"} {
 			out = append(out, "http://"+host+":"+p)
+			out = append(out, "https://"+host+":"+p)
 		}
 	}
 	for _, o := range strings.Split(os.Getenv("CORS_ALLOWED_ORIGINS"), ",") {
