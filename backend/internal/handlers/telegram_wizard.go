@@ -343,50 +343,59 @@ func renderCategoryPicker(state *app.State, mon *monitor.Monitor, chatID interfa
 	_, monPlans := getPlansForCategory(state, mon, "mon")
 	_, allPlans := getPlansForCategory(state, mon, "all")
 
-	actionText := "抢购"
-	icon := "🛒"
+	actionText := "快速下单"
+	icon := "⚡"
 	switch mode {
 	case "q":
-		actionText = "加入队列"
+		actionText = "抢购排队"
 		icon = "📥"
 	case "s":
 		actionText = "查询库存"
 		icon = "📦"
 	case "m":
 		actionText = "添加监控"
-		icon = "👀"
+		icon = "📡"
 	case "pr":
 		actionText = "查询价格"
 		icon = "💰"
 	}
 
-	text := fmt.Sprintf("%s 请选择要%s的服务器系列分类：\n（当前库中共 %d 款机型，也可直接发送命令如: /buy 24rise01-v2 gra）", icon, actionText, len(allPlans))
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("%s OVH 服务器选购中枢 · %s\n", icon, actionText))
+	b.WriteString(telegram.CardDivider + "\n")
+	b.WriteString(fmt.Sprintf("🌐 官方机型库: 共收录 %d 款特惠与旗舰机型\n", len(allPlans)))
+	b.WriteString("💡 点击分类进入机型列表，或直接发送型号 (例: /buy 24rise01 gra)\n")
+	b.WriteString(telegram.CardDivider + "\n")
+	b.WriteString("👇 请选择服务器产品线系列：")
 
 	btns := [][]map[string]string{
 		{
-			telegram.CallbackButton(fmt.Sprintf("💎 Kimsufi/KS (%d款)", len(ksPlans)), "i:cat:"+mode+":ks"),
-			telegram.CallbackButton(fmt.Sprintf("🚀 Rise系列 (%d款)", len(risePlans)), "i:cat:"+mode+":rise"),
+			telegram.CallbackButton(fmt.Sprintf("💎 Kimsufi / KS (%d款)", len(ksPlans)), "i:cat:"+mode+":ks"),
+			telegram.CallbackButton(fmt.Sprintf("🚀 Rise 性能型 (%d款)", len(risePlans)), "i:cat:"+mode+":rise"),
 		},
 		{
-			telegram.CallbackButton(fmt.Sprintf("🏢 Advance系列 (%d款)", len(advPlans)), "i:cat:"+mode+":adv"),
-			telegram.CallbackButton(fmt.Sprintf("💾 SYS/存储型 (%d款)", len(sysPlans)), "i:cat:"+mode+":sys"),
+			telegram.CallbackButton(fmt.Sprintf("🏢 Advance 旗舰 (%d款)", len(advPlans)), "i:cat:"+mode+":adv"),
+			telegram.CallbackButton(fmt.Sprintf("💾 SYS 存储型 (%d款)", len(sysPlans)), "i:cat:"+mode+":sys"),
 		},
 	}
 
 	thirdRow := []map[string]string{}
 	if len(monPlans) > 0 {
-		thirdRow = append(thirdRow, telegram.CallbackButton(fmt.Sprintf("📋 监控/队列 (%d款)", len(monPlans)), "i:cat:"+mode+":mon"))
+		thirdRow = append(thirdRow, telegram.CallbackButton(fmt.Sprintf("📋 监控/队列中 (%d款)", len(monPlans)), "i:cat:"+mode+":mon"))
 	}
-	thirdRow = append(thirdRow, telegram.CallbackButton(fmt.Sprintf("🌐 全部型号 (%d款)", len(allPlans)), "i:cat:"+mode+":all"))
+	thirdRow = append(thirdRow, telegram.CallbackButton(fmt.Sprintf("🌐 全部型号列表 (%d款)", len(allPlans)), "i:cat:"+mode+":all"))
 	btns = append(btns, thirdRow)
+	btns = append(btns, []map[string]string{
+		telegram.CallbackButton("🔙 返回主菜单", "i:dash:refresh"),
+	})
 
 	markup := telegram.InlineKeyboard(btns)
 	if edit && messageID > 0 {
-		if telegram.EditMessage(state, chatID, messageID, text, markup) {
+		if telegram.EditMessage(state, chatID, messageID, b.String(), markup) {
 			return
 		}
 	}
-	_, _ = telegram.SendToChat(state, chatID, text, markup)
+	_, _ = telegram.SendToChat(state, chatID, b.String(), markup)
 }
 
 func renderPlanPage(state *app.State, mon *monitor.Monitor, chatID interface{}, messageID int64, mode, category string, page int, edit bool) {
@@ -420,6 +429,12 @@ func renderPlanPage(state *app.State, mon *monitor.Monitor, chatID interface{}, 
 	}
 	pagePlans := plans[start:end]
 
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("🖥️ 机型列表 · %s\n", catTitle))
+	b.WriteString(telegram.CardDivider + "\n")
+	b.WriteString(fmt.Sprintf("📄 当前显示: 第 %d / %d 页 (共 %d 款机型)\n", page+1, totalPages, len(plans)))
+	b.WriteString("💡 点击型号进入规格选择与机房配置：")
+
 	prefix := "i:P:" + mode + ":"
 	modelBtns := make([]map[string]string, 0, len(pagePlans))
 	for _, p := range pagePlans {
@@ -427,7 +442,7 @@ func renderPlanPage(state *app.State, mon *monitor.Monitor, chatID interface{}, 
 		if len(data) > 64 {
 			continue
 		}
-		label := p.Code
+		label := "⚡ " + p.Code
 		modelBtns = append(modelBtns, telegram.CallbackButton(label, data))
 	}
 	rows := telegram.ChunkButtons(modelBtns, 2)
@@ -548,8 +563,8 @@ func enumerateWizardConfigs(state *app.State, planCode, accountID string) []wiza
 		}
 		mem := strings.TrimSpace(d.Memory)
 		stor := strings.TrimSpace(d.Storage)
-		label := strings.TrimSpace(mem + " / " + stor)
-		if label == "/" || label == "" {
+		label := telegram.HumanizeHardware(mem, stor)
+		if label == "" || label == "/" {
 			continue
 		}
 		inStock := 0
@@ -619,18 +634,23 @@ func offerNarrowConfig(state *app.State, chatID interface{}, _ int64, planCode s
 		if i >= narrowMaxButtons {
 			break
 		}
-		label := c.Label
+		stockBadge := "[🔴 缺货]"
 		if c.InStock > 0 {
-			label += fmt.Sprintf(" ✅%d机房有货", c.InStock)
+			stockBadge = fmt.Sprintf("[🟢 %d机房有货]", c.InStock)
 		}
-		btns = append(btns, telegram.CallbackButton(tgBtnLabel(label), fmt.Sprintf("i:mon:n:%s:%d", tok, i)))
+		btnLabel := tgBtnLabel(fmt.Sprintf("⚡ %s  %s", c.Label, stockBadge))
+		btns = append(btns, telegram.CallbackButton(btnLabel, fmt.Sprintf("i:mon:n:%s:%d", tok, i)))
 	}
 	rows := telegram.ChunkButtons(btns, 1)
 	rows = append(rows, []map[string]string{
-		telegram.CallbackButton("🌐 保持盯全部配置", fmt.Sprintf("i:mon:n:%s:all", tok)),
+		telegram.CallbackButton("🌐 保持监控全部硬件配置", fmt.Sprintf("i:mon:n:%s:all", tok)),
 	})
-	text := fmt.Sprintf("🔧 %s 有 %d 套配置，现在盯的是全部。\n要只盯一套就点一下（随时可以改回来）：",
-		planCode, len(configs))
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("🔧 规格细化 · %s\n", planCode))
+	b.WriteString(telegram.CardDivider + "\n")
+	b.WriteString(fmt.Sprintf("检测到该型号存在 %d 套物理硬件规格，当前默认监控全部配置。\n", len(configs)))
+	b.WriteString("若您只想锁定特定硬件配置（避免其他配置放货时误触发），请点击下方直接锁定：")
+	text := b.String()
 	_, _ = telegram.SendToChat(state, chatID, text, telegram.InlineKeyboard(rows))
 	return true
 }
@@ -701,33 +721,37 @@ func showConfigPicker(state *app.State, mon *monitor.Monitor, chatID interface{}
 		if i >= 8 {
 			break
 		}
-		stockIcon := "🔴 缺货"
+		stockBadge := "[🔴 缺货]"
 		if c.InStock > 0 {
-			stockIcon = fmt.Sprintf("🟢 %d机房有货", c.InStock)
+			stockBadge = fmt.Sprintf("[🟢 %d机房有货]", c.InStock)
 		}
-		btnText := tgBtnLabel(fmt.Sprintf("💾 %s (%s)", c.Label, stockIcon))
+		btnText := tgBtnLabel(fmt.Sprintf("⚡ %s  %s", c.Label, stockBadge))
 		btns = append(btns, telegram.CallbackButton(btnText, fmt.Sprintf("i:cfg:%s:%d", tok, i)))
 	}
 	rows := telegram.ChunkButtons(btns, 1)
 
 	rows = append(rows, []map[string]string{
-		telegram.CallbackButton(tgBtnLabel("🌐 任意配置 (不限制配置，按机房首选)"), fmt.Sprintf("i:cfg:%s:any", tok)),
+		telegram.CallbackButton(tgBtnLabel("🌐 任意硬件配置 (不限规格 · 优先抢占首选机房)"), fmt.Sprintf("i:cfg:%s:any", tok)),
 	})
 	rows = append(rows, []map[string]string{
 		telegram.CallbackButton("🔙 返回系列分类", "i:cat:"+mode+":root"),
 	})
 
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("⚙️ 型号: %s\n\n", planCode))
-	b.WriteString(fmt.Sprintf("该型号共检测到 %d 种硬件配置规格，请点选您要盯的那一套：\n\n", len(configs)))
+	b.WriteString(fmt.Sprintf("🖥️ 硬件规格自选匹配 · %s\n", planCode))
+	b.WriteString(telegram.CardDivider + "\n")
 	if len(targetDCs) > 0 {
 		up := make([]string, len(targetDCs))
 		for i, d := range targetDCs {
-			up[i] = telegram.DisplayDC(d)
+			up[i] = telegram.DisplayDCFull(d)
 		}
-		b.WriteString("📍 已指定机房: " + strings.Join(up, ", ") + "\n\n")
+		b.WriteString("📍 目标机房: " + strings.Join(up, "、") + "\n")
 	}
-	b.WriteString("💡 抢购和监控按配置精确匹配。选错一套等于盯另一台机器。对内存/硬盘无要求再选「任意配置」。")
+	b.WriteString(fmt.Sprintf("📊 规格选项: 共检测到 %d 种物理硬件配置方案\n", len(configs)))
+	b.WriteString("🎯 下单策略: 硬件规格精准锁单匹配\n")
+	b.WriteString(telegram.CardDivider + "\n")
+	b.WriteString("💡 说明: 抢购将按选定配置精确锁单。若对内存/硬盘无特定要求，推荐选择最下方的「🌐 任意硬件配置」，成功率最高！\n\n")
+	b.WriteString("👇 请点选要锁定抢购的硬件方案：")
 
 	markup := telegram.InlineKeyboard(rows)
 	if edit && messageID > 0 {
@@ -822,34 +846,40 @@ func showDCPicker(state *app.State, chatID interface{}, messageID int64, mode, p
 	rows = append(rows, navRow)
 
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("📦 型号: %s\n", planCode))
+	actionTitle := "🛒 目标机房选择"
+	if mode == "q" {
+		actionTitle = "📥 队列挂机机房选择"
+	} else if mode == "m" {
+		actionTitle = "📡 监控目标机房选择"
+	}
+	b.WriteString(fmt.Sprintf("%s · %s\n", actionTitle, planCode))
+	b.WriteString(telegram.CardDivider + "\n")
+	cfgText := "任意硬件配置 (全规格优选)"
 	if sess.ConfigLabel != "" {
-		b.WriteString(fmt.Sprintf("⚙️ 配置: %s\n", sess.ConfigLabel))
+		cfgText = sess.ConfigLabel
 	} else if len(sess.Options) > 0 {
-		b.WriteString(fmt.Sprintf("⚙️ 配置: %s\n", strings.Join(sess.Options, ", ")))
-	} else {
-		b.WriteString("⚙️ 配置: 任意/默认配置\n")
+		cfgText = telegram.HumanizeOptionCodes(sess.Options)
 	}
-	if mode == "m" {
-		b.WriteString("请勾选要监控的机房（🟢有现货 🔴缺货；支持多选）：\n")
-	} else {
-		b.WriteString("请勾选目标机房（🟢有现货 🔴缺货挂机抢；支持多选）：\n")
-	}
-
+	b.WriteString("⚙️ 锁定配置: " + cfgText + "\n")
 	if len(stock) > 0 {
 		up := make([]string, len(stock))
 		for i, d := range stock {
 			up[i] = telegram.DisplayDC(d)
 		}
-		b.WriteString("✅ 当前有货: " + strings.Join(up, ", ") + "\n")
+		b.WriteString(fmt.Sprintf("🟢 实时现货: %s 有现货！\n", strings.Join(up, "、")))
 	} else {
-		b.WriteString("⚠️ 当前全区缺货，选机房后将加入抢购队列按设置的间隔重试。\n")
+		b.WriteString("🔴 现货状态: 当前全区缺货 (支持挂机自动抢购)\n")
 	}
-
+	b.WriteString(telegram.CardDivider + "\n")
 	if selectedCount > 0 {
-		b.WriteString(fmt.Sprintf("\n📌 已勾选 (%d个): %s\n💡 选好后点击下方确认按钮提交。", selectedCount, strings.Join(selectedList, ", ")))
+		b.WriteString(fmt.Sprintf("📌 已勾选 (%d 个机房): %s\n", selectedCount, strings.Join(selectedList, "、")))
+		b.WriteString("👉 点击下方提交按钮立即生效！")
 	} else {
-		b.WriteString("\n💡 请点击上方机房按钮进行多选，选好后点确认；也可直接点上方全选。")
+		if mode == "m" {
+			b.WriteString("💡 请点击机房按钮进行多选（🟢有现货 🔴缺货监控）\n支持多机房同时监听，上架即刻报警！")
+		} else {
+			b.WriteString("💡 请点击机房按钮进行多选（🟢有现货 🔴缺货挂机）\n可点击上方「⚡ 全选有货」或「🌐 全选所有」。")
+		}
 	}
 
 	markup := telegram.InlineKeyboard(rows)
@@ -937,23 +967,26 @@ func enqueueWizardDCs(state *app.State, chatID interface{}, messageID int64, mod
 		kind = "极速下单"
 	}
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("⏳ 排队中…（%s）\n\n", kind))
-	b.WriteString("📦 型号: " + planCode + "\n")
+	b.WriteString(fmt.Sprintf("⚡ 抢购任务已建立入队 · %s\n", kind))
+	b.WriteString(telegram.CardDivider + "\n")
+	b.WriteString("📦 目标型号: " + planCode + "\n")
+	cfgText := "任意硬件配置 (自动优选)"
 	if configLabel != "" {
-		b.WriteString("⚙️ 配置: " + configLabel + "\n")
+		cfgText = configLabel
 	} else if len(options) > 0 {
-		b.WriteString("⚙️ 配置: " + strings.Join(options, ", ") + "\n")
+		cfgText = telegram.HumanizeOptionCodes(options)
 	}
-	b.WriteString("📍 正在排队:\n")
+	b.WriteString("⚙️ 锁定规格: " + cfgText + "\n")
+	b.WriteString("👤 执行账户: " + accLabel + "\n")
+	b.WriteString(telegram.CardDivider + "\n")
+	b.WriteString(fmt.Sprintf("📍 监听节点 (%d 个机房并发抢占):\n", okN))
 	for _, t := range createdTasks {
 		b.WriteString("  • " + telegram.DisplayDCFull(t.Datacenter) + "\n")
 	}
-	b.WriteString("👤 账户: " + accLabel + "\n")
-	b.WriteString(fmt.Sprintf("📊 任务数: %d 个运行中\n", okN))
 	if failN > 0 {
-		b.WriteString(fmt.Sprintf("⚠️ %d 个未入队：%s\n", failN, lastErr))
+		b.WriteString(fmt.Sprintf("\n⚠️ 异常未入队 (%d个): %s\n", failN, lastErr))
 	}
-	b.WriteString("\n💡 官方放货后将按设置的间隔自动提交，进度会实时更新本条消息。")
+	b.WriteString("\n🚀 状态: 后台挂机监听中，检测到上架即毫秒抢占并锁单支付！")
 
 	var btnRows [][]map[string]string
 	var cancelBtns []map[string]string
@@ -1732,6 +1765,23 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 			showMonitorManager(state, mon, chatID, messageID, true)
 			return true
 		}
+	case "dash":
+		act := "refresh"
+		if len(parts) >= 3 {
+			act = parts[2]
+		}
+		if act == "iv" {
+			telegram.AnswerCallback(state, cbID, "重试间隔", false)
+			text := intervalText(state, nil)
+			markup := telegram.InlineKeyboard([][]map[string]string{
+				{telegram.CallbackButton("🔙 返回主菜单", "i:dash:refresh")},
+			})
+			_ = telegram.EditMessage(state, chatID, messageID, text, markup)
+			return true
+		}
+		telegram.AnswerCallback(state, cbID, "控制台已就绪", false)
+		_ = telegram.EditMessage(state, chatID, messageID, telegram.HelpMessage(), dashboardKeyboard())
+		return true
 	case "acc":
 		telegram.AnswerCallback(state, cbID, "账户管理", false)
 		showAccounts(state, chatID, messageID, true)
@@ -1883,17 +1933,27 @@ func showTasks(state *app.State, chatID interface{}, messageID int64, edit bool)
 	state.QueueMu.Unlock()
 
 	if len(active) == 0 {
-		text := "📋 当前抢购队列为空，没有正在运行的任务。\n\n可发送 /buy 选择型号机房加入抢购。"
+		text := fmt.Sprintf("📋 抢购任务监控队列\n%s\n✨ 当前队列为空，暂无进行中的抢购任务。\n\n💡 可发送 /buy 或点击下方按钮点选机型加入抢购！", telegram.CardDivider)
+		markup := telegram.InlineKeyboard([][]map[string]string{
+			{
+				telegram.CallbackButton("⚡ 快速下单", "i:cat:b:root"),
+				telegram.CallbackButton("📥 挑选排队", "i:cat:q:root"),
+			},
+			{
+				telegram.CallbackButton("🔙 返回主菜单", "i:dash:refresh"),
+			},
+		})
 		if edit && messageID > 0 {
-			_ = telegram.EditMessage(state, chatID, messageID, text, telegram.EmptyInlineKeyboard())
+			_ = telegram.EditMessage(state, chatID, messageID, text, markup)
 			return
 		}
-		_, _ = telegram.SendToChat(state, chatID, text, nil)
+		_, _ = telegram.SendToChat(state, chatID, text, markup)
 		return
 	}
 
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("📋 抢购任务队列（共 %d 个运行中）:\n\n", len(active)))
+	b.WriteString(fmt.Sprintf("📋 抢购任务队列 (运行中: %d 个)\n", len(active)))
+	b.WriteString(telegram.CardDivider + "\n")
 	btns := []map[string]string{}
 	limit := 6
 	for i, it := range active {
@@ -1903,20 +1963,30 @@ func showTasks(state *app.State, chatID interface{}, messageID int64, edit bool)
 			if it.Status == "paused" {
 				statusBadge = "⏸ 已暂停"
 			}
-			b.WriteString(fmt.Sprintf("%d. 📦 %s\n   📍 %s · %s (已刷 %d 轮)\n", i+1, it.PlanCode, dcFull, statusBadge, it.RetryCount))
+			cfgDisplay := "任意硬件配置"
+			if len(it.Options) > 0 {
+				cfgDisplay = telegram.HumanizeOptionCodes(it.Options)
+			}
+			b.WriteString(fmt.Sprintf("%d️⃣ 📦 %s\n   📍 %s ｜ ⚙️ %s\n   ⚡ 状态: %s (已轮询 %d 轮 · 周期 %ds)\n\n",
+				i+1, it.PlanCode, dcFull, cfgDisplay, statusBadge, it.RetryCount, it.RetryInterval))
 			shortID := rememberShort(state, it.ID, "task")
-			btns = append(btns, telegram.CallbackButton(fmt.Sprintf("⏹ 停止 %s@%s", it.PlanCode, strings.ToUpper(it.Datacenter)), "i:Tk:"+shortID))
+			btns = append(btns, telegram.CallbackButton(fmt.Sprintf("⏹ 停止 %s@%s", it.PlanCode, telegram.DisplayDC(it.Datacenter)), "i:Tk:"+shortID))
 		}
 	}
 	if len(active) > limit {
-		b.WriteString(fmt.Sprintf("\n…另有 %d 个任务未列出\n", len(active)-limit))
+		b.WriteString(fmt.Sprintf("…另有 %d 个任务在后台运行中\n", len(active)-limit))
 	}
+	b.WriteString(telegram.CardDivider + "\n")
+	b.WriteString("👇 点击下方按钮可中止单个或全部挂机任务：")
 	rows := telegram.ChunkButtons(btns, 1)
+	bottomRow := []map[string]string{}
 	if len(active) > 1 {
-		rows = append(rows, []map[string]string{
-			telegram.CallbackButton("🛑 停止全部抢购任务", "i:Tk:all"),
-		})
+		bottomRow = append(bottomRow, telegram.CallbackButton("🛑 停止全部抢购任务", "i:Tk:all"))
 	}
+	bottomRow = append(bottomRow, telegram.CallbackButton("🔄 刷新队列", "i:Tk:list"))
+	bottomRow = append(bottomRow, telegram.CallbackButton("🔙 返回主菜单", "i:dash:refresh"))
+	rows = append(rows, bottomRow)
+
 	markup := telegram.InlineKeyboard(rows)
 	if edit && messageID > 0 {
 		_ = telegram.EditMessage(state, chatID, messageID, b.String(), markup)
@@ -1931,7 +2001,7 @@ func showAccounts(state *app.State, chatID interface{}, messageID int64, edit bo
 	state.AccountsMu.RUnlock()
 
 	if len(accs) == 0 {
-		text := "👤 系统中尚未添加任何 OVH 账户。\n请先在网页控制台「设置」中添加账户。"
+		text := fmt.Sprintf("👤 OVH 账户矩阵控制台\n%s\n⚠️ 系统中尚未配置任何 OVH 账户。\n\n请在 Web 控制台「账户管理」中添加 OVH API 凭据。", telegram.CardDivider)
 		if edit && messageID > 0 {
 			_ = telegram.EditMessage(state, chatID, messageID, text, telegram.EmptyInlineKeyboard())
 			return
@@ -1943,27 +2013,35 @@ func showAccounts(state *app.State, chatID interface{}, messageID int64, edit bo
 	activeAcc, _ := telegram.ActiveAccount(state)
 
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("👤 OVH 绑定账户列表（共 %d 个）:\n\n", len(accs)))
+	b.WriteString(fmt.Sprintf("👤 OVH 账户矩阵控制台 (共 %d 个账户)\n", len(accs)))
+	b.WriteString(telegram.CardDivider + "\n")
 	btns := []map[string]string{}
 	for i, a := range accs {
 		isActive := a.ID == activeAcc.ID
-		mark := ""
+		mark := "⚪ 空闲"
 		if isActive {
-			mark = " ✅ [当前活跃]"
+			mark = "🟢 [当前活跃]"
 		} else if a.IsDefault {
-			mark = " 🌟 [系统默认]"
+			mark = "🌟 [系统默认]"
 		}
 		zone := strings.ToUpper(a.Zone)
 		if zone == "" {
 			zone = "EU"
 		}
-		b.WriteString(fmt.Sprintf("%d. 👤 %s\n   🌐 区域: %s / %s%s\n", i+1, a.Name, zone, a.Endpoint, mark))
+		b.WriteString(fmt.Sprintf("%d️⃣ 👤 %s  %s\n   🌐 区域: %s ｜ 终端: %s\n\n",
+			i+1, a.Name, mark, zone, a.Endpoint))
 		if !isActive {
 			shortID := rememberShort(state, a.ID, "acc")
-			btns = append(btns, telegram.CallbackButton("👉 设为当前活跃: "+a.Name, "i:S:"+shortID))
+			btns = append(btns, telegram.CallbackButton("👉 切换至: "+a.Name, "i:S:"+shortID))
 		}
 	}
+	b.WriteString(telegram.CardDivider + "\n")
+	b.WriteString("💡 活跃账户将作为当前 Telegram 下单与监控的执行身份。\n👇 点击下方按钮可一键无缝切换：")
 	rows := telegram.ChunkButtons(btns, 1)
+	rows = append(rows, []map[string]string{
+		telegram.CallbackButton("🔄 刷新账户状态", "i:acc:list"),
+		telegram.CallbackButton("🔙 返回主菜单", "i:dash:refresh"),
+	})
 	markup := telegram.InlineKeyboard(rows)
 	if edit && messageID > 0 {
 		_ = telegram.EditMessage(state, chatID, messageID, b.String(), markup)
@@ -1996,6 +2074,9 @@ func showStockCardWithButtons(state *app.State, mon *monitor.Monitor, chatID int
 	}
 	rows := telegram.ChunkButtons(btns, 2)
 	rows = append(rows, actionRow)
+	rows = append(rows, []map[string]string{
+		telegram.CallbackButton("🔙 返回主菜单", "i:dash:refresh"),
+	})
 	markup := telegram.InlineKeyboard(rows)
 	_, _ = telegram.SendToChat(state, chatID, rawText, markup)
 }
@@ -2012,9 +2093,11 @@ func showMonitorManager(state *app.State, mon *monitor.Monitor, chatID interface
 	}
 	subs := mon.Snapshot()
 	if len(subs) == 0 {
-		text := "👀 当前暂无正在运行的库存监控。\n\n点击下方按钮即可选择机型开启全天候监控："
+		text := fmt.Sprintf("📡 毫秒级补货监控中枢\n%s\n✨ 当前暂无监控中的机型。\n\n一旦官方有新机器放货，监控引擎将在毫秒内向 Telegram 推送通知并支持一键秒抢！\n%s\n👇 点击下方按钮选择机型开启全天候监控：",
+			telegram.CardDivider, telegram.CardDivider)
 		markup := telegram.InlineKeyboard([][]map[string]string{
 			{telegram.CallbackButton("➕ 选择机型添加监控", "i:cat:m:root")},
+			{telegram.CallbackButton("🔙 返回主菜单", "i:dash:refresh")},
 		})
 		if edit && messageID > 0 {
 			_ = telegram.EditMessage(state, chatID, messageID, text, markup)
@@ -2025,7 +2108,8 @@ func showMonitorManager(state *app.State, mon *monitor.Monitor, chatID interface
 	}
 
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("👀 已监控机型列表（共 %d 款）:\n\n", len(subs)))
+	b.WriteString(fmt.Sprintf("📡 补货监控控制台 (监控中: %d 款机型)\n", len(subs)))
+	b.WriteString(telegram.CardDivider + "\n")
 	btns := []map[string]string{}
 	limit := 8
 	for i, s := range subs {
@@ -2033,29 +2117,39 @@ func showMonitorManager(state *app.State, mon *monitor.Monitor, chatID interface
 			continue
 		}
 		if i < limit {
-			dcStr := "全部机房"
+			dcStr := "全球所有机房"
 			if len(s.Datacenters) > 0 {
 				up := make([]string, len(s.Datacenters))
 				for idx, d := range s.Datacenters {
 					up[idx] = telegram.DisplayDC(d)
 				}
-				dcStr = strings.Join(up, ", ")
+				dcStr = strings.Join(up, "、")
 			}
 			namePart := s.PlanCode
 			if s.ServerName != "" {
 				namePart += " (" + s.ServerName + ")"
 			}
-			b.WriteString(fmt.Sprintf("%d. 📦 %s\n   📍 机房: %s\n", i+1, namePart, dcStr))
+			cfgStr := "全部硬件规格组合"
+			if len(s.Options) > 0 {
+				cfgStr = telegram.HumanizeOptionCodes(s.Options)
+			}
+			b.WriteString(fmt.Sprintf("%d️⃣ 📦 %s\n   📍 机房: %s\n   ⚙️ 规格: %s\n\n",
+				i+1, namePart, dcStr, cfgStr))
 			btns = append(btns, telegram.CallbackButton("🗑 取消 "+s.PlanCode, "i:mon:del:"+s.PlanCode))
 		}
 	}
 	if len(subs) > limit {
-		b.WriteString(fmt.Sprintf("\n…另有 %d 款未展示\n", len(subs)-limit))
+		b.WriteString(fmt.Sprintf("…另有 %d 款监控在后台运行中\n", len(subs)-limit))
 	}
+	b.WriteString(telegram.CardDivider + "\n")
+	b.WriteString("👇 点击下方按钮管理或添加监控：")
 	rows := telegram.ChunkButtons(btns, 2)
 	rows = append(rows, []map[string]string{
 		telegram.CallbackButton("➕ 添加新监控", "i:cat:m:root"),
 		telegram.CallbackButton("🗑 清空全部监控", "i:mon:clear"),
+	})
+	rows = append(rows, []map[string]string{
+		telegram.CallbackButton("🔙 返回主菜单", "i:dash:refresh"),
 	})
 	markup := telegram.InlineKeyboard(rows)
 	if edit && messageID > 0 {

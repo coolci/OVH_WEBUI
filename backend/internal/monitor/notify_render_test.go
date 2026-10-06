@@ -213,3 +213,52 @@ func TestRenderAlertSaysWhenPriceMissing(t *testing.T) {
 		t.Fatalf("失败原因要带上，实际：\n%s", msg)
 	}
 }
+
+func TestRenderUnavailableAlertGrouped(t *testing.T) {
+	m := renderTestMonitor(t)
+	unavailDCs := []map[string]interface{}{
+		{"dc": "fra"},
+		{"dc": "gra"},
+		{"dc": "lon"},
+		{"dc": "rbx"},
+		{"dc": "sbg"},
+		{"dc": "waw"},
+		{"dc": "bhs"},
+	}
+	cfg := map[string]interface{}{
+		"display": "ram-64g-ecc-2133 + softraid-2x450nvme",
+		"memory":  "ram-64g-ecc-2133",
+		"storage": "softraid-2x450nvme",
+	}
+
+	msg := m.buildUnavailableAlertGrouped("24sk202", unavailDCs, cfg,
+		"KS-2 | Intel Xeon-D 1540",
+		"281f9a29-ca65-46e5-b419-0d0635b1449e",
+		"c79b61b6-0c94-4210-8376-a4815b9c03ea",
+	)
+
+	fmt.Println("\n┌────── 下架聚合通知渲染 ──────")
+	for _, line := range splitLines(msg) {
+		fmt.Println("│ " + line)
+	}
+	fmt.Println("└─────────────────────────────")
+
+	// 关键信息验证：规格必须人性化，不能包含原生冗长 slug，必须有 7 个机房
+	for _, must := range []string{
+		"📦 服务器下架通知 · 24sk202",
+		"KS-2 | Intel Xeon-D 1540",
+		"64G ECC ｜ 2×450G NVMe",
+		"已下架机房 (7 个)",
+		"FRA", "GRA", "LON", "RBX", "SBG", "WAW", "BHS",
+		"281f9a29", "c79b61b6",
+	} {
+		if !contains(msg, must) {
+			t.Errorf("通知中缺少关键信息: %q", must)
+		}
+	}
+	// 绝对不能有未翻译的原始 slug
+	if contains(msg, "ram-64g-ecc-2133") || contains(msg, "softraid-2x450nvme") {
+		t.Errorf("通知中包含了未翻译的原始硬件 slug:\n%s", msg)
+	}
+}
+

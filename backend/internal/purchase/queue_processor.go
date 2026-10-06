@@ -10,6 +10,7 @@ import (
 
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/notify"
+	"github.com/ovh-webui/server/internal/telegram"
 	"github.com/ovh-webui/server/internal/types"
 )
 
@@ -93,23 +94,29 @@ func (f *failNotifier) take(item *types.QueueItem, reason string, fatal bool) (s
 func buildTaskFailedMessage(item *types.QueueItem, reason string, fatal bool) string {
 	var b strings.Builder
 	if fatal {
-		b.WriteString("🛑 抢购任务已停止（重试也不会变）" + "\n" + "\n")
+		b.WriteString(fmt.Sprintf("🛑 抢购任务已停止（重试也不会变）· %s\n", item.PlanCode))
 	} else {
-		b.WriteString("⚠️ 抢购任务已停止（连续下单失败）" + "\n" + "\n")
+		b.WriteString(fmt.Sprintf("⚠️ 抢购任务已停止（连续下单失败）· %s\n", item.PlanCode))
 	}
+	b.WriteString(telegram.CardDivider + "\n")
 	b.WriteString("型号：" + item.PlanCode + "\n")
 	if item.Datacenter != "" {
-		b.WriteString("机房：" + strings.ToUpper(item.Datacenter) + "\n")
+		b.WriteString("机房：" + telegram.DisplayDCFull(item.Datacenter) + " (" + strings.ToUpper(item.Datacenter) + ")\n")
+	}
+	if len(item.Options) > 0 {
+		b.WriteString("⚙️ 硬件规格：" + telegram.HumanizeOptionCodes(item.Options) + "\n")
 	}
 	b.WriteString("原因：" + reason + "\n")
+	b.WriteString(telegram.CardDivider + "\n")
 	if fatal {
-		b.WriteString("\n" + "这类失败换个时间点重试结果一样，需要先改掉原因。" + "\n" +
-			"常见的是型号和账户不在同一个区 —— 三个大区的目录互不相通，" + "\n" +
-			"同一台机器在不同区是不同的型号代码。发 /accounts 看当前账户。" + "\n")
+		b.WriteString("ℹ️ 这类失败换个时间点重试结果一样，需要先改掉原因。\n" +
+			"常见的是型号和账户不在同一个区 —— 三个大区的目录互不相通，\n" +
+			"同一台机器在不同区是不同的型号代码。发 /accounts 看当前账户。\n")
 	} else {
-		b.WriteString("\n" + "库存可能已经被抢完。想接着抢就重新下一单。" + "\n")
+		b.WriteString("ℹ️ 库存可能已经被抢完。想接着抢就重新下一单。\n")
 	}
-	b.WriteString("\n" + "查看 /queue · 历史里有完整报错")
+	b.WriteString(telegram.CardDivider + "\n")
+	b.WriteString("⚡ 发送 /tasks 查看任务队列（历史里有完整报错）")
 	return b.String()
 }
 

@@ -14,6 +14,7 @@ import (
 	"github.com/ovh-webui/server/internal/notify"
 	"github.com/ovh-webui/server/internal/numconv"
 	"github.com/ovh-webui/server/internal/ovh"
+	"github.com/ovh-webui/server/internal/telegram"
 	"github.com/ovh-webui/server/internal/types"
 	"time"
 )
@@ -1062,13 +1063,13 @@ func backfillOrderDetail(state *app.State, client *ovhsdk.Client, taskID, orderI
 // 但订单是**未付款**的,逾期会自动作废。不把这句写出来,
 // 用户看到 🎉 就睡了,第二天机器没了还以为是我们没抢到。
 func BuildOrderSuccessMessage(item *types.QueueItem, orderID, managerURL string) string {
-	payNote := "⚠️ 订单尚未付款：请尽快打开订单链接完成付款,逾期未付订单会自动作废。\n" +
-		"(订单未付款前处于 14 天撤销期内,可在 OVH 订单页撤回)\n"
+	payNote := "⚠️ 订单尚未付款：请尽快打开订单链接完成付款，逾期未付订单会自动作废。\n" +
+		"（订单未付款前处于 14 天撤销期内，可在 OVH 订单页撤回）"
 	if item.AutoPay {
 		// 只承诺我们真正知道的:已请求自动付款 ≠ 扣款一定成功
 		// (默认支付方式失效/余额不足时 OVH 不会扣成),让用户去核对
-		payNote = "💳 已请求用账户默认支付方式自动付款,请打开订单链接核对扣款是否成功。\n" +
-			"(下单时已按惯例放弃 14 天撤销期)\n"
+		payNote = "💳 已请求用账户默认支付方式自动付款，请打开订单链接核对扣款是否成功。\n" +
+			"（下单时已按惯例放弃 14 天撤销期）"
 	}
 	// 发控制面板深链,不发 checkout 返回的那个 url ——
 	// 后者是带凭证的下载链接(OVH 的 billing.Order 里 url 旁边就是 password),
@@ -1078,13 +1079,21 @@ func BuildOrderSuccessMessage(item *types.QueueItem, orderID, managerURL string)
 	if linkURL == "" {
 		linkURL = "请在 OVH 控制面板 → 账单 → 订单 中查看"
 	}
-	msg := fmt.Sprintf("🎉 OVH 服务器下单成功！\n\n服务器型号 (Plan Code): %s\n数据中心: %s\n订单 ID: %s\n订单链接: %s\n\n%s",
-		item.PlanCode, item.Datacenter, orderID, linkURL, payNote)
+
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("🎉 OVH 服务器下单成功 · %s\n", item.PlanCode))
+	b.WriteString(telegram.CardDivider + "\n")
+	b.WriteString("📍 交付机房: " + telegram.DisplayDCFull(item.Datacenter) + "\n")
 	if len(item.Options) > 0 {
-		msg += "自定义配置: " + strings.Join(item.Options, ", ") + "\n"
+		b.WriteString("⚙️ 硬件规格: " + telegram.HumanizeOptionCodes(item.Options) + "\n")
 	}
-	msg += "\n抢购任务ID: " + item.ID
-	return msg
+	b.WriteString("🧾 订单编号: " + orderID + "\n")
+	b.WriteString("🔗 订单链接: " + linkURL + "\n")
+	b.WriteString(telegram.CardDivider + "\n")
+	b.WriteString(payNote + "\n")
+	b.WriteString(telegram.CardDivider + "\n")
+	b.WriteString("🆔 任务编号: " + item.ID)
+	return b.String()
 }
 
 // reconcileOrder checkout 报 transient 失败(超时/429/5xx)后查 /me/order 对账:
