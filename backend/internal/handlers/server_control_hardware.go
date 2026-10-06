@@ -153,14 +153,21 @@ func GetServerIPs(state *app.State) gin.HandlerFunc {
 			return
 		}
 		// 并发拉每个 IP 的详情
-		details := parallelGetStringKeys(client, list, func(ip string) string {
+		details, _ := parallelGetStringKeysWithErrs(client, list, func(ip string) string {
 			return "/ip/" + strings.ReplaceAll(ip, "/", "%2F")
 		}, 10)
 		ips := []gin.H{}
 		for i, ip := range list {
 			detail := details[i]
 			if detail == nil {
-				ips = append(ips, gin.H{"ip": ip, "type": "unknown"})
+				// OVH 的 /ip/{ip} 接口中，部分区域（如加拿大 BHS 机房）的自带默认 IP 未在全局 IP 库建档，
+				// 会返回 404 (The requested object does not exist)。但该 IP 本身即属于该独立服务器，
+				// 因此默认标识为 dedicated（主服务器专用 IP）而非 unknown。
+				ips = append(ips, gin.H{
+					"ip":       ip,
+					"type":     "dedicated",
+					"routedTo": svc,
+				})
 				continue
 			}
 			routedTo := ""
@@ -169,9 +176,12 @@ func GetServerIPs(state *app.State) gin.HandlerFunc {
 					routedTo = s
 				}
 			}
+			if routedTo == "" {
+				routedTo = svc
+			}
 			ips = append(ips, gin.H{
 				"ip":          ip,
-				"type":        valueOr(detail, "type", "N/A"),
+				"type":        valueOr(detail, "type", "dedicated"),
 				"description": valueOr(detail, "description", ""),
 				"routedTo":    routedTo,
 			})
