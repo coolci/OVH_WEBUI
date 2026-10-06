@@ -66,6 +66,8 @@ export function getActiveServerControlAccount(): string {
   return window.localStorage.getItem(SERVER_CONTROL_ACCOUNT_KEY) || "";
 }
 
+export const getActiveAccount = getActiveServerControlAccount;
+
 export function setActiveServerControlAccount(id: string): void {
   if (id) {
     window.localStorage.setItem(SERVER_CONTROL_ACCOUNT_KEY, id);

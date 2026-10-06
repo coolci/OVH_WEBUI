@@ -46,3 +46,4 @@ export function formatMoney(value: number, code?: string | null, digits = 2): st
 
 /** 币种缺失时给 title / 说明用的文案，别让用户以为是页面少渲染了一截 */
 export const currencyUnknownHint = () => i18n.t("commons.currencyUnknownHint");
+export const CURRENCY_UNKNOWN_HINT = "币种未知 (未获取到货币代码)";

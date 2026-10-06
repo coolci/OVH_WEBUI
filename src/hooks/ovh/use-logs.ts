@@ -26,6 +26,16 @@ export function useLogs(autoRefresh: boolean = true) {
   });
 }
 
+/** 轻量预览：仪表盘 / 顶栏用，固定小 limit */
+export function useRecentLogs(limit = 15, autoRefresh = true) {
+  const q = useLogs(autoRefresh);
+  const data = q.data;
+  return {
+    ...q,
+    data: Array.isArray(data) ? { logs: data.slice(0, limit) } : { logs: [] },
+  };
+}
+
 /** 清空日志 */
 export function useClearLogs() {
   const qc = useQueryClient();

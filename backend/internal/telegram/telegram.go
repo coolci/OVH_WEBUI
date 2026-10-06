@@ -126,6 +126,67 @@ func SendMessage(state *app.State, message string, replyMarkup map[string]interf
 	return true
 }
 
+// SendToChat 发到指定 chat，返回 Telegram message_id（用于随后 EditMessage）。
+func SendToChat(state *app.State, chatID interface{}, message string, replyMarkup map[string]interface{}) (int64, bool) {
+	cfg := state.Config.Get()
+	if cfg.TgToken == "" {
+		state.Logger.Warn("Telegram消息未发送: Bot Token未在config中设置", "")
+		return 0, false
+	}
+	cid := strings.TrimSpace(idToString(chatID))
+	if cid == "" {
+		state.Logger.Warn("Telegram消息未发送: Chat ID 为空", "")
+		return 0, false
+	}
+	payload := map[string]interface{}{
+		"chat_id": cid,
+		"text":    truncateRunes(message, MaxMessageRunes),
+	}
+	if replyMarkup != nil {
+		payload["reply_markup"] = replyMarkup
+	}
+	res, err := call(state, cfg.TgToken, "sendMessage", payload, 10*time.Second)
+	if err != nil {
+		state.Logger.Error("发送 Telegram 消息失败: "+err.Error(), "telegram")
+		return 0, false
+	}
+	var parsed struct {
+		MessageID int64 `json:"message_id"`
+	}
+	_ = json.Unmarshal(res.Result, &parsed)
+	return parsed.MessageID, true
+}
+
+// EditMessage 原地更新一条 Bot 消息（进度闭环）。
+func EditMessage(state *app.State, chatID interface{}, messageID int64, text string, replyMarkup map[string]interface{}) bool {
+	cfg := state.Config.Get()
+	if cfg.TgToken == "" || messageID == 0 {
+		return false
+	}
+	cid := strings.TrimSpace(idToString(chatID))
+	if cid == "" {
+		return false
+	}
+	payload := map[string]interface{}{
+		"chat_id":    cid,
+		"message_id": messageID,
+		"text":       truncateRunes(text, MaxMessageRunes),
+	}
+	if replyMarkup != nil {
+		payload["reply_markup"] = replyMarkup
+	}
+	_, err := call(state, cfg.TgToken, "editMessageText", payload, 10*time.Second)
+	if err != nil {
+		state.Logger.Debug("editMessageText 失败: "+err.Error(), "telegram")
+		return false
+	}
+	return true
+}
+
+func EmptyInlineKeyboard() map[string]interface{} {
+	return map[string]interface{}{"inline_keyboard": [][]map[string]string{}}
+}
+
 // AnswerCallback 应答 callback_query
 func AnswerCallback(state *app.State, callbackQueryID, text string, showAlert bool) {
 	cfg := state.Config.Get()

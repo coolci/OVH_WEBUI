@@ -15,10 +15,11 @@ import (
 
 // OrderResult Telegram 下单结果
 type OrderResult struct {
-	Success       bool   `json:"success"`
-	Message       string `json:"message"`
-	TotalOrders   int    `json:"total_orders"`
-	CreatedOrders int    `json:"created_orders"`
+	Success       bool     `json:"success"`
+	Message       string   `json:"message"`
+	TotalOrders   int      `json:"total_orders"`
+	CreatedOrders int      `json:"created_orders"`
+	ItemIDs       []string `json:"item_ids,omitempty"`
 }
 
 // accountRegionLabel 给用户看的账户归属描述:"名字(子公司 US / US 区)"。

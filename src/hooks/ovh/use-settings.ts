@@ -117,3 +117,5 @@ export function useTelegramPoller() {
     refetchInterval: 10_000,
   });
 }
+
+export const useTelegramPollerStatus = useTelegramPoller;

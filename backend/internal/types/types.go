@@ -168,6 +168,8 @@ type QueueItem struct {
 	// 默认 false:自动扣钱必须是用户显式打开的开关,不能是隐含行为。
 	AutoPay            bool   `json:"autoPay,omitempty"`
 	ConfigSniperTaskID string `json:"configSniperTaskId,omitempty"`
+	TelegramChatID     string `json:"telegramChatId,omitempty"`
+	TelegramMessageID  int64  `json:"telegramMessageId,omitempty"`
 }
 
 // PriceInfo 价格信息

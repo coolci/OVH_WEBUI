@@ -271,3 +271,10 @@ func (db *DB) GetAccountRaw(id string) (RawAccount, bool, error) {
 	}
 	return RawAccount{appKey: r.AppKey, appSecret: r.AppSecret, consumerKey: r.ConsumerKey}, true, nil
 }
+
+// UpdateAccountCredState 更新账户凭据校验状态 (PRD D-01)
+func (db *DB) UpdateAccountCredState(id, credState, checkedAt, evidence string) error {
+	_, err := db.Exec(`UPDATE ovh_accounts SET cred_state=?, cred_checked_at=?, cred_evidence=?, updated_at=datetime('now') WHERE id=?`,
+		credState, checkedAt, evidence, id)
+	return err
+}
