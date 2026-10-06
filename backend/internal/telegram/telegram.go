@@ -9,17 +9,17 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
+	"unicode"
 
 	"github.com/ovh-webui/server/internal/app"
-
+	"github.com/ovh-webui/server/internal/netfp"
 	"github.com/ovh-webui/server/internal/types"
 )
 
-// VerifyConfig 检查 Telegram 是否可用:Token / Chat ID 是否填写 + bot 是否能 getMe + chat 是否可访问。
-// 用于 AddSubscription 等"必须 TG 有效"的强制校验。
-// 返回 (ok, 失败原因)。所有失败原因都是面向终端用户的中文短句。
+func tgClient(timeout time.Duration) *http.Client {
+	return netfp.Shared(timeout)
+}
 
 // tokenRe 匹配 Telegram API URL 里的 bot token 段。
 var tokenRe = regexp.MustCompile(`/bot[0-9]+:[A-Za-z0-9_-]+`)
@@ -40,6 +40,9 @@ func scrub(s string) string {
 	return tokenRe.ReplaceAllString(s, "/bot***")
 }
 
+// VerifyConfig 检查 Telegram 是否可用:Token / Chat ID 是否填写 + bot 是否能 getMe + chat 是否可访问。
+// 用于 AddSubscription 等"必须 TG 有效"的强制校验。
+// 返回 (ok, 失败原因)。所有失败原因都是面向终端用户的中文短句。
 func VerifyConfig(state *app.State) (bool, string) {
 	cfg := state.Config.Get()
 	token := strings.TrimSpace(cfg.TgToken)
@@ -50,7 +53,7 @@ func VerifyConfig(state *app.State) (bool, string) {
 	if chatID == "" {
 		return false, "未配置 Telegram Chat ID"
 	}
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := tgClient(10 * time.Second)
 
 	// 1) getMe 验 token
 	resp, err := client.Get("https://api.telegram.org/bot" + token + "/getMe")
@@ -89,41 +92,8 @@ func VerifyConfig(state *app.State) (bool, string) {
 }
 
 func SendMessage(state *app.State, message string, replyMarkup map[string]interface{}) bool {
-	cfg := state.Config.Get()
-	if cfg.TgToken == "" {
-		state.Logger.Warn("Telegram消息未发送: Bot Token未在config中设置", "")
-		return false
-	}
-	if cfg.TgChatID == "" {
-		state.Logger.Warn("Telegram消息未发送: Chat ID未在config中设置", "")
-		return false
-	}
-
-	// 超 4096 字符 Telegram 直接 400,整条消息丢掉 —— 而走这条路的是补货通知
-	// 和抢购结果,恰恰是最不能丢的。截断后至少把前 4095 个字送到。
-	// 按字符截不按字节:按字节切会把中文劈成半个字,发出去是乱码。
-	if n := len([]rune(message)); n > MaxMessageRunes {
-		state.Logger.Warn(fmt.Sprintf("Telegram 消息 %d 字符超过 %d 上限,已截断发送",
-			n, MaxMessageRunes), "telegram")
-		message = truncateRunes(message, MaxMessageRunes)
-	}
-
-	payload := map[string]interface{}{
-		"chat_id": cfg.TgChatID,
-		"text":    message,
-	}
-	if replyMarkup != nil {
-		payload["reply_markup"] = replyMarkup
-	}
-
-	if _, err := call(state, cfg.TgToken, "sendMessage", payload, 10*time.Second); err != nil {
-		// 这里必须是 Error:补货通知发不出去 = 用户错过这一波货,
-		// 而他不会知道曾经有过货
-		state.Logger.Error("发送 Telegram 消息失败: "+err.Error(), "telegram")
-		return false
-	}
-	state.Logger.Info("成功发送消息到 Telegram", "telegram")
-	return true
+	_, ok := SendToChat(state, state.Config.Get().TgChatID, message, replyMarkup)
+	return ok
 }
 
 // SendToChat 发到指定 chat，返回 Telegram message_id（用于随后 EditMessage）。
@@ -140,21 +110,38 @@ func SendToChat(state *app.State, chatID interface{}, message string, replyMarku
 	}
 	payload := map[string]interface{}{
 		"chat_id": cid,
-		"text":    truncateRunes(message, MaxMessageRunes),
+		"text":    message,
 	}
 	if replyMarkup != nil {
 		payload["reply_markup"] = replyMarkup
 	}
-	res, err := call(state, cfg.TgToken, "sendMessage", payload, 10*time.Second)
+	body, _ := json.Marshal(payload)
+	req, err := http.NewRequest(http.MethodPost, "https://api.telegram.org/bot"+cfg.TgToken+"/sendMessage", bytes.NewReader(body))
 	if err != nil {
-		state.Logger.Error("发送 Telegram 消息失败: "+err.Error(), "telegram")
+		state.Logger.Error("发送Telegram消息时发生未预期错误: "+scrub(err.Error()), "")
+		return 0, false
+	}
+	req.Header.Set("Content-Type", "application/json")
+	client := tgClient(10 * time.Second)
+	resp, err := client.Do(req)
+	if err != nil {
+		state.Logger.Error("发送Telegram消息时发生网络错误: "+scrub(err.Error()), "")
+		return 0, false
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		state.Logger.Error(fmt.Sprintf("发送消息到Telegram失败: 状态码=%d, 响应=%s", resp.StatusCode, string(respBody)), "")
 		return 0, false
 	}
 	var parsed struct {
-		MessageID int64 `json:"message_id"`
+		OK     bool `json:"ok"`
+		Result struct {
+			MessageID int64 `json:"message_id"`
+		} `json:"result"`
 	}
-	_ = json.Unmarshal(res.Result, &parsed)
-	return parsed.MessageID, true
+	_ = json.Unmarshal(respBody, &parsed)
+	return parsed.Result.MessageID, parsed.OK || resp.StatusCode == http.StatusOK
 }
 
 // EditMessage 原地更新一条 Bot 消息（进度闭环）。
@@ -170,14 +157,27 @@ func EditMessage(state *app.State, chatID interface{}, messageID int64, text str
 	payload := map[string]interface{}{
 		"chat_id":    cid,
 		"message_id": messageID,
-		"text":       truncateRunes(text, MaxMessageRunes),
+		"text":       text,
 	}
 	if replyMarkup != nil {
 		payload["reply_markup"] = replyMarkup
 	}
-	_, err := call(state, cfg.TgToken, "editMessageText", payload, 10*time.Second)
+	body, _ := json.Marshal(payload)
+	req, err := http.NewRequest(http.MethodPost, "https://api.telegram.org/bot"+cfg.TgToken+"/editMessageText", bytes.NewReader(body))
 	if err != nil {
-		state.Logger.Debug("editMessageText 失败: "+err.Error(), "telegram")
+		return false
+	}
+	req.Header.Set("Content-Type", "application/json")
+	client := tgClient(10 * time.Second)
+	resp, err := client.Do(req)
+	if err != nil {
+		state.Logger.Warn("editMessageText 网络错误: "+scrub(err.Error()), "telegram")
+		return false
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		state.Logger.Debug("editMessageText 失败: "+string(respBody), "telegram")
 		return false
 	}
 	return true
@@ -187,63 +187,90 @@ func EmptyInlineKeyboard() map[string]interface{} {
 	return map[string]interface{}{"inline_keyboard": [][]map[string]string{}}
 }
 
+// DeleteWebhook 去掉 Bot 上已注册的 Webhook，否则 getUpdates 会 409。
+func DeleteWebhook(token string) error {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return nil
+	}
+	payload, _ := json.Marshal(map[string]any{"drop_pending_updates": false})
+	req, err := http.NewRequest(http.MethodPost, "https://api.telegram.org/bot"+token+"/deleteWebhook", bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	client := tgClient(10 * time.Second)
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	var result map[string]interface{}
+	_ = json.Unmarshal(body, &result)
+	if ok, _ := result["ok"].(bool); ok {
+		return nil
+	}
+	desc, _ := result["description"].(string)
+	if desc == "" {
+		desc = string(body)
+	}
+	return fmt.Errorf("%s", desc)
+}
+
 // AnswerCallback 应答 callback_query
 func AnswerCallback(state *app.State, callbackQueryID, text string, showAlert bool) {
 	cfg := state.Config.Get()
 	if cfg.TgToken == "" {
 		return
 	}
-	// 官方限 0-200 字符,超了整个 answerCallbackQuery 被拒 ——
-	// 表现是用户点了按钮、转圈半天没有任何提示,而按钮其实已经生效了。
-	_, err := call(state, cfg.TgToken, "answerCallbackQuery", map[string]interface{}{
+	payload := map[string]interface{}{
 		"callback_query_id": callbackQueryID,
-		"text":              truncateRunes(text, MaxCallbackAnswerRunes),
+		"text":              text,
 		"show_alert":        showAlert,
-	}, 5*time.Second)
-	if err != nil {
-		// Debug 而不是 Warn:回调应答只是个气泡提示,失败不影响按钮本身的效果。
-		// 但必须留痕 —— 以前这里完全静默,"点了没反应"根本无从查起。
-		state.Logger.Debug("回应 Telegram 按钮点击失败: "+err.Error(), "telegram")
+	}
+	body, _ := json.Marshal(payload)
+	client := tgClient(5 * time.Second)
+	req, _ := http.NewRequest(http.MethodPost,
+		"https://api.telegram.org/bot"+cfg.TgToken+"/answerCallbackQuery",
+		bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err == nil {
+		resp.Body.Close()
 	}
 }
 
-// SendReply 回复指定消息。
-//
-// 这是所有 /命令 回复的主路径。以前它是 `if err == nil { resp.Body.Close() }` ——
-// 网络错误和 Telegram 的 ok:false 全吞掉:用户发了 /queue 收不到任何东西,
-// 而日志里一个字都没有,没法排查。
+// SendReply 回复指定消息
 func SendReply(state *app.State, chatID interface{}, text string, replyToMessageID int64) {
 	cfg := state.Config.Get()
 	if cfg.TgToken == "" {
 		return
 	}
-	// 超 4096 字符 Telegram 直接 400,整条消息丢掉。截断后至少把前 4095 个字送到,
-	// 而不是让用户什么都收不到。
-	text = truncateRunes(text, MaxMessageRunes)
-	_, err := call(state, cfg.TgToken, "sendMessage", map[string]interface{}{
+	payload := map[string]interface{}{
 		"chat_id":             chatID,
 		"text":                text,
 		"reply_to_message_id": replyToMessageID,
-	}, 10*time.Second)
-	if err != nil {
-		state.Logger.Warn("回复 Telegram 消息失败: "+err.Error(), "telegram")
+	}
+	body, _ := json.Marshal(payload)
+	client := tgClient(10 * time.Second)
+	req, _ := http.NewRequest(http.MethodPost,
+		"https://api.telegram.org/bot"+cfg.TgToken+"/sendMessage",
+		bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err == nil {
+		resp.Body.Close()
 	}
 }
 
 type OrderInfo struct {
 	PlanCode   string
 	Datacenter string
-	// AccountRef 用户在命令里显式指定的账户。原样保留,由 handlers 去解析成具体账户 ——
-	// telegram 包看不到账户列表,也不该看到。
-	//
-	//	"@us" / "@1"  指定一个账户
-	//	"@all"        同区每个能买的账户各下一单(抢稀缺机器时翻倍机会)
-	//
-	// 空 = 没指定,由 planCode 反推。
+	// AccountRef 用户在命令里显式指定的账户（如 @us, @1, @all）。
 	AccountRef string
-	// Quantity 每个机房下几台。有上限,见 MaxOrderQuantity。
-	Quantity int
-	Options  []string
+	Quantity   int
+	Options    []string
 }
 
 // 格式: <planCode> [机房] [数量] [配置...]
@@ -254,17 +281,6 @@ type OrderInfo struct {
 //	纯数字   → 数量
 //	3~4 字母 → 机房(不区分大小写,统一转小写)
 //	其余     → 配置(addon planCode),逗号或空格分隔都认
-//
-// 以前这里是按**位置**猜的:先找带逗号的词当 options,剩下的按
-// switch len(remaining) 分 case 1 / case 2。三种常见写法全都静默失效:
-//
-//	24ska01 gra softraid-2x960ssd     配置没逗号 → 配置被丢掉
-//	24ska01 gra 2 softraid-2x960ssd   剩 3 个词 → switch 没有 case 3,
-//	                                  机房、数量、配置**全部**丢掉
-//	24ska01 GRA 2                     机房要求全小写 → 机房和数量都丢掉
-//
-// 而丢掉是没有任何报错的:任务照样建,用户拿到的是基础配置的机器。
-// 这正是"TG 上下单总是无法选择配置"的来源。
 func ParseOrderMessage(text string) *OrderInfo {
 	text = strings.TrimSpace(text)
 	if text == "" {
@@ -294,30 +310,17 @@ func ParseOrderMessage(text string) *OrderInfo {
 	for _, p := range parts[1:] {
 		switch {
 		case strings.HasPrefix(p, "@"):
-			// 账户。裸 @ 是打漏了,直接丢 —— 它不是配置项,
-			// 当配置发给 OVH 只会换来一个看不懂的 400。
 			if len(p) > 1 && result.AccountRef == "" {
 				result.AccountRef = strings.ToLower(p[1:])
 			}
 		case !qtySet && isPositiveInt(p):
-			// 只认第一个纯数字。第二个数字多半是配置里的型号
-			// (比如手滑把 "2 960" 打成两个词),当数量会把数量改错。
 			n, _ := parsePositiveInt(p)
 			result.Quantity = clampQuantity(n)
 			qtySet = true
 		case result.Datacenter == "" && isDatacenterCode(p):
-			// OVH 独服机房码都是 3~4 个纯字母(gra/rbx/sbg/bhs/waw/eri/sgp…),
-			// 而 addon planCode 一律带连字符和数字(ram-64g-noecc-2133、
-			// softraid-2x960ssd),两者不会撞。
 			result.Datacenter = strings.ToLower(p)
 		case isMalformedQuantity(p):
-			// 写成 -1 / +2 / 3.5 这种:意图显然是数量,只是写得不合法。
-			// 丢给 addOption 会把 "-1" 当成 addon planCode 发给 OVH,
-			// 换回一句用户看不懂的英文报错。数量有默认值,忽略即可。
-			//
-			// 注意只挡带符号/小数点的写法。裸的正整数(比如 "24ska01 gra 2 960"
-			// 里的 960)照旧进 options —— 它多半是配置项被空格打断了,
-			// 留在 options 里用户能在下单确认那条消息里看见,丢掉就永远不知道。
+			// 忽略 -1 / +2 / 3.5 这种畸形数量
 		default:
 			addOption(p)
 		}
@@ -326,8 +329,6 @@ func ParseOrderMessage(text string) *OrderInfo {
 }
 
 // isDatacenterCode 长得像机房码:3~4 个 ASCII 字母,不区分大小写。
-// 只判形状不查词表 —— OVH 随时开新机房,写死一张表就意味着
-// 每开一个机房都要发版,而中间那段时间用户的 /buy 会静默丢掉机房。
 func isDatacenterCode(s string) bool {
 	if len(s) < 3 || len(s) > 4 {
 		return false
@@ -348,8 +349,6 @@ func isPositiveInt(s string) bool {
 }
 
 // isMalformedQuantity 带符号或带小数点的数字,比如 -1 / +2 / 3.5。
-// 这种写法只可能是在写数量(addon planCode 不长这样),只是写得不合法。
-// 裸的正整数不算 —— 那个由调用方按位置决定是数量还是配置。
 func isMalformedQuantity(s string) bool {
 	if s == "" {
 		return false
@@ -376,16 +375,11 @@ func isMalformedQuantity(s string) bool {
 	return digits && (signed || dot)
 }
 
-// parsePositiveInt 只接受纯十进制 ASCII 数字字符串，
-// 不接受 "-1" / "+5" / " 3" 等带符号或空白的版本（strconv.Atoi 会通过）。
-// MaxOrderQuantity / MaxOrderFanout 下单规模上限。
-// 定义挪到了 types —— 它们是产品级约束,不是 TG 专有的:
-// 网页端那条入队路径原来完全没有上界(见 types 里的说明)。
-// 这里留别名,TG 侧的引用不用改。
-const (
-	MaxOrderQuantity = types.MaxOrderQuantity
-	MaxOrderFanout   = types.MaxOrderFanout
-)
+// MaxOrderQuantity 一条聊天消息能指定的最大数量。
+const MaxOrderQuantity = types.MaxOrderQuantity
+
+// MaxOrderFanout 一条消息最多创建多少个抢购任务。
+const MaxOrderFanout = types.MaxOrderFanout
 
 // clampQuantity 把数量夹到 [1, MaxOrderQuantity]
 func clampQuantity(n int) int {
@@ -398,6 +392,8 @@ func clampQuantity(n int) int {
 	return n
 }
 
+// parsePositiveInt 只接受纯十进制 ASCII 数字字符串，
+// 不接受 "-1" / "+5" / " 3" 等带符号或空白的版本（strconv.Atoi 会通过）。
 func parsePositiveInt(s string) (int, bool) {
 	if s == "" {
 		return 0, false
@@ -414,6 +410,15 @@ func parsePositiveInt(s string) (int, bool) {
 	return n, true
 }
 
+func isAlpha(s string) bool {
+	for _, r := range s {
+		if !unicode.IsLetter(r) {
+			return false
+		}
+	}
+	return len(s) > 0
+}
+
 func min(a, b int) int {
 	if a < b {
 		return a
@@ -421,187 +426,53 @@ func min(a, b int) int {
 	return b
 }
 
-// MarkButtonPressed 把原消息上刚按下的那颗按钮标成已下单。
-//
-// 以前按完按钮，那条上架通知长得和没按过一模一样：几个机房按钮原样摆着，
-// 没有任何痕迹说明哪个已经下过单了。在手机上翻回几条消息之前的通知再按一次，
-// 是很自然的动作 —— 挡住它的只有服务端那道一次性 claim，
-// 用户得到的反馈是一句冷冰冰的「按钮已被使用」，而他根本不记得自己按过。
-//
-// 这里直接用回调里带回来的原始键盘改一颗按钮的文案，不重建整个键盘 ——
-// 其余机房的按钮要原样留着，用户很可能想多买几个机房。
-func MarkButtonPressed(state *app.State, chatID interface{}, messageID int64, pressedData, newText string) {
-	cfg := state.Config.Get()
-	if cfg.TgToken == "" || messageID <= 0 {
-		return
-	}
-	kb := rebuildKeyboard(state, chatID, messageID, pressedData, newText)
-	if kb == nil {
-		return
-	}
-	payload := map[string]interface{}{
-		"chat_id":      chatID,
-		"message_id":   messageID,
-		"reply_markup": map[string]interface{}{"inline_keyboard": kb},
-	}
-	body, _ := json.Marshal(payload)
-	client := &http.Client{Timeout: 10 * time.Second}
-	req, _ := http.NewRequest(http.MethodPost,
-		"https://api.telegram.org/bot"+cfg.TgToken+"/editMessageReplyMarkup",
-		bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := client.Do(req)
-	if err != nil {
-		// 编辑失败不影响下单本身,只是少了个视觉反馈
-		state.Logger.Debug("标记按钮已用失败: "+scrub(err.Error()), "telegram")
-		return
-	}
-	resp.Body.Close()
-}
-
-// storedKeyboard 由 handlers 在回调里塞进来的原始键盘(来自 callback_query.message)。
-// 用一个短生命周期的 map 传递,避免给 MarkButtonPressed 加一个巨大的参数。
-var (
-	kbMu    sync.Mutex
-	kbCache = map[string][][]map[string]interface{}{}
-)
-
-// StashKeyboard 记下这条消息当前的键盘,供随后的 MarkButtonPressed 使用。
-func StashKeyboard(chatID interface{}, messageID int64, kb [][]map[string]interface{}) {
-	if kb == nil {
-		return
-	}
-	kbMu.Lock()
-	kbCache[kbKey(chatID, messageID)] = kb
-	// 这个 map 只在"收到回调 → 标记按钮"之间活几毫秒,但异常路径可能不取走。
-	// 攒到一定量就整体清掉,不引入定时器。
-	if len(kbCache) > 256 {
-		kbCache = map[string][][]map[string]interface{}{
-			kbKey(chatID, messageID): kb,
-		}
-	}
-	kbMu.Unlock()
-}
-
-func kbKey(chatID interface{}, messageID int64) string {
-	return fmt.Sprintf("%v:%d", chatID, messageID)
-}
-
-// rebuildKeyboard 取出原键盘,把命中的那颗按钮改文案。
-func rebuildKeyboard(state *app.State, chatID interface{}, messageID int64, pressedData, newText string) [][]map[string]interface{} {
-	kbMu.Lock()
-	kb, ok := kbCache[kbKey(chatID, messageID)]
-	delete(kbCache, kbKey(chatID, messageID))
-	kbMu.Unlock()
-	if !ok || kb == nil {
-		return nil
-	}
-	hit := false
-	for _, row := range kb {
-		for _, b := range row {
-			if d, _ := b["callback_data"].(string); d == pressedData {
-				b["text"] = newText
-				hit = true
-			}
-		}
-	}
-	if !hit {
-		return nil
-	}
-	return kb
-}
-
-// BotCommands 注册给 Telegram 的命令列表。
-//
-// 注册之后用户在聊天框打 "/" 就会看到这个菜单,点一下就发出去 ——
-// 不用记、不用打字,在手机上尤其重要。
-// 这是让一个 bot 显得"有人管"最便宜的一件事,而以前一条都没注册过。
-var BotCommands = []map[string]string{
-	{"command": "help", "description": "怎么用 / 下单格式"},
-	{"command": "watch", "description": "盯着补货就抢（/watch 型号 [机房] [x数量]）"},
-	{"command": "unwatch", "description": "不盯了（/unwatch 型号）"},
-	{"command": "status", "description": "监控与队列总览"},
-	{"command": "queue", "description": "正在抢的任务"},
-	{"command": "cancel", "description": "取消任务（/cancel 任务号 或 all）"},
-	{"command": "subs", "description": "监控订阅列表"},
-	{"command": "recent", "description": "最近的抢购结果"},
-	{"command": "accounts", "description": "可用的 OVH 账户"},
-}
-
-// RegisterCommands 把命令菜单推给 Telegram。
-// 幂等,启动时调一次即可;失败只是少了个菜单,不影响任何功能,所以不返回错误。
-func RegisterCommands(state *app.State) {
+// SetMyCommands 向 Telegram 注册 Bot 命令菜单（/buy /stock /tasks 等）。
+// 成功返回空串；失败返回错误描述。
+func SetMyCommands(state *app.State) string {
 	cfg := state.Config.Get()
 	if strings.TrimSpace(cfg.TgToken) == "" {
-		return
+		return "未配置 Telegram Bot Token"
 	}
-	payload := map[string]interface{}{"commands": BotCommands}
-	body, _ := json.Marshal(payload)
-	client := &http.Client{Timeout: 10 * time.Second}
-	req, _ := http.NewRequest(http.MethodPost,
-		"https://api.telegram.org/bot"+cfg.TgToken+"/setMyCommands",
-		bytes.NewReader(body))
+	type botCmd struct {
+		Command     string `json:"command"`
+		Description string `json:"description"`
+	}
+	commands := []botCmd{
+		{Command: "start", Description: "显示帮助与可用操作"},
+		{Command: "help", Description: "命令帮助"},
+		{Command: "buy", Description: "快速下单或抢购 [planCode] [dc]"},
+		{Command: "watch", Description: "盯补货并抢购: /watch <planCode> [dc] [x数量]"},
+		{Command: "stock", Description: "查询库存并开抢: /stock <planCode>"},
+		{Command: "tasks", Description: "查看当前抢购任务队列"},
+		{Command: "accounts", Description: "查看与切换 OVH 账号"},
+		{Command: "queue", Description: "加入排队队列: /queue <planCode> [dc]"},
+		{Command: "monitor", Description: "添加库存监控: /monitor <planCode>"},
+		{Command: "price", Description: "查询价格: /price <planCode> <dc>"},
+		{Command: "interval", Description: "查看或修改默认重试间隔: /interval [秒]"},
+	}
+	payload, _ := json.Marshal(map[string]interface{}{"commands": commands})
+	apiURL := "https://api.telegram.org/bot" + cfg.TgToken + "/setMyCommands"
+	client := tgClient(10 * time.Second)
+	req, err := http.NewRequest(http.MethodPost, apiURL, bytes.NewReader(payload))
+	if err != nil {
+		return err.Error()
+	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := client.Do(req)
 	if err != nil {
-		state.Logger.Debug("注册 Telegram 命令菜单失败: "+scrub(err.Error()), "telegram")
-		return
+		return err.Error()
 	}
 	defer resp.Body.Close()
-	var r struct {
-		OK          bool   `json:"ok"`
-		Description string `json:"description"`
+	body, _ := io.ReadAll(resp.Body)
+	var result map[string]interface{}
+	_ = json.Unmarshal(body, &result)
+	if ok, _ := result["ok"].(bool); ok {
+		state.Logger.Info("Telegram setMyCommands 成功", "telegram")
+		return ""
 	}
-	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, MaxTelegramBodyBytes))
-	_ = json.Unmarshal(respBody, &r)
-	if r.OK {
-		state.Logger.Info(fmt.Sprintf("已注册 %d 条 Telegram 命令菜单", len(BotCommands)), "telegram")
-		return
+	desc, _ := result["description"].(string)
+	if desc == "" {
+		desc = string(body)
 	}
-	state.Logger.Debug("注册 Telegram 命令菜单被拒: "+r.Description, "telegram")
-}
-
-// SendKeyboard 发一条带内联键盘的消息。
-//
-// SendReply 不带 reply_markup，而分步选择流程的每一步都需要按钮 ——
-// 让用户在手机上点，而不是去背 ram-64g-noecc-2133 这种 addon 代码。
-func SendKeyboard(state *app.State, chatID interface{}, replyToMessageID int64,
-	text string, replyMarkup map[string]interface{}) {
-	cfg := state.Config.Get()
-	if cfg.TgToken == "" {
-		return
-	}
-	payload := map[string]interface{}{
-		"chat_id": chatID,
-		"text":    text,
-	}
-	if replyToMessageID > 0 {
-		payload["reply_to_message_id"] = replyToMessageID
-	}
-	if replyMarkup != nil {
-		payload["reply_markup"] = replyMarkup
-	}
-	body, _ := json.Marshal(payload)
-	client := &http.Client{Timeout: 10 * time.Second}
-	req, _ := http.NewRequest(http.MethodPost,
-		"https://api.telegram.org/bot"+cfg.TgToken+"/sendMessage",
-		bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := client.Do(req)
-	if err != nil {
-		state.Logger.Warn("发送带按钮的消息失败: "+scrub(err.Error()), "telegram")
-		return
-	}
-	defer resp.Body.Close()
-	// Telegram 对 callback_data 有 64 字节硬限制，超了它**不会报错**，
-	// 按钮发出去就是点了没反应。这里把非 ok 响应记下来，否则这种故障完全无声。
-	var r struct {
-		OK          bool   `json:"ok"`
-		Description string `json:"description"`
-	}
-	b, _ := io.ReadAll(io.LimitReader(resp.Body, MaxTelegramBodyBytes))
-	_ = json.Unmarshal(b, &r)
-	if !r.OK {
-		state.Logger.Warn("Telegram 拒绝了带按钮的消息: "+r.Description, "telegram")
-	}
+	return desc
 }

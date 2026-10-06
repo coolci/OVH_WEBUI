@@ -14,6 +14,7 @@ import (
 	"github.com/ovh-webui/server/internal/logger"
 	"github.com/ovh-webui/server/internal/monitor"
 	"github.com/ovh-webui/server/internal/storage"
+	"github.com/ovh-webui/server/internal/telegram"
 	"github.com/ovh-webui/server/internal/types"
 )
 
@@ -142,8 +143,14 @@ func TestUnwatch(t *testing.T) {
 func TestWatchCommandsRouted(t *testing.T) {
 	st, mon := newWatchTestMonitor(t)
 	for _, text := range []string{"/watch 24sk602", "/unwatch 24sk602", "/w 24sk602", "/uw 24sk602"} {
-		if !handleCommand(st, mon, int64(1), 1, text) {
-			t.Errorf("%q 应当被当成命令处理", text)
+		cmd := telegram.ParseBotCommand(text)
+		if cmd == nil {
+			t.Errorf("%q 应当被当成命令解析", text)
+			continue
+		}
+		reply := dispatchTelegramCommand(st, mon, cmd)
+		if reply == "" {
+			t.Errorf("%q 应当被当成命令处理并返回回复", text)
 		}
 	}
 }

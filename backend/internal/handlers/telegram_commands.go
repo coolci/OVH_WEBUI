@@ -2,291 +2,367 @@ package handlers
 
 import (
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/ovh-webui/server/internal/app"
+	"github.com/ovh-webui/server/internal/catalog"
 	"github.com/ovh-webui/server/internal/monitor"
+	"github.com/ovh-webui/server/internal/price"
 	"github.com/ovh-webui/server/internal/telegram"
 	"github.com/ovh-webui/server/internal/types"
 )
 
-// Telegram 命令。
-//
-// 以前这个 bot 只认一种输入:恰好符合下单格式的那一行文本。别的一律
-// Debug 一行日志然后静默丢掉 —— 用户发 "hi"、发 "?"、发错格式,
-// 屏幕上什么都不会发生,他没有任何办法知道自己该发什么。
-// 一个能花钱下单的 bot,连 /help 都没有是说不过去的。
-//
-// 这里的命令都只读或只做"撤销"(取消任务),不新增花钱的动作 ——
-// 花钱的入口仍然只有两个:上架通知里的一键下单按钮,和下单格式的文本。
+// dispatchTelegramCommand 处理 /buy /stock 等斜杠命令，返回回复文案。
+func dispatchTelegramCommand(state *app.State, mon *monitor.Monitor, cmd *telegram.BotCommand) string {
+	if cmd == nil {
+		return telegram.HelpMessage()
+	}
+	switch cmd.Name {
+	case "start", "help":
+		return telegram.HelpMessage()
+	case "watch", "w":
+		return watchText(state, mon, cmd.Args)
+	case "unwatch", "uw":
+		return unwatchText(state, mon, cmd.Args)
+	case "stock":
+		return cmdStock(state, cmd.Args)
+	case "queue", "buy":
+		return cmdBuyOrQueue(state, mon, cmd.Args, cmd.Name)
+	case "tasks":
+		return "📋 请在与 Bot 的私聊或群内发送 /tasks 即可直接交互管理抢购任务。"
+	case "accounts":
+		return "👤 请在与 Bot 的私聊或群内发送 /accounts 即可查看并切换下单账户。"
+	case "monitor":
+		return cmdMonitor(state, mon, cmd.Args)
+	case "price":
+		return cmdPrice(state, cmd.Args)
+	case "interval", "iv":
+		return intervalText(state, cmd.Args)
+	default:
+		return "❌ 未知命令: /" + cmd.Name + "\n\n" + telegram.HelpMessage()
+	}
+}
 
-// tgMaxReplyLen Telegram 单条消息上限 4096 字符,留点余量。
-const tgMaxReplyLen = 3800
+func cmdStock(state *app.State, args []string) string {
+	if len(args) < 1 || strings.TrimSpace(args[0]) == "" {
+		return "用法: /stock <planCode>\n例: /stock 24ska01"
+	}
+	planCode := strings.TrimSpace(args[0])
+	if !state.HasAnyAccount() {
+		return "❌ 未配置任何 OVH 账户"
+	}
+	accountID := telegram.DefaultAccountID(state)
+	avail := catalog.CheckServerAvailabilityWithConfigs(state, planCode, accountID)
+	if len(avail) == 0 {
+		return "❌ 无法获取 " + planCode + " 的库存信息（型号可能不存在或 API 失败）"
+	}
 
-// tgMaxListItems 列表类命令最多列几条,超了给个总数。
-const tgMaxListItems = 15
+	// 汇总各机房：任一配置有货即视为该 DC 有货
+	dcStatus := map[string]string{} // dc → best status
+	configLines := []string{}
+	for _, cfg := range avail {
+		availDCs := []string{}
+		for dc, st := range cfg.Datacenters {
+			if st == "" || st == "unavailable" || st == "unknown" {
+				continue
+			}
+			availDCs = append(availDCs, strings.ToUpper(dc)+"("+st+")")
+			// 记录全局机房状态
+			if prev, ok := dcStatus[dc]; !ok || prev == "unavailable" {
+				dcStatus[dc] = st
+			}
+		}
+		mem, stor := cfg.Memory, cfg.Storage
+		if mem == "" {
+			mem = "?"
+		}
+		if stor == "" {
+			stor = "?"
+		}
+		if len(availDCs) == 0 {
+			configLines = append(configLines, fmt.Sprintf("· %s / %s → 无货", mem, stor))
+		} else {
+			configLines = append(configLines, fmt.Sprintf("· %s / %s → %s", mem, stor, strings.Join(availDCs, ", ")))
+		}
+	}
 
-// handleCommand 处理 / 开头的命令。返回 false 表示这不是命令,交给下单解析。
-func handleCommand(state *app.State, mon *monitor.Monitor, chatID interface{}, messageID int64, text string) bool {
-	if !strings.HasPrefix(text, "/") {
+	inStock := []string{}
+	outStock := []string{}
+	for dc, st := range dcStatus {
+		if st != "" && st != "unavailable" && st != "unknown" {
+			inStock = append(inStock, telegram.DisplayDCFull(dc)+" ("+st+")")
+		} else {
+			outStock = append(outStock, telegram.DisplayDCFull(dc))
+		}
+	}
+
+	var b strings.Builder
+	b.WriteString("📦 库存查询结果\n\n")
+	b.WriteString("📦 型号: " + planCode + "\n\n")
+	if len(inStock) > 0 {
+		b.WriteString(fmt.Sprintf("✅ 有货机房 (%d个):\n", len(inStock)))
+		for _, s := range inStock {
+			b.WriteString("  • " + s + "\n")
+		}
+	} else {
+		b.WriteString("❌ 当前所有机房均缺货（支持无货挂机抢购）\n")
+	}
+	if len(configLines) > 0 {
+		b.WriteString("\n⚙️ 配置概览:\n")
+		// 最多展示 8 行，避免 Telegram 消息过长
+		limit := 8
+		for i, line := range configLines {
+			if i >= limit {
+				b.WriteString(fmt.Sprintf("…另有 %d 条配置省略\n", len(configLines)-limit))
+				break
+			}
+			b.WriteString(line + "\n")
+		}
+	}
+	b.WriteString("\n💡 立即下单: /buy " + planCode + " <机房代码>")
+	return b.String()
+}
+
+// startTelegramOrder 多套配置时先弹出点选,避免 /buy 型号 机房 直接拿随机第一套。
+// 返回 true = 已经弹出选择器,调用方不要再 ProcessOrder。
+func startTelegramOrder(state *app.State, mon *monitor.Monitor, chatID interface{}, cmdName string, info *telegram.OrderInfo) bool {
+	if info == nil || info.PlanCode == "" || info.AccountRef != "" {
 		return false
 	}
-	// Telegram 群里命令会带 @botname 后缀
-	fields := strings.Fields(text)
-	cmd := strings.ToLower(strings.TrimPrefix(fields[0], "/"))
-	if i := strings.Index(cmd, "@"); i >= 0 {
-		cmd = cmd[:i]
+	mode := "b"
+	if cmdName == "queue" {
+		mode = "q"
 	}
-	args := fields[1:]
-
-	var reply string
-	switch cmd {
-	case "start", "help", "h", "?":
-		reply = helpText()
-	case "status", "s":
-		reply = statusText(state, mon)
-	case "queue", "q":
-		reply = queueText(state)
-	case "cancel":
-		reply = cancelText(state, args)
-	case "interval", "iv":
-		reply = intervalText(state, args)
-	case "watch", "w":
-		// 带了 x<数量> = 用户明确知道自己要什么,直接建,不打断他。
-		// 否则走按钮流程:让他挑配置和账户 —— 这两件事不挑就等于默默替他决定,
-		// 而它们直接决定会不会抢到、以及会下多少单。
-		if hasExplicitQuantity(args) || len(args) == 0 {
-			reply = watchText(state, mon, args)
-			// 快捷式建完是"盯全部配置"。addon planCode 二三十字符,打不出来,
-			// 所以紧跟一排按钮让他一键改窄 —— 以前只能删掉订阅重发一次不带 x 的 /watch。
-			// 先把文本发出去再挂按钮:两条消息,前一条是结果,后一条是可选的下一步。
-			if len(args) > 0 && mon != nil {
-				telegram.SendReply(state, chatID, reply, messageID)
-				if offerNarrowConfig(state, chatID, messageID, strings.TrimSpace(args[0])) {
-					return true
-				}
-				return true
-			}
-		} else if startWatchFlow(state, mon, chatID, messageID, args[0], dcArgs(args[1:])) {
-			return true // 流程自己回复了
-		} else {
-			reply = watchText(state, mon, args)
+	qty := info.Quantity
+	if qty < 1 {
+		qty = 1
+	}
+	if len(info.Options) > 0 {
+		return false
+	}
+	configs := enumerateWizardConfigs(state, info.PlanCode, "")
+	if len(configs) > 1 {
+		var tdc []string
+		if info.Datacenter != "" {
+			tdc = []string{strings.ToLower(info.Datacenter)}
 		}
-	case "unwatch", "uw":
-		reply = unwatchText(state, mon, args)
-	case "accounts", "acc":
-		reply = accountsText(state, chatID, messageID)
-	case "subs", "sub":
-		reply = subsText(state, mon)
-	case "recent", "history":
-		reply = recentText(state)
-	default:
-		reply = "❓ 不认识的命令: /" + cmd + "\n\n发 /help 看能用什么。"
+		showConfigPicker(state, mon, chatID, 0, mode, info.PlanCode, false, tdc, qty)
+		return true
 	}
-	if reply != "" {
-		telegram.SendReply(state, chatID, clampReply(reply), messageID)
+	if len(configs) == 1 {
+		info.Options = append([]string{}, configs[0].Options...)
 	}
-	return true
+	if info.Datacenter == "" {
+		sess := getPickerSession(chatID, 0, mode, info.PlanCode)
+		sess.Options = append([]string{}, info.Options...)
+		if len(configs) == 1 {
+			sess.ConfigLabel = configs[0].Label
+		}
+		showDCPicker(state, chatID, 0, mode, info.PlanCode, false)
+		return true
+	}
+	return false
 }
 
-func clampReply(s string) string {
-	if len(s) <= tgMaxReplyLen {
-		return s
+func cmdBuyOrQueue(state *app.State, mon *monitor.Monitor, args []string, cmdName string) string {
+	if len(args) < 1 {
+		return "用法: /" + cmdName + " <planCode> [datacenter] [quantity] [options]\n例: /" + cmdName + " 24ska01 gra"
 	}
-	return s[:tgMaxReplyLen] + "\n…(内容过长已截断，完整信息请看控制台)"
+	return cmdBuyOrQueueInfo(state, mon, telegram.ParseOrderArgs(args), cmdName)
 }
 
-func helpText() string {
-	var b strings.Builder
-	b.WriteString("🤖 OVH 抢购助手\n\n")
-	b.WriteString("【下单】直接发一行文本：\n")
-	b.WriteString("  <型号> [机房] [数量] [配置,逗号分隔]\n\n")
-	b.WriteString("例子：\n")
-	b.WriteString("  24sk602            → 所有有货机房各 1 台\n")
-	b.WriteString("  24sk602 gra        → 只买 gra\n")
-	b.WriteString("  24sk602 gra 2      → gra 买 2 台\n")
-	b.WriteString("  24sk602 gra 2 ram-64g,softraid-2x480ssd\n\n")
-	b.WriteString(fmt.Sprintf("数量上限 %d 台/次，一条消息最多创建 %d 个任务。\n",
-		telegram.MaxOrderQuantity, telegram.MaxOrderFanout))
-	b.WriteString("机房代码是 3-4 位小写字母（gra / rbx / sbg / bhs / waw…）。\n\n")
-	b.WriteString("【指定账户】在命令里加 @：\n")
-	b.WriteString("  24sk602 gra @us    用美区账户下\n")
-	b.WriteString("  24sk602 gra @2     用 /accounts 里第 2 个账户\n")
-	b.WriteString("  24sk602 gra @all   每个能买的账户各下一单（抢稀缺机器时翻倍机会）\n")
-	b.WriteString("不写 @ 的话我按型号查它在哪个账户的目录里，然后让你确认一次。\n\n")
-	b.WriteString("⚠️ 上面这种是「现在就买」，机器当下没货会直接失败。\n")
-	b.WriteString("   想等补货请用 /watch。\n\n")
-	b.WriteString("【盯补货】机器现在没货时用这个：\n")
-	b.WriteString("  /watch 24sk602         我用按钮让你挑配置和账户\n")
-	b.WriteString("  /watch 24sk602 gra     只盯 gra，其余照样按钮挑\n")
-	b.WriteString("  /watch 24sk602 gra x1  跳过按钮，直接盯全部配置自动抢 1 台\n")
-	b.WriteString("  /unwatch 24sk602       不盯了\n\n")
-	b.WriteString("⚠️ 一个型号底下常有好几套内存/存储组合，而补货通知和自动下单是\n")
-	b.WriteString("   **按配置逐套**触发的。不挑配置就是每套都要，\n")
-	b.WriteString("   「抢 1 台」会变成「每套配置在每个机房各抢 1 台」。\n\n")
-	b.WriteString("【命令】\n")
-	b.WriteString("  /status   监控与队列总览\n")
-	b.WriteString("  /queue    正在抢的任务\n")
-	b.WriteString("  /cancel <任务号|all>  取消任务\n")
-	b.WriteString("  /interval [秒]   看/改新任务的默认重试间隔\n")
-	b.WriteString("  /subs     在盯哪些型号\n")
-	b.WriteString("  /accounts 看/切当前下单账户\n")
-	b.WriteString("  /recent   最近的抢购结果\n\n")
-	b.WriteString("💡 上架通知里的按钮可以直接下单，比打字快。\n")
-	b.WriteString("💡 多账户的话先 /accounts 确认当前用的是哪个 —— ")
-	b.WriteString("三个大区的型号代码不一样，选错区永远抢不到。\n")
-	return b.String()
+func cmdBuyOrQueueInfo(state *app.State, mon *monitor.Monitor, info *telegram.OrderInfo, cmdName string) string {
+	if info == nil || info.PlanCode == "" {
+		return "❌ 无法解析参数\n用法: /" + cmdName + " <planCode> [datacenter] [quantity] [options]"
+	}
+	// 拒绝把子命令当 planCode
+	if strings.HasPrefix(info.PlanCode, "/") {
+		return "❌ 型号无效: " + info.PlanCode
+	}
+
+	state.Logger.Info(fmt.Sprintf("Telegram /%s: planCode=%s dc=%s qty=%d opts=%v ref=%s",
+		cmdName, info.PlanCode, info.Datacenter, info.Quantity, info.Options, info.AccountRef), "telegram")
+
+	if info.AccountRef != "" {
+		accs, err := resolveAccountRef(state, mon, info.AccountRef, info.PlanCode)
+		if err != "" {
+			return "❌ " + err
+		}
+		return runOrder(state, info, accs)
+	}
+
+	resolved := resolveOrderAccount(state, mon, info.PlanCode)
+	if resolved.Reason != "" {
+		return "❌ " + resolved.Reason
+	}
+	acc := resolved.Account
+	result := telegram.ProcessOrder(state, acc.ID, info.PlanCode, info.Datacenter, info.Quantity, info.Options)
+	if result.Success {
+		dcText := "所有可用机房"
+		if info.Datacenter != "" {
+			dcText = telegram.DisplayDCFull(info.Datacenter)
+		}
+		optsText := "所有可用配置"
+		if len(info.Options) > 0 {
+			optsText = strings.Join(info.Options, ", ")
+		}
+		title := "✅ 已加入抢购队列"
+		if cmdName == "buy" {
+			title = "⚡ 快速下单已入队"
+		}
+		accExplain := explainAccountChoice(resolved, info.PlanCode)
+		return fmt.Sprintf("%s\n\n📦 型号: %s\n📍 机房: %s\n🔢 数量: %d\n⚙️ 配置: %s\n%s\n⏱ 重试间隔: %d 秒\n\n已成功创建 %d/%d 个抢购任务，将按「设置 → 抢购参数」的间隔重试。",
+			title, info.PlanCode, dcText, info.Quantity, optsText, accExplain, state.Config.RetryInterval(), result.CreatedOrders, result.TotalOrders)
+	}
+	return "❌ 任务创建失败\n\n" + result.Message
 }
 
-func statusText(state *app.State, mon *monitor.Monitor) string {
-	var b strings.Builder
-	b.WriteString("📊 当前状态\n\n")
-
-	if mon != nil {
-		subs := mon.Snapshot()
-		running := "已停止"
-		if st, ok := mon.Status()["running"].(bool); ok && st {
-			running = "运行中"
-		}
-		b.WriteString(fmt.Sprintf("监控：%s，%d 个订阅\n", running, len(subs)))
-		// 查不到库存的订阅要单独说 —— 那是监控已经失效但看上去一切正常的状态
-		bad := 0
-		for _, s := range subs {
-			if s.LastCheckError != "" {
-				bad++
-			}
-		}
-		if bad > 0 {
-			b.WriteString(fmt.Sprintf("⚠️ 其中 %d 个订阅最近一次检查失败，发 /subs 看详情\n", bad))
+func cmdMonitor(state *app.State, mon *monitor.Monitor, args []string) string {
+	if mon == nil {
+		return "❌ 监控模块不可用"
+	}
+	if len(args) < 1 || strings.TrimSpace(args[0]) == "" {
+		return "用法: /monitor <planCode> [datacenter...]\n例: /monitor 24ska01\n例: /monitor 24ska01 gra rbx"
+	}
+	// 监控依赖 TG 通知自身
+	if ok, reason := telegram.VerifyConfig(state); !ok {
+		return "❌ Telegram 配置无效: " + reason
+	}
+	planCode := strings.TrimSpace(args[0])
+	dcs := []string{}
+	for _, a := range args[1:] {
+		a = strings.ToLower(strings.TrimSpace(a))
+		if a != "" {
+			dcs = append(dcs, a)
 		}
 	}
 
-	// 当前账户必须在总览里 —— 它决定下单落到哪个区,而选错区的表现只是"抢不到"
-	if acc, explicit := telegram.ActiveAccount(state); acc.ID != "" {
-		b.WriteString("当前账户：" + telegram.AccountLabel(acc))
-		if !explicit {
-			b.WriteString("（默认）")
-		}
-		b.WriteString("\n")
-	}
-
-	pending, running, done, failed := queueCounts(state)
-	b.WriteString(fmt.Sprintf("队列：%d 进行中，%d 等待，%d 成功，%d 失败\n", running, pending, done, failed))
-
-	ok, fail := state.CountPurchase()
-	b.WriteString(fmt.Sprintf("历史：抢到 %d 单，失败 %d 次\n", ok, fail))
-
-	// 未付款的单子最要紧 —— 逾期会自动作废,机器白抢
-	if n, earliest := unpaidOrders(state); n > 0 {
-		b.WriteString(fmt.Sprintf("\n💳 有 %d 单还没付款", n))
-		if earliest != "" {
-			b.WriteString("（最早一单下单于 " + earliest + "）")
-		}
-		b.WriteString("\n逾期未付会自动作废，尽快去 OVH 控制面板付款。\n")
-	}
-
-	if fails := state.LoadFailures(); len(fails) > 0 {
-		names := make([]string, 0, len(fails))
-		for k := range fails {
-			names = append(names, k)
-		}
-		sort.Strings(names)
-		b.WriteString("\n🚨 启动时这些数据没读出来，本次运行不会写它们：" + strings.Join(names, "、") + "\n")
-	}
-	return b.String()
-}
-
-func queueCounts(state *app.State) (pending, running, done, failed int) {
-	state.QueueMu.Lock()
-	defer state.QueueMu.Unlock()
-	for _, it := range state.Queue {
-		switch it.Status {
-		case "running":
-			running++
-		case "pending", "paused":
-			pending++
-		case "completed", "success":
-			done++
-		case "failed":
-			failed++
-		}
-	}
-	return
-}
-
-// unpaidOrders 数一数成功但还没付款的单。
-func unpaidOrders(state *app.State) (int, string) {
-	state.HistoryMu.Lock()
-	defer state.HistoryMu.Unlock()
-	n := 0
-	earliest := ""
-	for _, h := range state.History {
-		if h.Status != "success" || h.OrderID == "" {
-			continue
-		}
-		// delivered / cancelled 是终态,不用再催
-		if h.OrderStatus == "delivered" || h.OrderStatus == "cancelled" {
-			continue
-		}
-		n++
-		if t, ok := types.ParseTS(h.PurchaseTime); ok {
-			s := t.Format("01-02 15:04")
-			if earliest == "" || s < earliest {
-				earliest = s
-			}
-		}
-	}
-	return n, earliest
-}
-
-func queueText(state *app.State) string {
-	state.QueueMu.Lock()
-	items := make([]types.QueueItem, 0, len(state.Queue))
-	for _, it := range state.Queue {
-		if it.Status == "running" || it.Status == "pending" || it.Status == "paused" {
-			items = append(items, it)
-		}
-	}
-	state.QueueMu.Unlock()
-
-	if len(items) == 0 {
-		return "📭 当前没有正在抢的任务。\n\n发 /help 看怎么下单。"
-	}
-	var b strings.Builder
-	b.WriteString(fmt.Sprintf("🛒 正在抢的任务（%d 个）\n\n", len(items)))
-	for i, it := range items {
-		if i >= tgMaxListItems {
-			b.WriteString(fmt.Sprintf("\n…还有 %d 个，完整列表见控制台。\n", len(items)-tgMaxListItems))
+	var serverName string
+	state.ServerPlansMu.RLock()
+	for _, s := range state.ServerPlans {
+		if s.PlanCode == planCode {
+			serverName = s.Name
 			break
 		}
-		dc := it.Datacenter
-		if dc == "" {
-			dc = "任意机房"
-		}
-		b.WriteString(fmt.Sprintf("%d. %s @ %s\n", i+1, it.PlanCode, strings.ToUpper(dc)))
-		b.WriteString(fmt.Sprintf("   状态 %s · 每 %d 秒重试", it.Status,
-			types.ClampRetryInterval(it.RetryInterval, state.Config.RetryInterval())))
-		if it.FailureCount > 0 {
-			b.WriteString(fmt.Sprintf(" · 已失败 %d 次", it.FailureCount))
-		}
-		if acc, ok := state.FindAccount(it.AccountID); ok {
-			b.WriteString(" · " + acc.Name)
-		}
-		b.WriteString("\n   取消：/cancel " + shortID(it.ID) + "\n")
 	}
-	b.WriteString("\n全部取消：/cancel all")
-	return b.String()
+	state.ServerPlansMu.RUnlock()
+
+	mon.AddSubscription(planCode, dcs, true, false, serverName, nil, nil, false, 0, "", false, nil)
+	mon.SaveToDB()
+	if !mon.Running() {
+		mon.Start()
+		state.Logger.Info("Telegram /monitor 添加订阅后自动启动监控", "telegram")
+	}
+
+	dcText := "全部机房"
+	if len(dcs) > 0 {
+		up := make([]string, len(dcs))
+		for i, d := range dcs {
+			up[i] = telegram.DisplayDCFull(d)
+		}
+		dcText = strings.Join(up, "\n  • ")
+	}
+	namePart := planCode
+	if serverName != "" {
+		namePart = planCode + " (" + serverName + ")"
+	}
+	return fmt.Sprintf("✅ 已成功添加库存监控！\n\n📦 型号: %s\n📍 监控机房:\n  • %s\n⚙️ 配置: 全部（多套配置同时补货会各自通知、各自下单）\n\n一旦官方有货上架，Bot 将第一时间向您推送补货通知！", namePart, dcText)
 }
 
-// shortID 任务 ID 是 uuid,在手机上让人照着打完整的不现实。
-// 取前 8 位做前缀匹配 —— 冲突概率极低,真撞上了会让用户用更长的前缀。
-func shortID(id string) string {
-	if len(id) > 8 {
-		return id[:8]
+func cmdPrice(state *app.State, args []string) string {
+	if len(args) < 2 {
+		return "用法: /price <planCode> <datacenter>\n例: /price 24ska01 gra"
 	}
-	return id
+	planCode := strings.TrimSpace(args[0])
+	dc := strings.ToLower(strings.TrimSpace(args[1]))
+	if planCode == "" || dc == "" {
+		return "用法: /price <planCode> <datacenter>\n例: /price 24ska01 gra"
+	}
+	if !state.HasAnyAccount() {
+		return "❌ 未配置任何 OVH 账户"
+	}
+	accountID := telegram.DefaultAccountID(state)
+
+	validDCs, _ := validAndInStockDCs(state, planCode, accountID)
+	if len(validDCs) > 0 {
+		dcSupported := false
+		for _, vd := range validDCs {
+			if vd == dc {
+				dcSupported = true
+				break
+			}
+		}
+		if !dcSupported {
+			var up []string
+			for _, v := range validDCs {
+				up = append(up, telegram.DisplayDC(v))
+			}
+			return fmt.Sprintf("❌ 无法在 %s 查询价格\n\n型号 %s 在该机房未提供（属于区域专用型号）。\n\n该型号支持的数据中心:\n%s\n\n💡 建议命令: /price %s %s",
+				telegram.DisplayDC(dc), planCode, strings.Join(up, "、"), planCode, validDCs[0])
+		}
+	}
+
+	// 尝试取该机房任一有货配置的 options 再询价
+	options := []string{}
+	avail := catalog.CheckServerAvailabilityWithConfigs(state, planCode, accountID)
+	for _, cfg := range avail {
+		if st, ok := cfg.Datacenters[dc]; ok && st != "" && st != "unavailable" && st != "unknown" {
+			if len(cfg.Options) > 0 {
+				options = append([]string{}, cfg.Options...)
+				break
+			}
+		}
+	}
+	// 无货时仍尝试用第一套配置询价（OVH 常允许对无货组合询价）
+	if len(options) == 0 {
+		for _, cfg := range avail {
+			if len(cfg.Options) > 0 {
+				options = append([]string{}, cfg.Options...)
+				break
+			}
+		}
+	}
+
+	result := price.GetInternal(state, accountID, planCode, dc, options)
+	if !result.Success {
+		err := result.Error
+		if err == "" {
+			err = "询价失败"
+		}
+		return "❌ 价格查询失败\n\n" + err
+	}
+
+	var withTax, withoutTax interface{}
+	currency := ""
+	if result.Price != nil {
+		if result.Price.Prices != nil {
+			withTax = result.Price.Prices["withTax"]
+			withoutTax = result.Price.Prices["withoutTax"]
+		}
+	}
+	// 尝试从 items 里找货币
+	optsText := "默认/匹配配置"
+	if len(options) > 0 {
+		optsText = strings.Join(options, ", ")
+	}
+
+	var b strings.Builder
+	b.WriteString("💰 价格查询结果\n\n")
+	b.WriteString("📦 型号: " + planCode + "\n")
+	b.WriteString("📍 机房: " + telegram.DisplayDCFull(dc) + "\n")
+	b.WriteString("⚙️ 配置: " + optsText + "\n")
+	if withTax != nil {
+		b.WriteString(fmt.Sprintf("💵 含税价: %v %s\n", withTax, currency))
+	}
+	if withoutTax != nil {
+		b.WriteString(fmt.Sprintf("💴 未税价: %v %s\n", withoutTax, currency))
+	}
+	if withTax == nil && withoutTax == nil {
+		b.WriteString("（未返回具体金额，请在网页端查看详情）\n")
+	}
+	b.WriteString(fmt.Sprintf("\n💡 立即下单: /buy %s %s", planCode, dc))
+	return b.String()
 }
 
 // intervalText /interval 看或改新建任务的默认重试间隔。
@@ -313,273 +389,257 @@ func intervalText(state *app.State, args []string) string {
 	return fmt.Sprintf("✅ 默认重试间隔已改为 %d 秒（之前 %d 秒）。\n只影响之后新建的任务。", n, cur)
 }
 
-func cancelText(state *app.State, args []string) string {
-	if len(args) == 0 {
-		return "用法：/cancel <任务号> 或 /cancel all\n\n发 /queue 看任务号。"
-	}
-	target := strings.ToLower(strings.TrimSpace(args[0]))
-
-	state.QueueMu.Lock()
-	var matched []int
-	for i := range state.Queue {
-		it := state.Queue[i]
-		if it.Status != "running" && it.Status != "pending" && it.Status != "paused" {
-			continue
-		}
-		if target == "all" || strings.HasPrefix(strings.ToLower(it.ID), target) {
-			matched = append(matched, i)
-		}
-	}
-	if len(matched) == 0 {
-		state.QueueMu.Unlock()
-		return "没找到匹配的进行中任务：" + target + "\n\n发 /queue 看当前任务号。"
-	}
-	if target != "all" && len(matched) > 1 {
-		state.QueueMu.Unlock()
-		return fmt.Sprintf("任务号 %s 匹配到 %d 个任务，太短了。请多打几位。", target, len(matched))
-	}
-	// 倒着删,避免前面的删除把后面的下标挪掉
-	killed := make([]string, 0, len(matched))
-	for i := len(matched) - 1; i >= 0; i-- {
-		idx := matched[i]
-		it := state.Queue[idx]
-		killed = append(killed, it.PlanCode+" @ "+strings.ToUpper(orAny(it.Datacenter)))
-		state.MarkTaskDeleted(it.ID) // 同时取消它正在进行的下单
-		state.Queue = append(state.Queue[:idx], state.Queue[idx+1:]...)
-	}
-	state.QueueMu.Unlock()
-
-	// 落库失败必须说 —— 不说的话用户以为取消了,重启后任务原地复活继续抢
-	if err := state.SaveQueue(); err != nil {
-		state.Logger.Error("Telegram 取消任务后保存队列失败: "+err.Error(), "telegram")
-		return fmt.Sprintf("⚠️ 已从运行中的队列移除 %d 个任务，但没能写进数据库，重启后会重新出现：\n%s",
-			len(killed), err.Error())
-	}
-	state.Logger.Info(fmt.Sprintf("Telegram 取消了 %d 个抢购任务", len(killed)), "telegram")
-
-	var b strings.Builder
-	b.WriteString(fmt.Sprintf("🛑 已取消 %d 个任务\n\n", len(killed)))
-	for i, k := range killed {
-		if i >= tgMaxListItems {
-			b.WriteString(fmt.Sprintf("…还有 %d 个\n", len(killed)-tgMaxListItems))
-			break
-		}
-		b.WriteString("  • " + k + "\n")
-	}
-	return b.String()
-}
-
-func orAny(dc string) string {
-	if dc == "" {
-		return "任意机房"
-	}
-	return dc
-}
-
-// accountsText 列账户 + 让用户切。
-//
-// 返回空串表示已经用按钮自己回复了。
-//
-// 为什么要能切:planCode 是分区的(EU / US / CA 三套目录基本不重合),
-// 用错区的账户下单,OVH 返回的是 200 + 空数组而不是报错 ——
-// 表现就是"永远抢不到",用户完全看不出是账户选错了。
-// 以前 TG 这边连选都不能选,一律落默认账户。
-func accountsText(state *app.State, chatID interface{}, messageID int64) string {
-	accs := listAccounts(state)
-	if len(accs) == 0 {
-		return "还没有配置 OVH 账户。请到控制台「设置 → OVH 账户」添加。"
-	}
-	cur, explicit := telegram.ActiveAccount(state)
-
-	var b strings.Builder
-	b.WriteString("👤 当前账户：" + telegram.AccountLabel(cur))
-	if !explicit {
-		b.WriteString("\n（没单独选过，用的是默认账户）")
-	}
-	b.WriteString("\n\n这个账户决定文本下单和 /watch 落到哪里。\n")
-	b.WriteString("三个大区的机型目录互不相通，同一台机器在不同区的型号代码不一样 ——\n")
-	b.WriteString("选错区的后果是永远抢不到，而且看不出原因。\n")
-
-	if len(accs) == 1 {
-		// 只有一个账户,没什么可切的
-		return b.String()
+// handleTelegramText 统一处理 webhook 普通文本：斜杠命令 / free-form 下单 / 帮助。
+func handleTelegramText(state *app.State, mon *monitor.Monitor, text string, chatID, userID interface{}, messageID float64) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return
 	}
 
-	b.WriteString("\n下单时可以直接指定：\n")
-	for i, a := range accs {
-		b.WriteString(fmt.Sprintf("  [@%d] 或 [@%s]  %s\n", i+1, accountShortName(a), a.Name))
-	}
-	b.WriteString("  [@all]  每个能买的账户各下一单\n")
-	b.WriteString("\n要换默认的就点下面：")
-	f := &watchFlow{Step: stepSwitchAccount, Accounts: accs}
-	tok := putFlow(f)
-	labels := make([]string, 0, len(accs))
-	for _, a := range accs {
-		l := telegram.AccountLabel(a)
-		if a.ID == cur.ID {
-			l = "✅ " + l
-		}
-		labels = append(labels, l)
-	}
-	telegram.SendKeyboard(state, chatID, messageID, b.String(), flowKeyboard(tok, labels))
-	return ""
-}
+	// Chat ID 或 User ID 白名单
+	authorized := telegram.IsAuthorizedActor(state, chatID, userID)
 
-func subsText(state *app.State, mon *monitor.Monitor) string {
-	if mon == nil {
-		return "监控未初始化。"
-	}
-	subs := mon.Snapshot()
-	if len(subs) == 0 {
-		return "📭 还没有监控订阅。到控制台「服务器监控」添加。"
-	}
-	var b strings.Builder
-	b.WriteString(fmt.Sprintf("🔔 监控订阅（%d 个）\n\n", len(subs)))
-	for i, s := range subs {
-		if i >= tgMaxListItems {
-			b.WriteString(fmt.Sprintf("\n…还有 %d 个。\n", len(subs)-tgMaxListItems))
-			break
-		}
-		b.WriteString("  • " + s.PlanCode)
-		if len(s.Datacenters) > 0 {
-			b.WriteString(" @ " + strings.ToUpper(strings.Join(s.Datacenters, "/")))
-		}
-		b.WriteString("\n")
-		// 配置和账户必须列出来 —— 这两件事决定了会不会抢到、以及会下多少单,
-		// 而用户是在几天前点按钮选的,不会记得。
-		if len(s.Options) > 0 {
-			b.WriteString("    配置：" + strings.Join(s.Options, " + ") + "\n")
-		} else {
-			b.WriteString("    配置：全部（每套补货各触发一次）\n")
-		}
-		if s.AutoOrder && s.AutoOrderAccountID != "" {
-			label := s.AutoOrderAccountID
-			if acc, ok := state.FindAccount(s.AutoOrderAccountID); ok {
-				label = acc.Name + "（" + strings.ToUpper(acc.Zone) + "）"
-			}
-			b.WriteString(fmt.Sprintf("    补货自动抢 %d 台 · 账户 %s\n", s.Quantity, label))
-		}
-		// 检查失败要显式说:表现和"一直无货"一模一样,不说用户永远发现不了
-		if s.LastCheckError != "" {
-			b.WriteString("    ⚠️ 最近一次检查失败：" + truncate(s.LastCheckError, 80) + "\n")
-		}
-	}
-	return b.String()
-}
-
-func recentText(state *app.State) string {
-	state.HistoryMu.Lock()
-	n := len(state.History)
-	start := n - tgMaxListItems
-	if start < 0 {
-		start = 0
-	}
-	recent := make([]types.PurchaseHistoryEntry, 0, n-start)
-	for i := n - 1; i >= start; i-- {
-		recent = append(recent, state.History[i])
-	}
-	state.HistoryMu.Unlock()
-
-	if len(recent) == 0 {
-		return "📭 还没有抢购记录。"
-	}
-	var b strings.Builder
-	b.WriteString("📜 最近的抢购结果\n\n")
-	for _, h := range recent {
-		icon := "❌"
-		if h.Status == "success" {
-			icon = "✅"
-		}
-		b.WriteString(icon + " " + h.PlanCode + " @ " + strings.ToUpper(orAny(h.Datacenter)))
-		if t, ok := types.ParseTS(h.PurchaseTime); ok {
-			b.WriteString("  " + t.Format("01-02 15:04"))
-		}
-		b.WriteString("\n")
-		if h.Status == "success" {
-			// 付款状态是这里最该说的一件事:抢到但没付款,逾期就作废了
-			switch h.OrderStatus {
-			case "delivered":
-				b.WriteString("    订单 " + h.OrderID + " · 已交付\n")
-			case "cancelled":
-				b.WriteString("    订单 " + h.OrderID + " · 已取消\n")
-			case "":
-				b.WriteString("    订单 " + h.OrderID + " · ⚠️ 付款状态未知，请去面板确认\n")
-			default:
-				b.WriteString("    订单 " + h.OrderID + " · " + h.OrderStatus + "（未付款会逾期作废）\n")
-			}
-		} else if h.ErrorMessage != nil && *h.ErrorMessage != "" {
-			b.WriteString("    " + truncate(*h.ErrorMessage, 90) + "\n")
-		}
-	}
-	return b.String()
-}
-
-// hasExplicitQuantity 参数里有没有 x<数量>。
-// 有就说明用户很清楚自己要什么,不该再拿按钮打断他。
-func hasExplicitQuantity(args []string) bool {
-	for _, a := range args {
-		a = strings.ToLower(strings.TrimSpace(a))
-		if len(a) > 1 && a[0] == 'x' {
-			if _, err := strconv.Atoi(a[1:]); err == nil {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// dcArgs 从参数里挑出机房代码,忽略其它。
-func dcArgs(args []string) []string {
-	out := []string{}
-	for _, a := range args {
-		a = strings.ToLower(strings.TrimSpace(a))
-		if len(a) >= 3 && len(a) <= 4 && isLowerAlpha(a) {
-			out = append(out, a)
-		}
-	}
-	return out
-}
-
-// dispatchTelegramCommand 处理来自网页端「云下单」执行的斜杠命令。
-func dispatchTelegramCommand(state *app.State, mon *monitor.Monitor, cmd *telegram.BotCommand) string {
+	// 1) 斜杠命令或中文快捷指令
+	cmd := telegram.ParseBotCommand(text)
 	if cmd == nil {
-		return helpText()
+		trimmed := strings.TrimSpace(text)
+		lower := strings.ToLower(trimmed)
+		if lower == "监控" || lower == "监控列表" {
+			cmd = &telegram.BotCommand{Name: "monitor"}
+		} else if lower == "库存" || lower == "查库存" {
+			cmd = &telegram.BotCommand{Name: "stock"}
+		} else if lower == "价格" || lower == "查价格" {
+			cmd = &telegram.BotCommand{Name: "price"}
+		} else if lower == "任务" || lower == "队列" || lower == "任务列表" {
+			cmd = &telegram.BotCommand{Name: "tasks"}
+		} else if lower == "账户" || lower == "账号" || lower == "切换账户" {
+			cmd = &telegram.BotCommand{Name: "accounts"}
+		} else if lower == "买" || lower == "抢" || lower == "下单" {
+			cmd = &telegram.BotCommand{Name: "buy"}
+		} else if strings.HasPrefix(lower, "查库存 ") || strings.HasPrefix(lower, "库存 ") || strings.HasPrefix(lower, "查 ") {
+			fields := strings.Fields(trimmed)
+			if len(fields) > 1 {
+				cmd = &telegram.BotCommand{Name: "stock", Args: fields[1:]}
+			}
+		} else if strings.HasPrefix(lower, "监控 ") {
+			fields := strings.Fields(trimmed)
+			if len(fields) > 1 {
+				cmd = &telegram.BotCommand{Name: "monitor", Args: fields[1:]}
+			}
+		} else if strings.HasPrefix(lower, "查价格 ") || strings.HasPrefix(lower, "价格 ") {
+			fields := strings.Fields(trimmed)
+			if len(fields) > 1 {
+				cmd = &telegram.BotCommand{Name: "price", Args: fields[1:]}
+			}
+		} else if strings.HasPrefix(lower, "买 ") || strings.HasPrefix(lower, "抢 ") || strings.HasPrefix(lower, "下单 ") {
+			fields := strings.Fields(trimmed)
+			if len(fields) > 1 {
+				cmd = &telegram.BotCommand{Name: "buy", Args: fields[1:]}
+			}
+		}
 	}
-	switch cmd.Name {
-	case "start", "help", "h", "?":
-		return helpText()
-	case "watch", "w":
-		return watchText(state, mon, cmd.Args)
-	case "unwatch", "uw":
-		return unwatchText(state, mon, cmd.Args)
-	case "status", "s":
-		return statusText(state, mon)
-	case "queue", "q":
-		return queueText(state)
-	case "cancel":
-		return cancelText(state, cmd.Args)
-	case "interval", "iv":
-		return intervalText(state, cmd.Args)
-	case "accounts", "acc":
-		return accountsText(state, nil, 0)
-	case "subs", "sub":
-		return subsText(state, mon)
-	case "recent", "history":
-		return recentText(state)
-	case "buy", "stock", "price":
-		if len(cmd.Args) == 0 {
-			return "用法: /" + cmd.Name + " <planCode> [datacenter] [quantity] [options]"
+	if cmd != nil {
+		if cmd.Name == "start" || cmd.Name == "help" {
+			markup := telegram.InlineKeyboard([][]map[string]string{
+				{
+					telegram.CallbackButton("⚡ 快速下单", "i:cat:b:root"),
+					telegram.CallbackButton("📥 抢购排队", "i:cat:q:root"),
+				},
+				{
+					telegram.CallbackButton("📦 查询库存", "i:cat:s:root"),
+					telegram.CallbackButton("👀 监控管理", "i:mon:list"),
+				},
+				{
+					telegram.CallbackButton("💰 价格查询", "i:cat:pr:root"),
+					telegram.CallbackButton("📋 抢购任务", "i:Tk:list"),
+				},
+				{
+					telegram.CallbackButton("👤 账户管理", "i:acc:list"),
+				},
+			})
+			_, _ = telegram.SendToChat(state, chatID, telegram.HelpMessage(), markup)
+			return
 		}
-		info := telegram.ParseOrderArgs(cmd.Args)
-		if info == nil {
-			info = &telegram.OrderInfo{PlanCode: strings.TrimSpace(cmd.Args[0])}
+		if !authorized {
+			state.Logger.Warn(fmt.Sprintf("拒绝未授权: chat=%v user=%v cmd=/%s", chatID, userID, cmd.Name), "telegram")
+			telegram.SendReply(state, chatID,
+				"❌ 未授权。请在网页「设置」中配置正确的 Telegram Chat ID，并确保用该会话发消息。",
+				int64(messageID))
+			return
 		}
-		resolved := resolveOrderAccount(state, mon, info.PlanCode)
-		if resolved.Reason != "" {
-			return "❌ " + resolved.Reason
+		if !telegram.IsKnownCommand(cmd.Name) {
+			telegram.SendReply(state, chatID,
+				"❌ 未知命令: /"+cmd.Name+"\n\n"+telegram.HelpMessage(),
+				int64(messageID))
+			return
 		}
-		return runOrder(state, info, []types.OVHAccount{resolved.Account})
-	default:
-		return "❓ 不认识的命令: /" + cmd.Name + "\n\n发 /help 看能用什么。"
+		if cmd.Name == "stock" {
+			if len(cmd.Args) == 0 {
+				startPlanPicker(state, mon, chatID, int64(messageID), "s")
+				return
+			}
+			showStockCardWithButtons(state, mon, chatID, int64(messageID), cmd.Args[0])
+			return
+		}
+		if cmd.Name == "monitor" {
+			if len(cmd.Args) == 0 {
+				showMonitorManager(state, mon, chatID, int64(messageID), false)
+				return
+			}
+			if len(cmd.Args) == 1 {
+				showDCPicker(state, chatID, 0, "m", cmd.Args[0], false)
+				return
+			}
+			// 快捷式: /monitor <型号> <机房...> 立刻建订阅(盯全部配置)。
+			// addon planCode 二三十字符打不出来,所以建完紧跟一排按钮一键改窄。
+			reply := cmdMonitor(state, mon, cmd.Args)
+			telegram.SendReply(state, chatID, reply, int64(messageID))
+			if !strings.HasPrefix(reply, "❌") {
+				offerNarrowConfig(state, chatID, int64(messageID), strings.TrimSpace(cmd.Args[0]))
+			}
+			return
+		}
+		if cmd.Name == "price" {
+			if len(cmd.Args) == 0 {
+				startPlanPicker(state, mon, chatID, int64(messageID), "pr")
+				return
+			}
+			if len(cmd.Args) == 1 {
+				showDCPicker(state, chatID, 0, "pr", cmd.Args[0], false)
+				return
+			}
+			rawPrice := cmdPrice(state, cmd.Args)
+			plan, dc := cmd.Args[0], cmd.Args[1]
+			var markup map[string]interface{}
+			if strings.HasPrefix(rawPrice, "❌") {
+				validDCs, _ := validAndInStockDCs(state, plan, "")
+				var rows [][]map[string]string
+				if len(validDCs) > 0 && validDCs[0] != dc {
+					rows = append(rows, []map[string]string{
+						telegram.CallbackButton("💰 查看 "+telegram.DisplayDC(validDCs[0])+" 价格", "i:D:pr:"+plan+":"+validDCs[0]),
+					})
+				}
+				rows = append(rows, []map[string]string{
+					telegram.CallbackButton("🔙 重新选择机型", "i:cat:pr:root"),
+				})
+				markup = telegram.InlineKeyboard(rows)
+			} else {
+				markup = telegram.InlineKeyboard([][]map[string]string{
+					{
+						telegram.CallbackButton("⚡ "+telegram.DisplayDC(dc)+" 立即开抢", "i:D:b:"+plan+":"+dc),
+						telegram.CallbackButton("👀 监控此型号", "i:M:"+plan),
+					},
+					{
+						telegram.CallbackButton("🔙 重新询价", "i:cat:pr:root"),
+					},
+				})
+			}
+			_, _ = telegram.SendToChat(state, chatID, rawPrice, markup)
+			return
+		}
+		if cmd.Name == "tasks" {
+			showTasks(state, chatID, 0, false)
+			return
+		}
+		if cmd.Name == "accounts" {
+			showAccounts(state, chatID, 0, false)
+			return
+		}
+		if cmd.Name == "buy" || cmd.Name == "queue" {
+			mode := "b"
+			if cmd.Name == "queue" {
+				mode = "q"
+			}
+			if len(cmd.Args) == 0 {
+				startPlanPicker(state, mon, chatID, int64(messageID), mode)
+				return
+			}
+			info := telegram.ParseOrderArgs(cmd.Args)
+			if startTelegramOrder(state, mon, chatID, cmd.Name, info) {
+				return
+			}
+			telegram.SendReply(state, chatID, cmdBuyOrQueueInfo(state, mon, info, cmd.Name), int64(messageID))
+			return
+		}
+		reply := dispatchTelegramCommand(state, mon, cmd)
+		telegram.SendReply(state, chatID, reply, int64(messageID))
+		return
 	}
+
+	// 2) free-form 下单: planCode [dc] [qty] [options]
+	if !authorized {
+		state.Logger.Debug(fmt.Sprintf("忽略未授权消息: chat=%v user=%v", chatID, userID), "telegram")
+		return
+	}
+	orderInfo := telegram.ParseOrderMessage(text)
+	if orderInfo == nil || orderInfo.PlanCode == "" {
+		if strings.EqualFold(text, "help") || text == "?" || text == "帮助" {
+			markup := telegram.InlineKeyboard([][]map[string]string{
+				{
+					telegram.CallbackButton("⚡ 快速下单", "i:cat:b:root"),
+					telegram.CallbackButton("📥 抢购排队", "i:cat:q:root"),
+				},
+				{
+					telegram.CallbackButton("📦 查询库存", "i:cat:s:root"),
+					telegram.CallbackButton("👀 监控管理", "i:mon:list"),
+				},
+				{
+					telegram.CallbackButton("💰 价格查询", "i:cat:pr:root"),
+					telegram.CallbackButton("📋 抢购任务", "i:Tk:list"),
+				},
+				{
+					telegram.CallbackButton("👤 账户管理", "i:acc:list"),
+				},
+			})
+			_, _ = telegram.SendToChat(state, chatID, telegram.HelpMessage(), markup)
+		}
+		// 严格拒绝无法识别的文本（避免误入队）
+		return
+	}
+	if strings.HasPrefix(orderInfo.PlanCode, "/") {
+		telegram.SendReply(state, chatID, "❌ 未知命令\n\n"+telegram.HelpMessage(), int64(messageID))
+		return
+	}
+
+	state.Logger.Info(fmt.Sprintf("解析 free-form 下单: planCode=%s, datacenter=%s, quantity=%d, options=%v, ref=%s",
+		orderInfo.PlanCode, orderInfo.Datacenter, orderInfo.Quantity, orderInfo.Options, orderInfo.AccountRef), "telegram")
+
+	if orderInfo.AccountRef != "" {
+		accs, err := resolveAccountRef(state, mon, orderInfo.AccountRef, orderInfo.PlanCode)
+		if err != "" {
+			telegram.SendReply(state, chatID, "❌ "+err, int64(messageID))
+			return
+		}
+		telegram.SendReply(state, chatID, runOrder(state, orderInfo, accs), int64(messageID))
+		return
+	}
+
+	if startTelegramOrder(state, mon, chatID, "buy", orderInfo) {
+		return
+	}
+
+	resolved := resolveOrderAccount(state, mon, orderInfo.PlanCode)
+	if resolved.Reason != "" {
+		telegram.SendReply(state, chatID, "❌ "+resolved.Reason, int64(messageID))
+		return
+	}
+	acc := resolved.Account
+	result := telegram.ProcessOrder(state, acc.ID, orderInfo.PlanCode, orderInfo.Datacenter, orderInfo.Quantity, orderInfo.Options)
+	var reply string
+	if result.Success {
+		dcText := "自动选择机房"
+		if orderInfo.Datacenter != "" {
+			dcText = telegram.DisplayDCFull(orderInfo.Datacenter)
+		}
+		optsText := "匹配配置"
+		if len(orderInfo.Options) > 0 {
+			optsText = strings.Join(orderInfo.Options, ", ")
+		}
+		accExplain := explainAccountChoice(resolved, orderInfo.PlanCode)
+		reply = fmt.Sprintf("📥 已成功创建 %d/%d 个抢购任务\n\n📦 型号: %s\n📍 机房: %s\n🔢 数量: %d\n⚙️ 配置: %s\n%s\n⏱ 重试间隔: %d 秒\n\n将按「设置 → 抢购参数」的间隔重试。锁单成功≠已付款。",
+			result.CreatedOrders, result.TotalOrders, orderInfo.PlanCode, dcText, telegram.ClampQuantity(orderInfo.Quantity), optsText, accExplain, state.Config.RetryInterval())
+	} else {
+		reply = "❌ 任务创建失败\n\n" + result.Message
+	}
+	telegram.SendReply(state, chatID, reply, int64(messageID))
 }

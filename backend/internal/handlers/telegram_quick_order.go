@@ -132,7 +132,10 @@ func buildTelegramCommandArgs(mode, planCode, dc string, quantity int, options [
 // 单独注册 Bot 命令菜单。
 func RegisterTelegramCommands(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		telegram.RegisterCommands(state)
+		if errMsg := telegram.SetMyCommands(state); errMsg != "" {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": errMsg})
+			return
+		}
 		c.JSON(http.StatusOK, gin.H{"success": true, "message": "Bot 命令菜单已注册"})
 	}
 }

@@ -62,19 +62,10 @@ func emptyAvailabilityReason(state *app.State, accountID, planCode string, acc t
 	return base + fmt.Sprintf("\n\n%s 的目录里有 %s,所以不是区域搞错了,而是这个机型当前在所有机房都没有可售配置。", sub, planCode)
 }
 
-// accountID 由调用方解析好传进来(按 planCode 反推大区,见 handlers.resolveOrderAccount)。
-// 空串 = 退回当前账户 —— 但正常路径不该走到那里:
-// 账户选错的后果是"永远抢不到"且 OVH 不报错,必须在下单前就定死。
 func ProcessOrder(state *app.State, accountID, planCode, datacenter string, quantity int, options []string) OrderResult {
 	if quantity < 1 {
 		quantity = 1
 	}
-	// 用 Telegram 侧当前选中的账户(/accounts 里切),没选过就是默认账户。
-	//
-	// 必须在这里就解析成具体 ID 并写进队列项:以前 QueueItem.AccountID 留空,
-	// 下单时才由 purchase 现取默认账户 —— 中间只要有人改过默认账户(或删掉它),
-	// 这一单就会用另一个账户、另一个区的凭据去下,而可用性/目录判断用的
-	// 还是此刻这个账户的子公司,两边对不上。
 	acc, ok := state.FindAccount(accountID)
 	if !ok {
 		acc, ok = ActiveAccount(state)
@@ -112,38 +103,53 @@ func ProcessOrder(state *app.State, accountID, planCode, datacenter string, quan
 		return OrderResult{Success: false, Message: fmt.Sprintf("未找到匹配的配置（指定选项: %v）", options)}
 	}
 
+	// map 遍历顺序每次都不一样。未指定配置时若直接取「第一个」,
+	// 用户会感觉「选不中指定配置」。按内存/硬盘标签稳定排序后再取。
+	sort.SliceStable(configsToOrder, func(i, j int) bool {
+		ai, aj := configsToOrder[i].data, configsToOrder[j].data
+		li := strings.TrimSpace(ai.Memory + " / " + ai.Storage)
+		lj := strings.TrimSpace(aj.Memory + " / " + aj.Storage)
+		return li < lj
+	})
+	if len(options) == 0 && len(configsToOrder) > 1 {
+		configsToOrder = configsToOrder[:1]
+	}
+
+	allKnownDCs := map[string]struct{}{}
 	availableDCs := map[string]struct{}{}
 	for _, e := range configsToOrder {
 		for dc, status := range e.data.Datacenters {
-			// comingSoon 也会走到这里,但它下不了单;用白名单避免为永远买不到的机型建单
+			allKnownDCs[dc] = struct{}{}
 			if catalog.IsAvailableForOrder(status) {
 				availableDCs[dc] = struct{}{}
 			}
 		}
 	}
-	if len(availableDCs) == 0 {
-		return OrderResult{Success: false, Message: fmt.Sprintf("%s 在账户 %s 可见的所有机房都无货", planCode, accLabel)}
-	}
+
 	dcsToOrder := []string{}
+	targetInStock := false
 	if datacenter != "" {
-		// 用户在 TG 里打的是展示名(比如孟买 mum),OVH 可用性/购物车认的是 API 名(ynm)。
-		// 不转换的话 availableDCs 里永远查不到 mum,回一句"指定机房无货"——
-		// 而 purchase 那边是转换过的,等于同一台机器在两个环节用了两个名字。
 		apiDC := ovh.ConvertDisplayDCToAPIDC(datacenter)
-		if _, ok := availableDCs[apiDC]; !ok {
-			dcs := make([]string, 0, len(availableDCs))
-			for dc := range availableDCs {
-				dcs = append(dcs, dc)
-			}
-			sort.Strings(dcs)
-			return OrderResult{Success: false, Message: fmt.Sprintf(
-				"指定机房 %s 无货(账户 %s 当前有货的机房: %s)",
-				strings.ToUpper(datacenter), accLabel, strings.Join(dcs, ", "))}
-		}
 		dcsToOrder = append(dcsToOrder, apiDC)
+		if _, ok := availableDCs[apiDC]; ok {
+			targetInStock = true
+		}
 	} else {
-		for dc := range availableDCs {
-			dcsToOrder = append(dcsToOrder, dc)
+		// 未显式指定机房：优先取有现货的机房；若全区缺货，则将已知机房加入抢购队列
+		if len(availableDCs) > 0 {
+			targetInStock = true
+			for dc := range availableDCs {
+				dcsToOrder = append(dcsToOrder, dc)
+			}
+		} else {
+			for dc := range allKnownDCs {
+				dcsToOrder = append(dcsToOrder, dc)
+			}
+			if len(dcsToOrder) == 0 {
+				for _, d := range StandardDCs {
+					dcsToOrder = append(dcsToOrder, ovh.ConvertDisplayDCToAPIDC(d))
+				}
+			}
 		}
 	}
 
@@ -164,17 +170,20 @@ func ProcessOrder(state *app.State, accountID, planCode, datacenter string, quan
 		}
 	}
 	ordersToCreate := []types.QueueItem{}
-	state.Logger.Info(fmt.Sprintf("[Telegram下单] 账户=%s, 子公司=%s, planCode=%s", accLabel, sub, planCode), "telegram")
+	state.Logger.Info(fmt.Sprintf("[Telegram下单] 账户=%s, 子公司=%s, planCode=%s, 机房=%v, 现货状态=%v",
+		accLabel, sub, planCode, dcsToOrder, targetInStock), "telegram")
+
 	for _, ce := range configsToOrder {
 		configOptions := append([]string{}, ce.data.Options...)
-		state.Logger.Info(fmt.Sprintf("[Telegram下单] 处理配置: memory=%s, storage=%s, options=%v (数量: %d)",
-			ce.data.Memory, ce.data.Storage, configOptions, len(configOptions)), "telegram")
-		if len(configOptions) == 0 {
-			state.Logger.Warn(fmt.Sprintf("[Telegram下单] ⚠️ 配置选项为空！memory=%s, storage=%s",
-				ce.data.Memory, ce.data.Storage), "telegram")
-		}
 		for _, dc := range dcsToOrder {
-			if status, ok := ce.data.Datacenters[dc]; ok && !catalog.IsAvailableForOrder(status) {
+			// 检查是否已有相同配置的活跃抢购任务
+			if HasActiveDuplicate(state, planCode, dc, configOptions) {
+				state.Logger.Info(fmt.Sprintf("[Telegram下单] 跳过重复活跃任务: %s@%s", planCode, dc), "telegram")
+				continue
+			}
+			// 检查近期是否已成功下单同一配置
+			if RecentSuccessDuplicate(state, planCode, dc, configOptions) {
+				state.Logger.Info(fmt.Sprintf("[Telegram下单] 跳过近期已成功下单的重复任务: %s@%s", planCode, dc), "telegram")
 				continue
 			}
 			for i := 0; i < quantity; i++ {
@@ -194,37 +203,38 @@ func ProcessOrder(state *app.State, accountID, planCode, datacenter string, quan
 					FromTelegram:  true,
 				}
 				ordersToCreate = append(ordersToCreate, item)
-				state.Logger.Debug(fmt.Sprintf("[Telegram下单] 创建订单项: planCode=%s, datacenter=%s, options=%v (ID: %s)",
-					planCode, dc, item.Options, item.ID[:8]), "telegram")
 			}
 		}
 	}
 
-	// 一次加锁批量入队。
-	//
-	// 以前这里是"分批 + 每项一个 goroutine",但每个 goroutine 的全部工作就是
-	// QueueMu.Lock() → append → Unlock():所有并发路径抢的是同一把锁,实际完全串行,
-	// 只是白付了调度和 WaitGroup 的开销。入队是纯内存操作,一次锁全部 append 才是对的。
-	created := len(ordersToCreate)
-	if created > 0 {
-		// 入队 + 落库是一件事:失败时 EnqueueItems 会把这批整体撤回,
-		// 不留"这次能跑但重启就丢"的半成功任务 —— 那种状态看起来完全正常
-		if err := state.EnqueueItems(ordersToCreate, false); err != nil {
-			state.Logger.Error("Telegram 下单后保存队列失败,已撤回: "+err.Error(), "telegram")
-			return OrderResult{
-				Success:     false,
-				TotalOrders: totalOrders,
-				Message: fmt.Sprintf("❌ 任务没能写进数据库，已全部撤回（避免出现重启就消失的假任务）：%s",
-					err.Error()),
-			}
+	if len(ordersToCreate) == 0 {
+		return OrderResult{
+			Success: false,
+			Message: "未创建任务：已存在相同配置的活跃任务或刚刚已成功下单，请勿重复提交",
 		}
-		state.Logger.Info(fmt.Sprintf("已创建 %d/%d 个订单", created, totalOrders), "telegram")
+	}
+
+	createdItems, errMsg := appendAndSave(state, ordersToCreate)
+	if errMsg != "" {
+		return OrderResult{Success: false, Message: errMsg, TotalOrders: totalOrders}
+	}
+	createdIDs := make([]string, 0, len(createdItems))
+	for _, it := range createdItems {
+		createdIDs = append(createdIDs, it.ID)
+	}
+	created := len(createdItems)
+	state.Logger.Info(fmt.Sprintf("订单创建完成: 成功加入队列 %d/%d 个任务", created, totalOrders), "telegram")
+
+	msgSuffix := "（当前有现货，系统将立即尝试结账）"
+	if !targetInStock {
+		msgSuffix = "（目标机房当前缺货，已加入抢购队列，将按设置的间隔重试）"
 	}
 	return OrderResult{
 		Success:       true,
-		Message:       fmt.Sprintf("已创建 %d/%d 个订单(账户 %s)", created, totalOrders, accLabel),
+		Message:       fmt.Sprintf("已创建 %d/%d 个任务(账户 %s)%s", created, totalOrders, accLabel, msgSuffix),
 		TotalOrders:   totalOrders,
 		CreatedOrders: created,
+		ItemIDs:       createdIDs,
 	}
 }
 

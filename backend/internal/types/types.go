@@ -139,6 +139,11 @@ type OVHAccount struct {
 	// (套件顺序被忽略、TLS 1.3 套件不可配、扩展顺序固定),
 	// 所以这里改的是 TLS 版本区间、ALPN/h2、以及 UA 这类头。详见 netfp 包的说明。
 	Fingerprint string `json:"fingerprint,omitempty"`
+
+	CredState          string `json:"credState,omitempty"`          // unverified / verified / invalid / expired (D-01)
+	CredCheckedAt      string `json:"credCheckedAt,omitempty"`
+	CredEvidence       string `json:"credEvidence,omitempty"`
+	VerificationReason string `json:"verificationReason,omitempty"`
 }
 
 // QueueItem 抢购队列项

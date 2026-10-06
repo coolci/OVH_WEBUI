@@ -277,9 +277,8 @@ func main() {
 		api.GET("/telegram/verify", handlers.VerifyTelegram(state))
 
 		// Telegram
-		// 收 update 只有长轮询一条路。这个端点只读状态,给设置页显示"收到没收到"。
-		api.GET("/telegram/poller", handlers.GetTelegramPollerStatus(state))
-		api.GET("/telegram/status", handlers.GetTelegramPollerStatus(state))
+		api.GET("/telegram/status", handlers.TelegramStatus(state))
+		api.GET("/telegram/poller", handlers.TelegramStatus(state))
 		api.POST("/telegram/quick-order", handlers.TelegramQuickOrder(state, mon))
 		api.POST("/telegram/register-commands", handlers.RegisterTelegramCommands(state))
 
@@ -590,13 +589,10 @@ func main() {
 		state.Logger.Warn(fmt.Sprintf(format, args...), "proxy")
 	})
 
-	// 长轮询:配了 Token 就拉起来。
-	// 内部会先 deleteWebhook —— 老版本可能在 Telegram 那边注册过 webhook,
-	// 不摘掉的话 getUpdates 会一直失败。
-	handlers.InitPoller(state, mon)
-	go handlers.StartPollerIfEnabled(state)
-	// 把命令菜单推给 Telegram,用户打 "/" 就能看到能用什么(以前一条都没注册过)
-	go telegram.RegisterCommands(state)
+	// Telegram 长轮询: 统一分发消息、按钮回调与下单向导
+	go telegram.StartPoller(state, func(u map[string]interface{}) {
+		handlers.ProcessTelegramUpdate(state, mon, u)
+	})
 	// 服务器目录走懒加载：访问到且缓存过期时才打 OVH，无后台定时刷新
 
 	// 自动启动监控（如果有订阅）

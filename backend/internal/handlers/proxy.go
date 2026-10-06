@@ -11,7 +11,16 @@ import (
 	"github.com/ovh-webui/server/internal/netfp"
 	"github.com/ovh-webui/server/internal/ovh"
 	"github.com/ovh-webui/server/internal/proxyguard"
+	"github.com/ovh-webui/server/internal/types"
 )
+
+func listAccounts(state *app.State) []types.OVHAccount {
+	state.AccountsMu.RLock()
+	defer state.AccountsMu.RUnlock()
+	out := make([]types.OVHAccount, len(state.Accounts))
+	copy(out, state.Accounts)
+	return out
+}
 
 // TestAccountProxy POST /api/accounts/:id/proxy-test
 //
