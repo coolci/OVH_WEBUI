@@ -195,7 +195,8 @@ func (db *DB) DeleteAccount(id string) error {
 	var wasDefault int
 	if err := tx.Get(&wasDefault, `SELECT is_default FROM ovh_accounts WHERE id = ?`, id); err != nil {
 		if err == sql.ErrNoRows {
-			return fmt.Errorf("account %s not found", id)
+			// 账户已不存在，视为幂等删除成功
+			return nil
 		}
 		return err
 	}

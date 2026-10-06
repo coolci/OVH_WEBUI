@@ -154,7 +154,10 @@ export function useDeleteAccount() {
       qc.invalidateQueries({ queryKey: ["history"] });
       toast.success(i18n.t("hooksMsg.account.deleted"));
     },
-    onError: (e: any) => toast.error(apiMessage(e)),
+    onError: (e: any) => {
+      qc.invalidateQueries({ queryKey: ACCOUNTS_KEY });
+      toast.error(apiMessage(e));
+    },
   });
 }
 
