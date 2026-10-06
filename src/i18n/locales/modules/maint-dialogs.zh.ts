@@ -342,6 +342,18 @@ export const maintDialogsZh = {
       nicLoadFailed: "网卡接口读取失败，请刷新重试",
       nicEmpty: "未发现网卡",
       nicPartialWhat: "网卡接口",
+      lottery: {
+        badge: "中奖",
+        ordered: "订购",
+        tip: "实际交付硬件优于下单时订购的配置\n订购：{{ordered}}\n实配：{{actual}}",
+        bannerTitle: "🎉 恭喜中奖！实际交付硬件优于订购配置",
+        bannerDesc: "{{plan}} 订购配置与机房实配不同：{{items}}",
+        kind: {
+          cpu: "CPU 升级",
+          memory: "内存升级",
+          disk: "硬盘升级",
+        },
+      },
     },
     power: {
       cards: {

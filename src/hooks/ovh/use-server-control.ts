@@ -34,6 +34,23 @@ export interface OwnedServer {
   error?: string;
 }
 
+/** 单项"中奖"明细：实际交付硬件优于下单时订购的配置 */
+export interface HardwareLotteryItem {
+  kind: "cpu" | "memory" | "disk";
+  ordered: string;
+  actual: string;
+}
+
+/** 订购配置 vs 实际硬件比对结果（后端 lottery 字段）。checked=false 表示没拿到订购配置，不做判断 */
+export interface HardwareLottery {
+  checked: boolean;
+  won: boolean;
+  planCode?: string;
+  planName?: string;
+  items: HardwareLotteryItem[];
+  reason?: string;
+}
+
 export interface HardwareInfo {
   processorName: string;
   processorArchitecture: string;
@@ -42,6 +59,8 @@ export interface HardwareInfo {
   memorySize?: { value: number; unit: string };
   diskGroups?: any[];
   expansionCards?: any[];
+  /** 前端拼进来的：后端同一响应里的 lottery 字段 */
+  lottery?: HardwareLottery | null;
 }
 
 export interface ServiceInfo {
@@ -107,7 +126,8 @@ export function useServerHardware(serviceName: string | null) {
     queryKey: qk.serverControl.hardware(serviceName || ""),
     queryFn: async () => {
       const res = await api.get(`/server-control/${serviceName}/hardware`);
-      return (res.data?.hardware || null) as HardwareInfo | null;
+      const hw = (res.data?.hardware || null) as HardwareInfo | null;
+      return hw ? { ...hw, lottery: (res.data?.lottery || null) as HardwareLottery | null } : null;
     },
     enabled: !!serviceName,
   });

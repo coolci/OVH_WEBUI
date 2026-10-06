@@ -347,6 +347,18 @@ const pack: MaintDialogsPack = {
       nicLoadFailed: "Failed to load network interfaces — refresh and retry",
       nicEmpty: "No network interfaces found",
       nicPartialWhat: "network interfaces",
+      lottery: {
+        badge: "Bonus",
+        ordered: "Ordered",
+        tip: "Delivered hardware beats the configuration you ordered\nOrdered: {{ordered}}\nDelivered: {{actual}}",
+        bannerTitle: "🎉 Hardware lottery won! Delivered hardware beats your order",
+        bannerDesc: "{{plan}} differs from the ordered configuration: {{items}}",
+        kind: {
+          cpu: "CPU upgrade",
+          memory: "Memory upgrade",
+          disk: "Storage upgrade",
+        },
+      },
     },
     power: {
       cards: {
