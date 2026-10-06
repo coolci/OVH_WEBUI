@@ -11,16 +11,7 @@ import (
 	"github.com/ovh-webui/server/internal/netfp"
 	"github.com/ovh-webui/server/internal/ovh"
 	"github.com/ovh-webui/server/internal/proxyguard"
-	"github.com/ovh-webui/server/internal/types"
 )
-
-func listAccounts(state *app.State) []types.OVHAccount {
-	state.AccountsMu.RLock()
-	defer state.AccountsMu.RUnlock()
-	out := make([]types.OVHAccount, len(state.Accounts))
-	copy(out, state.Accounts)
-	return out
-}
 
 // TestAccountProxy POST /api/accounts/:id/proxy-test
 //
@@ -37,7 +28,7 @@ func TestAccountProxy(state *app.State) gin.HandlerFunc {
 		id := c.Param("id")
 		acc, ok := state.FindAccount(id)
 		if !ok {
-			c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "账户不存在"})
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "账户不存在", "code": "EE72C3716"})
 			return
 		}
 		prof, warn := netfp.LookupProfile(acc.Fingerprint)
@@ -142,7 +133,7 @@ func CheckAccountProxy(state *app.State) gin.HandlerFunc {
 		id := c.Param("id")
 		acc, ok := state.FindAccount(id)
 		if !ok {
-			c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "账户不存在"})
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "账户不存在", "code": "EE72C3716"})
 			return
 		}
 		prof, warn := netfp.LookupProfile(acc.Fingerprint)

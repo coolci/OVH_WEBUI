@@ -9,17 +9,29 @@ import {
   useUpdateRenewal,
   useUpdateTerminationPolicy,
   type ServiceInfo,
+  terminationLabel,
 } from "@/hooks/use-server-control";
-import { useHideIp, maskSensitive } from "@/hooks/use-hide-ip";
 import { toast } from "sonner";
+import { useTranslation, Trans } from "react-i18next";
+import { errorMessage } from "@/components/common/LoadFailed";
+import { fmtDate } from "@/i18n/format";
 
 type RenewMode = "auto" | "manual" | "delete";
 
-const MODE_OPTIONS: Array<{ value: RenewMode; label: string; desc: string }> = [
-  { value: "auto", label: "自动续费", desc: "到期前 OVH 自动扣款续费" },
-  { value: "manual", label: "手动续费", desc: "到期前需手动付款,不付则服务终止" },
-  { value: "delete", label: "到期终止", desc: "到期日之前照常使用,到期后才销毁" },
+/** 三选一选项表:存文案 key,渲染处 t() */
+const MODE_OPTIONS: Array<{ value: RenewMode; labelKey: string; descKey: string }> = [
+  { value: "auto", labelKey: "maint.renewal.mode.auto", descKey: "maint.renewal.mode.autoDesc" },
+  { value: "manual", labelKey: "maint.renewal.mode.manual", descKey: "maint.renewal.mode.manualDesc" },
+  { value: "delete", labelKey: "maint.renewal.mode.delete", descKey: "maint.renewal.mode.deleteDesc" },
 ];
+
+/** hooks 的 terminationLabel 返回中文;这里按同样的分支派生 i18n key(text/title 成对) */
+const TERM_BASE_BY_ACTION: Record<string, string> = {
+  terminate: "maint.renewal.termTerminateNow",
+  terminateAtEngagementDate: "maint.renewal.termAtEngagement",
+  terminateAtExpirationDate: "maint.renewal.termAtExpiration",
+  deleteAtExpiration: "maint.renewal.termAtExpiration",
+};
 
 /** 用 VPS / dedicated 各自的 update hook 都行,Dialog 只关心 mutation 接口形状 */
 export type RenewalMutation = {
@@ -27,6 +39,8 @@ export type RenewalMutation = {
   isPending: boolean;
 };
 
+/** 终止流程的两步。VPS 和独服的端点不同(/vps-control 与 /server-control),
+ *  所以必须由调用方注入 —— 写死一边会让另一边打到错误的端点上。 */
 export type TerminationMutations = {
   policy: {
     mutateAsync: (vars: { policy: string }) => Promise<any>;
@@ -53,7 +67,11 @@ export function RenewalDialog({
   /** 可选:不传则用 dedicated 的终止端点。VPS 必须传自己的 */
   termination?: TerminationMutations;
 }) {
-  const terminationOn = info.terminationScheduled ?? info.renewalDeleteAtExpiration;
+  const { t } = useTranslation();
+  // 终止状态以 lifecycle.pendingActions 为准(文档指定的读回路径)。
+  // term 还带着"是哪一种终止" —— 立即终止不能显示成到期终止
+  const term = terminationLabel(info);
+  const terminationOn = !!term && !info.terminationStateUnknown;
   const currentMode: RenewMode = terminationOn
     ? "delete"
     : info.renewalType
@@ -61,9 +79,29 @@ export function RenewalDialog({
       : "manual";
   const [mode, setMode] = useState<RenewMode>(currentMode);
   const [period, setPeriod] = useState<number>(info.renewalPeriod || 1);
-  const { hidden } = useHideIp();
   const defaultUpdate = useUpdateRenewal(serviceName);
   const update = mutation ?? defaultUpdate;
+
+  // 展示用的终止状态文案:跟 terminationLabel 同一套分支,但走语言包
+  let termTextKey: string | null = null;
+  let termTitleKey: string | null = null;
+  if (term) {
+    if (info.terminationStateUnknown) {
+      termTextKey = "maint.renewal.termUnknownText";
+      termTitleKey = "maint.renewal.termUnknownTitle";
+    } else {
+      const base = TERM_BASE_BY_ACTION[info.terminationAction || ""] || "maint.renewal.termScheduled";
+      termTextKey = `${base}Text`;
+      termTitleKey = `${base}Title`;
+    }
+  }
+
+  // 到期终止走 PUT /services/{serviceId} 的 terminationPolicy。
+  //
+  // **不要**用 POST /terminate —— 那是「立即终止」,提交后 OVH 当场把服务器暂停,
+  // 并邮件通知「5 天内不付款就彻底清除硬盘数据」。这个坑真实踩过一次。
+  // OVH 的生命周期动作枚举里 terminate 与 terminateAtExpirationDate 是两个不同的动作,
+  // /terminate 端点只对应前者,没有「到期」这个选项可选。
   const defaultPolicy = useUpdateTerminationPolicy(serviceName);
   const policyMut = termination?.policy ?? defaultPolicy;
 
@@ -80,29 +118,30 @@ export function RenewalDialog({
     ? info.possibleRenewPeriod
     : [1, 3, 6, 12];
 
-  const errText = (e: any, fallback: string) =>
-    e?.response?.data?.error || e?.response?.data?.message || e?.message || fallback;
-
   const handleSubmit = async () => {
     if (mode === "delete") {
       try {
         const res = await policyMut.mutateAsync({ policy: "terminateAtExpirationDate" });
-        toast.success(res?.message || "已设为到期终止", { duration: 6000 });
+        toast.success(res?.message || t("maint.renewal.toast.setDelete"), { duration: 6000 });
         onOpenChange(false);
       } catch (e: any) {
-        toast.error(errText(e, "设置失败"), { duration: 8000 });
+        toast.error(errorMessage(e), { duration: 8000 });
       }
       return;
     }
+    // 从「到期终止」切回自动/手动续费时，先把终止策略撤掉，
+    // 否则续费模式改了、终止标记还挂着，到期照样销毁。
     try {
       if (currentMode === "delete") {
         await policyMut.mutateAsync({ policy: "empty" });
       }
       await update.mutateAsync({ mode, period });
-      toast.success(currentMode === "delete" ? "已取消终止并更新续费策略" : "续费策略已更新");
+      toast.success(
+        currentMode === "delete" ? t("maint.renewal.toast.cancelAndUpdated") : t("maint.renewal.toast.updated")
+      );
       onOpenChange(false);
     } catch (e: any) {
-      toast.error(errText(e, "更新失败"), { duration: 6000 });
+      toast.error(errorMessage(e), { duration: 6000 });
     }
   };
 
@@ -114,21 +153,37 @@ export function RenewalDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Repeat className="w-5 h-5" />
-            修改续费策略
+            {t("maint.renewal.title")}
           </DialogTitle>
-          <DialogDescription>{maskSensitive(serviceName, hidden)}</DialogDescription>
+          <DialogDescription>{serviceName}</DialogDescription>
         </DialogHeader>
 
-        {info.renewalForced ? (
-          <div className="border border-amber-500/40 bg-amber-500/10 rounded-xl p-3 flex gap-2.5">
-            <Lock className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+        {term && termTextKey && termTitleKey && (
+          <div
+            className={`rounded-xl p-3 flex gap-2.5 border ${
+              term.danger ? "border-destructive/40 bg-destructive/5" : "border-warning/40 bg-warning/10"
+            }`}
+            title={t(termTitleKey)}
+          >
+            <AlertCircle
+              className={`w-4 h-4 flex-shrink-0 mt-0.5 ${term.danger ? "text-destructive" : "text-warning"}`}
+            />
             <div className="text-[12px]">
-              <p className="font-semibold text-amber-700 dark:text-amber-300 mb-1">
-                合同期内,无法修改
+              <p className="font-semibold mb-0.5">
+                {t("maint.renewal.currentPrefix")}
+                {t(termTextKey)}
               </p>
-              <p className="text-muted-foreground">
-                该服务器处于 OVH 套餐合同期(engaged),续费策略由 OVH 锁定。需要联系 OVH 客服或等合同期结束。
-              </p>
+              <p className="text-muted-foreground">{t(termTitleKey)}</p>
+            </div>
+          </div>
+        )}
+
+        {info.renewalForced ? (
+          <div className="border border-warning/40 bg-warning/10 rounded-xl p-3 flex gap-2.5">
+            <Lock className="w-4 h-4 text-warning flex-shrink-0 mt-0.5" />
+            <div className="text-[12px]">
+              <p className="font-semibold text-warning mb-1">{t("maint.renewal.forcedTitle")}</p>
+              <p className="text-muted-foreground">{t("maint.renewal.forcedDesc")}</p>
             </div>
           </div>
         ) : (
@@ -158,12 +213,14 @@ export function RenewalDialog({
                       >
                         {selected && <div className="w-2 h-2 rounded-full bg-primary" />}
                       </div>
-                      <span className="text-[13px] font-semibold">{opt.label}</span>
+                      <span className="text-[13px] font-semibold">{t(opt.labelKey)}</span>
                       {currentMode === opt.value && (
-                        <span className="ml-auto text-[10px] text-muted-foreground">当前</span>
+                        <span className="ml-auto text-[10px] text-muted-foreground">
+                          {t("maint.renewal.current")}
+                        </span>
                       )}
                     </div>
-                    <p className="text-[11px] text-muted-foreground mt-1 ml-6">{opt.desc}</p>
+                    <p className="text-[11px] text-muted-foreground mt-1 ml-6">{t(opt.descKey)}</p>
                   </button>
                 );
               })}
@@ -172,7 +229,7 @@ export function RenewalDialog({
             {/* 续费周期(到期注销时隐藏) */}
             {mode !== "delete" && (
               <div className="pt-1">
-                <label className="text-[12px] font-semibold block mb-1.5">续费周期</label>
+                <label className="text-[12px] font-semibold block mb-1.5">{t("maint.renewal.periodLabel")}</label>
                 <Select value={String(period)} onValueChange={(v) => setPeriod(Number(v))}>
                   <SelectTrigger className="h-9">
                     <SelectValue />
@@ -180,7 +237,7 @@ export function RenewalDialog({
                   <SelectContent>
                     {periods.map((p) => (
                       <SelectItem key={p} value={String(p)}>
-                        {p} 个月
+                        {t("maint.renewal.monthOption", { n: p })}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -191,9 +248,16 @@ export function RenewalDialog({
             {mode === "delete" && (
               <div className="border border-destructive/40 bg-destructive/5 rounded-xl p-2.5 flex gap-2">
                 <AlertCircle className="w-3.5 h-3.5 text-destructive flex-shrink-0 mt-0.5" />
-                <p className="text-[11px] text-muted-foreground">
-                  设为「到期终止」后,服务器在到期日 ({info.expiration ? new Date(info.expiration).toLocaleDateString("zh-CN") : "—"}) 才会销毁。这不是立即关机。可再改回自动/手动续费来撤销。
-                </p>
+                <div className="text-[11px] text-muted-foreground space-y-1">
+                  <p>
+                    <Trans
+                      i18nKey="maint.renewal.deleteWarn"
+                      values={{ date: info.expiration ? fmtDate(info.expiration) : "—" }}
+                      components={{ b: <b /> }}
+                    />
+                  </p>
+                  <p>{t("maint.renewal.deleteUndo")}</p>
+                </div>
               </div>
             )}
           </div>
@@ -201,15 +265,17 @@ export function RenewalDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            取消
+            {t("common.cancel")}
           </Button>
           {!info.renewalForced && (
             <Button
               onClick={handleSubmit}
-              disabled={busy || (mode === currentMode && period === info.renewalPeriod)}
+              disabled={
+                busy || (mode !== "delete" && mode === currentMode && period === info.renewalPeriod)
+              }
               variant={mode === "delete" ? "destructive" : "default"}
             >
-              {busy ? "提交中…" : "保存"}
+              {busy ? t("maint.renewal.submitting") : t("common.save")}
             </Button>
           )}
         </DialogFooter>

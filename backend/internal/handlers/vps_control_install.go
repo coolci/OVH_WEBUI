@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -16,7 +17,14 @@ import (
 	"github.com/ovh-webui/server/internal/ovh"
 )
 
-// templatesCache 缓存模板列表,key = accountID:serviceName
+// 模板列表缓存(账户 + 服务名 维度)。OVH 模板表基本不变,缓存 10 分钟避免每次开重装对话框都拉一遍。
+// 实测一台 VPS 30+ 模板,每个还要查详情,首次冷加载 5-15 秒;缓存命中后立即返回。
+type templatesCacheEntry struct {
+	list    []gin.H
+	kind    string
+	expires time.Time
+}
+
 var (
 	templatesCacheMu sync.Mutex
 	templatesCache   = map[string]templatesCacheEntry{}
@@ -24,17 +32,14 @@ var (
 
 const templatesCacheTTL = 10 * time.Minute
 
-type templatesCacheEntry struct {
-	list    []gin.H
-	kind    string
-	expires time.Time
-}
-
 // GetVpsCurrentOS GET /api/vps-control/:service_name/current-os
 //
-// 只走 /vps/{name}/images/current(三区都有,BETA)。
-// 旧路 /vps/{name}/distribution 被 OVH 标记废弃、2026-10-15 删除 ——
-// 按约定废弃端点不再调用。
+// 只走 /vps/{name}/images/current(EU/CA/US 三区都有,BETA,返简化 vps.Image)。
+// 旧路 /vps/{name}/distribution(EU/CA,信息更全)已被 OVH 标记废弃、
+// 2026-10-15 删除 —— 按约定废弃端点不再调用。distribution 由 name 推断。
+//
+// 只有 404(OVH 明确说没有当前镜像记录)才降级成 null;限流/鉴权/5xx 必须报出来,
+// 否则重装对话框只是不显示「当前系统」,用户不知道是读失败还是真没有。
 func GetVpsCurrentOS(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		svc := c.Param("service_name")
@@ -43,11 +48,10 @@ func GetVpsCurrentOS(state *app.State) gin.HandlerFunc {
 			noOVHResp(c)
 			return
 		}
-
 		var img map[string]interface{}
 		if err := client.Get("/vps/"+svc+"/images/current", &img); err != nil {
-			if ovhIsGone(err) {
-				c.JSON(http.StatusOK, gin.H{"success": true, "currentOS": nil, "removed": true})
+			if ovhIsNotFound(err) {
+				c.JSON(http.StatusOK, gin.H{"success": true, "currentOS": nil})
 				return
 			}
 			state.Logger.Error("VPS "+svc+" 读取当前系统失败: "+err.Error(), "vps_control")
@@ -73,7 +77,7 @@ func GetVpsCurrentOS(state *app.State) gin.HandlerFunc {
 //
 // 只走 /vps/{name}/images/available(string[] imageId,三区都有,BETA)。
 // 旧路 /vps/{name}/templates(EU/CA,long[] templateId)被 OVH 标记废弃、
-// 2026-10-15 删除 —— 按约定废弃端点不再调用,"先试旧的再退"都不留。
+// 2026-10-15 删除 —— 按约定废弃端点不再调用,连"先试旧的再退"都不留。
 // 统一返回 { id, name, distribution, bitFormat, locale, availableLanguage, kind },
 // kind 恒为 "imageId",字段保留是为了前端兼容旧响应结构。
 //
@@ -84,7 +88,7 @@ func GetVpsTemplates(state *app.State) gin.HandlerFunc {
 		acc, _ := ovhAccountFor(state, c)
 		cacheKey := acc.ID + ":" + svc
 
-		// 命中缓存直接走
+		// 命中缓存直接返
 		templatesCacheMu.Lock()
 		if entry, ok := templatesCache[cacheKey]; ok && time.Now().Before(entry.expires) {
 			list, kind := entry.list, entry.kind
@@ -116,16 +120,16 @@ func GetVpsTemplates(state *app.State) gin.HandlerFunc {
 //
 // 30+ 个模板用 10 并发打 OVH,一次瞬时 429 就可能让详情全挂。以前失败位被静默跳过,
 // 空列表照样按 10 分钟 TTL 写进缓存,前端显示「账户没有模板」且刷新无效 —— 必须区分开:
-//   - 全挂(拿到了 id 却一条详情都没有)返 500,让用户知道是读失败、可以立刻重试
-//   - 部分挂:照常返回,但不写缓存,免得残缺列表被钉住 10 分钟
+//   - 全挂(拿到了 id 却一条详情都没有)→ 500,让用户知道是读失败,可以立刻重试
+//   - 部分挂 → 照常返回,但不写缓存,免得残缺列表被钉死 10 分钟
 func respondTemplates(state *app.State, c *gin.Context, cacheKey, svc string, list []gin.H, failed, total int, kind string) {
 	// images 分支详情失败时会用 id 兜底出一条记录,所以不能只看 len(list)==0,
 	// 还要看失败数是不是把 total 吃满了 —— 那种「一列裸 id」的列表同样是读失败,不是真实模板表。
 	if total > 0 && (len(list) == 0 || failed == total) {
-		state.Logger.Error(fmt.Sprintf("VPS %s 模板详情全部拉取失败(%d 条)", svc, total), "vps_control")
+		state.Logger.Error(fmt.Sprintf("VPS %s 模板详情全部拉取失败(%d 个)", svc, total), "vps_control")
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
-			"error":   "读取系统模板详情失败(可能被 OVH 限流),请稍后重试",
+			"error":   "读取系统模板详情失败(可能被 OVH 限流),请稍后重试", "code": "E0A5160F2",
 		})
 		return
 	}
@@ -184,8 +188,11 @@ func cacheTemplates(key string, list []gin.H, kind string) {
 	templatesCacheMu.Unlock()
 }
 
+// (buildEuTemplateList 已删:它拉的 /vps/{sn}/templates/{id} 与列表端点同批
+//  DEPRECATED(2026-10-15 删除),按约定废弃端点不再调用。)
+
 // buildUsImageList /images/available 分支(三区共用,不只美区)。vps.Image 只有 { id, name },
-// 从 name 推断 distribution。10 并发拉。
+// 从 name 推断 distribution。10 并发。
 // 详情失败时用 id 兜底 name(列表仍可用),但失败个数要返回给调用方,失败就不写缓存。
 func buildUsImageList(client *ovhsdk.Client, svc string, ids []string) ([]gin.H, int) {
 	paths := make([]string, len(ids))
@@ -215,6 +222,8 @@ func buildUsImageList(client *ovhsdk.Client, svc string, ids []string) ([]gin.H,
 	return sortTemplatesByDistribution(list), failed
 }
 
+// (assembleAndSortTemplates 已删:只被 buildEuTemplateList 用,随它一起退役。)
+
 // inferDistributionFromName 从 image name 推 distribution(US Image 没单独字段)
 func inferDistributionFromName(name string) string {
 	lc := strings.ToLower(name)
@@ -226,7 +235,7 @@ func inferDistributionFromName(name string) string {
 	return ""
 }
 
-// sortTemplatesByDistribution 把 debian / ubuntu / centos 等常见 distro 排前面
+// sortTemplatesByDistribution 把 debian / ubuntu / centos 等常用 distro 排前面
 func sortTemplatesByDistribution(list []gin.H) []gin.H {
 	priority := []string{"debian", "ubuntu", "centos", "rocky", "almalinux", "windows"}
 	getPriority := func(t gin.H) int {
@@ -267,32 +276,27 @@ func ReinstallVps(state *app.State) gin.HandlerFunc {
 		acc, _ := ovhAccountFor(state, c)
 
 		var body struct {
-			ImageID           interface{} `json:"imageId"`
-			TemplateID        interface{} `json:"templateId"` // 兼容旧字段名;语义是 imageId(string)
+			TemplateID        interface{} `json:"templateId"` // 兼容旧字段名;语义是 imageId(string),数字会被转成字符串
 			SSHKey            []string    `json:"sshKey"`
 			DoNotSendPassword bool        `json:"doNotSendPassword"`
 		}
 		_ = c.ShouldBindJSON(&body)
-		rawID := body.ImageID
-		if rawID == nil {
-			rawID = body.TemplateID
-		}
-		if rawID == nil {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少 imageId (或 templateId)"})
+		if body.TemplateID == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少 templateId", "code": "EBC5B68EC"})
 			return
 		}
 
 		// imageId 必须是 string;数字(旧缓存)转字符串
-		imageID, ok := rawID.(string)
+		imageID, ok := body.TemplateID.(string)
 		if !ok {
-			if tid, isNum := numconv.ToInt64(rawID); isNum {
+			if tid, isNum := numconv.ToInt64(body.TemplateID); isNum {
 				imageID = strconv.FormatInt(tid, 10)
 			} else {
-				imageID = fmt.Sprintf("%v", rawID)
+				imageID = fmt.Sprintf("%v", body.TemplateID)
 			}
 		}
 		if imageID == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "imageId 不能为空"})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "templateId 不能为空", "code": "E15AC7F4B"})
 			return
 		}
 		// sshKey 在 vps.rebuild.post 里是单个 string(key 名),不是数组;language /
@@ -305,6 +309,14 @@ func ReinstallVps(state *app.State) gin.HandlerFunc {
 		if len(body.SSHKey) > 0 {
 			params["sshKey"] = body.SSHKey[0]
 		}
+		// 与独服 InstallOS 同款 per-service 锁:重装连点在 OVH 侧撞任务冲突,
+		// 第二发显示"失败"而重装其实已开跑 —— 用户极易再点第三次
+		mu, ok := acquireInstallLock("vps:" + svc)
+		if !ok {
+			c.JSON(http.StatusConflict, gin.H{"success": false, "error": "该 VPS 已有重装任务正在执行,请等待完成后再试(进度看任务历史)", "code": "EF9E440A0"})
+			return
+		}
+		defer mu.Unlock()
 		var task map[string]interface{}
 		if err := client.Post("/vps/"+svc+"/rebuild", params, &task); err != nil {
 			state.Logger.Error("VPS "+svc+" rebuild 失败: "+err.Error(), "vps_control")
@@ -312,11 +324,12 @@ func ReinstallVps(state *app.State) gin.HandlerFunc {
 			return
 		}
 		state.Logger.Info(fmt.Sprintf("VPS %s rebuild 任务已创建: imageId=%s (endpoint=%s)", svc, imageID, acc.Endpoint), "vps_control")
-		c.JSON(http.StatusOK, gin.H{"success": true, "message": "重装任务已创建", "task": task})
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "重装任务已创建", "code": "E2CF344EE", "task": task})
 	}
 }
 
 // GetVpsTasks GET /api/vps-control/:service_name/tasks
+// /vps/{name}/tasks 返回 long[](taskId 数组),每个 /tasks/{id} 是 vps.Task
 func GetVpsTasks(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		svc := c.Param("service_name")
@@ -331,38 +344,49 @@ func GetVpsTasks(state *app.State) gin.HandlerFunc {
 			return
 		}
 		// schema 只承诺 long[],对顺序没有任何约定。以前直接取切片尾部 10 个当「最近」,
-		// 但 OVH 的 id 并非单调递增(有时新任务 id 偏小),倒序取会把真正的最近任务漏掉。
-		// 正确做法:全量 id 按数字降序排,前 10 个才是真正的最近 10 个。
-		sorted := make([]int64, len(ids))
-		copy(sorted, ids)
-		for i := 1; i < len(sorted); i++ {
-			for j := i; j > 0 && sorted[j] > sorted[j-1]; j-- {
-				sorted[j], sorted[j-1] = sorted[j-1], sorted[j]
-			}
+		// 一旦 OVH 按倒序返回,用户看到的就是最早的 10 条。这里自己按 taskId 降序排,不依赖未定义行为。
+		sort.Slice(ids, func(i, j int) bool { return ids[i] > ids[j] })
+		recent := ids
+		if len(recent) > 10 {
+			recent = recent[:10]
 		}
-		if len(sorted) > 10 {
-			sorted = sorted[:10]
+		// 取完「id 最大的 10 条」之后再翻回升序(旧→新)输出:
+		// 前端 VpsTasksDialog.tsx 拿到数组后自己 .reverse() 才渲染,契约就是后端给升序。
+		// 直接返回降序会被前端再翻一次,最新任务掉到列表最底部(刚提交重装时第一眼看不到)。
+		for i, j := 0, len(recent)-1; i < j; i, j = i+1, j-1 {
+			recent[i], recent[j] = recent[j], recent[i]
 		}
-		keys := make([]interface{}, len(sorted))
-		for i, id := range sorted {
+		keys := make([]interface{}, len(recent))
+		for i, id := range recent {
 			keys[i] = id
 		}
-		pathFn := func(k interface{}) string {
+		details := parallelGetDetails(client, keys, func(k interface{}) string {
 			return fmt.Sprintf("/vps/%s/tasks/%v", svc, k)
-		}
-		// 并发拉取最近 10 条任务详情
-		details := parallelGetDetails(client, keys, pathFn, 5)
-		list := []map[string]interface{}{}
-		for _, d := range details {
-			if d != nil {
-				list = append(list, d)
+		}, 10)
+		tasks := []gin.H{}
+		for i, id := range recent {
+			d := details[i]
+			if d == nil {
+				continue
 			}
+			progress := 0
+			if v, ok := numconv.ToInt64(d["progress"]); ok {
+				progress = int(v)
+			}
+			tasks = append(tasks, gin.H{
+				"id":       id,
+				"type":     valueOr(d, "type", ""),
+				"state":    valueOr(d, "state", "unknown"),
+				"date":     valueOr(d, "date", ""),
+				"progress": progress,
+			})
 		}
-		c.JSON(http.StatusOK, gin.H{"success": true, "tasks": list, "total": len(ids)})
+		c.JSON(http.StatusOK, gin.H{"success": true, "tasks": tasks, "total": len(tasks)})
 	}
 }
 
 // GetVpsTaskDetail GET /api/vps-control/:service_name/tasks/:task_id
+// 用于轮询单个任务进度
 func GetVpsTaskDetail(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		svc := c.Param("service_name")

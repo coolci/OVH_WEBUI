@@ -3,7 +3,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/common/Skeleton";
 import { EmptyState } from "@/components/common/EmptyState";
+import { LoadFailed } from "@/components/common/LoadFailed";
 import { useServerBiosSettings } from "@/hooks/use-server-control";
+import { useTranslation } from "react-i18next";
 
 /** BIOS 设置查看（含 SGX 子项；只读，旧前端也是只读展示） */
 export function BiosDialog({
@@ -16,6 +18,7 @@ export function BiosDialog({
   onOpenChange: (v: boolean) => void;
 }) {
   const q = useServerBiosSettings(serviceName, open);
+  const { t } = useTranslation();
   const settings = q.data?.settings || {};
   const sgx = q.data?.sgx;
   const keys = Object.keys(settings).filter((k) => k !== "success" && k !== "sgx");
@@ -26,16 +29,21 @@ export function BiosDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Cog className="w-5 h-5" />
-            BIOS 设置
+            {t("ctrl.bios.title")}
           </DialogTitle>
-          <DialogDescription>当前 BIOS 配置（只读）。如需调整请通过 OVH 工单流程。</DialogDescription>
+          <DialogDescription>{t("ctrl.bios.desc")}</DialogDescription>
         </DialogHeader>
 
         <div className="overflow-y-auto -mx-6 px-6 space-y-4">
           {q.isPending ? (
             <Skeleton className="h-40 rounded-2xl" />
+          ) : q.isError ? (
+            // hook 里以前把所有异常吞成 {},这里就永远只显示「未获取到 BIOS 设置」——
+            // 和"这个机型确实不暴露 BIOS"完全无法区分。现在 hook 只对 404/501 返回空对象
+            // (那才是业务事实),其余错误抛出来走这条分支。
+            <LoadFailed icon={Cog} title={t("ctrl.bios.loadFailed")} error={q.error} onRetry={() => q.refetch()} />
           ) : keys.length === 0 && !sgx ? (
-            <EmptyState icon={Cog} title="未获取到 BIOS 设置" />
+            <EmptyState icon={Cog} title={t("ctrl.bios.empty")} />
           ) : (
             <>
               {keys.length > 0 && (
@@ -75,10 +83,10 @@ export function BiosDialog({
         <DialogFooter>
           <Button variant="outline" onClick={() => q.refetch()} disabled={q.isFetching}>
             <RefreshCw className={`w-3.5 h-3.5 mr-1 ${q.isFetching ? "animate-spin" : ""}`} />
-            刷新
+            {t("common.refresh")}
           </Button>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            关闭
+            {t("common.close")}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -101,7 +101,10 @@ type Subscription struct {
 	Quantity           int               `json:"quantity,omitempty"`
 	AutoOrderAccountID string            `json:"autoOrderAccountId,omitempty"` // 空 = 触发时只通知不下单
 	AutoPay            bool              `json:"autoPay,omitempty"`            // 下单后自动付款(显式开关,默认关)
-	Options            []string          `json:"options,omitempty"`            // 硬件配置选配 (空 = 全部配置)
+	// Options 只盯这套配置。空 = 全部配置(老行为)。
+	// 一个 planCode 底下常有好几套内存/存储组合,而通知和自动下单是按配置逐套触发的,
+	// "自动抢 1 台"在三套配置同时补货时会下三次单(再乘机房数)。
+	Options []string `json:"options,omitempty"`
 
 	// —— 本轮可用性查询的诊断信息 ——
 	// 只存内存、不落库(每轮检查都会重算,持久化没有意义)。
@@ -145,6 +148,7 @@ func (s *Subscription) checkConfig() subCheckConfig {
 	copy(opts, s.Options)
 	return subCheckConfig{
 		Datacenters:        dcs,
+		Options:            opts,
 		NotifyAvailable:    s.NotifyAvailable,
 		NotifyUnavailable:  s.NotifyUnavailable,
 		ServerName:         s.ServerName,
@@ -152,7 +156,6 @@ func (s *Subscription) checkConfig() subCheckConfig {
 		Quantity:           s.Quantity,
 		AutoOrderAccountID: s.AutoOrderAccountID,
 		AutoPay:            s.AutoPay,
-		Options:            opts,
 	}
 }
 
@@ -167,8 +170,17 @@ func (s *Subscription) beginCheck(at, accountID, region, subsidiary string) (pre
 	s.LastCheckAccountID = accountID
 	s.LastCheckRegion = region
 	s.LastCheckSubsidiary = subsidiary
-	s.LastCheckError = ""
+	// 不在这里清 LastCheckError(issue #2):清了之后,"已恢复"的判定会在
+	// 真正查到库存之前发生 —— 持续失败的型号每轮都先报恢复再报同样的错,
+	// 日志刷屏且状态自相矛盾。恢复只在成功拿到库存后由 clearCheckError 记录。
 	return prevErr
+}
+
+// clearCheckError 本轮真正成功获取库存后调用,并记一条恢复日志。
+func (s *Subscription) clearCheckError() {
+	s.mu.Lock()
+	s.LastCheckError = ""
+	s.mu.Unlock()
 }
 
 func (s *Subscription) setCheckError(msg string) {
@@ -240,6 +252,7 @@ func (s *Subscription) snapshot() *Subscription {
 	return &Subscription{
 		PlanCode:           s.PlanCode,
 		Datacenters:        dcs,
+		Options:            opts,
 		NotifyAvailable:    s.NotifyAvailable,
 		NotifyUnavailable:  s.NotifyUnavailable,
 		LastStatus:         last,
@@ -250,7 +263,6 @@ func (s *Subscription) snapshot() *Subscription {
 		Quantity:           s.Quantity,
 		AutoOrderAccountID: s.AutoOrderAccountID,
 		AutoPay:            s.AutoPay,
-		Options:            opts,
 
 		LastCheckAt:         s.LastCheckAt,
 		LastCheckAccountID:  s.LastCheckAccountID,

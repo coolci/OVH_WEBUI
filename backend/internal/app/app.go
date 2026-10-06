@@ -139,23 +139,37 @@ type State struct {
 	DeletedTaskIDs   map[string]struct{}
 
 	// 正在跑 PurchaseServer 的任务 → 取消函数。
-	// DeletedTaskIDs 只是标记,不 cancel 的话这一轮 OVH 调用(含结账)会跑完。
+	// DeletedTaskIDs 只是个标记,处理器要到下一轮才会看它;而一轮下单链路有 10 次
+	// OVH 调用、每次最长 60s。用户删任务的那一刻如果链路正跑到一半,这里的 cancel
+	// 让正在进行的 HTTP 调用立刻中断,而不是把这一轮跑完 —— 包括结账。
 	taskCancelMu sync.Mutex
 	taskCancel   map[string]context.CancelFunc
 
-	VPSSubsMu        sync.Mutex
+	VPSSubsMu sync.Mutex
+
+	// 保存串行化锁。Save* 是"快照 + 全表覆盖",两个并发保存里
+	// 晚拍快照的可能先落库,把新数据覆盖掉 —— 必须让"拍快照到写完"整段串行。
+	// 和上面那些数据锁分开:数据锁保护内存读写(要短),这些保护落库顺序(会持有到 IO 结束)。
+	saveQueueMu   sync.Mutex
+	saveHistoryMu sync.Mutex
+	saveServersMu sync.Mutex
+
+	// 启动时哪张表没读出来。
+	//
+	// Save* 全是"DELETE 整表 + 重新 INSERT 内存快照"。LoadAll 读失败时只记了条日志,
+	// 内存留空,于是**第一次保存就把那张表整个抹了** —— 加一列忘了同步结构体、
+	// 库文件被别的进程锁住、磁盘临时 IO 错,任何一种都够把用户全部抢购历史/队列
+	// 永久删掉,而且删得静悄悄。
+	//
+	// 所以:读失败的表一律禁止再写。宁可这次运行不落库,也不能拿空内存去覆盖磁盘上
+	// 那份还完好的数据。用户重启一次(或修好 schema)就能恢复。
+	loadFailedMu     sync.RWMutex
+	loadFailed       map[string]string
 	VPSSubscriptions []types.VPSSubscription
 	VPSCheckInterval int
 
 	MonitorRunning        bool
 	QueueProcessorRunning bool
-
-	loadFailedMu sync.RWMutex
-	loadFailed   map[string]string
-
-	saveHistoryMu sync.Mutex
-	saveQueueMu   sync.Mutex
-	saveServersMu sync.Mutex
 
 	// onProxyError 代理故障回调,由 main 接到 proxyguard。
 	onProxyError func(accountID string, err error)
@@ -248,9 +262,7 @@ func (s *State) ReloadAccounts() error {
 	}
 	s.Accounts = accs
 	s.AccountsMu.Unlock()
-	if s.OVH != nil {
-		s.OVH.InvalidateAll()
-	}
+	s.OVH.InvalidateAll()
 	return nil
 }
 
@@ -268,7 +280,7 @@ func (s *State) LoadAll() {
 		s.AccountsMu.Unlock()
 		s.Logger.Info("已加载 OVH 账户: "+intStr(len(accs))+" 个", "system")
 	} else {
-		s.Logger.Error("load accounts: "+err.Error(), "system")
+		s.MarkLoadFailed("ovh_accounts", err)
 	}
 
 	// queue
@@ -371,6 +383,33 @@ func (s *State) CountPurchase() (success, failed int) {
 	return
 }
 
+// Save* 系列都是"拍内存快照 → 全表 DELETE+INSERT"。
+//
+// 快照和写库必须在同一把锁里,否则并发调用会丢数据:
+// A 拍快照(60 条)→ B 拍快照(59 条)→ B 先写库 → A 后写库,
+// 库里最后是 A 那份也就罢了 —— 真实情况是 goroutine 调度随机,
+// 晚拍的快照经常先落库,新数据被旧快照整表覆盖。
+//
+// 实测(internal/app 的并发测试):一边追加 60 条历史一边并发触发保存,
+// 库里最后只剩 19~35 条,丢一半以上。而代码里有八处 `go state.SaveHistory()`
+// 是 fire-and-forget 调用的,批量抢购时会同时触发 —— 抢到的订单记录
+// 就这么没了,重启后历史里查无此单。
+//
+// 每类数据一把独立的保存锁:历史和队列互不阻塞。
+// 注意这把锁必须包住整个"快照+写库",而不只是写库。
+func (s *State) SaveQueue() error {
+	if err := s.SaveBlocked("queue"); err != nil {
+		return err
+	}
+	s.saveQueueMu.Lock()
+	defer s.saveQueueMu.Unlock()
+	s.QueueMu.Lock()
+	cp := make([]types.QueueItem, len(s.Queue))
+	copy(cp, s.Queue)
+	s.QueueMu.Unlock()
+	return s.DB.ReplaceQueue(cp)
+}
+
 // MarkLoadFailed 记下某张表启动时没读出来,之后禁止覆盖写它。
 func (s *State) MarkLoadFailed(table string, err error) {
 	s.loadFailedMu.Lock()
@@ -408,49 +447,10 @@ func (s *State) LoadFailures() map[string]string {
 }
 
 // MarkTaskDeleted 标记任务已删除,并取消它正在进行的下单(如果有)。
-func (s *State) MarkTaskDeleted(id string) {
-	s.DeletedTaskIDsMu.Lock()
-	s.DeletedTaskIDs[id] = struct{}{}
-	s.DeletedTaskIDsMu.Unlock()
-
-	s.taskCancelMu.Lock()
-	cancel := s.taskCancel[id]
-	delete(s.taskCancel, id)
-	s.taskCancelMu.Unlock()
-	if cancel != nil {
-		cancel()
-	}
-}
-
-// IsTaskDeleted 任务是否已被标记删除。
-func (s *State) IsTaskDeleted(id string) bool {
-	s.DeletedTaskIDsMu.Lock()
-	defer s.DeletedTaskIDsMu.Unlock()
-	_, ok := s.DeletedTaskIDs[id]
-	return ok
-}
-
-// RegisterTaskCancel 登记一个任务这一轮下单的取消函数。
-func (s *State) RegisterTaskCancel(id string, cancel context.CancelFunc) {
-	s.taskCancelMu.Lock()
-	if s.taskCancel == nil {
-		s.taskCancel = make(map[string]context.CancelFunc)
-	}
-	s.taskCancel[id] = cancel
-	s.taskCancelMu.Unlock()
-}
-
-// UnregisterTaskCancel 一轮下单结束后注销并释放 ctx。
-func (s *State) UnregisterTaskCancel(id string) {
-	s.taskCancelMu.Lock()
-	cancel := s.taskCancel[id]
-	delete(s.taskCancel, id)
-	s.taskCancelMu.Unlock()
-	if cancel != nil {
-		cancel()
-	}
-}
-
+//
+// 所有删任务的入口(网页删单个 / 清空、TG /cancel、处理器复核)都必须走这里。
+// 只写 DeletedTaskIDs 不调 cancel 的话,PurchaseServer 会把这一轮跑完 —— 包括结账:
+// 用户在"有货"通知弹出后两秒内点了删除,单照样下出去。
 // EnqueueItems 入队并落库。失败时把这批从内存里撤回,再把错返回给调用方。
 //
 // 四条入队路径(网页新建 / 快速下单 / TG 一键按钮 / TG 文本下单)以前各写各的,
@@ -467,14 +467,21 @@ func (s *State) EnqueueItems(items []types.QueueItem, prepend bool) error {
 	if len(items) == 0 {
 		return nil
 	}
-	if len(items) > types.MaxOrderFanout {
-		return fmt.Errorf("单次入队任务数超出上限 %d (尝试入队 %d)", types.MaxOrderFanout, len(items))
-	}
 	s.QueueMu.Lock()
-	if len(s.Queue)+len(items) > types.MaxQueueSize {
-		cur := len(s.Queue)
+	// 队列总量闸门。放在这里是因为四条入队路径(网页新建 / 快速下单 / TG 文本下单 /
+	// 监控自动下单)全都汇到这个函数 —— 加一次就都受保护。
+	//
+	// 要防的是"多打一个数字"这种事:网页端建任务的循环没有上界,
+	// 数量填 9999 × 5 个机房 = 近 5 万条任务,而每一条都是一次真实下单尝试。
+	// 正常用法离 MaxQueueItems 很远,撞上它基本可以断定是填错了。
+	if len(s.Queue)+len(items) > types.MaxQueueItems {
+		have, want := len(s.Queue), len(items)
 		s.QueueMu.Unlock()
-		return fmt.Errorf("队列容量超出上限 %d (当前 %d，尝试新增 %d)", types.MaxQueueSize, cur, len(items))
+		return fmt.Errorf(
+			"队列里已有 %d 条任务,这次还要加 %d 条,会超过上限 %d。"+
+				"每条任务都是一次真实的下单尝试 —— 请先确认数量没填错,"+
+				"或到队列页清理掉不需要的任务",
+			have, want, types.MaxQueueItems)
 	}
 	if prepend {
 		s.Queue = append(append([]types.QueueItem{}, items...), s.Queue...)
@@ -503,18 +510,51 @@ func (s *State) EnqueueItems(items []types.QueueItem, prepend bool) error {
 	return nil
 }
 
-// SaveQueue 把内存中 Queue 整表覆盖写入 SQLite
-func (s *State) SaveQueue() error {
-	if err := s.SaveBlocked("queue"); err != nil {
-		return err
+func (s *State) MarkTaskDeleted(id string) {
+	s.DeletedTaskIDsMu.Lock()
+	s.DeletedTaskIDs[id] = struct{}{}
+	s.DeletedTaskIDsMu.Unlock()
+
+	s.taskCancelMu.Lock()
+	cancel := s.taskCancel[id]
+	delete(s.taskCancel, id)
+	s.taskCancelMu.Unlock()
+	if cancel != nil {
+		cancel()
 	}
-	s.saveQueueMu.Lock()
-	defer s.saveQueueMu.Unlock()
-	s.QueueMu.Lock()
-	cp := make([]types.QueueItem, len(s.Queue))
-	copy(cp, s.Queue)
-	s.QueueMu.Unlock()
-	return s.DB.ReplaceQueue(cp)
+}
+
+// IsTaskDeleted 任务是否已被标记删除。
+func (s *State) IsTaskDeleted(id string) bool {
+	s.DeletedTaskIDsMu.Lock()
+	defer s.DeletedTaskIDsMu.Unlock()
+	_, ok := s.DeletedTaskIDs[id]
+	return ok
+}
+
+// RegisterTaskCancel 登记一个任务这一轮下单的取消函数。PurchaseServer 开跑前调。
+//
+// 调用方登记完必须再查一次 IsTaskDeleted:登记前一瞬间刚好被删的话,
+// MarkTaskDeleted 那时还找不到 cancel 函数,ctx 不会被取消 —— 那次复核把这个窗口堵上。
+func (s *State) RegisterTaskCancel(id string, cancel context.CancelFunc) {
+	s.taskCancelMu.Lock()
+	if s.taskCancel == nil {
+		s.taskCancel = make(map[string]context.CancelFunc)
+	}
+	s.taskCancel[id] = cancel
+	s.taskCancelMu.Unlock()
+}
+
+// UnregisterTaskCancel 一轮下单结束后注销并释放 ctx。用 defer 调,成败都要走。
+// 已被 MarkTaskDeleted 摘掉的话这里是空操作。
+func (s *State) UnregisterTaskCancel(id string) {
+	s.taskCancelMu.Lock()
+	cancel := s.taskCancel[id]
+	delete(s.taskCancel, id)
+	s.taskCancelMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 }
 
 // SaveHistory 把内存中 History 整表覆盖写入 SQLite

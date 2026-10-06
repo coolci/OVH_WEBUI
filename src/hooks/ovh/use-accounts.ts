@@ -1,7 +1,10 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, getActiveServerControlAccount, setActiveServerControlAccount } from "@/lib/http";
+import { api } from "@/lib/http";
 import { qk } from "@/lib/query";
 import { toast } from "sonner";
+import { zoneStyle } from "@/lib/zone-color";
+import i18n from "@/i18n";
+import { apiMessage } from "@/lib/api-error";
 
 export interface OVHAccount {
   id: string;
@@ -16,18 +19,12 @@ export interface OVHAccount {
   createdAt: string;
 
   // ── 出站配置 ──
-  // proxyUrl 是打过码的(密码换成 ***,主机端口保留)。只能用来显示。
-  // 绝不能当成真值再提交回去 —— 那会把 "***" 当成密码存进去,代理从此连不上。
+  // proxyUrl 是**打过码的**(密码换成 ***,主机端口保留)。只能用来显示,
+  // 绝不能当成真值再提交回去 —— 那会把 "***" 当成密码存进库,代理从此连不上,
   // 而后端配了代理就不会退回直连,表现是这个账户在补货那一刻一单都下不出去。
   proxyUrl?: string;
-  /** 出站指纹配置名。空 = default */
+  /** 出站指纹配置名,空 = default */
   fingerprint?: string;
-
-  /** 凭据状态 (PRD D-01) */
-  credState?: "unverified" | "verified" | "invalid" | "expired";
-  credCheckedAt?: string;
-  credEvidence?: string;
-  verificationReason?: string;
 }
 
 export interface AccountInput {
@@ -40,19 +37,32 @@ export interface AccountInput {
   iam?: string;
   setDefault?: boolean;
 
-  // 代理 / 指纹走指针语义,跟上面几个字段的"空 = 保持原样"不一样:
+  // 代理 / 指纹是**指针语义**,跟上面几个字段的"空 = 保持原值"不一样:
   //   字段不出现(undefined) = 不改
   //   ""                    = 清掉(改回直连 / 默认指纹)
   //   非空                  = 设成这个
   // 所以「输入框留空」必须翻译成"不传这个 key",不能翻译成空串 ——
   // 空串会把用户配好的代理悄悄清掉,而清掉代理的表现是一切正常、隔离却没了。
   // 反过来,清代理也只有发空串这一条路,界面上必须给一个明确的清除动作。
-  // (注意别发 null:Go 那边 *string 收到 null 也是 nil,等于"不改")
+  // (注意别发 null:Go 那边 *string 收到 null 也是 nil,等于"不改"。)
   proxyUrl?: string;
   fingerprint?: string;
 }
 
 const ACCOUNTS_KEY = ["accounts", "list"] as const;
+
+/**
+ * 创建 / 更新 / 验证账户时后端带回来的子公司错配说明(空 = 没问题)。
+ *
+ * 后端(handlers.SubsidiaryMismatchNote)拿账户里存的 zone 跟 OVH /me 返回的 ovhSubsidiary 比:
+ * zone 决定目录站点、价格币种和下单 region,ovhSubsidiary 才是 OVH 认的归属。
+ * 两者不同区时凭据依然 valid=true,所有请求却都会打到错误的站点 —— 这段话是用户在
+ * 真正下单失败之前唯一能看到的信号,必须原样显示,不能只吞成一句"验证通过"。
+ */
+export interface AccountVerifyResult {
+  valid: boolean;
+  subsidiaryWarning?: string;
+}
 
 /** 全部账户列表(默认账户排首位) */
 export function useAccounts() {
@@ -78,34 +88,24 @@ export function useCreateAccount() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: AccountInput) => {
-      const res = await api.post<{ account: OVHAccount; valid: boolean; credState?: string; remediation?: string[] }>("/accounts", input);
+      const res = await api.post<{ account: OVHAccount } & AccountVerifyResult>("/accounts", input);
       return res.data;
     },
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ACCOUNTS_KEY });
+      // 新账户的出站配置要出现在代理健康面板里
       qc.invalidateQueries({ queryKey: qk.accounts.proxyStatus() });
-      // 新账户立即设为活跃，避免 localStorage 仍指向旧 ID
-      if (data?.account?.id) {
-        setActiveServerControlAccount(data.account.id);
-        void qc.invalidateQueries({ queryKey: ["server-control"] });
-        void qc.invalidateQueries({ queryKey: ["vps-control"] });
-        void qc.invalidateQueries({ queryKey: ["account"] });
-      }
       if (data.valid) {
-        toast.success(`账户 ${data.account.name} 创建成功`);
+        toast.success(i18n.t("hooksMsg.account.created", { name: data.account.name }));
       } else {
-        toast.warning(`账户已添加，但 OVH 验证未通过，请检查凭据`);
+        toast.warning(i18n.t("hooksMsg.account.savedVerifyFailed"));
+      }
+      // 子公司填错不会让 valid 变 false,但会让目录/价格/下单全部走错站点,单独长时间提示
+      if (data.subsidiaryWarning) {
+        toast.warning(data.subsidiaryWarning, { duration: 15000 });
       }
     },
-    onError: (e: any) => {
-      // D-01: 校验失败也会入库置 invalid，刷新列表保证界面可见可修改
-      qc.invalidateQueries({ queryKey: ACCOUNTS_KEY });
-      qc.invalidateQueries({ queryKey: qk.accounts.proxyStatus() });
-      const errData = e?.response?.data;
-      const remediations = errData?.remediation?.join(" / ");
-      const msg = errData?.detail || errData?.error || "创建失败";
-      toast.error(remediations ? `${msg} (建议: ${remediations})` : msg);
-    },
+    onError: (e: any) => toast.error(apiMessage(e)),
   });
 }
 
@@ -114,24 +114,28 @@ export function useUpdateAccount() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, input }: { id: string; input: Partial<AccountInput> }) => {
-      const res = await api.put<{ account: OVHAccount; valid: boolean; credState?: string }>(`/accounts/${id}`, input);
+      const res = await api.put<{ account: OVHAccount } & AccountVerifyResult>(`/accounts/${id}`, input);
       return res.data;
     },
-    onSuccess: (_data, vars) => {
+    onSuccess: (data, vars) => {
       qc.invalidateQueries({ queryKey: ACCOUNTS_KEY });
       qc.invalidateQueries({ queryKey: qk.accounts.proxyStatus() });
+      // 出站配置可能刚改过,上一次测到的出口 IP 就不再对应现在生效的配置了。
+      // 留着它等于拿旧 IP 冒充新配置的结果 —— 而这个 IP 正是用户用来判断
+      // "隔离到底生没生效"的唯一依据,宁可空着让他重测一次。
       qc.removeQueries({ queryKey: qk.accounts.proxyTest(vars.id) });
+      // 链路检测同理:那份延迟数字是旧代理跑出来的,留着会让用户拿旧链路的成绩
+      // 给新代理背书 —— 而他改代理的目的往往正是嫌慢。
       qc.removeQueries({ queryKey: qk.accounts.proxyCheck(vars.id) });
-      toast.success("账户已更新");
+      toast.success(i18n.t("hooksMsg.account.updated"));
+      if (!data.valid) {
+        toast.warning(i18n.t("hooksMsg.account.savedVerifyFailed"));
+      }
+      if (data.subsidiaryWarning) {
+        toast.warning(data.subsidiaryWarning, { duration: 15000 });
+      }
     },
-    onError: (e: any) => {
-      qc.invalidateQueries({ queryKey: ACCOUNTS_KEY });
-      qc.invalidateQueries({ queryKey: qk.accounts.proxyStatus() });
-      const errData = e?.response?.data;
-      const remediations = errData?.remediation?.join(" / ");
-      const msg = errData?.detail || errData?.error || "更新失败";
-      toast.error(remediations ? `${msg} (建议: ${remediations})` : msg);
-    },
+    onError: (e: any) => toast.error(apiMessage(e)),
   });
 }
 
@@ -139,26 +143,18 @@ export function useUpdateAccount() {
 export function useDeleteAccount() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (id: string) => {
-      await api.delete(`/accounts/${id}`);
-      return id;
-    },
-    onSuccess: (id) => {
-      if (getActiveServerControlAccount() === id) {
-        setActiveServerControlAccount("");
-      }
+    mutationFn: async (id: string) => (await api.delete(`/accounts/${id}`)).data,
+    onSuccess: (_d, id) => {
       qc.invalidateQueries({ queryKey: ACCOUNTS_KEY });
       qc.invalidateQueries({ queryKey: qk.accounts.proxyStatus() });
       qc.removeQueries({ queryKey: qk.accounts.proxyTest(id) });
       qc.removeQueries({ queryKey: qk.accounts.proxyCheck(id) });
+      // 关联数据也变了,顺手 invalidate
       qc.invalidateQueries({ queryKey: ["queue"] });
       qc.invalidateQueries({ queryKey: ["history"] });
-      qc.invalidateQueries({ queryKey: ["server-control"] });
-      qc.invalidateQueries({ queryKey: ["vps-control"] });
-      qc.invalidateQueries({ queryKey: ["account"] });
-      toast.success("账户已删除,关联数据一并清理");
+      toast.success(i18n.t("hooksMsg.account.deleted"));
     },
-    onError: (e: any) => toast.error(e?.response?.data?.error || "删除失败"),
+    onError: (e: any) => toast.error(apiMessage(e)),
   });
 }
 
@@ -169,9 +165,9 @@ export function useSetDefaultAccount() {
     mutationFn: async (id: string) => (await api.post(`/accounts/${id}/set-default`)).data,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ACCOUNTS_KEY });
-      toast.success("已设为默认账户");
+      toast.success(i18n.t("hooksMsg.account.setDefault"));
     },
-    onError: (e: any) => toast.error(e?.response?.data?.error || "设默认失败"),
+    onError: (e: any) => toast.error(apiMessage(e)),
   });
 }
 
@@ -179,12 +175,16 @@ export function useSetDefaultAccount() {
 export function useVerifyAccount() {
   return useMutation({
     mutationFn: async (id: string) =>
-      (await api.post<{ valid: boolean }>(`/accounts/${id}/verify`)).data,
+      (await api.post<AccountVerifyResult>(`/accounts/${id}/verify`)).data,
     onSuccess: (data) => {
       if (data.valid) {
-        toast.success("OVH 凭据验证通过");
+        toast.success(i18n.t("hooksMsg.account.verifyOk"));
       } else {
-        toast.error("OVH 凭据验证失败,检查 AppKey / AppSecret / ConsumerKey");
+        toast.error(i18n.t("hooksMsg.account.verifyFailed"));
+      }
+      // 凭据有效 ≠ 区配对了。这条警告比"验证通过"重要得多,单独弹且停久一点
+      if (data.subsidiaryWarning) {
+        toast.warning(data.subsidiaryWarning, { duration: 15000 });
       }
     },
   });
@@ -196,14 +196,14 @@ export function findAccountByID(accounts: OVHAccount[] | undefined, id: string):
   return accounts.find((a) => a.id === id);
 }
 
-/** zone 颜色映射, 用于账户 chip 区分(EU 蓝 / US 红 / CA 绿 等) */
+/** zone 颜色映射,用于账户 chip 区分。
+ *
+ * 委托给 zone-color(按 API endpoint 分组:EUs蓝 / US 琥珀 / CA 绿),
+ * 不再自己按国家另配一套 —— 之前这里按国家给 US=红、CA=绿、亚太=橙,
+ * 和顶栏切换器的 endpoint 配色是同一概念的两种颜色,
+ * 同一个账户在两处显示不一样,看着像两个东西。 */
 export function accountChipColor(zone: string): string {
-  const z = zone.toUpperCase();
-  if (z === "US") return "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300";
-  if (z === "CA" || z === "QC") return "bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-300";
-  if (z === "ASIA" || z === "SG" || z === "AU" || z === "IN") return "bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300";
-  // EU 系
-  return "bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300";
+  return zoneStyle(zone).badge;
 }
 
 // ─── 出站代理 / 指纹 ────────────────────────────────────────────────────────
@@ -281,11 +281,6 @@ export type ProxyTestRecord =
   | (ProxyTestSuccess & { testedAt: number })
   | (ProxyTestFailure & { testedAt: number });
 
-/** 这份结果是什么时候的:优先用 testedAt */
-export function proxyTestTime(rec: ProxyTestRecord): Date {
-  return new Date(rec.testedAt);
-}
-
 /**
  * 用账户**已保存**的出站配置查一次真实出口 IP。
  *
@@ -305,14 +300,14 @@ export function useProxyTest() {
       const rec: ProxyTestRecord = { ...data, testedAt: Date.now() };
       qc.setQueryData(qk.accounts.proxyTest(id), rec);
       if (data.success) {
-        toast.success(`出口 IP ${data.egressIP}(${data.usingProxy ? "经代理" : "直连"})`);
+        toast.success(i18n.t("hooksMsg.account.egressOk", { ip: data.egressIP, via: data.usingProxy ? i18n.t("hooksMsg.account.viaProxy") : i18n.t("hooksMsg.account.viaDirect") }));
         if (data.warning) toast.warning(data.warning, { duration: 10000 });
       } else {
         // 配了代理就不会退回直连:这条失败等于该账户此刻一单都下不出去
-        toast.error(`出口测试失败(经由${data.via}): ${data.error}`);
+        toast.error(i18n.t("hooksMsg.account.egressFailed", { via: data.via, error: data.error }));
       }
     },
-    onError: (e: any) => toast.error(e?.response?.data?.error || "出口测试请求没发出去"),
+    onError: (e: any) => toast.error(apiMessage(e)),
   });
 }
 
@@ -425,14 +420,14 @@ export type LatencyLevel = "fast" | "slow" | "bad";
  */
 export function gradeLatency(minMs: number): { level: LatencyLevel; note: string } {
   if (minMs < 300) {
-    return { level: "fast", note: "延迟正常,补货那一刻不会因为链路吃亏。" };
+    return { level: "fast", note: i18n.t("hooksMsg.account.latFast") };
   }
   if (minMs <= 800) {
-    return { level: "slow", note: "偏慢。冷门机型够用,热门机型会比别人慢半步。" };
+    return { level: "slow", note: i18n.t("hooksMsg.account.latSlow") };
   }
   return {
     level: "bad",
-    note: "这个延迟在补货那一刻很可能抢不过别人 —— 换一个离该大区更近的代理。",
+    note: i18n.t("hooksMsg.account.latVerySlow"),
   };
 }
 
@@ -476,28 +471,28 @@ export function useProxyCheck() {
       const rec: ProxyCheckRecord = { ...data, receivedAt: Date.now() };
       qc.setQueryData(qk.accounts.proxyCheck(id), rec);
       if (!data.success) {
-        toast.error(`链路检测没做成: ${data.error}`);
+        toast.error(i18n.t("hooksMsg.account.probeFailed", { error: data.error }));
         return;
       }
       if (data.warning) toast.warning(data.warning, { duration: 10000 });
       const down = data.targets.filter((t) => !t.ok);
       if (down.length > 0) {
         // 目标不通 ≠ 慢,这是"此刻下不了单",优先级高于任何延迟结论
-        toast.error(`${down.length}/${data.targets.length} 个目标不通 —— 这个账户现在下不出单`);
+        toast.error(i18n.t("hooksMsg.account.probeDown", { down: down.length, total: data.targets.length }));
         return;
       }
       const worst = worstMinMs(data.targets);
       if (worst === undefined) {
-        toast.warning("检测回来了,但没有一条目标给出延迟 —— 打开弹窗看具体哪条");
+        toast.warning(i18n.t("hooksMsg.account.probeNoLatency"));
         return;
       }
       const g = gradeLatency(worst);
-      const head = `链路检测完成 · 最慢目标 ${worst}ms`;
+      const head = i18n.t("hooksMsg.account.probeDone", { worst });
       if (g.level === "bad") toast.error(`${head} —— ${g.note}`, { duration: 10000 });
       else if (g.level === "slow") toast.warning(`${head} —— ${g.note}`, { duration: 8000 });
       else toast.success(head);
     },
-    onError: (e: any) => toast.error(e?.response?.data?.error || "链路检测请求没发出去"),
+    onError: (e: any) => toast.error(apiMessage(e)),
   });
 }
 
@@ -515,4 +510,3 @@ export function useLastProxyCheck(accountId: string) {
     staleTime: Infinity,
   });
 }
-

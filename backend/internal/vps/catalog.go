@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ovh-webui/server/internal/netfp"
 	"github.com/ovh-webui/server/internal/ovh"
 )
 
@@ -134,7 +135,8 @@ type catalogPlan struct {
 }
 
 func fetchModels(subsidiary string) ([]Model, error) {
-	client := &http.Client{Timeout: 60 * time.Second}
+	// 同 eco 目录:公开、按子公司缓存、跨账户共享,走统一出口
+	client := netfp.Shared(60 * time.Second)
 	req, err := http.NewRequest(http.MethodGet, vpsCatalogURL(subsidiary), nil)
 	if err != nil {
 		return nil, err

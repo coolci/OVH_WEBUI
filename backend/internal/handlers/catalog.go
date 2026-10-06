@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/ovh-webui/server/internal/app"
+	"github.com/ovh-webui/server/internal/netfp"
 	"github.com/ovh-webui/server/internal/ovh"
 )
 
@@ -69,7 +70,8 @@ func GetCatalog(state *app.State) gin.HandlerFunc {
 		// 2. 直连 OVH 拉新数据。站点由子公司决定(三区目录互不相通,查错站点是 400 而不是空目录)
 		baseURL := catalogBaseURLForSubsidiary(sub)
 		url := fmt.Sprintf("%s/v1/order/catalog/public/eco?ovhSubsidiary=%s", baseURL, sub)
-		client := &http.Client{Timeout: 30 * time.Second}
+		// 同 eco 目录:公开、按子公司缓存、跨账户共享,走统一出口而不是本机真实 IP
+		client := netfp.Shared(30 * time.Second)
 		req, _ := http.NewRequest(http.MethodGet, url, nil)
 		req.Header.Set("accept", "application/json")
 

@@ -2,6 +2,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/http";
 import { qk } from "@/lib/query";
 import { toast } from "sonner";
+import { useAccounts, findAccountByID } from "@/hooks/use-accounts";
+import { useActiveServerControlAccount } from "@/hooks/use-active-account";
+import i18n from "@/i18n";
+import { apiMessage } from "@/lib/api-error";
 
 export interface ServerOption {
   label: string;
@@ -38,13 +42,31 @@ export interface ServerPlan {
  */
 export function useServers(showApiServers: boolean = true) {
   const qc = useQueryClient();
-  const key = qk.servers.list(showApiServers);
+  // 目录跟着当前账户走:后端 /api/servers 支持 ?account=,按该账户的 zone(子公司)+ endpoint
+  // 取目录并单独分桶缓存。不传的话永远是默认账户的视角 —— 切到美区账户后,页面上的机型集合、
+  // 机房状态、价格分别来自三个不同的账户/站点,互相对不上。
+  // 只在这个 id 确实存在于账户列表里时才带上:后端对未知 account 直接 400,
+  // 而 localStorage 里可能留着已删账户的 id,那会让整页变成一条红错。
+  const [activeId] = useActiveServerControlAccount();
+  const { data: accounts, isPending: accountsPending } = useAccounts();
+  const accountId = findAccountByID(accounts, activeId) ? activeId : "";
+  const key = qk.servers.list(showApiServers, accountId);
   const q = useQuery({
     queryKey: key,
     queryFn: async () => {
-      const res = await api.get("/servers", { params: { showApiServers } });
-      return (res.data.servers || res.data || []) as ServerPlan[];
+      const params: Record<string, unknown> = { showApiServers };
+      if (accountId) params.account = accountId;
+      const res = await api.get("/servers", { params });
+      // 必须确保是数组:调用方直接 .find() / .map(),拿到对象就是整页白屏
+      // (「Something went wrong!」那种,比任何报错都难查)。
+      // 后端正常返回 { servers: [...] },这里防的是响应结构意外的情况 ——
+      // 反向代理插了一页、网关返回 200 带错误体、以后重构改了字段名。
+      const raw = res.data?.servers ?? res.data;
+      return (Array.isArray(raw) ? raw : []) as ServerPlan[];
     },
+    // 账户列表还没到手时不发请求:否则会先按默认视角拉一份完整目录(后端要打 ~100 次 OVH),
+    // 紧接着 key 变了再拉一次。等一下就好,这个查询本来就有 2 小时缓存。
+    enabled: !accountsPending,
     staleTime: 2 * 60 * 60_000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
@@ -69,37 +91,22 @@ export function useServers(showApiServers: boolean = true) {
   });
 }
 
-/** 添加到监控订阅。通知/自动下单/自动付款由调用方显式传入，不再写死成仅有货提醒。 */
+/** 添加到监控订阅 */
 export function useAddToMonitor() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (payload: {
       planCode: string;
       datacenters: string[];
+      /** 只盯这套配置(addon planCode)。空 = 该机型底下所有配置组合 */
+      options?: string[];
       serverName?: string;
-      notifyAvailable?: boolean;
-      notifyUnavailable?: boolean;
-      autoOrder?: boolean;
-      quantity?: number;
-      autoOrderAccountId?: string;
-      autoPay?: boolean;
     }) =>
-      (
-        await api.post("/monitor/subscriptions", {
-          notifyAvailable: true,
-          notifyUnavailable: false,
-          autoOrder: false,
-          autoPay: false,
-          ...payload,
-        })
-      ).data,
+      (await api.post("/monitor/subscriptions", { ...payload, notifyAvailable: true, notifyUnavailable: false })).data,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.monitor.list() });
-      toast.success("已加入监控");
+      toast.success(i18n.t("hooksMsg.servers.monitorAdded"));
     },
-    onError: (e: any) =>
-      toast.error(
-        e.response?.data?.message || e.response?.data?.error || "加入监控失败"
-      ),
+    onError: (e: any) => toast.error(apiMessage(e)),
   });
 }

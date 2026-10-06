@@ -6,9 +6,11 @@ import (
 )
 
 // autoOrderAccountID:auto_order 触发时用哪个账户下单;空 = 只通知不下单
+// options 为空 = 盯这个 planCode 的全部配置(老行为)。
+// 非空则只盯匹配那套 addon 的配置 —— 见 configMatchesFilter 上的说明。
 func (m *Monitor) AddSubscription(planCode string, datacenters []string, notifyAvailable, notifyUnavailable bool,
 	serverName string, lastStatus map[string]string, history []HistoryEntry, autoOrder bool, quantity int,
-	autoOrderAccountID string, autoPay bool, options ...[]string) {
+	autoOrderAccountID string, autoPay bool, options []string) {
 
 	m.subsMu.Lock()
 	defer m.subsMu.Unlock()
@@ -38,9 +40,12 @@ func (m *Monitor) AddSubscription(planCode string, datacenters []string, notifyA
 			s.AutoOrderAccountID = autoOrderAccountID
 			// 自动付款依附于自动下单:不下单就谈不上付款
 			s.AutoPay = autoPay && autoOrder
-			if len(options) > 0 && options[0] != nil {
-				s.Options = append([]string(nil), options[0]...)
+			// 配置筛选:显式传 nil 和传空切片都当成"盯全部配置"。
+			// 这是就地改配置的路径,options 也要跟着改,否则用户在 TG 上重挑一次配置不生效。
+			if options == nil {
+				options = []string{}
 			}
+			s.Options = options
 			if s.History == nil {
 				s.History = []HistoryEntry{}
 			}
@@ -58,11 +63,8 @@ func (m *Monitor) AddSubscription(planCode string, datacenters []string, notifyA
 	if history == nil {
 		history = []HistoryEntry{}
 	}
-	var optList []string
-	if len(options) > 0 && options[0] != nil {
-		optList = append([]string(nil), options[0]...)
-	} else {
-		optList = []string{}
+	if options == nil {
+		options = []string{}
 	}
 	sub := &Subscription{
 		PlanCode:           planCode,
@@ -74,7 +76,7 @@ func (m *Monitor) AddSubscription(planCode string, datacenters []string, notifyA
 		History:            history,
 		AutoOrderAccountID: autoOrderAccountID,
 		AutoPay:            autoPay && autoOrder,
-		Options:            optList,
+		Options:            options,
 	}
 	if autoOrder {
 		if quantity < 1 {
@@ -140,6 +142,7 @@ func (m *Monitor) FindSubscription(planCode string) *Subscription {
 	return nil
 }
 
+// SetKnownServers 用于从持久化恢复
 // SetSubscriptionOptions 只改一条订阅盯哪套配置,其余字段原样不动。
 // 返回 false = 没有这条订阅。
 //
@@ -164,7 +167,6 @@ func (m *Monitor) SetSubscriptionOptions(planCode string, options []string) bool
 	return false
 }
 
-// SetKnownServers 用于从持久化恢复
 func (m *Monitor) SetKnownServers(set map[string]struct{}) {
 	m.subsMu.Lock()
 	m.knownServers = set
@@ -323,7 +325,8 @@ type SubscriptionConfig struct {
 	Quantity           int
 	AutoOrderAccountID string
 	AutoPay            bool
-	Options            []string
+	// Options 只盯这套配置。空 = 全部配置。
+	Options []string
 }
 
 // ClearAccountRefs 把内存订阅里对某账户的引用清掉。

@@ -17,8 +17,16 @@ import (
 
 // notification 单次状态变化通知（内部）
 type notification struct {
-	dc               string
-	status           string
+	// notify 这条跳变要不要发通知。与"要不要下单"分开:
+	// 下单只看跳变本身,通知才受 NotifyAvailable/NotifyUnavailable 控制。
+	notify bool
+	dc     string
+	status string
+	// rawStatus OVH 原样返回的可用性值(1H-low / 24H / 72H …)。
+	// status 是归一化后的 available/unavailable/price_check_failed,
+	// 丢掉原值就没法在通知里告诉用户"多久能交付、库存高还是低" ——
+	// 而这正是决定要不要立刻下单的信息。
+	rawStatus        string
 	oldStatus        string
 	hasOld           bool
 	statusKey        string
@@ -29,7 +37,6 @@ type notification struct {
 	traceID          string
 	detectedTime     string
 	durationText     string
-	notify           bool
 }
 
 func (n notification) oldStatusJSON() interface{} {
@@ -374,11 +381,6 @@ func (m *Monitor) CheckAvailabilityChange(sub *Subscription, traceID string) {
 		// 不是静默跳过;而且这个结论 10 分钟后会自动重探,机型上架后能自愈。
 		return
 	}
-	if prevErr != "" && choice.degradeReason == "" {
-		m.state.Logger.Info(fmt.Sprintf("[monitor/region] 订阅 %s 的区域问题已恢复,改用 %s 站点(子公司 %s)查询",
-			planCode, choice.region, choice.subsidiary), "monitor")
-	}
-
 	// 监控用选中账户的 subsidiary 拉 catalog,这样跨子公司 multi-account
 	// 触发 auto-order 时,options 匹配能命中目标账户独有的项。
 	currentAvailability := catalog.CheckServerAvailabilityWithConfigs(m.state, planCode, choice.accountID)
@@ -396,6 +398,14 @@ func (m *Monitor) CheckAvailabilityChange(sub *Subscription, traceID string) {
 		return
 	}
 
+	// 走到这里说明本轮真正拿到了库存 —— 现在才允许说"已恢复"(issue #2:
+	// 以前在查询前就报恢复,持续失败的型号每轮"恢复→又失败"刷屏)。
+	if prevErr != "" {
+		sub.clearCheckError()
+		m.state.Logger.Info(fmt.Sprintf("[monitor/region] 订阅 %s 的区域问题已恢复,改用 %s 站点(子公司 %s)查询",
+			planCode, choice.region, choice.subsidiary), "monitor")
+	}
+
 	// 状态先在副本上推进,循环结束一次性写回:HTTP 侧读到的要么是上轮的完整状态、
 	// 要么是本轮的完整状态,不会是推进到一半的中间态。
 	lastStatus := sub.statusSnapshot()
@@ -405,15 +415,21 @@ func (m *Monitor) CheckAvailabilityChange(sub *Subscription, traceID string) {
 	m.state.Logger.Info(fmt.Sprintf("订阅 %s - 当前发现 %d 个配置组合", planCode, len(currentAvailability)), "monitor")
 
 	for configKey, configData := range currentAvailability {
+		// 订阅指定了配置就只盯那一套。
+		//
+		// 这个循环下面的每一件事都是**按配置逐套**做的:发一条通知、触发一次
+		// 自动下单。所以不筛的话,"自动抢 1 台"在三套配置同时补货时会下三次单
+		// (还要再乘以机房数)。用户想要的往往是"只盯 64G + 2x480SSD 那套",
+		// 在有这个字段之前他没有任何办法表达。
+		// 空 = 全部配置,保持一直以来的行为。
+		if !configMatchesFilter(cfg.Options, configData.Options) {
+			m.state.Logger.Debug(fmt.Sprintf("订阅 %s 跳过配置 %s(与订阅指定的配置不符)",
+				planCode, configKey), "monitor")
+			continue
+		}
 		memory := configData.Memory
 		storage := configData.Storage
 		configDisplay := memory + " + " + storage
-
-		// 若订阅限定了硬件配置，过滤不匹配的配置组合
-		if len(cfg.Options) > 0 && !matchSubscriptionOptions(cfg.Options, configData.Options) {
-			m.state.Logger.Debug(fmt.Sprintf("订阅 %s: 配置 %s 不匹配订阅指定的硬件选配 %v，跳过", planCode, configDisplay, cfg.Options), "monitor")
-			continue
-		}
 
 		configTraceID := uuid.NewString()
 		m.state.Logger.Info(fmt.Sprintf("检查配置: %s [config-trace:%s]", configDisplay, configTraceID), "monitor")
@@ -589,6 +605,7 @@ func (m *Monitor) CheckAvailabilityChange(sub *Subscription, traceID string) {
 				n := notification{
 					dc:               dc,
 					status:           actualStatus,
+					rawStatus:        ds.status,
 					oldStatus:        ds.oldStatus,
 					hasOld:           ds.hasOld,
 					statusKey:        ds.statusKey,
@@ -700,9 +717,18 @@ func (m *Monitor) CheckAvailabilityChange(sub *Subscription, traceID string) {
 			if priceText != "" {
 				configInfoWithPrice["cached_price"] = priceText
 			}
+			// 安装费从公开目录算(已缓存 2 小时,不占账户配额)。
+			// 不走询价接口:那个要真的建购物车再删,一次好几秒 ——
+			// 而补货通知的全部价值就在于"有货那一刻立刻发出去"。
+			if ip := m.installPriceText(planCode, choice.accountID, configData.Options); ip != "" {
+				configInfoWithPrice["install_price"] = ip
+			}
 			availDCs := make([]map[string]interface{}, 0, len(availables))
 			for _, n := range availables {
 				dcInfo := map[string]interface{}{"dc": n.dc, "status": n.status}
+				if n.rawStatus != "" {
+					dcInfo["raw_status"] = n.rawStatus
+				}
 				if n.durationText != "" {
 					dcInfo["duration_text"] = n.durationText
 				}
@@ -887,8 +913,49 @@ func (m *Monitor) calcDuration(sub *Subscription, dc, configDisplay string, targ
 	return fmt.Sprintf("历时 %d秒", seconds)
 }
 
+// configMatchesFilter 判断一套配置是否落在订阅指定的配置范围内。
+//
+// want 为空 = 不筛,盯全部配置(老行为)。
+// 非空时要求 want 里的每一项都出现在这套配置的 options 里 —— 用"子集"而不是
+// "完全相等":用户在 TG 上只会挑内存和存储两项,而一套配置的 options 还包含
+// 带宽、vRack 之类他没挑也不关心的东西,要求相等会一个都匹配不上。
+func configMatchesFilter(want, have []string) bool {
+	if len(want) == 0 {
+		return true
+	}
+	set := make(map[string]struct{}, len(have))
+	for _, h := range have {
+		set[h] = struct{}{}
+	}
+	for _, w := range want {
+		if _, ok := set[w]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// ConfigMatchesFilter 导出版，给测试和别的包用。语义见 configMatchesFilter。
+func ConfigMatchesFilter(want, have []string) bool { return configMatchesFilter(want, have) }
+
 // PlanAccount 给定 planCode，解析出「哪个账户能买到它」。
+//
+// 为什么下单要走这个而不是让用户自己选账户：
+// 用户真正在意的从来不是"用哪个账户"，而是"别落到一个买不到这台机器的账户上"。
+// 而 planCode 本身就带着区域信息 —— OVH 的 EU / US / CA 是三套彼此独立的系统，
+// 同一台机器在不同区是不同的型号代码（美区通常带 -us 后缀）。
+// 拿欧区 planCode 打美区接口，OVH 回的是 200 + 空数组而**不是报错**，
+// 表现就是"永远抢不到"，日志里也没有异常，用户完全看不出是账户选错了。
+//
+// 所以账户是可以算出来的，不该让人记着自己上次切到哪个区了。
+//
+// prefer 非空且它所在大区确实有这个 planCode 时优先用它 ——
+// 这是给"同一个大区有好几个账户"准备的，那种情况算不出来该用哪个。
+//
+// 返回值：accountID 为空表示没找到能买的账户，reason 里是给用户看的中文说明。
 func (m *Monitor) PlanAccount(planCode, prefer string) (accountID, region, subsidiary, reason string) {
+	// prefer 先验一遍:它所在大区有这个 plan 才认,否则当没传 ——
+	// 否则又退化成"用户选了什么就用什么",区域错配照样发生。
 	if prefer != "" {
 		if acc, ok := m.state.FindAccount(prefer); ok {
 			if in, definitive := m.planInAccountCatalog(acc.ID, planCode); definitive && in {
@@ -901,8 +968,14 @@ func (m *Monitor) PlanAccount(planCode, prefer string) (accountID, region, subsi
 	return c.accountID, c.region, c.subsidiary, c.degradeReason
 }
 
-// PlanAccountFast 只查已缓存的目录，不做跨区可用性探测。
-// 给交互式路径用（Telegram 下单）：命中目录即零延迟。
+// PlanAccountFast 只查已缓存的目录,不做跨区可用性探测。
+//
+// 给交互式路径用(Telegram 下单):探测要逐个大区打 OVH,实测能到好几秒,
+// 而补货那一刻每一秒都算数。目录本身有 2 小时缓存,命中就是零延迟。
+//
+// 判不出来时返回空 accountID —— 调用方**不要**据此拒绝下单,
+// 退回当前账户并把"没能确认"这件事说出来就行:
+// 判不出来的原因往往只是目录还没热,而不是真的没有合适的账户。
 func (m *Monitor) PlanAccountFast(planCode, prefer string) (accountID, region, subsidiary string) {
 	try := func(acc types.OVHAccount) (string, string, string, bool) {
 		if in, definitive := m.planInAccountCatalog(acc.ID, planCode); definitive && in {
@@ -922,7 +995,7 @@ func (m *Monitor) PlanAccountFast(planCode, prefer string) (accountID, region, s
 	accounts := make([]types.OVHAccount, len(m.state.Accounts))
 	copy(accounts, m.state.Accounts)
 	m.state.AccountsMu.RUnlock()
-	// 默认账户优先
+	// 默认账户优先,保证单账户/同区用户的行为和以前完全一致
 	for _, a := range accounts {
 		if !a.IsDefault {
 			continue
@@ -943,6 +1016,7 @@ func (m *Monitor) PlanAccountFast(planCode, prefer string) (accountID, region, s
 }
 
 // AccountsInRegion 某个大区下的所有账户。
+// 同区多账户时得让用户挑一次 —— 那种情况光看 planCode 算不出来用哪个。
 func (m *Monitor) AccountsInRegion(region string) []types.OVHAccount {
 	m.state.AccountsMu.RLock()
 	defer m.state.AccountsMu.RUnlock()
@@ -956,6 +1030,15 @@ func (m *Monitor) AccountsInRegion(region string) []types.OVHAccount {
 }
 
 // AccountsForPlan 所有目录里有这个 planCode 的账户。
+//
+// 用来做两件事：
+//   - `@all`：同区每个能买的账户各下一单。抢稀缺机器时这是多账户真正的价值 ——
+//     以前不管怎么切都只能用一个。
+//   - 上架通知的按钮：每个机房 × 每个能买的账户各一颗，看到补货直接选账户下单。
+//
+// 只认目录（权威），不解析 planCode 后缀 —— 后缀推不出账户：
+// 实测美区目录里 42 个 `-eu` 后缀的机型，卖的是欧洲机房的机器，
+// 但要用**美区**账户下单（它们的 region 配置恒为 united_states）。
 func (m *Monitor) AccountsForPlan(planCode string) []types.OVHAccount {
 	m.state.AccountsMu.RLock()
 	accounts := make([]types.OVHAccount, len(m.state.Accounts))
@@ -970,35 +1053,3 @@ func (m *Monitor) AccountsForPlan(planCode string) []types.OVHAccount {
 	}
 	return out
 }
-
-// matchSubscriptionOptions 检查可用配置的选项是否满足订阅要求
-func matchSubscriptionOptions(required, available []string) bool {
-	if len(required) == 0 {
-		return true
-	}
-	availSet := make(map[string]bool, len(available))
-	for _, a := range available {
-		availSet[strings.ToLower(strings.TrimSpace(a))] = true
-	}
-	for _, r := range required {
-		cleanR := strings.ToLower(strings.TrimSpace(r))
-		if cleanR == "" {
-			continue
-		}
-		if availSet[cleanR] {
-			continue
-		}
-		matched := false
-		for a := range availSet {
-			if strings.HasPrefix(a, cleanR) || strings.HasPrefix(cleanR, a) {
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			return false
-		}
-	}
-	return true
-}
-

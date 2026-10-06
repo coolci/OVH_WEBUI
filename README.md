@@ -1,514 +1,517 @@
-# OVH_WEBUI
+# OVH 控制台
 
-独立、模块化的 **OVH 独服/VPS 抢购 · 补货监控 · 运维控制台**。
+> 🌐 [English](README.en.md) | 中文
 
-自托管、多账户、Telegram 通知与一键下单；后端 Go，前端 React，生产用 Docker + Caddy 自动 HTTPS。
+OVH 独立服务器 / VPS / Eco 系列**抢购 + 监控 + 管理**控制台。
 
-| 文档 | 说明 |
-|------|------|
-| **本 README** | 功能总览 · 技术栈 · 线上部署完整流程 · 踩坑 |
-| [docs/DEPLOY.md](./docs/DEPLOY.md) | 部署细节与常用命令 |
-| [docs/SECURITY.md](./docs/SECURITY.md) | 密钥 / 数据安全红线 |
-| [docs/handover/](./docs/handover/00-INDEX.md) | 架构交接 · API · 巡检记录 |
+实时检测 OVH 各数据中心库存,发现可购买的服务器时按用户配置(机房、内存、存储、带宽、vRack)自动下单。后台同时管理已购买服务器的全生命周期(重启 / 重装 / IPMI / BIOS / 启动模式 / 维护工单 / 联系人变更 / 带宽 / 防火墙 / FTP 备份 / vRack / Secondary DNS 等)。支持**多 OVH 账户**同时管理,抢购 / 监控按账户隔离。
 
-> 已下线：巡检（Inspection）/ Config Sniper（见 ADR）。
+> Go (Gin) + SQLite 后端、Vite/React + TanStack + shadcn-ui 前端、`//go:embed` 单二进制部署(自带 SQLite, 跨平台无依赖)、
+> 强制 OvhCredsGate、多账户支持、双 SQLite driver(`modernc.org/sqlite` 纯 Go / `mattn/go-sqlite3` cgo, build tag 自动选)、
+> **中英双语界面(跟随浏览器,可手动固定)**、自动检测 GitHub Releases 更新。
 
----
+## 下载
 
-## 功能总览
+去 [Releases](https://github.com/gokele/ovh/releases) 拿对应平台的二进制,解压即用,**不需要装 Go、Node 或 SQLite**:
 
-### 抢购与监控
+| 平台 | 文件 |
+|---|---|
+| Windows x64 | `ovh-server-windows-amd64.exe` |
+| Linux x64 | `ovh-server-linux-amd64` |
+| Linux ARM64(树莓派 / ARM 云主机) | `ovh-server-linux-arm64` |
 
-| 能力 | 说明 |
-|------|------|
-| **可购目录** | 拉 OVH catalog，按型号/机房/配置浏览 |
-| **抢购队列** | 任务入队、重试、历史；后台循环尝试下单 |
-| **快速下单** | 页面一键入队；监控 auto-order 走同一路径 |
-| **独服补货监控** | 订阅 planCode + 机房；上架/下架 TG 推送 |
-| **一键下单按钮** | 上架通知内嵌机房按钮 → 轮询入站后入队 |
-| **VPS 监控** | 独立 VPS 订阅与通知 |
-| **Telegram 文本下单** | 向 Bot 发 `plancode [dc] [qty] [options]` |
+前端已经用 `//go:embed` 嵌进二进制,跑起来直接开 `http://localhost:19998` 就是完整界面。
+Linux 上记得 `chmod +x`。想自己编译见[部署方式](#部署方式)。
 
-### 已购机器运维
+也提供 Docker 镜像(`linux/amd64` + `linux/arm64`):
 
-| 能力 | 说明 |
-|------|------|
-| **独服控制** | 电源、重装、Boot、IPMI、硬件、续费/合约 |
-| **网络与流量** | 网卡、带宽、MRTG 流量图、部分 SKU 统计 |
-| **IP / 防护** | IP 列表与类型推断、缓解（mitigation）等 |
-| **VPS 控制** | 电源、快照、重装、任务等 |
-| **本地别名** | service_name 友好显示名（仅本地） |
-
-### 账户与系统
-
-| 能力 | 说明 |
-|------|------|
-| **多 OVH 账户** | 切换默认账户；监控/下单可指定账户 |
-| **网关鉴权** | `API_SECRET_KEY` / `X-API-Key` 登录 |
-| **设置** | Endpoint / Zone / Telegram Token·ChatID（保存后自动轮询收消息） |
-| **日志与仪表盘** | 运行日志、队列预览、可用性与统计 |
-
-### 典型业务流
-
-```text
-补货监控循环（约 5s）
-    → 发现上架
-    → Telegram 推送 +「机房 一键下单」按钮（UUID 已落库）
-    → 用户点击按钮
-    → 后端 getUpdates 轮询收到 callback_query
-    → 恢复 plan/dc/options → 写入抢购队列
-    → ProcessQueueLoop 调 OVH 下单
+```bash
+docker pull ghcr.io/gokele/ovh:latest
 ```
-
----
 
 ## 技术栈
 
-### 后端
+| 层 | 技术 |
+|---|---|
+| 前端 | Vite 5 + React 18 + TypeScript + TanStack Router + TanStack Query + shadcn-ui + Tailwind + recharts + **react-i18next(中/英)** |
+| 后端 | Go 1.21+ + Gin + 官方 [go-ovh](https://github.com/ovh/go-ovh) SDK |
+| 持久化 | SQLite(`modernc.org/sqlite` 纯 Go / `mattn/go-sqlite3` cgo 双 driver, build tag 自动选),凭据字段 AES-256-GCM 加密落盘 |
+| 通知 | Telegram Bot(长轮询,无需公网地址)+ 自定义 Webhook(钉钉 / 飞书 / Bark / 自建),多通道冗余 |
+| 部署 | 单二进制(前端 //go:embed 进 Go 二进制) 或前后端分开跑 |
 
-| 项 | 选型 |
-|----|------|
-| 语言 / 模块 | Go 1.25 · `github.com/ovh-webui/server` |
-| HTTP | Gin + gin-cors |
-| OVH | `github.com/ovh/go-ovh` + 自封装多账户工厂 |
-| 持久化 | SQLite（`sniper.db`）· sqlx |
-| SQLite 驱动 | CGO：`mattn/go-sqlite3`；Docker：`modernc.org/sqlite`（purego） |
-| 配置 | godotenv + KV 表 |
-| 日志 | 结构化 JSON 文件 + 内存查询 API |
-| 其它 | uuid · gopsutil（系统指标） |
+## 项目结构
 
-核心包：`handlers` · `monitor` · `purchase` · `telegram` · `catalog` · `db` · `ovh` · `vps`。
-
-### 前端
-
-| 项 | 选型 |
-|----|------|
-| 框架 | React 18 + TypeScript |
-| 构建 | Vite |
-| UI | Tailwind · shadcn/ui · Radix · lucide |
-| 数据 | TanStack React Query |
-| HTTP | **唯一传输层** `src/lib/http.ts`（axios） |
-| 业务 API | `src/lib/api.ts` facade + `hooks/ovh/*` |
-
-### 生产运行时
-
-| 组件 | 角色 |
-|------|------|
-| **backend** 容器 | Go API · 端口 19998（仅 Docker 内网） |
-| **frontend** 容器 | nginx 静态资源 |
-| **Caddy** 容器 | 公网 80/443 · Let's Encrypt · 反代 |
-| **Volume** `ovh_webui_data` | `/data`：SQLite · 日志 · 缓存 |
-
-```text
-Internet :80/:443
-        │
-        ▼
-     Caddy (TLS)
-        │
-        ├─ /api/*  /health  ──► backend:19998
-        └─ /*               ──► frontend:80
 ```
-
-### 仓库结构（精简）
-
-```text
-OVH_WEBUI/
-├── backend/                 # Go API
+.
+├── server/   # Go 后端 (Gin, 默认 :19998)
 │   ├── main.go
-│   └── internal/            # app / auth / db / handlers / monitor / purchase / telegram …
-├── src/                     # React UI（pages / hooks/ovh / lib / components）
-├── deploy/Caddyfile
-├── docker-compose.https.yml # ★ 生产 HTTPS 栈
-├── docker-compose.yml       # 内网 HTTP
-├── Dockerfile.backend
-├── Dockerfile.frontend
-├── scripts/
-│   ├── linux-oneclick-deploy.sh
-│   ├── init-first-run.ps1 / .sh
-│   ├── start-backend.ps1 / start-dev.ps1
-│   └── smoke_test.py
-└── docs/
+│   ├── webembed_ui.go    # build tag=ui 时把 web/ 整目录 embed 进二进制
+│   ├── webembed_noui.go  # 默认 build,无前端
+│   └── internal/
+│       ├── app/          # State 聚合
+│       ├── db/           # SQLite 层 (schema.sql + 各表 CRUD)
+│       ├── handlers/     # Gin handler
+│       ├── monitor/      # 服务器补货监控
+│       ├── vps/          # VPS 补货监控
+│       ├── purchase/     # 下单流程
+│       ├── price/        # OVH cart 询价
+│       ├── ovh/          # 按 account_id 路由的多账户 client 工厂
+│       ├── notify/       # 多通道通知(Telegram / 自定义 Webhook)
+│       ├── secret/       # 凭据落盘加密(AES-256-GCM)
+│       ├── updater/      # 在线更新:下载 / 校验 / 自替换 / 回滚
+│       └── ...
+└── web/      # 前端 (Vite + TanStack, dev 默认 :19997)
+    └── src/
+        ├── routes/       # 文件路由
+        ├── components/   # 共享组件 + AuthGate / OvhCredsGate
+        ├── hooks/        # TanStack Query hooks
+        ├── i18n/         # 多语言:语言包(模块化)+ 错误码翻译层 + 本地化格式化
+        └── lib/          # 子公司表 / OVH 数据中心常量 / utils
 ```
 
----
+后端详细文档见 [server/README.md](server/README.md)。
 
-## 本地开发
+## 部署方式
 
-### Windows（推荐首次）
+### 方式 A:Docker(推荐)
 
-```powershell
-cd C:\Users\video\Desktop\OVH\OVH_WEBUI
+```bash
+# 拿一份 docker-compose.yml,改掉里面的 API_SECRET_KEY,然后:
+docker compose up -d
 
-# 1) 初始化：生成 backend/.env（随机 API 密钥）、准备 data/
-.\scripts\init-first-run.ps1
-# 全新清空（会备份 data）：.\scripts\init-first-run.ps1 -Fresh
+# 更新
+docker compose pull && docker compose up -d
+```
 
-# 2) 后端
-$env:Path = "C:\Program Files\Go\bin;" + $env:Path
-cd backend
-go run .
-# 或: .\scripts\start-backend.ps1
+或者直接 run:
 
-# 3) 前端（另开终端）
-cd ..
+```bash
+docker run -d --name ovh-console \
+  -p 127.0.0.1:20000:20000 \
+  -v "$PWD/data:/data" \
+  -e API_SECRET_KEY=换成你自己的随机串 \
+  --restart unless-stopped \
+  ghcr.io/gokele/ovh:latest
+```
+
+镜像由打 tag 时的 GitHub Action 构建并推到 `ghcr.io/gokele/ovh`,提供 `linux/amd64` 与 `linux/arm64`。
+
+**数据全在 `/data` 这一个目录下**:SQLite 数据库、**数据库加密密钥**(`.env`)、缓存、日志。备份就备份这个目录。
+
+> ⚠️ 删了这个目录 = 已保存的 OVH 凭据和 Telegram Token 再也解不开。
+> 加密密钥默认自动生成并写进 `/data/.env`,跟着卷走;也可以用 `OVH_DB_KEY` 显式提供(迁移、k8s secret 时更可控)。
+
+首次启动时容器会把 `/data` 的归属改成 `PUID:PGID`(默认 10001)。
+bind mount 进来的宿主目录归属是宿主机那边的 uid,不处理的话容器里的非 root 用户写不进去,程序根本起不来。
+想和宿主机当前用户对齐就传 `PUID`/`PGID`,或者直接 `docker run --user $(id -u):$(id -g)`(那样容器不做归属处理,写权限由你保证)。
+
+**容器里自更新是停用的。** 新二进制只会写进容器的可写层,容器一重建
+(`compose up -d`、重启策略拉起、宿主机重启)就回到镜像里的旧版本 ——
+你会看到「更新成功」之后版本号又变回去。界面上会显示「有新版 + 请用 docker pull 更新」而不是更新按钮。
+
+### 方式 B:单二进制
+
+前端 build → Vite 输出到 `server/web/` → Go `-tags ui` 触发 `//go:embed` 把整目录嵌入二进制 → 单文件部署、双击即用。
+
+```bash
+# 1) 前端构建到 server/web/
+cd web
+npm ci
+npm run build
+
+# 2) 编译带前端的单二进制(CGO_ENABLED=0 走纯 Go SQLite,交叉编译不需要 gcc)
+cd ../server
+CGO_ENABLED=0 go build -tags ui -trimpath \
+  -ldflags "-s -w -X github.com/ovh-buy/server/internal/handlers.Version=$(cat ../VERSION)" \
+  -o ovh-server .
+./ovh-server
+```
+
+Windows 把产物名改成 `ovh-server.exe` 即可;交叉编译加 `GOOS=linux GOARCH=arm64` 这类前缀。
+**不需要外部 SQLite 库,二进制自带。** 默认监听 `:19998`,浏览器打开 `http://localhost:19998` 即用,
+数据库自动建在 `./data/sniper.db`。
+
+> Release 页提供 Windows amd64 / Linux amd64 / Linux arm64 三个预编译产物,不想自己编译可以直接下。
+
+### 方式 C:开发(前后端分开跑)
+
+```bash
+# 后端
+cd server
+go run .                # 默认 :19998
+
+# 前端(另一个终端)
+cd web
 npm install
-npm run dev
-# → http://127.0.0.1:8080
+npm run dev             # 默认 :19997, /api/* 自动反代到 19998
 ```
 
-1. 打开前端 → 输入 **API_SECRET_KEY**  
-2. 添加第一个 **OVH 账户**（App Key / Secret / Consumer Key）  
-3. 凭据只存本机 `backend/data/`（已 gitignore）
+浏览器打开 `http://localhost:19997`。
 
-Linux / macOS：
+
+## 首次访问
+
+打开浏览器后会依次出现两层全屏遮罩,都过了才能进主界面:
+
+1. **AuthGate**:输入 `.env` 里设置的 `API_SECRET_KEY`(没设的话用默认值,见下)
+2. **OvhCredsGate**:无任何 OVH 账户时强制弹出。填**账户名称** + OVH 子公司(Zone) + `APP KEY / APP SECRET / CONSUMER KEY`,`Endpoint` / `IAM` 自动派生。后端 `POST /api/accounts` 落 `ovh_accounts` 表并真去 OVH 验一次,通过才放行。
+
+凭据通过后,前端立刻在后台 prefetch 三件套(服务器目录 / catalog / 可用性),用户切到服务器列表页**直接出数据,不会再走"加载中"**。
+
+后续可在"设置 → OVH 账户"加更多账户。每个账户独立的 endpoint / 凭据 / Zone,**抢购队列、监控订阅、自动下单全部按账户隔离**。账户切换全站只有一个入口(左侧菜单栏),切换后目录 / 价格 / 控制台 / 下单账户全部跟着走。
+
+## 配置
+
+`server/.env.example` → 复制成 `server/.env` 改:
 
 ```bash
-chmod +x scripts/init-first-run.sh
-./scripts/init-first-run.sh          # 或 --fresh
+API_SECRET_KEY=...               # 前端访问后端的密钥, 必须改
+PORT=19998                       # 后端监听端口
+LISTEN_HOST=                     # 空 = 所有网卡(IPv4+IPv6); 127.0.0.1 锁回环; 0.0.0.0 公网
+ENABLE_API_KEY_AUTH=true         # 关掉的话所有 /api/* 不验证密钥, 仅本地调试用
+GIN_MODE=release                 # debug | release
+DEBUG=false                      # true 时启用 debug 日志
+
+# --- 数据库加密（都可不填，首次启动会自动处理）---
+OVH_DB_KEY=                      # 加密数据库里 OVH 凭据和 TG token 的密钥
+                                 # 没填的话首次启动自动生成一把并写回这个文件
+                                 # 备份 .env 时别漏了它: 丢了就再也解不开已存的账户
+OVH_ENV_FILE=                    # 配置文件自身的位置, 默认工作目录下的 .env
+                                 # systemd / docker 里工作目录未必是程序所在目录,
+                                 # 那种情况写绝对路径, 否则密钥可能"这次写进去下次找不到"
+
+# --- Telegram 安全（都可不填，留空即用默认行为）---
+TG_WEBHOOK_SECRET_OPTIONAL=false # true 时跳过 secret 校验, 仅本地调试用, 公网部署不要开
+TG_ALLOWED_USER_IDS=             # 群聊场景下允许下单的 user id, 逗号分隔; 私聊不需要
 ```
 
-### 烟测（可选）
+OVH 凭据**不放 env**,通过前端 OvhCredsGate / 设置页"OVH 账户" tab 录入,落 SQLite `ovh_accounts` 表(每个账户一行,独立 endpoint / AppKey / Secret / ConsumerKey / Zone),**加密存储**。`.gitignore` 默认拒绝所有 `.env` 入库。
 
-```powershell
-$env:API_SECRET_KEY="<与 backend/.env 一致>"
-# 可选：创建账户与只读目标机（勿写进 git）
-python scripts/smoke_test.py
+通知地址在设置页的「通知通道」里配,不走 env。Telegram 和自定义 Webhook 至少配一个 —— 只要还有一条能用,监控就继续跑。
+
+## 主要功能
+
+### 能力总览
+
+| 能力 | 状态 | 说明 |
+|---|---|---|
+| **深色模式** | ✅ | 浅色 / 深色 / 跟随系统三态,顶栏右上角一键切换或到「设置 → 外观」选择;选择只存在当前浏览器 |
+| **中英双语界面** | ✅ | 默认跟随浏览器语言;顶栏 / 登录页一键切换,手动切换过则以手动选择为准。日期 / 金额格式跟随语言,**后端报错消息同样双语**(稳定错误码 + 前端按码翻译) |
+| 多 OVH 账户 | ✅ | 独立 endpoint / 凭据 / Zone,抢购队列、历史、监控订阅全按 `account_id` 隔离 |
+| **全站单一账户入口** | ✅ | 只在左侧菜单栏切换,机型列表 / 可用性 / 价格 / 控制台 / 下单账户全部跟着走 |
+| **三区支持(EU / US / CA)** | ✅ | 子公司归属、目录站点、`region` 取值、planCode 后缀、机房集合全部按区解析,不写死欧区 |
+| **实时库存直连** | ✅ | 目录页红绿点直连 OVH 公开可用性接口(按账户所在站点,60 秒新鲜期),不再依赖最长 2 小时旧的目录缓存;接口失败时回落静态并明示"库存未知",不冒充缺货 |
+| 抢购队列 | ✅ | 每机型 × 每机房 × 数量独立任务,可暂停/恢复,fail-fast 不退化到默认配置 |
+| 服务器补货监控 | ✅ | 订阅 planCode + 机房,状态变化推 Telegram,**检查间隔 5–3600 秒可配** |
+| VPS 补货监控 | ✅ | 型号来自 OVH 实时目录(型号会整代下架,写死会让监控静默失效),区分 Linux / Windows,按子公司连对站点 |
+| 服务器自动下单 | ✅ | 监控触发,可指定下单账户;不指定则只通知 |
+| **VPS 自动下单** | ✅ | 同上,走 `/order/cart/{id}/vps`;系统在下单时选定,`region` 按站点解析 |
+| **订阅可编辑** | ✅ | 改配置不重置库存状态和历史 —— 删了重建会让"本来就有货"被误判成补货 |
+| Telegram 文本下单 | ✅ | 5 种消息格式,`plancode [机房] [数量] [配置]` |
+| Telegram 一键下单按钮 | ✅ | 上架通知内嵌机房按钮,参数落库、**一次性 nonce**、防重放 |
+| Telegram 安全链 | ✅ | 发送者授权 → update_id 幂等 → 频率限制 → 一次性按钮 |
+| **多通道通知** | ✅ | Telegram + 自定义 Webhook,只要有一条能用监控就继续跑,全挂才停 |
+| **凭据落盘加密** | ✅ | AES-256-GCM,密钥首次启动自动生成写进 `.env`,老库自动迁移 |
+| **抢购耗时打点** | ✅ | 查库存 / 建车 / 绑车 / 加购 / 配置 / 选项 / 下单 逐段计时,回答"我慢在哪一步" |
+| 后端询价 | ✅ | `POST /api/servers/{planCode}/price`,走 OVH cart 真实询价 |
+| 已购服务器管理 | ✅ | 电源 / 重装(对齐官方全能力:OS 定制问题·SSH 密钥·安装后脚本·硬件 RAID arrays/热备·软 RAID 盘数·LVM 卷名·ZFS zpool 名·数据保留) / IPMI / BIOS / 启动模式 / 任务 / 维护工单 |
+| 已购 VPS 管理 | ✅ | 开关机 / 重装 / 快照 / 控制台 / 改密 / 反解 / 自动备份 |
+| 网络与防护 | ✅ | 网卡 / OLA / MRTG 流量图 / DDoS 缓解 / 防火墙 / Backup FTP |
+| 合同期(engagement) | ✅ | 服务器与 VPS 双端,销毁类操作强制二次确认 |
+| 隐私模式 | ✅ | 一键打码所有 IP / MAC / 反向 DNS |
+| 自动检测更新 | ✅ | 拉 GitHub Releases 比版本号,有新版显示 ✨ |
+| **在线更新** | ✅ | 点一下自替换 + 自动重启,强制校验 SHA256,新版起不来自动回滚 |
+| **控制台接入方式可选** | ✅ | HTML5 KVM / **Java KVM(.jnlp)** / SOL(URL) / SOL(SSH),由用户选 |
+| 配置绑定狙击 | ❌ | 已下线 |
+
+
+### 多账户
+- **账户管理**:设置页"OVH 账户" tab 增删改查,每条记录有独立**名称 + Zone + endpoint + AppKey/Secret/ConsumerKey**
+- **账户隔离**:抢购队列、抢购历史、监控订阅都标 `account_id`,后端 goroutine 按 account_id 取对应 OVH client 下单
+- **级联清理**:删账户时关联 history / queue 自动删除,监控订阅的"自动下单账户"字段清空(订阅本身保留,只通知不下单)
+- **默认账户**:其中一个标 `is_default`,新建对话框不选时自动用默认账户
+- **凭据校验**:新建 / 更新账户都会真去 OVH 调一次 `/me`,结果放在响应的 `valid` 字段里(校验失败**仍会入库**,前端提示后放行,便于先进系统再到设置页修凭据)
+- **子公司与 endpoint 强制同区**:`zone=US` 只能配 `ovh-us`(同区的 `kimsufi-*` / `soyoustart-*` 别名照常可用)。EU / US / CA 三个站点的目录、价格、库存、购物车完全独立,配错的话要一路走到下单才报错,所以在建账户时就拦掉
+
+### 抢购
+- **服务器列表**:卡片网格 + 实时 DC 库存灯(绿可用 / 红缺货),点击直接选配置下单
+- **实时库存**:列表页直连 OVH 公开可用性接口拉全量状态(按当前账户所在站点,EU / US / CA 三站库存互不相通),60 秒新鲜期内复用;拉不到时回落目录静态数据并在页面顶部明示 —— 静态状态最长 2 小时旧,把它当"缺货"会错过有货的机器
+- **配置选择器**:按 OVH `addonFamilies`(CPU / 内存 / 系统盘 / 数据盘 / 带宽 / vRack)分组单选,默认值预选
+- **抢购队列**:每台服务器 × 每个 DC × 数量 独立任务,**每个任务绑定到一个 OVH 账户**,可暂停 / 恢复 / 删除,按 retry interval 轮询 OVH 库存
+- **fail-fast**:用户选的配置匹配不上 OVH 当前可订购的 addon → 整单失败,绝不退化到默认 HDD
+- **有货判定按官方枚举白名单**:只有 `\d+H`(交付时长承诺)算有货,`comingSoon` / `unknown` 不算 —— 否则会为永远下不了单的机型反复建单
+- **价格显示**:按**当前账户所属子公司**计价(币种、税率、目录都跟着它走),前端用本地 catalog 算,不走 cart 流程。不提供跨子公司比价 —— 那个下拉曾让人误以为切换了机型目录,照着它下单会被 OVH 拒
+- **耗时打点**:每一轮按 查库存 / 建购物车 / 绑定 / 加购 / 必需配置 / 硬件选项 / 下单 分段计时。抢购输了之后唯一有用的信息就是"慢在哪一步" —— 没有这串数字的话,"OVH 就是没货""我这机器网络慢""某一步卡了 8 秒"三种情况长得一模一样,而它们要采取的行动完全不同。抢购历史每行可点开看分解,队列页显示每条链路上一轮的结果和总耗时
+- **后端询价兜底**:`POST /api/servers/{planCode}/price`(body `{datacenter, options}`,账户走 `?account=<id>`)。走 OVH cart 真实询价拿含税/不含税/币种,用于本地 catalog 算不出价(缺项 / OVH 改结构 / addon 在目标机房不可订购)时兜底,也给外部脚本一个不必复刻算价公式的入口
+
+### 监控
+- **服务器补货**:订阅 planCode + DC 组合,状态变化推 Telegram。**自动下单可选指定账户**;不选只通知不下单
+- **检查间隔可配**:监控页「检查间隔」点一下就地改,合法区间 5-3600 秒(越界自动夹紧并回传实际生效值),落 `kv` 表重启保持。下限 5 秒是因为 OVH 可用性接口本身有缓存,更快只会撞限流
+- **VPS 补货**:同上,针对 OVH VPS 产品线(区分 Linux / Windows 镜像)。型号列表来自 **OVH 实时目录**而不是写死 —— VPS 型号会整代下架(2025 代已全线退出下单目录),盯着一个停售型号的订阅永远不会响,而症状只是"一直没货",看不出问题在哪。已有订阅指向停售型号的会标「已停售」
+- **VPS 自动下单**:补货时真的下单(`cart → assign → POST /vps → 必需配置 → checkout`)。系统(`vps_os`)是 VPS 下单时就要定的配置项,不是买完再装,所以放在订阅里选。只对"无货→有货"的跳变下单,抢到一台就停
+- **订阅可编辑**:服务器和 VPS 订阅都能改配置,**不重置库存状态和历史**。删了重建会清空 `LastStatus`,下一轮把"本来就有货"当成补货跳变,发一条根本没发生的通知外加真下单
+- **多通道通知**:Telegram + 自定义 Webhook。只要有一条通道可用监控就继续跑,全部挂掉才停 —— 以前 Telegram 一挂丢的不是一条消息,是整个监控
+- **历史时间线**:每个订阅完整变化记录
+
+### 已购服务器管理
+- **账户隔离**:所有 `/server-control/*` 请求由 axios 拦截器自动追加 `?account=<id>`,跟随左侧菜单栏选中的当前账户,无需逐 hook 改造
+- **概览**:硬件信息 + 服务到期 + IP / 网卡 + MRTG 流量图
+- **电源 / 系统**:重启 / 重装(对齐 OVH 官方能力:按模板动态渲染 OS 定制问题——SSH 密钥 / 安装后脚本 / 语言等;文件系统与 RAID 级别按模板兼容性过滤;硬件 RAID 支持 arrays/热备盘;软 RAID 可指定参与盘数;分区支持 LVM 卷名与 ZFS zpool 名;非安装盘组可声明保留数据)/ IPMI 控制台 / 启动模式 / SPLA Windows 解锁 / 任务列表 / BIOS / 安装进度。重装接口加了 per-service `TryLock`,防双击重复提交
+- **维护**:维护记录 + 硬件更换工单(硬盘 / 内存 / 散热)+ 联系人变更(Token 邮件确认)
+- **高级**(9 个 sub-tab):Burst / 防火墙 / Backup FTP / Secondary DNS / 虚拟 MAC / vRack / 可订购升级 / 附加选项 / IP 规格
+- **隐私模式**:一键打码所有 IP / MAC / 反向 DNS 主机名
+
+### 其它
+- **账户管理**:余额 / 退款记录 / 邮件历史(按当前账户切换)
+- **抢购历史**:订单 + 价格 + 倒计时 + OVH 订单链接直跳,每行带账户标识 chip
+- **详细日志**:实时刷新,按级别 / 关键字筛选
+- **自动检测更新**:仪表盘 mount 时调一次 `GET /api/version/check-update` 拉 GitHub releases 比版本号,有新版在版本号旁显示 ✨ chip 跳 release 页;后端纯被动响应,无 goroutine / 无定时
+
+## 持久化
+
+全部业务数据在 SQLite(`data/sniper.db`),11 张表:
+
+| 表 | 用途 |
+|---|---|
+| `kv` | 单例配置(TG token / 通知 webhook 地址 / 服务器与 VPS 检查间隔 / 长轮询 offset 等非账户级配置),**其中的密钥字段加密存储** |
+| `ovh_accounts` | OVH 账户(独立 endpoint / AppKey / Secret / ConsumerKey / Zone / is_default),**三个凭据字段加密存储** |
+| `queue` | 抢购队列(`account_id` 关联) |
+| `history` | 抢购历史(`account_id` 关联) |
+| `servers` | OVH 服务器目录缓存(刷新一次写一次,2h TTL) |
+| `catalogs` | OVH 公共 catalog 每个 subsidiary 一份(2h TTL),浏览页价格走它 |
+| `monitor_subscriptions` | 服务器补货订阅(`auto_order_account_id` 关联) |
+| `vps_subscriptions` | VPS 补货订阅(同上) |
+| `server_aliases` | 服务器本地别名(account_id + service_name 复合主键,不下发 OVH) |
+| `telegram_order_buttons` | TG「一键下单」按钮 UUID → 下单参数,`used_at` 做一次性 nonce |
+| `telegram_updates` | Telegram `update_id` 幂等表,防重投重复下单 |
+
+日志仍走 JSON 文件(`data/logs/app.log.json`),不进 SQLite。
+
+加密的字段带 `enc:v1:` 前缀,没有前缀的一律按明文处理 —— 老库升级上来时表里全是明文,不能一律当密文去解。首次启动会就地把已有的明文迁移成密文,幂等,重复启动不会重复加密。
+
+## 缓存策略
+
+| 数据 | 后端 TTL | 前端 staleTime | 后台轮询 | 触发刷新 |
+|---|---|---|---|---|
+| 服务器目录 | 2h(SQLite + 内存 ServerCache) | 2h | ❌ 完全访问触发 | 缓存过期时下一次访问 / 手动刷新按钮 |
+| OVH catalog(价格) | 2h(SQLite `catalogs` 表) | 2h | ❌ | 同上 |
+| 实时可用性 | —(前端直连 OVH 公开接口) | 60 秒 | ❌ | 访问触发;失败回落目录静态并明示 |
+
+实时库存由**前端**直连 OVH 各站点的公开 `datacenter/availabilities` 接口(不带凭据、不占账户配额),按当前账户所在站点选择 EU / US / CA 数据源 —— 三站库存互不相通,跟错站点等于整页永远"无货"。后端 `/api/servers` 返回的目录静态可用性仅作回落。
+
+启动时不主动调 OVH,只把 SQLite 现有数据加载到内存。`ServerCache` 用 SQLite 真实 `updated_at` 重建时间戳,旧数据不会被当成"刚刷过的"。
+
+## 安全 / 鉴权
+
+- 后端所有 `/api/*`(除少数白名单如 `/health` / `/version` / `/version/check-update`)都要求 `X-API-Key` 请求头
+- 两层全屏 gate:AuthGate(API 密钥) + OvhCredsGate(至少一个 OVH 账户)
+- API Key 存浏览器 localStorage,失效自动清除并要求重新输入
+- OVH 凭据落 SQLite `ovh_accounts` 表,前端通过 OvhCredsGate / 设置页"OVH 账户" tab 录入
+- `.gitignore` 默认拒绝所有 `.env` 文件入库(只允许 `*.env.example`),同时挡掉 `*.db` / `data/` / `logs/`
+- **凭据落盘加密**:`ovh_accounts` 的 AppKey / AppSecret / ConsumerKey、`kv` 里的 Telegram Token 都是 AES-256-GCM 加密存的。密钥优先取环境变量 `OVH_DB_KEY`,没有就在首次启动时生成一把写进 `.env`(权限 0600)
+- ⚠️ **加密防的是"只拿到 db 文件"那一类泄漏** —— 备份被同步到网盘、拷整个目录换机器、把 `data/` 打包发给别人排查问题。它**防不住** `.env` 和 db 一起漏出去,那种情况下加密等于没有。而 `.env` 恰恰是最容易被顺手提交、被贴进 issue 的文件
+- **密钥丢了会拒绝启动**:库里有密文却找不到密钥时,程序会停下来并说明怎么办,而不是照常起来。否则表现是"账户都在但每次调 OVH 都报签名错误",没人猜得到是密钥问题,而这时候重新录入凭据会覆盖旧密文,最后一点恢复余地也没了。确实找不回来时用 `OVH_DB_KEY_RESET=1` 启动,那些账户需要重新录入
+
+### 多语言实现口径
+
+- 界面文案全部走 `react-i18next`,语言包按模块拆分在 `web/src/i18n/locales/`(中文是事实来源,英文包经 TypeScript 类型强约束与中文同构,漏翻译直接编译报错)
+- **后端消息双语**:后端在返回 `error` / `message` 的同时带稳定错误码 `code`(内容寻址,同一文案跨接口复用),前端按码取当前语言译文;没有码的(动态拼接、含 OVH 原文)透传原文
+- 日期 / 相对时间 / 金额走 `Intl` + date-fns locale,不随语言出现格式混排
+- 加新语言 = 加一个语言包文件,代码不用动
+
+### Telegram 消息收取与安全链
+
+收 Telegram 消息只有**长轮询**(`getUpdates`)一条路:程序主动去 `api.telegram.org` 拉。
+不需要公网域名和证书,家宽 / NAT 后面 / 没域名的机器都能用一键下单。
+
+> 早先还支持 webhook(Telegram 推给你),已经删掉。它要求公网 HTTPS 域名 + 受信证书、
+> 端口只能 443/80/88/8443,还必须把回调端点放进鉴权白名单(Telegram 不可能带 `X-API-Key`),
+> 于是只能靠 `secret_token` 证明来源,还得为老部署留一个"secret 还没注册"的兼容模式。
+> 长轮询没有入站端点 —— 伪造来源这个问题连同它那一整套机制一起消失了。
+> 升级上来时后端启动会自动 `deleteWebhook`,不需要手动操作。
+
+剩下的校验链照常生效:
+
+| 环节 | 作用 | 失败响应 |
+|---|---|---|
+| **发送者授权** | 只认 `tgChatId` 配置的那个 chat;群聊还要求 user id 在 `TG_ALLOWED_USER_IDS` 白名单里 | `403 unauthorized_actor` |
+| **update_id 幂等** | `telegram_updates` 表去重。offset 是在**下一次** `getUpdates` 时才确认的,处理完还没推进 offset 就崩了/被自更新重启了,这条会重发 —— 没这层一次版本升级就能重复下单 | `200 {"duplicate":true}` |
+| **频率限制** | 单 chat 每 10 秒最多 8 次 | `429 rate_limited` |
+| **一次性按钮** | 「一键下单」按钮的完整参数落 `telegram_order_buttons` 表,`used_at` 原子占用:**同一个按钮只能下单一次**,超 24h 作废;入队失败自动归还可重试 | `409 button_already_used` / `410 button_expired` |
+
+按钮参数原来只存在进程内存里,重启后按钮全部失效、且可被无限次重放下单;落库同时解决了这两个问题。
+
+**单实例约束**:同一个 Bot Token 只能有一个进程在拉 update。两份程序同时跑会互相把对方踢下线,
+表现是按钮时灵时不灵、消息随机丢。后端识别到这种冲突会在日志和设置页明确说出来。
+
+## 多区域(EU / US / CA)注意事项
+
+> **账户只在左侧菜单栏切换一次,全站跟着走。**
+> 机型列表、机房红绿点、价格币种、服务器/VPS 控制台、下单账户,全部按当前账户所在站点显示。
+> 之所以只留一个入口:以前列表页、下单对话框、控制台页各有一个账户选择器且互不同步,
+> 而三个站点的目录互不相通(同一台机器欧区叫 `24sk602`、美区叫 `24sk602-v1-us`),
+> "用 A 账户浏览、用 B 账户下单"一键就能做出来 —— 这种任务必然被拒。
+> 同理机房也只列该机型在当前站点真正可选的那些,不再固定显示 16 个。
+
+
+三个站点是彼此独立的系统,同一个机型在不同子公司下的 planCode、价格、可下单区域都不一样:
+
+| 项 | EU(`ovh-eu`) | US(`ovh-us`) | 说明 |
+|---|---|---|---|
+| planCode | `24sk202` | `24sk202-us` / `24sk202-eu` | 美区目录的机型都带后缀,拿欧区 planCode 查美区可用性会返回空 |
+| `region` 配置项 | `canada` / `europe` | **`united_states`** | 下单时 `POST /order/cart/{id}/item/{id}/configuration` 要发的值 |
+| 亚太机型(sgp/syd/ynm) | `canada` | — | OVH 把亚太机房归在 `canada` 这个 region 桶里,**没有** `apac` 这个取值 |
+| 目录站点 | `eu.api.ovh.com` | `api.us.ovhcloud.com` | 由 `ovh.CatalogBaseURLForSubsidiary` 统一映射 |
+
+**VPS 也是三套独立系统,差异和独服不同**(实测公开目录):
+
+| 项 | EU / CA 站点 | US 站点 |
+|---|---|---|
+| `region` 取值 | `canada` / `europe` | **只有 `united_states`** |
+| 机房集合 | 11 个(含 BHS / SGP / SYD / YNM) | `vps-xxx` 只有 `US-EAST-VA` / `US-WEST-OR` |
+| 买欧洲 / 加拿大机房 | 同一个商品 | 要买 **`-eu` / `-ca` 后缀的另一个商品** |
+
+所以 VPS 下单时 `region` 不硬猜:先问购物车的 `requiredConfiguration`,它给一个取值就用那个,给多个才按机房挑(BHS/SGP/SYD/YNM→`canada`,其余→`europe`;这张表是从 OVH 自己的 `-ca` / `-eu` 变体目录里读出来的)。认不出的机房宁可不提交 `region`,让 OVH 用默认值 —— 提交一个错的会把整单打掉。
+
+独服这边,`region` 的合法取值由 **(子公司, planCode)** 决定而不是机房:美区账户即使下单欧洲机房(`gra`/`fra`),region 也必须是 `united_states`。所以代码不做静态"机房→区域"映射,而是由 [catalog.ResolveRegion](server/internal/catalog/region.go) 从官方目录的 `configurations[].values` 里取,内存缓存 2 小时;拉不到目录时才退回 `ovh.RegionForDCInSubsidiary` 的静态兜底。[region_test.go](server/internal/catalog/region_test.go) 里有联网用例,会把两区目录里每个 (plan × 机房) 组合穷举验一遍。
+
+## OVH API 对接
+
+下单流程严格对齐 OVH 官方 [order-cart-examples](https://github.com/ovh/order-cart-examples):
+
+```
+POST /order/cart                         → cartId
+POST /order/cart/{id}/assign
+POST /order/cart/{id}/eco                → itemId
+POST /order/cart/{id}/item/{itemId}/configuration × 3  (datacenter / os / region)
+POST /order/cart/{id}/eco/options × N
+GET  /order/cart/{id}/summary
+POST /order/cart/{id}/checkout
 ```
 
----
+VPS 是另一条链路(注意不是 `/eco`,必需配置项也不同):
 
-## 线上部署方案（我们实际使用的）
-
-### 生产画像
-
-| 项 | 值 |
-|----|-----|
-| 编排 | `docker-compose.https.yml`（Caddy + backend + frontend） |
-| 代码目录 | 服务器 `/opt/ovh-webui` |
-| 数据卷 | Docker volume `ovh_webui_data` → 容器内 `/data` |
-| 公网 | 仅 **80 / 443**（后端不暴露 19998） |
-| 域名示例 | `ovh.example.com`（A 记录 → 服务器公网 IP） |
-| 登录 | `.env` 中 `API_SECRET_KEY` |
-| Telegram | 设置页 Token + Chat ID；后端 `getUpdates` 轮询，无需公网 Webhook |
-
-环境变量见根目录 [`.env.example`](./.env.example)。**更新代码时务必保留服务器上已有 `.env`**，勿被空模板覆盖。
-
----
-
-### 完整流程 A：首次一键部署（Linux 服务器）
-
-**前置**
-
-1. Ubuntu 22.04+（或同类），公网 IP  
-2. 域名 A 记录已指向该 IP（传播完成）  
-3. 安全组 / 防火墙放行 **80、443**  
-4. 已安装 Docker + Compose v2  
-
-```bash
-sudo apt update && sudo apt install -y docker.io docker-compose-v2 curl
-# 可选：将用户加入 docker 组后重新登录
+```
+POST /order/cart                         → cartId
+POST /order/cart/{id}/assign
+POST /order/cart/{id}/vps                → itemId   (duration / pricingMode 取自 GET /order/cart/{id}/vps)
+GET  /order/cart/{id}/item/{itemId}/requiredConfiguration
+POST /order/cart/{id}/item/{itemId}/configuration   (vps_datacenter 必填 / region / vps_os)
+POST /order/cart/{id}/checkout
 ```
 
-**步骤**
+在售型号取自公开目录 `GET /order/catalog/public/vps?ovhSubsidiary=XX`,用 OVH 自己的 `order-funnel:show` 标记筛选 —— 不拿 planCode 正则猜代次,猜的话每次换代都得发版,而且分不出"下架了"和"正则没覆盖到"。
 
-```bash
-# 1) 把项目放到服务器（git clone 或 scp/rsync）
-sudo mkdir -p /opt/ovh-webui
-# 示例：本机打包上传后解压到 /opt/ovh-webui
+价格计算 = 基础 plan 月费 + 各 addon family 选中 addon 月费累加(`ovhjk/parser/price.go` 1:1 移植到前端 `web/src/hooks/use-availability.ts`)。
 
-cd /opt/ovh-webui
-chmod +x scripts/linux-oneclick-deploy.sh
+## 端口
 
-# 2) 交互部署：提示输入域名、邮箱 → 写 .env → 构建启动 → 申请证书
-sudo ./scripts/linux-oneclick-deploy.sh
+| 服务 | 端口 |
+|---|---|
+| Go 后端(生产单二进制 / 开发) | **19998** |
+| Vite dev server(仅开发) | 19997 |
 
-# 非交互示例
-export DOMAIN=ovh.example.com
-export ACME_EMAIL=ops@example.com
-sudo -E ./scripts/linux-oneclick-deploy.sh --yes
+## 常见问题与排查
+
+下面这些都是实际踩过的,按"看到什么现象"查。
+
+### 界面变成英文了 / 想换语言
+
+界面语言**默认跟随浏览器语言**:浏览器是英文(或系统语言首位是英文)就显示英文,中文浏览器显示中文。顶栏右上角(登录页也有)的语言按钮可以手动切换;**手动切换过之后就固定为手动选择**,不再跟随浏览器变化。想恢复"跟随浏览器",把浏览器语言调回去后清一下该站点的 localStorage(删 `ovh-lang` 键)即可。
+
+### 一直提示权限不足 / `This call has not been granted`
+
+申请 token 时 **Rights(权限)**没给全。只给 `GET` 的话能看不能买 —— 下单、改配置、重装全部会失败。
+
+去对应站点的 `/createToken/` 重新申请,Rights 填四条:
+
+```
+GET     /*
+POST    /*
+PUT     /*
+DELETE  /*
 ```
 
-**部署后验收**
+「有效期 / Validity」建议选**不限(Unlimited)**,选了期限到期后要重来一遍。
+出处:[OVHcloud API first steps](https://docs.ovhcloud.com/en/guides/manage-and-operate/api/first-steps) ——
+"In order to allow all OVHcloud APIs for an HTTP method, put an asterisk (`*`) into the field"。
 
-```bash
-docker compose -f docker-compose.https.yml ps
-# 期望：backend / frontend / caddy 均为 healthy
+### 凭据填了但验证不通过 / 一直 401
 
-curl -sS https://你的域名/api/health
-# {"status":"ok", ...}
+两种可能:
 
-# 浏览器打开 https://你的域名 → 用脚本打印的 API Key 登录
-# 设置 → 添加 OVH 账户
-# 设置 → Telegram：填 Token + Chat ID 并保存（自动开始轮询）
+1. **在错误的站点申请的 token**。EU / US / CA 三站互不通用,拿欧区 token 配美区账户永远登不进去。
+   先在界面上选好子公司,再点那个链接去申请 —— 链接会跟着子公司变。
+2. **Consumer Key 没激活或已过期**。申请完 OVH 会给一个授权链接,必须点开确认;有效期到了也要重新申请。
+
+### 机型搜不到 / 提示"三个站点都查不到"
+
+- 先确认 planCode 的**大小写**。它是区分大小写的,而手机键盘会自动把首字母变大写。
+  程序会在目录里做一次大小写无关查找并把正确写法告诉你。
+- 再确认账户所在大区。美区机型带 `-us` / `-eu` / `-ca` 后缀,欧区和加区不带。
+
+### 监控订阅建好了但从来不触发
+
+多半是**机房代码填错**。填之前先看输入框下面那行"该机型在 XX 可选:"的列表,照着填。
+大小写不敏感、半角全角逗号都认,但拼错了不会有提示 —— 这种情况日志里会有一条
+"指定的机房 … 一个都不在 OVH 返回的列表里"的告警,去日志页搜"机房"能看到。
+
+### Telegram 上下单选不了配置
+
+早期版本的解析器要求配置项之间必须是**半角**逗号,中文输入法打出的全角 `，` 会让整串配置
+变成一个词而被丢掉。现在半角/全角逗号、顿号、空格分隔都认。格式:
+
+```
+24ska01 gra 2 ram-64g,softraid-2x960ssd
+型号     机房 数量 配置(可多个)
 ```
 
-**Telegram 校验**
+机房、数量、配置的**顺序随意**,`@账户名` 也可以放在任意位置。
 
-```bash
-source <(grep -E '^(API_SECRET_KEY|DOMAIN)=' .env | sed 's/^/export /')
+### 自己被 Telegram 机器人挡在外面
 
-curl -sS "https://${DOMAIN}/api/telegram/status" \
-  -H "X-API-Key: ${API_SECRET_KEY}"
-# polling.running 应为 true
-```
+设置页的管理员白名单(chat ID)如果用全角逗号分隔,整条白名单会失效。现在两种逗号都认,
+但老配置建议去设置页重新保存一次。
 
----
+### 建任务时提示超过上限
 
-### 完整流程 B：日常更新（从开发机推到线上）
+单个机房最多 20 台、单次最多 60 个任务、队列里最多 500 条。
+每条任务都是一次**真实的下单尝试**,撞上这个数基本可以断定是数量填错了。
+确实需要更多的话,分批建,或先去队列页清理掉跑完的任务。
 
-原则：**覆盖代码与镜像，保留 `.env` 与 data volume。**
+### 系统进不去了怎么办
 
-```bash
-# ── 在开发机 ──
-# 确认本地已是目标版本，后端可编译
-cd backend && go build -o ovh-webui .
+服务器控制 → 电源与系统 → **一键救援系统**。它把 OVH 后台那四步合成一个按钮:
+改 netboot 为救援 → 填收密码的邮箱 → 重启。
 
-# 打包（排除 node_modules / .git / data / .env / 二进制）
-# 用 rsync / scp / SFTP 同步到服务器 /opt/ovh-webui
+手动做最常漏的是**最后的重启** —— netboot 改了但没重启,机器还在原系统里跑,
+你会对着 SSH 连不上发懵。这里重启是自动发的。
 
-# ── 在服务器 ──
-cd /opt/ovh-webui
+进去之后:约 3~5 分钟,root 密码发到你填的邮箱(留空则发到 OVH 账户联系邮箱),
+SSH 登录后挂载硬盘修东西。救援系统是网络启动的独立临时 Linux,**不动硬盘数据**。
+修完回到同一个入口点「退出救援模式」切回正常系统 ——
+不切回去的话每次重启都会再进救援。
 
-# 强烈建议：先备份 .env
-cp -a .env /tmp/ovh-webui.env.bak
+### 提示「密钥连续错误次数过多」进不去了
 
-# 同步代码后恢复 .env（若同步可能覆盖）
-cp -a /tmp/ovh-webui.env.bak .env
+从 v0.1.32 起,同一来源连续 10 次密钥错误会被暂时拒绝 5 分钟 ——
+这是为了挡住爆破(这个服务能用你的 OVH 账户下单,不设阻力的话端口可达就能一秒试几千次)。
 
-# 仅重建后端（改 Go 时最快）
-docker compose -f docker-compose.https.yml up -d --build backend
+密钥就是后端 `.env` 里的 `API_SECRET_KEY`;从没设置过的话默认是 `123456`
+(强烈建议改掉,启动日志里也会红字提醒)。
+等冷却结束再输一次正确的即可,**输对之后计数立刻清零**。
+限流按来源 IP 分开算,不会因为别人试错把你挡在外面。
 
-# 前后端都有改动时
-docker compose -f docker-compose.https.yml up -d --build
+### 停止 / 重启容器时日志好像少了一段
 
-# 验收
-docker compose -f docker-compose.https.yml ps
-curl -sS https://你的域名/api/health
-```
+v0.1.31 及以前:程序不处理 SIGTERM,而 `docker compose down` / `up -d` 发的就是它。
+Go 收到 SIGTERM 默认当场终止,内存里还没落盘的日志会**整段丢掉**(实测:日志文件
+连创建都没有)。v0.1.32 起会先等在途请求收尾、把日志刷盘、正常关库再退出。
 
-**数据不会随容器重建丢失**（在 volume 正常的前提下）。  
-**会丢的是**：进程内存态（未落库的缓存、未保存的订阅若写库失败等）——见下文踩坑。
+### 数据库 / 配置放在哪、怎么备份
 
----
+- SQLite:工作目录下的 `sniper.db`(Docker 里是挂载卷)
+- 加密密钥:`.env` 里的 `OVH_DB_KEY`
 
-### 完整流程 C：Telegram 一键下单从 0 到可用
-
-1. 设置中配置 **Bot Token + Chat ID** 并保存（无需公网 HTTPS）  
-2. 设置页「轮询入站状态」显示运行中，或 `GET /api/telegram/status`  
-3. **监控页添加订阅**，并确保监控在运行（有订阅时启动会自动 Start）  
-4. 上架推送后点击「一键下单」  
-5. 队列页应出现 `fromTelegram: true` 的任务  
-
-按钮配置会写入 SQLite 表 `telegram_order_buttons`（约 24h TTL），**重启后仍可点**（在有效期内）。
-
----
-
-### 运维速查
-
-```bash
-# 日志
-./scripts/linux-oneclick-deploy.sh --logs
-# 或
-docker compose -f docker-compose.https.yml logs -f --tail=200 backend
-
-# 重启
-docker compose -f docker-compose.https.yml restart backend
-
-# 停止整栈
-./scripts/linux-oneclick-deploy.sh --down
-
-# 备份业务数据
-docker run --rm -v ovh_webui_data:/data -v "$PWD":/b alpine \
-  tar czf /b/ovh-data-$(date +%F).tgz -C /data .
-```
-
-| 端口 | SSL 生产 | 说明 |
-|------|----------|------|
-| 80 | 必开 | ACME HTTP-01 |
-| 443 | 必开 | 业务 HTTPS |
-| 19998 | **不要对公网开放** | 仅容器内 |
-
----
-
-## 踩过的坑（实战记录）
-
-### 1. Telegram 一键下单：重启后按钮全废
-
-**现象**  
-点「一键下单」无反应或失败；日志 `UUID未找到 in cache`。
-
-**原因**  
-回调 `callback_data` 受 Telegram **64 字节**限制，只存 UUID；完整 plan/dc/options 原先只在 **内存 map**。Docker 重建 / 进程重启后缓存清空，降级路径又缺 planCode → 返回 **400** → Telegram 重试堆积。
-
-**修复**  
-- 表 `telegram_order_buttons` 持久化 UUID  
-- 查找：内存 → SQLite；启动 `LoadMessageUUIDCacheFromDB`  
-- 业务失败也回 **HTTP 200** + `answerCallback` 中文提示，禁止对 Telegram 回 400  
-
-**运维注意**  
-修复**之前**发出的旧按钮仍无法恢复；需等**新**上架通知。部署后确认监控订阅仍在。
-
----
-
-### 2. 启动时 `SaveToDB()` 可能清空监控订阅
-
-**现象**  
-部署/重启后 `subscriptions_count: 0`，监控不再推送。
-
-**原因**  
-`ReplaceMonitorSubscriptions` 先 `DELETE` 再插入。启动路径曾：`LoadFromDB` →（若空或失败）→ **`SaveToDB()`**，把库里的订阅覆盖成空。
-
-**修复**  
-启动阶段**不再**无条件 `SaveToDB()`；加载失败时打 Error，避免用空列表回写。
-
-**运维**  
-更新后检查监控订阅；若被历史 bug 清空，需在 UI 重新添加。
-
----
-
-### 4. 无订阅时监控不会自动启动
-
-**现象**  
-容器 healthy，但没有上架通知。
-
-**原因**  
-`main` 仅在 `len(mon.Snapshot()) > 0` 时 `mon.Start()`。
-
-**处理**  
-先加订阅；或 UI/API `POST /api/monitor/start`。
-
----
-
-### 5. SKU 无 statistics / 软 404 被当成「整站挂了」
-
-**现象**  
-部分机器流量统计 404/500，前端显示离线或一片红。
-
-**原因**  
-OVH 部分 SKU 无对应 API；未签名请求或硬错误传到 UI。
-
-**修复**  
-后端对能力缺失 **soft-fail 200 + notAvailable**；前端 `CapabilityNotice`；HTTP 客户端与 `backendUrl` 健康检查收敛。
-
----
-
-### 6. 多账户 / 陈旧 accountId → 401/400
-
-**现象**  
-控制台偶发 401/400，换账户后仍带旧 id。
-
-**原因**  
-前端缓存的 active account 与后端不一致。
-
-**修复**  
-`ActiveAccountSync` 同步；删除账户时清空关联 `auto_order_account_id`。
-
----
-
-### 7. HTTPS 证书申请失败
-
-**现象**  
-Caddy 不健康，浏览器证书错误。
-
-**排查**  
-- 域名 A 是否指到**这台**机器（本机 DNS 污染时用 `dig`/`nslookup` 从外网查）  
-- 80 是否被占用、是否对公网开放  
-- `docker logs ovh-webui-caddy`  
-
----
-
-### 8. 更新时弄丢 `.env` / API Key 变化
-
-**现象**  
-部署后无法登录，或 Webhook 配置「消失」。
-
-**原因**  
-同步代码时覆盖了服务器 `.env`，`API_SECRET_KEY` 被重置。
-
-**做法**  
-更新前 `cp .env /tmp/....bak`，同步后强制恢复；数据在 volume，**密钥在 `.env`**。
-
----
-
-### 9. Windows 本机后端「假死 / 一关终端就挂」
-
-**现象**  
-PowerShell 里跑 exe，关窗口或重定向不当导致进程退出。
-
-**处理**  
-用 `scripts/start-backend.ps1`（`UseShellExecute` 分离进程）；生产一律走 Docker。
-
----
-
-### 10. 查 SQLite 时只拷 `sniper.db` 看不到新表
-
-**现象**  
-宿主机 `docker cp` 出的 db 缺表/缺行。
-
-**原因**  
-WAL 模式：变更可能在 `sniper.db-wal`。
-
-**做法**  
-对 **volume 整目录** 查询，或在运行中的库上 `PRAGMA wal_checkpoint`，不要只拷主文件做权威判断。
-
----
-
-### 11. 前端 HMR / 函数声明顺序
-
-**现象**  
-开发热更新时 `formatIpTypeLabel is not defined` 类崩溃。
-
-**处理**  
-工具函数放模块顶层/安全顺序；生产构建无此问题。
-
----
-
-## 安全红线
-
-| 不要提交 / 不要贴到聊天长期留存 | 说明 |
-|----------------------------------|------|
-| `backend/.env` / 根 `.env` | 网关密钥 |
-| `backend/data/` · Docker volume 备份 | OVH 账户、队列、TG Token |
-| 真实 OVH AK/AS/CK、服务器 root 密码 | 仅环境变量或密钥管理 |
-| 临时 `_remote_deploy_*.py` 含密码脚本 | 用完即删 |
-
-鉴权：除 `/api/health` 等白名单外，均需 `X-API-Key`。
-
-详见 [docs/SECURITY.md](./docs/SECURITY.md)。
-
----
-
-## 目录与脚本索引
-
-| 路径 | 说明 |
-|------|------|
-| `backend/` | Go API |
-| `src/` | React UI |
-| `docker-compose.https.yml` | **生产 HTTPS 全栈** |
-| `scripts/linux-oneclick-deploy.sh` | Linux 一键部署 / 日志 |
-| `scripts/init-first-run.ps1` | Windows 首次初始化 |
-| `scripts/start-backend.ps1` | Windows 稳定起后端 |
-| `scripts/smoke_test.py` | API 烟测 |
-| `docs/DEPLOY.md` | 部署补充 |
-| `docs/handover/` | 架构与交接 |
-
----
-
-## 版本与维护提示
-
-- **本地与线上代码应对齐同一提交/同一份源码树**；我们更新线上时以本仓库为唯一源。  
-- 改后端：服务器 `up -d --build backend` 即可。  
-- 改前端：重建 frontend 镜像；用户侧建议强刷（Ctrl+F5）。  
-- 发版后建议快速检查：  
-  1. `/api/health`  
-  2. 登录  
-  3. 监控订阅数量  
-  4. `/api/telegram/status` 轮询 running  
-  5. 日志中无持续 `UUID未找到`  
-
----
-
-## License / 声明
-
-自用运维工具。调用 OVH 官方 API，请遵守 OVH 服务条款与本机数据保护责任。  
-不附带任何可用性或抢购成功保证。
+**两个必须一起备份**。只备份 `sniper.db` 而丢了 `OVH_DB_KEY`,已存的 OVH 凭据和 Telegram token
+就再也解不开了,只能去 OVH 控制台吊销后重新录入。

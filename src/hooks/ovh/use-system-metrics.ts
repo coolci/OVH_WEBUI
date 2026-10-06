@@ -1,11 +1,16 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/http";
+import i18n from "@/i18n";
+import { apiMessage } from "@/lib/api-error";
 
 /** 后端二进制版本*/
 export function useAppVersion() {
   return useQuery({
     queryKey: ["app", "version"],
-    queryFn: async () => (await api.get<{ version: string }>("/version")).data.version,
+    // ?? "" 不能省:queryFn 返回 undefined 会被 react-query 当成错误抛,
+    // 而这个 hook 用在仪表盘上 —— 抛出去就是整页白屏。
+    // 后端正常返回 { version }, 这里防的是响应结构意外(代理插页、网关 200 带错误体)。
+    queryFn: async () => (await api.get<{ version: string }>("/version")).data?.version ?? "",
     staleTime: Infinity, // 进程跑起来版本号不会变,缓存到 unmount
     gcTime: Infinity,
     retry: 0,
@@ -24,6 +29,11 @@ export interface UpdateCheck {
   body: string;
   prerelease: boolean;
   checkedAt: string;
+  /** 跑在容器里。自更新在容器里是停用的 —— 新二进制只会写进容器的可写层，
+   *  容器一重建就回到镜像里的旧版本。界面据此显示「怎么拉新镜像」而不是更新按钮。 */
+  inContainer?: boolean;
+  /** 容器里的更新指引（多行文本）。inContainer 为 false 时是空串。 */
+  updateHint?: string;
 }
 
 /** 检查上游 (gokele/ovh) 是否有新版本。
@@ -42,6 +52,37 @@ export function useUpdateCheck() {
   });
 }
 
+/** 自更新进度。后端把状态放内存,重启阶段这个接口会连不上 —— 那正是重启成功的信号 */
+export interface UpdateProgress {
+  phase: "idle" | "downloading" | "verifying" | "installing" | "restarting" | "done" | "failed";
+  message: string;
+  percent: number;
+  version: string;
+  error?: string;
+}
+
+/** 触发在线更新:下载 → 校验 SHA256 → 替换二进制 → 自动重启。
+ *  接口立刻返回,真正的活在后端 goroutine 里,进度靠 useUpdateProgress 轮询。 */
+export function useSelfUpdate() {
+  return useMutation({
+    mutationFn: async () =>
+      (await api.post<{ success: boolean; message?: string; error?: string; latest?: string }>("/version/update")).data,
+  });
+}
+
+/** 轮询更新进度。enabled 时每秒一次 —— 更新是用户主动点的、有明确终点,
+ *  这个频率只在更新期间存在,不会常驻。 */
+export function useUpdateProgress(enabled: boolean) {
+  return useQuery<UpdateProgress>({
+    queryKey: ["app", "update-progress"],
+    queryFn: async () => (await api.get<UpdateProgress>("/version/update/status")).data,
+    enabled,
+    refetchInterval: enabled ? 1000 : false,
+    retry: 0,
+    gcTime: 0,
+  });
+}
+
 export interface SystemMetrics {
   cpu: { percent: number; cores: number };
   memory: { totalBytes: number; usedBytes: number; percent: number };
@@ -56,7 +97,18 @@ export interface SystemMetrics {
 export function useSystemMetrics() {
   return useQuery({
     queryKey: ["system", "metrics"],
-    queryFn: async () => (await api.get<SystemMetrics>("/system/metrics")).data,
+    queryFn: async () => {
+      const d = (await api.get<SystemMetrics>("/system/metrics")).data;
+      // 形状不对就抛错:仪表盘的守卫是 sys.data ? 渲染环 : 未知环,
+      // 一个 truthy 但缺 cpu 子对象的结构(比如代理层回了别的 JSON)
+      // 会让 `sys.data.cpu.cores` 直接白屏。
+      // 抛错而不是返回 undefined —— React Query 不允许 data 为 undefined,
+      // 且 isError 路径会让未知环带上"读取失败"的正确语义
+      if (!d || typeof d !== "object" || !d.cpu || !d.memory || !d.disk) {
+        throw new Error(i18n.t("hooksMsg.metrics.badResponse"));
+      }
+      return d;
+    },
     refetchInterval: 2000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,

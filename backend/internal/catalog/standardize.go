@@ -56,21 +56,8 @@ func FormatMemoryDisplay(memoryCode string) string {
 }
 
 func FormatStorageDisplay(storageCode string) string {
-	if storageCode == "" {
-		return ""
-	}
-	// 完整 addon：SAS 优先于 SA；hybrid 任意介质顺序；0disk
-	if disp := ParseStorageAddonDisplay(storageCode); disp != "" {
-		if !strings.Contains(strings.ToLower(storageCode), "raid") &&
-			!strings.Contains(strings.ToLower(storageCode), "disk") {
-			if m := reStorageSegment.FindStringSubmatch(storageCode); m != nil {
-				return formatStorageSegment(m[1], m[2], m[3])
-			}
-		}
-		return disp
-	}
-	if m := reStorageSegment.FindStringSubmatch(storageCode); m != nil {
-		return formatStorageSegment(m[1], m[2], m[3])
+	if m := regexp.MustCompile(`(?i)(\d+)x(\d+)(ssd|nvme|hdd)`).FindStringSubmatch(storageCode); m != nil {
+		return m[1] + "x " + m[2] + "GB " + strings.ToUpper(m[3])
 	}
 	return storageCode
 }

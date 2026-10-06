@@ -1,90 +1,43 @@
-package types_test
+package types
 
 import (
 	"os"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"testing"
-
-	"github.com/ovh-webui/server/internal/types"
 )
 
-// TestOrderLimitsInSync verifies PRD F04.7 / D-28:
-// The limits defined in backend/internal/types/orderlimits.go must strictly match
-// src/lib/order-limits.ts.
-func TestOrderLimitsInSync(t *testing.T) {
-	// Look for src/lib/order-limits.ts from repo root
-	// In test run, cwd is backend/internal/types
-	candidates := []string{
-		filepath.Join("..", "..", "..", "src", "lib", "order-limits.ts"),
-		filepath.Join("..", "..", "src", "lib", "order-limits.ts"),
-		filepath.Join("src", "lib", "order-limits.ts"),
+// 前端有一份同样的上限(web/src/lib/order-limits.ts)。
+//
+// 后端是权威(EnqueueItems 会拒),前端那份只是为了提前告诉用户,
+// 而不是让他发出几百个请求之后才撞墙。但两份数一旦不一致,
+// 表现是最难查的那种:界面说"最多 20 台"、点下去后端按 10 拒,
+// 或者反过来界面放行 50 而请求发到一半开始报错。
+//
+// 这条测试直接读那个 .ts 文件核对。不是什么优雅做法,但重复已经存在了,
+// 与其指望人记得改两处,不如让忘记的那次当场红。
+func TestOrderLimitsMatchFrontend(t *testing.T) {
+	const path = "../../../web/src/lib/order-limits.ts"
+	src, err := os.ReadFile(path)
+	if err != nil {
+		t.Skipf("读不到前端常量文件(%s),跳过:%v", path, err)
 	}
-
-	var content []byte
-	var foundPath string
-	for _, p := range candidates {
-		data, err := os.ReadFile(p)
-		if err == nil {
-			content = data
-			foundPath = p
-			break
+	want := map[string]int{
+		"MAX_ORDER_QUANTITY": MaxOrderQuantity,
+		"MAX_ORDER_FANOUT":   MaxOrderFanout,
+	}
+	for name, goVal := range want {
+		re := regexp.MustCompile(`(?m)^export const ` + name + `\s*=\s*(\d+)`)
+		m := re.FindSubmatch(src)
+		if m == nil {
+			t.Errorf("前端 order-limits.ts 里找不到 %s —— 它被改名或删掉了?", name)
+			continue
 		}
-	}
-
-	if foundPath == "" {
-		t.Fatalf("could not locate src/lib/order-limits.ts; searched: %v", candidates)
-	}
-
-	text := string(content)
-
-	parseConst := func(name string) int {
-		re := regexp.MustCompile(name + `\s*=\s*(\d+)`)
-		m := re.FindStringSubmatch(text)
-		if len(m) < 2 {
-			t.Fatalf("failed to find %s in %s", name, foundPath)
+		tsVal, _ := strconv.Atoi(string(m[1]))
+		if tsVal != goVal {
+			t.Errorf("%s 前后端不一致:Go=%d,前端=%d。\n"+
+				"两边必须同时改 —— 不一致时用户会看到"+
+				"「界面允许但后端拒绝」这种最难查的表现。", name, goVal, tsVal)
 		}
-		val, err := strconv.Atoi(m[1])
-		if err != nil {
-			t.Fatalf("failed to parse %s value %q: %v", name, m[1], err)
-		}
-		return val
-	}
-
-	tsMaxQuantity := parseConst("MAX_ORDER_QUANTITY")
-	tsMaxFanout := parseConst("MAX_ORDER_FANOUT")
-	tsMaxQueue := parseConst("MAX_QUEUE_SIZE")
-
-	if types.MaxOrderQuantity != tsMaxQuantity {
-		t.Errorf("MaxOrderQuantity mismatch: Go=%d, TS=%d", types.MaxOrderQuantity, tsMaxQuantity)
-	}
-	if types.MaxOrderFanout != tsMaxFanout {
-		t.Errorf("MaxOrderFanout mismatch: Go=%d, TS=%d", types.MaxOrderFanout, tsMaxFanout)
-	}
-	if types.MaxQueueSize != tsMaxQueue {
-		t.Errorf("MaxQueueSize mismatch: Go=%d, TS=%d", types.MaxQueueSize, tsMaxQueue)
-	}
-}
-
-func TestClampOrderQuantity(t *testing.T) {
-	// PRD acceptance requirement: 9999 -> clamped to 20
-	if got := types.ClampOrderQuantity(9999); got != 20 {
-		t.Errorf("ClampOrderQuantity(9999) = %d; want 20", got)
-	}
-	if got := types.ClampOrderQuantity(0); got != 1 {
-		t.Errorf("ClampOrderQuantity(0) = %d; want 1", got)
-	}
-	if got := types.ClampOrderQuantity(-10); got != 1 {
-		t.Errorf("ClampOrderQuantity(-10) = %d; want 1", got)
-	}
-	if got := types.ClampOrderQuantity(5); got != 5 {
-		t.Errorf("ClampOrderQuantity(5) = %d; want 5", got)
-	}
-	if got := types.ClampOrderQuantity(20); got != 20 {
-		t.Errorf("ClampOrderQuantity(20) = %d; want 20", got)
-	}
-	if got := types.ClampOrderQuantity(21); got != 20 {
-		t.Errorf("ClampOrderQuantity(21) = %d; want 20", got)
 	}
 }

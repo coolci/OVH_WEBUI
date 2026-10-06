@@ -41,6 +41,18 @@ func main() {
 	// 所以路径必须和 Load() 用的完全一致 —— 分叉了就会出现
 	// "写进了 A、下次从 B 读"的情况,而那意味着重新生成一把新密钥。
 	envPath := envFilePath()
+	// 空值的环境变量要当成"没设"。
+	//
+	// godotenv.Load 不覆盖**已存在**的环境变量 —— 哪怕它是空串。
+	// 而容器编排很容易设出空变量:docker compose 里写
+	// `OVH_DB_KEY: ${OVH_DB_KEY:-}`,宿主机没定义时容器里就是一个空的 OVH_DB_KEY。
+	//
+	// 后果是灾难性的且完全无声:文件里明明有密钥,却因为环境变量"已存在"而读不进来,
+	// 于是每次启动都判定"没有密钥"、重新生成一把、再追加进 .env ——
+	// 之前加密的 OVH 凭据和 Telegram Token 从此永久解不开,
+	// 而用户看到的只是"账户怎么没了"。
+	//
+	// 实测踩到过:容器重启两次,/data/.env 里就有两行 OVH_DB_KEY。
 	clearEmptyEnv(
 		"OVH_DB_KEY", "API_SECRET_KEY", "TG_ALLOWED_USER_IDS",
 		"CORS_ALLOWED_ORIGINS", "TRUSTED_PROXIES", "OVH_UPDATE_API",
@@ -105,18 +117,11 @@ func main() {
 	lg := logger.New(paths.LogFile("app.log.json"), console)
 	cfgStore := config.New(sqliteDB)
 	state := app.NewState(paths, cfgStore, lg, sqliteDB)
-	state.APIKey = strings.TrimSpace(os.Getenv("API_SECRET_KEY"))
-	allowInsecureKey := strings.EqualFold(os.Getenv("ALLOW_INSECURE_DEFAULT_KEY"), "true")
-	if state.APIKey == "" || state.APIKey == "123456" || state.APIKey == "change-me-to-a-long-random-string" {
-		if allowInsecureKey {
-			if state.APIKey == "" {
-				state.APIKey = "123456"
-			}
-			console.Warn("using insecure API_SECRET_KEY (ALLOW_INSECURE_DEFAULT_KEY=true); do not use in production")
-		} else {
-			console.Error("API_SECRET_KEY is missing or weak; set a long random secret, or ALLOW_INSECURE_DEFAULT_KEY=true for local dev only")
-			os.Exit(1)
-		}
+	state.APIKey = os.Getenv("API_SECRET_KEY")
+	usingDefaultAPIKey := false
+	if state.APIKey == "" {
+		state.APIKey = "123456"
+		usingDefaultAPIKey = true
 	}
 	state.Port = os.Getenv("PORT")
 	if state.Port == "" {
@@ -165,18 +170,6 @@ func main() {
 	mon.LoadFromDB()
 	console.Info("监控就绪", "checkInterval", mon.CheckInterval())
 
-	_ = proxyguard.Init(state)
-	proxyguard.SetReload(func() {
-		if mon != nil {
-			mon.LoadFromDB()
-		}
-	})
-	state.OVH.SetProxyErrorHook(proxyguard.Report)
-	state.SetProxyErrorHook(proxyguard.Report)
-	applySharedProxy(state)
-
-	go handlers.WarmupServiceOwners(state)
-
 	// Gin
 	if mode := os.Getenv("GIN_MODE"); mode != "" {
 		gin.SetMode(mode)
@@ -184,29 +177,51 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 	r := gin.New()
-	// 不信任任意反向代理头，避免 X-Forwarded-For 伪造 ClientIP
-	_ = r.SetTrustedProxies(nil)
+	// 默认不信任任何代理。gin 默认信任所有代理 + 读 X-Forwarded-For,
+	// 于是 c.ClientIP() 直接返回请求头里的值 —— 而 /api/internal/monitor/price
+	// 的「仅限本地」判定就是拿 ClientIP 做的,任何人加一个
+	// X-Forwarded-For: 127.0.0.1 就能绕过去,驱动服务端用真实凭据建/删 OVH 购物车
+	// (消耗 API 配额,补货窗口被限流就是错过抢购)。
+	//
+	// 真的在反向代理后面跑,用 TRUSTED_PROXIES 显式声明(逗号分隔 IP/CIDR)。
+	trusted := []string{}
+	for _, p := range strings.Split(os.Getenv("TRUSTED_PROXIES"), ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			trusted = append(trusted, p)
+		}
+	}
+	if err := r.SetTrustedProxies(trusted); err != nil {
+		console.Warn("SetTrustedProxies 失败,将按不信任代理处理", "err", err)
+	}
 	r.Use(gin.Recovery())
-	corsCfg := cors.Config{
+	// CORS 只放行同机来源。
+	//
+	// 以前是 AllowAllOrigins:true,配上「API_SECRET_KEY 未设时默认 123456」和
+	// 「GET /api/accounts 下发解密后的凭据明文」,构成一条完整的窃取链:
+	// 用户开着控制台时访问任意网页,那个页面只要
+	//   fetch('http://127.0.0.1:19998/api/accounts', {headers:{'X-API-Key':'123456'}})
+	// 就能读走全部 OVH 凭据 —— 浏览器本身就是攻击载体,「只监听本地」挡不住。
+	//
+	// 前端和后端同源部署(单二进制 embed)时根本不需要 CORS;
+	// 分开跑时只有本机的 dev server 需要。所以白名单化,
+	// 额外来源用 CORS_ALLOWED_ORIGINS 显式声明(逗号分隔)。
+	r.Use(cors.New(cors.Config{
+		AllowOrigins: allowedOrigins(state.Port),
 		AllowMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
 		AllowHeaders: []string{"Content-Type", "Authorization", "X-API-Key", "X-Request-Time"},
 		// X-Partial-Failures:部分明细拉取失败的计数(账单/退款/邮件等走响应头下发),
 		// 跨源部署时不列进 ExposeHeaders 浏览器就读不到,前端的"部分失败"提示会恒不显示
 		ExposeHeaders:    []string{"X-Cache-Warning", "X-Partial-Failures", "X-Cache-Age-Seconds"},
 		AllowCredentials: false,
-	}
-	if pub := strings.TrimRight(strings.TrimSpace(os.Getenv("PUBLIC_BASE_URL")), "/"); pub != "" {
-		corsCfg.AllowOrigins = []string{pub}
-	} else {
-		corsCfg.AllowAllOrigins = true
-	}
-	r.Use(cors.New(corsCfg))
+	}))
 
 	enableAuth := !strings.EqualFold(os.Getenv("ENABLE_API_KEY_AUTH"), "false")
 	r.Use(auth.Middleware(auth.Config{
 		APIKey:         state.APIKey,
 		Enabled:        enableAuth,
 		WhitelistPaths: auth.DefaultWhitelist(),
+		// App 设备令牌校验(Bearer)。nil 安全:配对表不存在时走不到这条分支
+		DeviceTokenValid: state.DB.DeviceTokenValid,
 	}))
 
 	// 健康检查
@@ -240,7 +255,7 @@ func main() {
 		// Purchase history
 		api.GET("/purchase-history", handlers.GetPurchaseHistory(state))
 		api.DELETE("/purchase-history", handlers.ClearPurchaseHistory(state))
-		// 订单支付状态:下单成功≠已付款,得去 OVH 查
+		// 订单支付状态:下单成功≠已付款,得去 OVH 问
 		api.POST("/purchase-history/refresh-status", handlers.RefreshOrderStatuses(state))
 
 		// Monitor
@@ -261,9 +276,17 @@ func main() {
 		api.GET("/telegram/verify", handlers.VerifyTelegram(state))
 
 		// Telegram
-		api.GET("/telegram/status", handlers.TelegramStatus(state))
+		// 收 update 只有长轮询一条路。这个端点只读状态,给设置页显示"收到没收到"。
+		api.GET("/telegram/poller", handlers.GetTelegramPollerStatus(state))
+		api.GET("/telegram/status", handlers.GetTelegramPollerStatus(state))
 		api.POST("/telegram/quick-order", handlers.TelegramQuickOrder(state, mon))
 		api.POST("/telegram/register-commands", handlers.RegisterTelegramCommands(state))
+
+		// 按账户的出站代理:查真实出口 IP(确认隔离生效的唯一可靠手段)+ 健康状况
+		api.POST("/accounts/:id/proxy-test", handlers.TestAccountProxy(state))
+		// 出站链路体检:出口 IP + 各目标连通性与延迟(抢购对延迟直接敏感)
+		api.POST("/accounts/:id/proxy-check", handlers.CheckAccountProxy(state))
+		api.GET("/accounts/proxy-status", handlers.ProxyStatus(state))
 
 		// Servers / availability / cache
 		api.GET("/servers", handlers.GetServers(state))
@@ -276,6 +299,12 @@ func main() {
 		api.GET("/catalog", handlers.GetCatalog(state))
 		api.GET("/system/metrics", handlers.GetSystemMetrics(state))
 		api.GET("/version", handlers.GetVersion(state))
+
+		// App 配对体系:兑换在鉴权白名单(凭 2 分钟一次性码),管理端需要密钥
+		api.POST("/app/pair", handlers.RedeemPairingCode(state))
+		api.POST("/app/pairing-codes", handlers.CreatePairingCode(state))
+		api.GET("/app/devices", handlers.ListAppDevices(state))
+		api.DELETE("/app/devices/:id", handlers.RevokeAppDevice(state))
 		api.GET("/version/check-update", handlers.CheckUpdate(state))
 		// 在线更新:下载 → 校验 → 替换自己 → 自动重启。gracefulRestart 在下面赋值,
 		// 这里用闭包间接引用,避免"路由要在 server 之前注册、server 又要在路由之后创建"的鸡生蛋
@@ -284,10 +313,6 @@ func main() {
 
 		// Accounts (多账户管理)
 		api.GET("/accounts", handlers.ListAccounts(state))
-		api.GET("/accounts/proxy-status", handlers.ProxyStatus(state))
-		api.POST("/accounts/proxy/test", handlers.TestAccountProxy(state))
-		api.POST("/accounts/:id/proxy-test", handlers.TestAccountProxy(state))
-		api.POST("/accounts/:id/proxy-check", handlers.CheckAccountProxy(state))
 		api.GET("/accounts/:id", handlers.GetAccountByID(state))
 		api.POST("/accounts", handlers.CreateAccount(state))
 		api.PUT("/accounts/:id", handlers.UpdateAccount(state))
@@ -300,6 +325,8 @@ func main() {
 
 		// Server control - basic
 		sc := api.Group("/server-control")
+		// :service_name 会被直接拼进 OVH 的请求路径,先在组上统一挡一道 ——
+		// 名字里带 # 或 ? 会让请求被静默发到另一个端点,见 ValidateServiceName
 		sc.Use(handlers.ValidateServiceName())
 		{
 			sc.GET("/list", handlers.ListMyServers(state))
@@ -410,6 +437,8 @@ func main() {
 			sc.GET("/:service_name/virtual-mac", handlers.GetVirtualMACList(state))
 			sc.POST("/:service_name/virtual-mac", handlers.CreateVirtualMAC(state))
 			sc.GET("/:service_name/virtual-network-interface", handlers.GetVirtualNetworkInterfaces(state))
+			// virtual-network-interface/:uuid/{enable,disable} 已删:底层 OVH 端点三区 DEPRECATED,
+			// 按约定废弃端点不再调用(见 server_control_misc.go 里删除处的说明)
 			sc.GET("/:service_name/vrack", handlers.GetVRackList(state))
 			sc.DELETE("/:service_name/vrack/:vrack", handlers.RemoveFromVRack(state))
 			sc.GET("/:service_name/orderable/bandwidth", handlers.GetOrderableBandwidth(state))
@@ -436,6 +465,8 @@ func main() {
 
 		// VPS control(已购 VPS 管理)
 		vc := api.Group("/vps-control")
+		// :service_name 会被直接拼进 OVH 的请求路径,先在组上统一挡一道 ——
+		// 名字里带 # 或 ? 会让请求被静默发到另一个端点,见 ValidateServiceName
 		vc.Use(handlers.ValidateServiceName())
 		{
 			vc.GET("/list", handlers.ListVps(state))
@@ -456,11 +487,10 @@ func main() {
 			vc.POST("/:service_name/console", handlers.VpsGetConsoleUrl(state))
 			vc.POST("/:service_name/password", handlers.VpsSetPassword(state))
 
-			// 重装/重建系统 (PRD: OVH废弃 /reinstall 转向 /rebuild)
+			// 重装系统
 			vc.GET("/:service_name/current-os", handlers.GetVpsCurrentOS(state))
 			vc.GET("/:service_name/templates", handlers.GetVpsTemplates(state))
 			vc.POST("/:service_name/reinstall", handlers.ReinstallVps(state))
-			vc.POST("/:service_name/rebuild", handlers.ReinstallVps(state))
 
 			// 任务
 			vc.GET("/:service_name/tasks", handlers.GetVpsTasks(state))
@@ -526,7 +556,6 @@ func main() {
 		api.POST("/ovh/contact-change-requests/:task_id/resend-email", handlers.ResendContactChangeEmail(state))
 		api.GET("/ovh/account/sub-accounts", handlers.GetSubAccounts(state))
 		api.GET("/ovh/account/bills", handlers.GetAccountBills(state))
-		api.GET("/ovh/account/orders", handlers.GetAccountOrders(state))
 	}
 
 	// 前端静态文件（仅 `-tags ui` 构建时生效）
@@ -539,9 +568,34 @@ func main() {
 	// 预热各账户子公司的区域配置:region 的合法取值要从 10MB 的公开目录里解析,
 	// 首次解析放在抢购链路上会白白慢 2-7 秒
 	go catalog.WarmRegionCache(state)
-	go telegram.StartPoller(state, func(u map[string]interface{}) {
-		handlers.ProcessTelegramUpdate(state, mon, u)
+	// 按账户的出站代理看门狗:代理连续挂掉就暂停那个账户的任务并通知用户。
+	//
+	// 必须在任何 OVH 调用之前接好 —— SetProxyErrorHook 会清掉已缓存的 client
+	// 让它们带着钩子重建,晚接的话前面那些请求的故障就丢了。
+	proxyguard.Init(state)
+	proxyguard.SetReload(func() {
+		// 库里关掉了自动下单,内存里的 Monitor 还拿着旧值 —— 不重读的话
+		// 自动下单会继续触发,而它的出口已经断了。
+		mon.LoadFromDB()
 	})
+	state.OVH.SetProxyErrorHook(proxyguard.Report)
+	// 不带凭据但仍打 OVH 的那些请求(公开目录、VPS 可用性轮询)也要上报
+	state.SetProxyErrorHook(proxyguard.Report)
+	// 公开目录/区域探测这类跨账户共享的请求走统一出口:默认账户配了代理就用它,
+	// 否则直连。这不是按账户隔离(共享缓存本来就没这个维度),
+	// 只是别拿本机真实 IP 去打 OVH。
+	applySharedProxy(state)
+	state.OVH.SetLogf(func(format string, args ...interface{}) {
+		state.Logger.Warn(fmt.Sprintf(format, args...), "proxy")
+	})
+
+	// 长轮询:配了 Token 就拉起来。
+	// 内部会先 deleteWebhook —— 老版本可能在 Telegram 那边注册过 webhook,
+	// 不摘掉的话 getUpdates 会一直失败。
+	handlers.InitPoller(state, mon)
+	go handlers.StartPollerIfEnabled(state)
+	// 把命令菜单推给 Telegram,用户打 "/" 就能看到能用什么(以前一条都没注册过)
+	go telegram.RegisterCommands(state)
 	// 服务器目录走懒加载：访问到且缓存过期时才打 OVH，无后台定时刷新
 
 	// 自动启动监控（如果有订阅）
@@ -550,20 +604,25 @@ func main() {
 		state.Logger.Info("自动启动服务器监控", "system")
 	}
 
+	state.Logger.Info("Server started", "system")
 	// 默认监听所有网卡（双栈 IPv4+IPv6），这样 localhost / 127.0.0.1 / 局域网 IP 都能访问。
 	// Windows 上 localhost 常先解析到 ::1，单绑 127.0.0.1 会被浏览器拒连。
 	// 如果只想锁本机回环，设 LISTEN_HOST=127.0.0.1
 	host := os.Getenv("LISTEN_HOST")
 	addr := host + ":" + state.Port
-
-	srv := &http.Server{
-		Addr:              addr,
-		Handler:           r,
-		ReadHeaderTimeout: 15 * time.Second,
-		ReadTimeout:       120 * time.Second,
-		WriteTimeout:      120 * time.Second,
-		IdleTimeout:       90 * time.Second,
+	// 安全告警必须在监听之前、而且要显眼。
+	// 数据库密钥那套(密文对不上直接拒绝启动)的标准,鉴权这边一直没有:
+	// 「默认密钥 123456」+「LISTEN_HOST 空 = 所有网卡」组合起来,
+	// 装完就是一台任何人都能操作 OVH 账户的机器,而启动日志一个字都不提。
+	if !enableAuth {
+		console.Error("⚠️  API 密钥校验已关闭(ENABLE_API_KEY_AUTH=false):任何人都能调用全部接口,包括下单和重装。仅限本地调试")
+	} else if usingDefaultAPIKey {
+		console.Error("⚠️  正在使用默认 API 密钥 123456 —— 请立刻在 .env 里设置 API_SECRET_KEY")
+		if host == "" {
+			console.Error("⚠️  并且监听所有网卡(LISTEN_HOST 为空):同网段任何人都能用默认密钥操作你的 OVH 账户")
+		}
 	}
+	srv := &http.Server{Addr: addr, Handler: r}
 
 	// 端口真正 Listen 成功之后才标记"这一版能跑" —— 此时数据库已打开、路由已注册、
 	// 端口也占上了。太早标记等于没验证:启动就 panic、端口被占、数据库损坏,
@@ -574,6 +633,9 @@ func main() {
 	// 拿到 listener 就是确凿的成功信号,没有窗口。
 	ln, err := listenWithRetry(addr, state)
 	if err != nil {
+		// 这里失败就是整个程序没起来。以前"Listening"和"Server started"两行
+		// 打在 Listen **之前**,于是端口被占时日志上写着启动成功、实际进程已经退了 ——
+		// 自更新失败最难查的就是这一点。
 		console.Error("启动失败:端口没能绑上", "addr", addr, "err", err)
 		state.Logger.Error("启动失败,端口 "+addr+" 没能绑上: "+err.Error(), "system")
 		state.Logger.Flush()
@@ -582,6 +644,13 @@ func main() {
 	console.Info("Listening", "addr", addr, "auth", enableAuth, "ui", hasUI(), "dataDir", paths.DataDir)
 	state.Logger.Info("已监听 "+addr+",开始对外服务", "system")
 	updater.MarkHealthy(state)
+
+	// 后台:每小时清一次过期的 App 配对码(2 分钟有效,留 1 小时缓冲给排查)
+	go func() {
+		for range time.Tick(time.Hour) {
+			state.DB.CleanupPairingCodes()
+		}
+	}()
 
 	// 自更新完成后走这里:先停止接受新请求并等在途请求收尾,再关数据库,最后换进程映像。
 	// 顺序不能反 —— 先 exec 的话,新进程会发现端口还被自己占着。
@@ -601,6 +670,8 @@ func main() {
 			console.Warn("close sqlite", "err", err)
 		}
 
+		// 走到这一步再记一笔并落盘:以前日志停在"正在优雅关闭"就没了,
+		// 根本分不清是没走到 exec、还是 exec 失败了。
 		state.Logger.Info("[更新] 准备用新二进制替换进程映像: "+exe, "version")
 		state.Logger.Flush()
 
@@ -681,7 +752,17 @@ func main() {
 	}
 }
 
+// restartPending 标记"这次 Serve 退出是自更新计划内的"。
+var restartPending atomic.Bool
+
 // gracefulShutdown 退出前的收尾:停止接受新请求 → 等在途请求收尾 → 日志落盘 → 关数据库。
+//
+// 抽成独立函数是为了能测:这里真正要保证的是两件**可观察**的事 ——
+// 缓冲区里的日志写进了文件、数据库正常关闭。这两件在收到 SIGTERM 时
+// 原本一件都不会发生(Go 默认当场终止,defer 不执行)。
+//
+// 顺序不能反:先 Flush 再 Close。日志写的是文件不是库,但把"正在关库"
+// 这句留到关完再刷,万一 Close 卡住,最有用的那条线索就丢了。
 func gracefulShutdown(srv *http.Server, sqlDB io.Closer, lg *logger.Logger, console *slog.Logger, reason string, wait time.Duration) {
 	lg.Info("收到 "+reason+",正在优雅退出", "system")
 
@@ -711,12 +792,18 @@ func gracefulShutdown(srv *http.Server, sqlDB io.Closer, lg *logger.Logger, cons
 }
 
 // shutdownPending 标记"这次 Serve 退出是收到退出信号后计划内的"。
+// 和 restartPending 分开:两条路径的收尾动作不同(一个要 exec,一个要退出),
+// 共用一个标记会让自更新在收到 SIGTERM 时走错分支。
 var shutdownPending atomic.Bool
 
-// restartPending 标记"这次 Serve 退出是自更新计划内的"。
-var restartPending atomic.Bool
-
 // listenWithRetry 绑端口,短暂重试。
+//
+// 自更新是 execve:旧进程的监听 fd 虽然在 Shutdown 里关了,但内核回收、
+// 以及仍处于 TIME_WAIT 的连接,都可能让紧接着的 bind 撞上
+// "address already in use"。这是个几百毫秒的窗口,重试几次就过去了 ——
+// 而不重试的话,自更新会以"新版本起不来"收场,然后被回滚。
+//
+// 真的是别的进程占着端口时,重试几秒也还是失败,那时候才该报错退出。
 func listenWithRetry(addr string, state *app.State) (net.Listener, error) {
 	var lastErr error
 	for i := 0; i < 10; i++ {
@@ -808,6 +895,29 @@ func isTrue(v string) bool {
 		return true
 	}
 	return false
+}
+
+// allowedOrigins CORS 白名单:本机的前端来源 + 用户显式声明的。
+//
+// 默认只有 localhost / 127.0.0.1 的后端端口和 Vite dev 端口。
+// 反向代理或跨机访问的场景用 CORS_ALLOWED_ORIGINS 加(逗号分隔完整来源,
+// 如 https://ovh.example.com)。
+func allowedOrigins(port string) []string {
+	if port == "" {
+		port = "19998"
+	}
+	out := []string{}
+	for _, host := range []string{"localhost", "127.0.0.1"} {
+		for _, p := range []string{port, "19997"} { // 19997 = Vite dev server
+			out = append(out, "http://"+host+":"+p)
+		}
+	}
+	for _, o := range strings.Split(os.Getenv("CORS_ALLOWED_ORIGINS"), ",") {
+		if o = strings.TrimSpace(o); o != "" {
+			out = append(out, o)
+		}
+	}
+	return out
 }
 
 // applySharedProxy 把默认账户的代理设为"公开请求"的统一出口。

@@ -1,3 +1,4 @@
+import i18n from "@/i18n";
 /**
  * 金额显示的唯一入口。
  *
@@ -5,8 +6,9 @@
  * 实测 /v1/order/catalog/public/eco?ovhSubsidiary=X 的 locale.currencyCode：
  *   IE/FR/DE/NL/PT/FI/CZ/LT = EUR   GB = GBP   PL = PLN   MA = MAD   TN = TND   SN = XOF
  *   CA/QC = CAD   US/WE/WS = USD   SG = SGD   AU = AUD   IN = INR
- * 后端拿不到 currencyCode 就留空，前端若再 `|| "EUR"`
- * 等于把诚实留空重新伪造成欧元——美区/加区的订单会被显示成 €。
+ * 后端这一轮已经把"拿不到 currencyCode 就留空"落实了（internal/price/price.go、
+ * internal/purchase/purchase.go 都明确写了"不再默认 EUR"），前端若再 `|| "EUR"`
+ * 等于把后端的诚实留空重新伪造成欧元——美区/加区的订单会被显示成 €。
  * 所以：币种缺失时只显示数字，符号和币种码一个都不编。
  */
 
@@ -43,5 +45,4 @@ export function formatMoney(value: number, code?: string | null, digits = 2): st
 }
 
 /** 币种缺失时给 title / 说明用的文案，别让用户以为是页面少渲染了一截 */
-export const CURRENCY_UNKNOWN_HINT =
-  "OVH 未返回币种（currencyCode 为空）。币种按账户子公司定：US/WE/WS=USD、CA/QC=CAD、SG=SGD、AU=AUD、GB=GBP，不能默认按欧元读。";
+export const currencyUnknownHint = () => i18n.t("commons.currencyUnknownHint");

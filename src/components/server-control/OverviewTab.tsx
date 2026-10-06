@@ -1,69 +1,41 @@
-import { Cpu, HardDrive, MemoryStick, MapPin, Globe, Wifi } from "lucide-react";
+import { Cpu, HardDrive, MemoryStick, MapPin, Globe, Wifi, AlertTriangle } from "lucide-react";
 import type { OwnedServer } from "@/hooks/use-server-control";
-import {
-  useServerHardware,
-  useServerIps,
-  useServerNetworkInterfaces,
-} from "@/hooks/use-server-control";
+import { useServerHardware, useServerIps, useServerNetworkInterfaces } from "@/hooks/use-server-control";
 import { useHideIp, maskSensitive } from "@/hooks/use-hide-ip";
 import { Skeleton } from "@/components/common/Skeleton";
-import { InfoCard } from "@/components/common/InfoCard";
+import { PartialNotice, DetailErrorTag } from "@/components/common/PartialNotice";
 import { MrtgTrafficChart } from "./MrtgTrafficChart";
+import { useTranslation } from "react-i18next";
 
-/** IP type 展示：dedicated/failover + IPv4/IPv6，避免 raw unknown */
-function formatIpTypeLabel(entry: {
-  type?: string;
-  family?: string;
-  ip?: string;
-  inferred?: boolean;
-}): string {
-  const rawType = String(entry.type || "").toLowerCase();
-  const family =
-    entry.family || (String(entry.ip || "").includes(":") ? "ipv6" : "ipv4");
-
-  let typeLabel: string;
-  if (rawType === "dedicated") {
-    typeLabel = "独享";
-  } else if (rawType === "failover") {
-    typeLabel = "故障转移";
-  } else if (rawType === "unknown" || rawType === "n/a" || !rawType) {
-    typeLabel = family === "ipv6" ? "IPv6" : "IPv4";
-  } else {
-    typeLabel = entry.type || "";
-  }
-
-  const famLabel = family === "ipv6" ? "v6" : family === "ipv4" ? "v4" : "";
-  if (typeLabel === "独享" || typeLabel === "故障转移") {
-    return famLabel ? `${typeLabel} · ${famLabel}` : typeLabel;
-  }
-  return typeLabel || famLabel || "IP";
-}
-
-/** 概览 Tab：硬件 + 网络（IP / 接口 / MRTG 流量） */
+/** 概览 Tab：硬件 + 网络（IP / 接口 / MRTG 流量）。服务信息胶囊条已上提到 ServerTabs 同行 */
 export function OverviewTab({ server }: { server: OwnedServer }) {
+  const { t } = useTranslation();
   const hw = useServerHardware(server.serviceName);
   const ips = useServerIps(server.serviceName);
   const interfaces = useServerNetworkInterfaces(server.serviceName);
   const { hidden } = useHideIp();
 
+  // 内存字段是 { value, unit } 对象
   const memText = hw.data?.memorySize
     ? `${hw.data.memorySize.value} ${hw.data.memorySize.unit}`
     : "—";
 
+  // CPU 字段：processorName + 核线（旧前端写法照搬）
   const cpuText = hw.data?.processorName
     ? hw.data.coresPerProcessor && hw.data.threadsPerProcessor
-      ? `${hw.data.processorName} (${hw.data.coresPerProcessor}核/${hw.data.threadsPerProcessor}线程)`
+      ? t("maint.overview.cpuCoresThreads", {
+          name: hw.data.processorName,
+          cores: hw.data.coresPerProcessor,
+          threads: hw.data.threadsPerProcessor,
+        })
       : hw.data.processorName
     : "—";
 
+  // 磁盘：把所有 diskGroups 拼成 "N × Type Size" / "N × Type Size" 多组用 / 分隔
   const diskText =
     hw.data?.diskGroups && hw.data.diskGroups.length > 0
       ? hw.data.diskGroups
-          .map((g: {
-            numberOfDisks?: number;
-            diskType?: string;
-            diskSize?: { value: number; unit: string };
-          }) => {
+          .map((g: any) => {
             const count = g.numberOfDisks ?? 1;
             const type = g.diskType ?? "";
             const size = g.diskSize ? `${g.diskSize.value} ${g.diskSize.unit}` : "";
@@ -72,25 +44,35 @@ export function OverviewTab({ server }: { server: OwnedServer }) {
           .join(" / ")
       : "—";
 
-  const ipEntries =
-    ips.data && ips.data.length > 0
-      ? ips.data
-      : [{ ip: server.ip, type: "dedicated", family: "ipv4" as const }];
-
   return (
     <div className="space-y-6">
+      {/* 列表接口这次没查到这台机器的 serviceInfos：续费状态 / 计费状态都不可信。
+          「没查到」不能默默当成「没开自动续费」，否则用户会以为自己已经关过续费了。 */}
+      {(server.svcInfoError || server.error) && (
+        <div className="flex items-start gap-2 rounded-xl border border-warning/40 bg-warning/5 px-3 py-2 text-[11px] text-foreground/80">
+          <AlertTriangle className="w-3.5 h-3.5 text-warning flex-shrink-0 mt-0.5" />
+          <span>
+            {server.error
+              ? t("maint.overview.detailError", { err: server.error })
+              : t("maint.overview.svcInfoError", { err: server.svcInfoError })}
+          </span>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3">
-        <InfoCard icon={<Cpu className="w-4 h-4" />} label="处理器" value={cpuText} loading={hw.isPending} />
-        <InfoCard icon={<MemoryStick className="w-4 h-4" />} label="内存" value={memText} loading={hw.isPending} />
-        <InfoCard icon={<HardDrive className="w-4 h-4" />} label="磁盘" value={diskText} loading={hw.isPending} />
-        <InfoCard icon={<MapPin className="w-4 h-4" />} label="数据中心" value={(server.datacenter || "").toUpperCase()} />
+        <InfoCard icon={<Cpu className="w-4 h-4" />} label={t("maint.overview.info.cpu")} value={cpuText} loading={hw.isPending} />
+        <InfoCard icon={<MemoryStick className="w-4 h-4" />} label={t("maint.overview.info.mem")} value={memText} loading={hw.isPending} />
+        <InfoCard icon={<HardDrive className="w-4 h-4" />} label={t("maint.overview.info.disk")} value={diskText} loading={hw.isPending} />
+        <InfoCard icon={<MapPin className="w-4 h-4" />} label={t("maint.overview.info.dc")} value={(server.datacenter || "—").toUpperCase()} />
       </div>
 
+      {/* 网络：IP 列表 + 接口 + MRTG 流量 */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
+        {/* IP 列表 */}
         <div className="border border-border rounded-2xl overflow-hidden">
           <div className="px-4 py-3 border-b border-border flex items-center gap-2">
             <Globe className="w-4 h-4 text-muted-foreground" />
-            <h3 className="text-sm font-semibold">IP 地址</h3>
+            <h3 className="text-sm font-semibold">{t("maint.overview.ipTitle")}</h3>
           </div>
           {ips.isPending ? (
             <div className="p-4">
@@ -98,48 +80,84 @@ export function OverviewTab({ server }: { server: OwnedServer }) {
             </div>
           ) : (
             <div className="divide-y divide-border">
-              {ipEntries.map((entry) => (
-                <div
-                  key={entry.ip}
-                  className="flex items-center justify-between gap-3 px-4 py-3 text-[13px]"
-                >
-                  <code className="min-w-0 truncate font-mono text-[12px] sm:text-[13px]">
-                    {maskSensitive(entry.ip, hidden)}
-                  </code>
-                  <span className="flex-shrink-0 text-[11px] text-muted-foreground">
-                    {formatIpTypeLabel(entry)}
-                  </span>
+              {(ips.data && ips.data.length > 0 ? ips.data : [{ ip: server.ip, type: "IPv4" }]).map((entry) => (
+                <div key={entry.ip} className="px-4 py-3 flex items-center justify-between text-[13px]">
+                  <code className="font-mono">{maskSensitive(entry.ip, hidden)}</code>
+                  <span className="text-[11px] text-muted-foreground">{entry.type}</span>
                 </div>
               ))}
             </div>
           )}
         </div>
 
+        {/* 网卡接口 */}
         <div className="border border-border rounded-2xl overflow-hidden">
           <div className="px-4 py-3 border-b border-border flex items-center gap-2">
             <Wifi className="w-4 h-4 text-muted-foreground" />
-            <h3 className="text-sm font-semibold">网卡接口</h3>
+            <h3 className="text-sm font-semibold">{t("maint.overview.nicTitle")}</h3>
           </div>
           {interfaces.isPending ? (
             <div className="p-4">
               <Skeleton className="h-20 rounded-md" />
             </div>
-          ) : (interfaces.data || []).length === 0 ? (
-            <p className="px-4 py-6 text-sm text-muted-foreground text-center">未发现网卡</p>
+          ) : interfaces.isError ? (
+            // 「读取失败」和「这台机器没网卡」是两回事，混成同一句会让用户放弃重试
+            <p className="px-4 py-6 text-sm text-destructive text-center">{t("maint.overview.nicLoadFailed")}</p>
+          ) : (interfaces.data?.items || []).length === 0 ? (
+            <p className="px-4 py-6 text-sm text-muted-foreground text-center">{t("maint.overview.nicEmpty")}</p>
           ) : (
-            <div className="divide-y divide-border">
-              {(interfaces.data || []).map((nic) => (
-                <div key={nic.mac} className="px-4 py-3 flex items-center justify-between text-[13px]">
-                  <code className="font-mono">{maskSensitive(nic.mac, hidden)}</code>
-                  <span className="text-[11px] text-muted-foreground">{nic.linkType || "—"}</span>
-                </div>
-              ))}
-            </div>
+            <>
+              <PartialNotice
+                failedCount={interfaces.data?.failedCount || 0}
+                what={t("maint.overview.nicPartialWhat")}
+                className="mx-4 mt-3"
+              />
+              <div className="divide-y divide-border">
+                {(interfaces.data?.items || []).map((nic) => (
+                  <div key={nic.mac} className="px-4 py-3 flex items-center justify-between text-[13px]">
+                    <code className="font-mono">{nic.mac}</code>
+                    <span className="text-[11px] text-muted-foreground flex items-center gap-2">
+                      <DetailErrorTag message={nic._detailError} />
+                      {nic.linkType || "—"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </div>
       </div>
 
+      {/* MRTG 流量监控 */}
       <MrtgTrafficChart serviceName={server.serviceName} />
+    </div>
+  );
+}
+
+function InfoCard({
+  icon,
+  label,
+  value,
+  loading,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  loading?: boolean;
+}) {
+  return (
+    <div className="border border-border rounded-xl px-3.5 py-3 flex items-center gap-3 min-w-0">
+      <div className="w-9 h-9 rounded-lg bg-secondary flex items-center justify-center flex-shrink-0">{icon}</div>
+      <div className="min-w-0">
+        <div className="text-[11px] text-muted-foreground">{label}</div>
+        {loading ? (
+          <Skeleton className="h-4 w-24 mt-1" />
+        ) : (
+          <div className="text-[13px] font-semibold truncate" title={value}>
+            {value}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -37,13 +37,14 @@ func UpdateSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc 
 
 		var body struct {
 			Datacenters        *[]string `json:"datacenters"`
-			Options            *[]string `json:"options"`
 			NotifyAvailable    *bool     `json:"notifyAvailable"`
 			NotifyUnavailable  *bool     `json:"notifyUnavailable"`
 			AutoOrder          *bool     `json:"autoOrder"`
 			Quantity           *int      `json:"quantity"`
 			AutoOrderAccountID *string   `json:"autoOrderAccountId"`
 			AutoPay            *bool     `json:"autoPay"`
+			// Options 只盯这套配置。空数组 = 改回"盯全部配置"。
+			Options *[]string `json:"options"`
 		}
 		if err := c.ShouldBindJSON(&body); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "请求体格式错误: " + err.Error()})
@@ -53,19 +54,16 @@ func UpdateSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc 
 		// 先取当前值作为默认,再用 body 里给了的字段覆盖
 		cur := mon.SubscriptionConfig(planCode)
 		datacenters := cur.Datacenters
-		options := cur.Options
 		notifyAvailable := cur.NotifyAvailable
 		notifyUnavailable := cur.NotifyUnavailable
 		autoOrder := cur.AutoOrder
 		quantity := cur.Quantity
 		accountID := cur.AutoOrderAccountID
 		autoPay := cur.AutoPay
+		options := cur.Options
 
 		if body.Datacenters != nil {
 			datacenters = *body.Datacenters
-		}
-		if body.Options != nil {
-			options = *body.Options
 		}
 		if body.NotifyAvailable != nil {
 			notifyAvailable = *body.NotifyAvailable
@@ -82,12 +80,15 @@ func UpdateSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc 
 		if body.AutoPay != nil {
 			autoPay = *body.AutoPay
 		}
+		if body.Options != nil {
+			options = *body.Options
+		}
 		if body.AutoOrderAccountID != nil {
 			accountID = *body.AutoOrderAccountID
 			// 空串是合法值:表示「触发时只通知、不下单」
 			if accountID != "" {
 				if _, ok := state.FindAccount(accountID); !ok {
-					c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "autoOrderAccountId 不存在"})
+					c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "autoOrderAccountId 不存在", "code": "EB5C2D1BB"})
 					return
 				}
 			}
@@ -225,7 +226,7 @@ func UpdateVPSSubscription(state *app.State) gin.HandlerFunc {
 		if next.AutoOrderAccountID != "" {
 			acc, ok := state.FindAccount(next.AutoOrderAccountID)
 			if !ok {
-				c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "autoOrderAccountId 不存在"})
+				c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "autoOrderAccountId 不存在", "code": "EB5C2D1BB"})
 				return
 			}
 			accRegion := ovh.EndpointRegion(acc.Endpoint)

@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/ovh-webui/server/internal/app"
+	"github.com/ovh-webui/server/internal/ovh"
 	"github.com/ovh-webui/server/internal/telegram"
 	"github.com/ovh-webui/server/internal/types"
 )
@@ -15,11 +16,7 @@ import (
 // GetSettings GET /api/settings
 func GetSettings(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		cfg := state.Config.Get()
-		// webhook secret 不下发前端：它只在后端和 Telegram 之间使用，
-		// 前端拿到也没用，暴露面反而变大。
-		cfg.TgWebhookSecret = ""
-		c.JSON(http.StatusOK, cfg)
+		c.JSON(http.StatusOK, state.Config.Get())
 	}
 }
 
@@ -28,7 +25,7 @@ func SaveSettings(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var newCfg types.Config
 		if err := c.ShouldBindJSON(&newCfg); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": err.Error()})
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": ovh.Explain(err)})
 			return
 		}
 
@@ -48,16 +45,10 @@ func SaveSettings(state *app.State) gin.HandlerFunc {
 			u, err := url.Parse(newCfg.NotifyWebhookURL)
 			if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
 				c.JSON(http.StatusBadRequest, gin.H{"status": "error",
-					"message": "通知 Webhook 地址不合法,必须是完整的 http:// 或 https:// 地址"})
+					"message": "通知 Webhook 地址不合法,必须是完整的 http:// 或 https:// 地址", "code": "E3CAC8031"})
 				return
 			}
 		}
-
-		// webhook secret 前端不可见也不可改（GetSettings 已抹掉），
-		// 这里必须从旧配置继承回来，否则前端保存一次设置就把 secret 清了，
-		// Telegram 那边仍在校验旧 secret → 所有回调直接 401。
-		newCfg.TgWebhookSecret = prev.TgWebhookSecret
-		newCfg.TgWebhookSecretRegistered = prev.TgWebhookSecretRegistered
 
 		// 默认值兜底
 		if newCfg.Endpoint == "" {
@@ -71,10 +62,21 @@ func SaveSettings(state *app.State) gin.HandlerFunc {
 		newCfg.QuickOrderRetryInterval = types.ClampRetryInterval(newCfg.QuickOrderRetryInterval, types.DefaultQuickRetryInterval)
 
 		if err := state.Config.Set(newCfg); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": ovh.Explain(err)})
 			return
 		}
 		state.Logger.Info("API settings updated in config.json", "system")
+
+		// Token 变了就得重拉长轮询。
+		//
+		// 收 update 只有这一条路,而循环是拿着旧 Token 在跑的 ——
+		// 不重启的话用户换完 Token 保存,界面一切正常,但从此一条命令、
+		// 一个按钮都收不到,而且没有任何地方会提示他。
+		// 首次填 Token 同理:启动时没有 Token,poller 根本没起来。
+		if newCfg.TgToken != prev.TgToken {
+			state.Logger.Info("Telegram Token 已变更,重启长轮询", "telegram")
+			go RestartPoller(state)
+		}
 
 		// TG 配置变更 → 同步发一条测试消息
 		if newCfg.TgToken != "" && newCfg.TgChatID != "" {
@@ -92,8 +94,6 @@ func SaveSettings(state *app.State) gin.HandlerFunc {
 		} else {
 			state.Logger.Info("未配置 Telegram Token 或 Chat ID，跳过测试消息。", "")
 		}
-
-		telegram.NotifyPollerConfigChanged()
 
 		c.JSON(http.StatusOK, gin.H{"status": "success"})
 	}

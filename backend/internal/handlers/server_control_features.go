@@ -11,6 +11,7 @@ import (
 	ovhsdk "github.com/ovh/go-ovh/ovh"
 
 	"github.com/ovh-webui/server/internal/app"
+	"github.com/ovh-webui/server/internal/ovh"
 )
 
 // featureOVHErr 拆出 OVH 错误里的 HTTP 状态码和原始 message。
@@ -66,7 +67,7 @@ func featureBackupFTPUnavailable(state *app.State, c *gin.Context) bool {
 	state.Logger.Info("账户所在大区 "+region+" 不提供备份FTP功能，已拦截请求", "server_control")
 	payload := gin.H{
 		"success":      false,
-		"error":        "当前账户所在区域（US）不提供备份FTP功能，请改用云备份（Backup Cloud）",
+		"error":        "当前账户所在区域（US）不提供备份FTP功能，请改用云备份（Backup Cloud）", "code": "E192FDC9B",
 		"notAvailable": true,
 		"unsupported":  true,
 		"region":       region,
@@ -129,10 +130,10 @@ func GetBurst(state *app.State) gin.HandlerFunc {
 			lower := strings.ToLower(err.Error())
 			if strings.Contains(lower, "does not exist") || strings.Contains(lower, "not exist") {
 				state.Logger.Info("服务器 "+svc+" 不支持突发带宽功能", "server_control")
-				c.JSON(http.StatusOK, gin.H{"success": false, "error": "该服务器不支持突发带宽功能", "notAvailable": true})
+				c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "该服务器不支持突发带宽功能", "code": "EA43E3E3C", "notAvailable": true})
 				return
 			}
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"success": true, "burst": burst})
@@ -153,7 +154,7 @@ func UpdateBurst(state *app.State) gin.HandlerFunc {
 		}
 		_ = c.ShouldBindJSON(&body)
 		if body.Status == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少status参数"})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少status参数", "code": "E8C3A474D"})
 			return
 		}
 		// 合法取值由 schema 写死：body 模型 dedicated.server.ServerBurst 的 status 是
@@ -162,7 +163,7 @@ func UpdateBurst(state *app.State) gin.HandlerFunc {
 		switch body.Status {
 		case "active", "inactive", "inactiveLocked":
 		default:
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "status 参数无效，只能是 active / inactive / inactiveLocked"})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "status 参数无效，只能是 active / inactive / inactiveLocked", "code": "E5244ABC0"})
 			return
 		}
 		var result map[string]interface{}
@@ -175,11 +176,11 @@ func UpdateBurst(state *app.State) gin.HandlerFunc {
 				status = http.StatusBadRequest
 			}
 			state.Logger.Error("更新服务器 "+svc+" 突发带宽状态失败: "+err.Error(), "server_control")
-			c.JSON(status, gin.H{"success": false, "error": err.Error()})
+			c.JSON(status, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		state.Logger.Info("更新服务器 "+svc+" 突发带宽状态为: "+body.Status, "server_control")
-		c.JSON(http.StatusOK, gin.H{"success": true, "message": "突发带宽状态已更新", "result": result})
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "突发带宽状态已更新", "code": "EA72B810D", "result": result})
 	}
 }
 
@@ -196,10 +197,10 @@ func GetFirewall(state *app.State) gin.HandlerFunc {
 		if err := client.Get("/dedicated/server/"+svc+"/features/firewall", &fw); err != nil {
 			lower := strings.ToLower(err.Error())
 			if strings.Contains(lower, "does not exist") || strings.Contains(lower, "not exist") {
-				c.JSON(http.StatusOK, gin.H{"success": false, "error": "该服务器不支持防火墙功能", "notAvailable": true})
+				c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "该服务器不支持防火墙功能", "code": "E38DF225C", "notAvailable": true})
 				return
 			}
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"success": true, "firewall": fw})
@@ -216,19 +217,26 @@ func UpdateFirewall(state *app.State) gin.HandlerFunc {
 			return
 		}
 		var body struct {
-			Enabled bool `json:"enabled"`
+			Enabled *bool `json:"enabled"`
 		}
 		_ = c.ShouldBindJSON(&body)
-		var result map[string]interface{}
-		if err := client.Put("/dedicated/server/"+svc+"/features/firewall", map[string]interface{}{
-			"enabled": body.Enabled,
-		}, &result); err != nil {
-			state.Logger.Error("更新服务器 "+svc+" 防火墙状态失败: "+err.Error(), "server_control")
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		if body.Enabled == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少enabled参数", "code": "E3D2DC322"})
 			return
 		}
-		state.Logger.Info("更新服务器 "+svc+" 防火墙状态成功", "server_control")
-		c.JSON(http.StatusOK, gin.H{"success": true, "message": "防火墙状态已更新", "result": result})
+		var result map[string]interface{}
+		if err := client.Put("/dedicated/server/"+svc+"/features/firewall", map[string]interface{}{
+			"enabled": *body.Enabled,
+		}, &result); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
+			return
+		}
+		text := "启用"
+		if !*body.Enabled {
+			text = "禁用"
+		}
+		state.Logger.Info(text+"服务器 "+svc+" 防火墙", "server_control")
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "防火墙已" + text, "result": result})
 	}
 }
 
@@ -249,7 +257,7 @@ func GetBackupFTP(state *app.State) gin.HandlerFunc {
 			code, msg := featureOVHErr(err)
 			if code == http.StatusNotFound || strings.Contains(strings.ToLower(msg), "does not exist") {
 				if featureIsFeatureMissing(client, svc) {
-					c.JSON(http.StatusOK, gin.H{"success": false, "error": "备份FTP未激活", "notActivated": true})
+					c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "备份FTP未激活", "code": "E9C2BD021", "notActivated": true})
 					return
 				}
 				state.Logger.Warn("查询服务器 "+svc+" 备份FTP：服务器不存在或不属于当前账户 - "+msg, "server_control")
@@ -258,14 +266,14 @@ func GetBackupFTP(state *app.State) gin.HandlerFunc {
 				// 用户会看到一个点下去必然失败的"激活"按钮。200 才会走 notAvailable 分支把原因显示出来。
 				c.JSON(http.StatusOK, gin.H{
 					"success":        false,
-					"error":          "服务器不存在或不属于当前账户",
+					"error":          "服务器不存在或不属于当前账户", "code": "E834268F5",
 					"unknownService": true,
 					"reason":         msg,
 				})
 				return
 			}
 			state.Logger.Error("查询服务器 "+svc+" 备份FTP失败: "+err.Error(), "server_control")
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"success": true, "backupFtp": d})
@@ -290,18 +298,18 @@ func ActivateBackupFTP(state *app.State) gin.HandlerFunc {
 			if strings.Contains(lower, "cannot benefit") || strings.Contains(lower, "not available") {
 				c.JSON(http.StatusBadRequest, gin.H{
 					"success":      false,
-					"error":        "该服务器无法使用备份FTP服务",
+					"error":        "该服务器无法使用备份FTP服务", "code": "E826B0844",
 					"notAvailable": true,
-					"reason":       err.Error(),
+					"reason":       ovh.Explain(err),
 				})
 				return
 			}
 			state.Logger.Error("激活服务器 "+svc+" 备份FTP失败: "+err.Error(), "server_control")
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		state.Logger.Info("激活服务器 "+svc+" 备份FTP成功", "server_control")
-		c.JSON(http.StatusOK, gin.H{"success": true, "message": "备份FTP已激活", "result": result})
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "备份FTP已激活", "code": "EE5FB27CE", "result": result})
 	}
 }
 
@@ -320,11 +328,11 @@ func DeleteBackupFTP(state *app.State) gin.HandlerFunc {
 		var result map[string]interface{}
 		if err := client.Delete("/dedicated/server/"+svc+"/features/backupFTP", &result); err != nil {
 			state.Logger.Error("删除服务器 "+svc+" 备份FTP失败: "+err.Error(), "server_control")
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		state.Logger.Info("删除服务器 "+svc+" 备份FTP成功", "server_control")
-		c.JSON(http.StatusOK, gin.H{"success": true, "message": "备份FTP已删除", "result": result})
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "备份FTP已删除", "code": "EB5E5B03F", "result": result})
 	}
 }
 
@@ -343,7 +351,7 @@ func GetBackupFTPAccess(state *app.State) gin.HandlerFunc {
 		var blocks []string
 		if err := client.Get("/dedicated/server/"+svc+"/features/backupFTP/access", &blocks); err != nil {
 			state.Logger.Error("获取服务器 "+svc+" 备份FTP授权IP列表失败: "+err.Error(), "server_control")
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		// 并发拉每个 IP block 的详情
@@ -371,7 +379,7 @@ func GetBackupFTPAccess(state *app.State) gin.HandlerFunc {
 		// 全挂通常是凭据失效/限流/OVH 故障，这种时候不能伪装成 success:true 让前端把占位对象当成真实数据
 		if failed > 0 && failed == len(blocks) {
 			state.Logger.Error("服务器 "+svc+" 备份FTP授权IP详情全部获取失败: "+firstErr.Error(), "server_control")
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": firstErr.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(firstErr)})
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"success": true, "accessList": list, "failedCount": failed})
@@ -398,7 +406,7 @@ func AddBackupFTPAccess(state *app.State) gin.HandlerFunc {
 		}
 		_ = c.ShouldBindJSON(&body)
 		if body.IPBlock == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少ipBlock参数"})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少ipBlock参数", "code": "E1230A21F"})
 			return
 		}
 		ftp := true
@@ -413,11 +421,11 @@ func AddBackupFTPAccess(state *app.State) gin.HandlerFunc {
 			"nfs":     body.NFS,
 		}, &result); err != nil {
 			state.Logger.Error("添加备份FTP访问IP "+body.IPBlock+" 失败: "+err.Error(), "server_control")
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		state.Logger.Info("添加备份FTP访问IP "+body.IPBlock+" 成功", "server_control")
-		c.JSON(http.StatusOK, gin.H{"success": true, "message": "访问IP已添加", "result": result})
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "访问IP已添加", "code": "E9495F9D0", "result": result})
 	}
 }
 
@@ -448,16 +456,16 @@ func DeleteBackupFTPAccess(state *app.State) gin.HandlerFunc {
 			ipBlock = strings.TrimPrefix(strings.TrimSpace(c.Param("ip_block")), "/")
 		}
 		if ipBlock == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少ipBlock参数"})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少ipBlock参数", "code": "E1230A21F"})
 			return
 		}
 		if err := client.Delete(featureBackupFTPACLPath(svc, ipBlock), nil); err != nil {
 			state.Logger.Error("删除备份FTP访问IP "+ipBlock+" 失败: "+err.Error(), "server_control")
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		state.Logger.Info("删除备份FTP访问IP "+ipBlock+" 成功", "server_control")
-		c.JSON(http.StatusOK, gin.H{"success": true, "message": "访问IP已删除"})
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "访问IP已删除", "code": "E1E22216A"})
 	}
 }
 
@@ -476,11 +484,11 @@ func ChangeBackupFTPPassword(state *app.State) gin.HandlerFunc {
 		var result map[string]interface{}
 		if err := client.Post("/dedicated/server/"+svc+"/features/backupFTP/password", map[string]interface{}{}, &result); err != nil {
 			state.Logger.Error("修改服务器 "+svc+" 备份FTP密码失败: "+err.Error(), "server_control")
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		state.Logger.Info("修改服务器 "+svc+" 备份FTP密码成功", "server_control")
-		c.JSON(http.StatusOK, gin.H{"success": true, "message": "密码已重置，新密码已发送至邮箱", "result": result})
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "密码已重置，新密码已发送至邮箱", "code": "E37D29005", "result": result})
 	}
 }
 
@@ -499,7 +507,7 @@ func GetBackupFTPAuthorizableBlocks(state *app.State) gin.HandlerFunc {
 		var blocks []string
 		if err := client.Get("/dedicated/server/"+svc+"/features/backupFTP/authorizableBlocks", &blocks); err != nil {
 			state.Logger.Error("获取服务器 "+svc+" 备份FTP可授权IP段失败: "+err.Error(), "server_control")
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"success": true, "blocks": blocks})
@@ -520,20 +528,20 @@ func GetBackupCloud(state *app.State) gin.HandlerFunc {
 			code, msg := featureOVHErr(err)
 			if code == http.StatusNotFound || strings.Contains(strings.ToLower(msg), "does not exist") {
 				if featureIsFeatureMissing(client, svc) {
-					c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "云备份未激活", "notActivated": true})
+					c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "云备份未激活", "code": "E8120431F", "notActivated": true})
 					return
 				}
 				state.Logger.Warn("查询服务器 "+svc+" 云备份：服务器不存在或不属于当前账户 - "+msg, "server_control")
 				c.JSON(http.StatusNotFound, gin.H{
 					"success":        false,
-					"error":          "服务器不存在或不属于当前账户",
+					"error":          "服务器不存在或不属于当前账户", "code": "E834268F5",
 					"unknownService": true,
 					"reason":         msg,
 				})
 				return
 			}
 			state.Logger.Error("查询服务器 "+svc+" 云备份失败: "+err.Error(), "server_control")
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"success": true, "backupCloud": d})
@@ -572,11 +580,11 @@ func ActivateBackupCloud(state *app.State) gin.HandlerFunc {
 				status = code
 			}
 			state.Logger.Error("激活服务器 "+svc+" 云备份失败: "+err.Error(), "server_control")
-			c.JSON(status, gin.H{"success": false, "error": err.Error()})
+			c.JSON(status, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		state.Logger.Info("激活服务器 "+svc+" 云备份成功", "server_control")
-		c.JSON(http.StatusOK, gin.H{"success": true, "message": "云备份已激活", "result": result})
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "云备份已激活", "code": "E56282980", "result": result})
 	}
 }
 
@@ -595,24 +603,24 @@ func DeleteBackupCloud(state *app.State) gin.HandlerFunc {
 			code, msg := featureOVHErr(err)
 			if code == http.StatusNotFound || strings.Contains(strings.ToLower(msg), "does not exist") {
 				if featureIsFeatureMissing(client, svc) {
-					c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "云备份未激活", "notActivated": true})
+					c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "云备份未激活", "code": "E8120431F", "notActivated": true})
 					return
 				}
 				state.Logger.Warn("停用服务器 "+svc+" 云备份：服务器不存在或不属于当前账户 - "+msg, "server_control")
 				c.JSON(http.StatusNotFound, gin.H{
 					"success":        false,
-					"error":          "服务器不存在或不属于当前账户",
+					"error":          "服务器不存在或不属于当前账户", "code": "E834268F5",
 					"unknownService": true,
 					"reason":         msg,
 				})
 				return
 			}
 			state.Logger.Error("停用服务器 "+svc+" 云备份失败: "+err.Error(), "server_control")
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		state.Logger.Info("停用服务器 "+svc+" 云备份成功", "server_control")
-		c.JSON(http.StatusOK, gin.H{"success": true, "message": "云备份已停用（容器内数据不会被删除）"})
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "云备份已停用（容器内数据不会被删除）", "code": "E32472475"})
 	}
 }
 
@@ -632,24 +640,24 @@ func ChangeBackupCloudPassword(state *app.State) gin.HandlerFunc {
 			code, msg := featureOVHErr(err)
 			if code == http.StatusNotFound || strings.Contains(strings.ToLower(msg), "does not exist") {
 				if featureIsFeatureMissing(client, svc) {
-					c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "云备份未激活", "notActivated": true})
+					c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "云备份未激活", "code": "E8120431F", "notActivated": true})
 					return
 				}
 				state.Logger.Warn("重置服务器 "+svc+" 云备份密码：服务器不存在或不属于当前账户 - "+msg, "server_control")
 				c.JSON(http.StatusNotFound, gin.H{
 					"success":        false,
-					"error":          "服务器不存在或不属于当前账户",
+					"error":          "服务器不存在或不属于当前账户", "code": "E834268F5",
 					"unknownService": true,
 					"reason":         msg,
 				})
 				return
 			}
 			state.Logger.Error("重置服务器 "+svc+" 云备份密码失败: "+err.Error(), "server_control")
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		state.Logger.Info("重置服务器 "+svc+" 云备份密码成功", "server_control")
-		c.JSON(http.StatusOK, gin.H{"success": true, "message": "云备份密码已重置", "result": result})
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "云备份密码已重置", "code": "E82979D39", "result": result})
 	}
 }
 
@@ -670,20 +678,20 @@ func GetBackupCloudOfferDetails(state *app.State) gin.HandlerFunc {
 			if code == http.StatusNotFound || strings.Contains(strings.ToLower(msg), "does not exist") {
 				if featureIsFeatureMissing(client, svc) {
 					state.Logger.Info("服务器 "+svc+" 没有可用的云备份报价", "server_control")
-					c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "该服务器不支持云备份", "notAvailable": true})
+					c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "该服务器不支持云备份", "code": "E94D0ECE3", "notAvailable": true})
 					return
 				}
 				state.Logger.Warn("查询服务器 "+svc+" 云备份报价：服务器不存在或不属于当前账户 - "+msg, "server_control")
 				c.JSON(http.StatusNotFound, gin.H{
 					"success":        false,
-					"error":          "服务器不存在或不属于当前账户",
+					"error":          "服务器不存在或不属于当前账户", "code": "E834268F5",
 					"unknownService": true,
 					"reason":         msg,
 				})
 				return
 			}
 			state.Logger.Error("查询服务器 "+svc+" 云备份报价失败: "+err.Error(), "server_control")
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"success": true, "offerDetails": d})

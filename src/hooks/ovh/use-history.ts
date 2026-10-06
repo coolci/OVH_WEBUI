@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/http";
 import { qk } from "@/lib/query";
 import { toast } from "sonner";
+import i18n from "@/i18n";
+import { apiMessage } from "@/lib/api-error";
 
 export interface PurchaseHistory {
   id: string;
@@ -19,12 +21,13 @@ export interface PurchaseHistory {
   /** 抢购到这单时一共尝试了几次（后端 attemptCount） */
   attemptCount?: number;
   expirationTime?: string;
-  /** 撤销权截止（billing.Order.retractionDate），与付款作废时间 expirationTime 不是一回事 */
-  retractionTime?: string;
   /** 各阶段墙钟耗时。抢购输了之后唯一有用的信息就是"慢在哪一步" */
   timing?: { name: string; ms: number }[];
   totalMs?: number;
-  orderStatus?: "notPaid" | "checking" | "delivering" | "delivered" | "cancelled" | "cancelling" | "documentsRequested" | "unknown" | string;
+  /** OVH 侧订单状态(billing.order.OrderStatusEnum):notPaid / checking / delivering /
+   *  delivered / cancelling / cancelled / documentsRequested / unknown。
+   *  没有它,"下单成功"到底付没付永远不知道。空 = 还没查到 */
+  orderStatus?: string;
   orderStatusAt?: string;
   price?: {
     withTax?: number;
@@ -38,7 +41,12 @@ export interface PurchaseHistory {
 export function useHistory() {
   return useQuery({
     queryKey: qk.history(),
-    queryFn: async () => (await api.get<PurchaseHistory[]>("/purchase-history")).data,
+    // Array.isArray:调用方直接 items.filter,truthy 非数组(代理层改写响应等)
+    // 会整页白屏 —— 宁可当空列表走"没有历史"的空态
+    queryFn: async () => {
+      const d = (await api.get<PurchaseHistory[]>("/purchase-history")).data;
+      return Array.isArray(d) ? d : [];
+    },
   });
 }
 
@@ -53,9 +61,13 @@ export function useRefreshOrderStatus() {
       (await api.post<{ success: boolean; updated: number }>("/purchase-history/refresh-status")).data,
     onSuccess: (d) => {
       qc.invalidateQueries({ queryKey: qk.history() });
-      toast.success(d.updated > 0 ? `${d.updated} 条订单状态有更新` : "订单状态已是最新");
+      toast.success(
+        d.updated > 0
+          ? i18n.t("hooksMsg.history.statusUpdated", { count: d.updated })
+          : i18n.t("hooksMsg.history.statusAlreadyLatest")
+      );
     },
-    onError: (e: any) => toast.error(e.response?.data?.error || "刷新状态失败"),
+    onError: (e: any) => toast.error(apiMessage(e) || i18n.t("hooksMsg.history.refreshStatusFailed")),
   });
 }
 
@@ -66,8 +78,8 @@ export function useClearHistory() {
     mutationFn: async () => (await api.delete("/purchase-history")).data,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.history() });
-      toast.success("已清空购买历史");
+      toast.success(i18n.t("hooksMsg.history.cleared"));
     },
-    onError: (e: any) => toast.error(e.response?.data?.error || "清空失败"),
+    onError: (e: any) => toast.error(apiMessage(e) || i18n.t("hooksMsg.history.clearFailed")),
   });
 }

@@ -1,4 +1,4 @@
-﻿package app
+package app
 
 import (
 	"errors"
@@ -8,9 +8,15 @@ import (
 	"github.com/ovh-webui/server/internal/types"
 )
 
+// LoadAll 读表失败时只记了条日志,内存留空,而 Save* 是"DELETE 整表 + 重灌内存快照"。
+// 结果:读一次失败,下一次保存就把用户磁盘上那份完好的数据整个抹掉,而且悄无声息。
+//
+// 真实触发路径不止一种:新版本加了一列但结构体没同步(SELECT * + sqlx 严格映射会直接报错)、
+// 库文件被别的进程占着、磁盘临时 IO 错。任何一种都够删光全部抢购历史。
 func TestSaveRefusedAfterLoadFailure(t *testing.T) {
 	s := newTestState(t)
 
+	// 先往库里写一批"用户的既有数据"
 	msg := "boom"
 	s.HistoryMu.Lock()
 	for i := 0; i < 10; i++ {
@@ -31,11 +37,13 @@ func TestSaveRefusedAfterLoadFailure(t *testing.T) {
 		t.Fatalf("准备数据失败,库里应有 10 条,实际 %d", len(before))
 	}
 
+	// 模拟下一次启动:history 读失败 → 内存被留空
 	s.MarkLoadFailed("history", errors.New("missing column: retraction_time"))
 	s.HistoryMu.Lock()
 	s.History = []types.PurchaseHistoryEntry{}
 	s.HistoryMu.Unlock()
 
+	// 这一步在修复前会静默清空整张表
 	if err := s.SaveHistory(); err == nil {
 		t.Fatal("读失败后 SaveHistory 应当拒绝写入并返回错误,却成功了")
 	}
@@ -49,6 +57,7 @@ func TestSaveRefusedAfterLoadFailure(t *testing.T) {
 	}
 }
 
+// 没有读失败标记时,保存必须照常工作 —— 守卫不能把正常路径也堵死。
 func TestSaveStillWorksWithoutLoadFailure(t *testing.T) {
 	s := newTestState(t)
 	s.QueueMu.Lock()
@@ -66,6 +75,7 @@ func TestSaveStillWorksWithoutLoadFailure(t *testing.T) {
 	}
 }
 
+// 守卫按表隔离:history 读挂了不该连带把 queue 也锁死。
 func TestLoadFailureIsPerTable(t *testing.T) {
 	s := newTestState(t)
 	s.MarkLoadFailed("history", errors.New("schema drift"))

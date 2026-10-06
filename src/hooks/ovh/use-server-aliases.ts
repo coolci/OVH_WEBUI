@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, getActiveServerControlAccount } from "@/lib/http";
+import { api, getActiveAccount } from "@/lib/http";
 import { toast } from "sonner";
+import i18n from "@/i18n";
+import { apiMessage } from "@/lib/api-error";
 
 /** 服务器本地别名 map: { service_name: alias }。
  *  - axios interceptor 会自动给 /server-control/* 加 ?account=<id>,所以不用手传
@@ -9,7 +11,7 @@ import { toast } from "sonner";
  */
 export function useServerAliases() {
   return useQuery<Record<string, string>>({
-    queryKey: ["server-control", "aliases", getActiveServerControlAccount()],
+    queryKey: ["server-control", "aliases", getActiveAccount()],
     queryFn: async () => (await api.get<Record<string, string>>("/server-control/aliases")).data,
     staleTime: 30 * 60_000,
     gcTime: 60 * 60_000,
@@ -32,10 +34,10 @@ export function useSetServerAlias() {
     },
     onSuccess: ({ alias }) => {
       qc.invalidateQueries({ queryKey: ["server-control", "aliases"] });
-      toast.success(alias === "" ? "已清除别名" : "别名已保存");
+      toast.success(i18n.t(alias === "" ? "hooksMsg.aliases.cleared" : "hooksMsg.aliases.saved"));
     },
     onError: (e: any) => {
-      toast.error(e?.response?.data?.error || "保存失败");
+      toast.error(apiMessage(e));
     },
   });
 }

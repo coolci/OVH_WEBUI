@@ -14,7 +14,6 @@ import (
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/catalog"
 	"github.com/ovh-webui/server/internal/purchase"
-	"github.com/ovh-webui/server/internal/telegram"
 	"github.com/ovh-webui/server/internal/types"
 )
 
@@ -30,34 +29,33 @@ func AddQueueItem(state *app.State) gin.HandlerFunc {
 			RetryInterval int      `json:"retryInterval"`
 			// AutoPay 下单成功后用默认支付方式自动付款(显式开关,默认关)
 			AutoPay bool `json:"autoPay"`
-			// Force 强制添加自定义或未在当前目录收录的型号入队
-			Force bool `json:"force"`
 		}
 		_ = c.ShouldBindJSON(&body)
 		if body.AccountID == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "缺少 account_id"})
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "缺少 account_id", "code": "E34CBF1D4"})
 			return
 		}
 		if _, ok := state.FindAccount(body.AccountID); !ok {
-			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "account_id 不存在"})
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "account_id 不存在", "code": "E7B315B13"})
 			return
 		}
 		body.PlanCode = strings.TrimSpace(body.PlanCode)
 		body.Datacenter = strings.TrimSpace(body.Datacenter)
 		if body.PlanCode == "" || body.Datacenter == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "缺少 planCode 或 datacenter"})
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "缺少 planCode 或 datacenter", "code": "E75DA4B08"})
 			return
 		}
-		// 入队前检查型号归属。若用户明确指定 Force（例如新品或自定义型号），则记日志并放行入队。
+		// 入队前挡住"这个账户根本买不到这台机器"的任务(跨区 / 非 Eco / planCode 不存在)。
+		// 前端的下单对话框有独立的账户选择器(web/src/routes/servers.tsx:646),
+		// 机型列表却是按另一个账户拉的 —— 拿欧区机型配美区账户是一键就能做出来的组合。
+		// 而这种任务进了队列后:availabilities 返回 200 + 空数组 → PurchaseServer 判"无货"
+		// → 按 retryInterval 永远重试,日志里永远只有一句"当前无货",用户看不出错在哪。
+		// 所以在这里就说清楚,而不是让它在后台空转到天荒地老。
+		// 探测失败(catalog.PlanVerdictUnknown)不拦 —— 一次网络瞬断不该让用户下不了单。
 		if verdict, hint := catalog.ClassifyPlan(state, body.AccountID, body.PlanCode, "queue"); hint != "" {
-			if body.Force && verdict == catalog.PlanVerdictNoSuchPlan {
-				state.Logger.Warn(fmt.Sprintf("[queue] 用户强制添加未收录型号(判定 %d): %s 在 %s: %s", verdict, body.PlanCode, body.Datacenter, hint), "queue")
-			} else {
-				state.Logger.Warn(fmt.Sprintf("[queue] 拒绝任务(判定 %d): %s", verdict, hint), "queue")
-				canForce := verdict == catalog.PlanVerdictNoSuchPlan
-				c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": hint, "can_force": canForce})
-				return
-			}
+			state.Logger.Warn(fmt.Sprintf("[queue] 拒绝任务(判定 %d): %s", verdict, hint), "queue")
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": hint})
+			return
 		}
 		// 没给 / 给 0 = 用全局默认(设置页可改);超出区间夹回来
 		body.RetryInterval = types.ClampRetryInterval(body.RetryInterval, state.Config.RetryInterval())
@@ -74,7 +72,6 @@ func AddQueueItem(state *app.State) gin.HandlerFunc {
 			RetryCount:    0,
 			LastCheckTime: 0,
 			AutoPay:       body.AutoPay,
-			Force:         body.Force,
 		}
 		// 入队 + 落库是一件事:EnqueueItems 失败会把这条从内存撤回,
 		// 不留"这次能跑但重启就丢"的半成功任务
@@ -127,11 +124,6 @@ func RemoveQueueItem(state *app.State) gin.HandlerFunc {
 		}
 		if removed != nil {
 			state.Logger.Info("Removed "+removed.PlanCode+" from queue (ID: "+id+")", "system")
-			if removed.TelegramMessageID != 0 && strings.TrimSpace(removed.TelegramChatID) != "" {
-				telegram.NotifyTaskProgress(state, removed, "cancelled", map[string]string{
-					"reason": "已在网页控制台删除此任务",
-				})
-			}
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "success"})
 	}
@@ -163,7 +155,7 @@ func UpdateQueueInterval(state *app.State) gin.HandlerFunc {
 		}
 		state.QueueMu.Unlock()
 		if !found {
-			c.JSON(http.StatusNotFound, gin.H{"status": "error", "error": "任务不存在"})
+			c.JSON(http.StatusNotFound, gin.H{"status": "error", "error": "任务不存在", "code": "E10FEEC40"})
 			return
 		}
 		if err := state.SaveQueue(); err != nil {
@@ -184,16 +176,11 @@ func ClearQueue(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		state.QueueMu.Lock()
 		count := len(state.Queue)
-		oldQueue := append([]types.QueueItem{}, state.Queue...)
-		ids := make([]string, 0, count)
 		for _, it := range state.Queue {
-			ids = append(ids, it.ID)
+			state.MarkTaskDeleted(it.ID) // 同时取消正在进行的下单
 		}
 		state.Queue = []types.QueueItem{}
 		state.QueueMu.Unlock()
-		for _, id := range ids {
-			state.MarkTaskDeleted(id)
-		}
 		if err := state.SaveQueue(); err != nil {
 			state.Logger.Error("清空队列后保存失败: "+err.Error(), "queue")
 			c.JSON(http.StatusInternalServerError, gin.H{
@@ -202,16 +189,6 @@ func ClearQueue(state *app.State) gin.HandlerFunc {
 			})
 			return
 		}
-
-		for _, it := range oldQueue {
-			if it.TelegramMessageID != 0 && strings.TrimSpace(it.TelegramChatID) != "" {
-				itCopy := it
-				telegram.NotifyTaskProgress(state, &itCopy, "cancelled", map[string]string{
-					"reason": "已在网页控制台清空抢购队列",
-				})
-			}
-		}
-
 		state.Logger.Info("Cleared all queue items ("+strconv.Itoa(count)+" items removed)", "")
 		c.JSON(http.StatusOK, gin.H{"status": "success", "count": count})
 	}
@@ -229,13 +206,10 @@ func UpdateQueueStatus(state *app.State) gin.HandlerFunc {
 			body.Status = "pending"
 		}
 		state.QueueMu.Lock()
-		var target *types.QueueItem
 		for i := range state.Queue {
 			if state.Queue[i].ID == id {
 				state.Queue[i].Status = body.Status
 				state.Queue[i].UpdatedAt = types.NowISO()
-				cp := state.Queue[i]
-				target = &cp
 				state.Logger.Info("Updated "+state.Queue[i].PlanCode+" status to "+body.Status, "")
 				break
 			}
@@ -249,15 +223,6 @@ func UpdateQueueStatus(state *app.State) gin.HandlerFunc {
 			})
 			return
 		}
-
-		if target != nil && target.TelegramMessageID != 0 && strings.TrimSpace(target.TelegramChatID) != "" {
-			if body.Status == "paused" {
-				telegram.NotifyTaskProgress(state, target, "paused", nil)
-			} else if body.Status == "running" {
-				telegram.NotifyTaskProgress(state, target, "queued", nil)
-			}
-		}
-
 		c.JSON(http.StatusOK, gin.H{"status": "success"})
 	}
 }

@@ -20,7 +20,12 @@ import (
 )
 
 // noOVHResp 当前账户取不到 OVH 客户端时的统一响应。
-// 用 412 而不是 401：401 会让前端判定会话失效、踢回登录页。
+//
+// 用 412 Precondition Failed 而不是 401:401 的语义是"你的身份凭据不对",
+// 前端的 401 拦截器会据此判定会话失效、把用户踢回登录界面。
+// 而这里的真实含义是"你还没添加 OVH 账户(或它的凭据不全)"—— 用户访问后端的
+// API 密钥完全正确。混用 401 会让没配账户的用户被反复踢出登录页,
+// 而他怎么重新输密钥都没用,因为问题根本不在密钥上。
 func noOVHResp(c *gin.Context) {
 	c.JSON(http.StatusPreconditionFailed, gin.H{
 		"success": false,
@@ -68,13 +73,8 @@ func ListMyServers(state *app.State) gin.HandlerFunc {
 		var names []string
 		if err := client.Get("/dedicated/server", &names); err != nil {
 			state.Logger.Error("获取服务器列表失败: "+err.Error(), "server_control")
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
-		}
-		if acc, ok := ovhAccountFor(state, c); ok && acc.ID != "" {
-			for _, name := range names {
-				RegisterServerOwner(name, acc.ID)
-			}
 		}
 		state.Logger.Info(fmt.Sprintf("获取服务器列表成功，共 %d 台", len(names)), "server_control")
 
@@ -192,8 +192,18 @@ func Reboot(state *app.State) gin.HandlerFunc {
 		}
 		var result map[string]interface{}
 		if err := client.Post("/dedicated/server/"+svc+"/reboot", map[string]interface{}{}, &result); err != nil {
+			// 重启防抖(OVH 回 403 + "A reboot has already been requested")不是失败:
+			// 用户要的重启已经在进行,当成功返回,别让人误以为权限出了问题
+			if ovh.IsRebootAlreadyRequested(err) {
+				state.Logger.Info("服务器 "+svc+" 已有重启在进行中,本次请求按幂等成功处理", "server_control")
+				c.JSON(http.StatusOK, gin.H{
+					"success": true,
+					"message": "这台服务器已经有一个重启在进行中,无需重复发送 —— 稍等它完成即可", "code": "E704347D1",
+				})
+				return
+			}
 			state.Logger.Error("重启服务器 "+svc+" 失败: "+err.Error(), "server_control")
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		state.Logger.Info("服务器 "+svc+" 重启请求已发送", "server_control")
@@ -217,7 +227,7 @@ func GetOSTemplates(state *app.State) gin.HandlerFunc {
 		var templates map[string]interface{}
 		if err := client.Get("/dedicated/server/"+svc+"/install/compatibleTemplates", &templates); err != nil {
 			state.Logger.Error("获取服务器 "+svc+" 系统模板失败: "+err.Error(), "server_control")
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		var allNames []string
@@ -255,13 +265,22 @@ func GetOSTemplates(state *app.State) gin.HandlerFunc {
 				if v, ok := numconv.ToInt64(detail["bitFormat"]); ok {
 					bf = int(v)
 				}
-				details[idx] = gin.H{
+				entry := gin.H{
 					"templateName": name,
 					"distribution": valueOr(detail, "distribution", "N/A"),
 					"family":       valueOr(detail, "family", "N/A"),
 					"description":  valueOr(detail, "description", ""),
 					"bitFormat":    bf,
 				}
+				// 官方 partitioning-ovh 文档的 OS 兼容元数据(详情拉不到的字段不编造):
+				// filesystems 过滤文件系统下拉;lvmReady/noPartitioning/softRaidOnlyMirroring
+				// 控制存储配置可用性;customizeQuestions 驱动 OS 特定定制表单(sshKey/语言/LACP 等)
+				for _, k := range []string{"filesystems", "lvmReady", "noPartitioning", "softRaidOnlyMirroring", "customizeQuestions"} {
+					if v, ok := detail[k]; ok && v != nil {
+						entry[k] = v
+					}
+				}
+				details[idx] = entry
 			}(i, tn)
 		}
 		wg.Wait()
@@ -364,6 +383,23 @@ func parseRaidLevelValue(v interface{}) (int64, bool) {
 	return 0, false
 }
 
+// storageError 带稳定错误码和插值参数的存储配置校验错误。
+// 前端按 code + params 出当前语言的译文(i18n 插值),error 字段保留中文完整句兜底
+type storageError struct {
+	msg    string
+	code   string
+	params map[string]interface{}
+}
+
+func (e *storageError) Error() string { return e.msg }
+
+func serr(code string, params map[string]interface{}, msg string) *storageError {
+	if params == nil {
+		params = map[string]interface{}{}
+	}
+	return &storageError{msg: msg, code: code, params: params}
+}
+
 // normalizeStorageConfig 把前端的 storageConfig 显式映射成 dedicated.server.reinstall.Storage[]。
 // 前端拼硬件 RAID 用的是旧 partitionScheme 的字段名(disks 磁盘编号数组 / mode / name / step)，
 // 而 schema 的 HardwareRaid 只有 arrays / disks(数量) / raidLevel / spares，字段名和类型都对不上。
@@ -405,7 +441,7 @@ func checkFSRaidCompat(fs string, level int64) string {
 func normalizeStorageConfig(raw interface{}) ([]map[string]interface{}, error) {
 	groups, ok := raw.([]interface{})
 	if !ok {
-		return nil, fmt.Errorf("自定义存储配置格式不正确，应为数组")
+		return nil, serr("STORAGE_NOT_ARRAY", nil, "自定义存储配置格式不正确，应为数组")
 	}
 	out := []map[string]interface{}{}
 	// size=0(占满剩余空间)的分区在整份配置里最多一个,跨磁盘组一起数
@@ -413,7 +449,7 @@ func normalizeStorageConfig(raw interface{}) ([]map[string]interface{}, error) {
 	for _, gRaw := range groups {
 		g, ok := gRaw.(map[string]interface{})
 		if !ok {
-			return nil, fmt.Errorf("自定义存储配置格式不正确，磁盘组应为对象")
+			return nil, serr("STORAGE_GROUP_NOT_OBJECT", nil, "自定义存储配置格式不正确，磁盘组应为对象")
 		}
 		entry := map[string]interface{}{}
 		// 磁盘组编号从 1 起 —— 官方分区文档:"By default, the OS will be installed
@@ -427,7 +463,7 @@ func normalizeStorageConfig(raw interface{}) ([]map[string]interface{}, error) {
 			for _, hRaw := range hrRaw {
 				h, ok := hRaw.(map[string]interface{})
 				if !ok {
-					return nil, fmt.Errorf("硬件 RAID 配置格式不正确")
+					return nil, serr("HWRAID_BAD_SHAPE", nil, "硬件 RAID 配置格式不正确")
 				}
 				level, ok := parseRaidLevelValue(h["raidLevel"])
 				if !ok {
@@ -437,10 +473,10 @@ func normalizeStorageConfig(raw interface{}) ([]map[string]interface{}, error) {
 					level, ok = parseRaidLevelValue(h["name"])
 				}
 				if !ok {
-					return nil, fmt.Errorf("硬件 RAID 缺少 raidLevel")
+					return nil, serr("HWRAID_MISSING_LEVEL", nil, "硬件 RAID 缺少 raidLevel")
 				}
 				if !reinstallHardRaidLevels[level] {
-					return nil, fmt.Errorf("硬件 RAID 级别 %d 不受支持，可选：0/1/5/6/10/50/60", level)
+					return nil, serr("HWRAID_LEVEL_UNSUPPORTED", map[string]interface{}{"level": level}, fmt.Sprintf("硬件 RAID 级别 %d 不受支持，可选：0/1/5/6/10/50/60", level))
 				}
 				item := map[string]interface{}{"raidLevel": level}
 				// schema 的 disks 是"参与阵列的磁盘数量"，前端给的是磁盘编号数组，这里换算成数量
@@ -477,33 +513,33 @@ func normalizeStorageConfig(raw interface{}) ([]map[string]interface{}, error) {
 				for _, itRaw := range lRaw {
 					it, ok := itRaw.(map[string]interface{})
 					if !ok {
-						return nil, fmt.Errorf("分区配置格式不正确")
+						return nil, serr("PARTITION_BAD_SHAPE", nil, "分区配置格式不正确")
 					}
 					fs, _ := it["fileSystem"].(string)
 					fs = strings.ToLower(strings.TrimSpace(fs))
 					if !reinstallFileSystems[fs] {
-						return nil, fmt.Errorf("不支持的文件系统 %q", fs)
+						return nil, serr("FS_UNSUPPORTED", map[string]interface{}{"fs": fs}, fmt.Sprintf("不支持的文件系统 %q", fs))
 					}
 					mp, _ := it["mountPoint"].(string)
 					mp = strings.TrimSpace(mp)
 					if mp == "" {
-						return nil, fmt.Errorf("分区缺少挂载点")
+						return nil, serr("PARTITION_MISSING_MOUNTPOINT", nil, "分区缺少挂载点")
 					}
 					size, _ := numconv.ToInt64(it["size"])
 					if size < 0 {
-						return nil, fmt.Errorf("分区 %s 的大小不能为负数", mp)
+						return nil, serr("PARTITION_NEGATIVE_SIZE", map[string]interface{}{"mp": mp}, "分区 {{mp}} 的大小不能为负数")
 					}
 					// size=0 = 占满剩余空间。官方分区文档:
 					// "Up to 1 partition can be configured to fill the remaining space (size 0)"
 					if size == 0 {
 						fillCount++
 						if fillCount > 1 {
-							return nil, fmt.Errorf("最多只能有一个分区把大小留空(占满剩余空间),当前有多个,请给其余分区指定大小")
+							return nil, serr("PARTITION_MULTI_FILL", nil, "最多只能有一个分区把大小留空(占满剩余空间),当前有多个,请给其余分区指定大小")
 						}
 						// 同一份文档明确禁止 swap 占满磁盘:
 						// "You have chosen the swap partition to fill the disk ... we disallow this"
 						if fs == "swap" {
-							return nil, fmt.Errorf("swap 分区必须指定大小,不能留空占满磁盘(OVH 不允许)")
+							return nil, serr("SWAP_CANNOT_FILL", nil, "swap 分区必须指定大小,不能留空占满磁盘(OVH 不允许)")
 						}
 					}
 					// schema: size 是必填 long，0 表示用尽剩余空间
@@ -514,10 +550,10 @@ func normalizeStorageConfig(raw interface{}) ([]map[string]interface{}, error) {
 					}
 					if rl, ok := parseRaidLevelValue(it["raidLevel"]); ok {
 						if !reinstallSoftRaidLevels[rl] {
-							return nil, fmt.Errorf("分区 %s 的软 RAID 级别 %d 不受支持，可选：0/1/5/6/7/10", mp, rl)
+							return nil, serr("PARTITION_RAID_UNSUPPORTED", map[string]interface{}{"mp": mp, "level": rl}, "分区 {{mp}} 的软 RAID 级别 {{level}} 不受支持，可选：0/1/5/6/7/10")
 						}
 						if msg := checkFSRaidCompat(fs, rl); msg != "" {
-							return nil, fmt.Errorf("分区 %s: %s", mp, msg)
+							return nil, serr("PARTITION_FS_RAID_INCOMPAT", map[string]interface{}{"mp": mp, "reason": msg}, "分区 {{mp}}: {{reason}}")
 						}
 						lay["raidLevel"] = rl
 					}
@@ -547,13 +583,22 @@ func normalizeStorageConfig(raw interface{}) ([]map[string]interface{}, error) {
 				entry["partitioning"] = part
 			}
 		}
-		if len(entry) == 0 || (entry["partitioning"] == nil && entry["hardwareRaid"] == nil) {
-			return nil, fmt.Errorf("自定义存储配置里有磁盘组既没有分区也没有硬件 RAID")
+		// 官方文档 Data erasure:默认所有盘组都会被擦;非安装盘组可以只带 erase:false
+		// 声明"保留该组数据"(混合盘机器保数据盘的唯一手段);安装组(带
+		// partitioning/hardwareRaid)不允许 erase:false —— 官方明确禁止
+		if er, ok := g["erase"].(bool); ok {
+			entry["erase"] = er
+			if !er && (entry["partitioning"] != nil || entry["hardwareRaid"] != nil) {
+				return nil, serr("ERASE_FALSE_ON_INSTALL_GROUP", map[string]interface{}{"gid": g["diskGroupId"]}, "磁盘组 {{gid}} 同时带了存储配置和 erase:false —— 安装盘组必须擦除,erase:false 只能用于非安装盘组")
+			}
+		}
+		if len(entry) == 0 || (entry["partitioning"] == nil && entry["hardwareRaid"] == nil && entry["erase"] == nil) {
+			return nil, serr("STORAGE_GROUP_EMPTY", nil, "自定义存储配置里有磁盘组既没有分区也没有硬件 RAID")
 		}
 		out = append(out, entry)
 	}
 	if len(out) == 0 {
-		return nil, fmt.Errorf("自定义存储配置为空")
+		return nil, serr("STORAGE_EMPTY", nil, "自定义存储配置为空")
 	}
 	return out, nil
 }
@@ -567,7 +612,7 @@ func InstallOS(state *app.State) gin.HandlerFunc {
 		if !ok {
 			c.JSON(http.StatusConflict, gin.H{
 				"success": false,
-				"error":   "该服务器已有重装任务正在执行，请等待完成后再试",
+				"error":   "该服务器已有重装任务正在执行，请等待完成后再试", "code": "EF9E440A0",
 			})
 			return
 		}
@@ -580,23 +625,42 @@ func InstallOS(state *app.State) gin.HandlerFunc {
 		}
 		var body map[string]interface{}
 		if err := c.ShouldBindJSON(&body); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "请求体格式错误: " + err.Error()})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "请求体格式错误: " + ovh.Explain(err)})
 			return
 		}
 		templateName, _ := body["templateName"].(string)
 		if templateName == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "未指定系统模板"})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "未指定系统模板", "code": "ED4AB4A93"})
 			return
 		}
 
 		installParams := map[string]interface{}{
 			"operatingSystem": templateName,
 		}
+		customizations := map[string]interface{}{}
 		if v, ok := body["customHostname"].(string); ok && v != "" {
 			// schema: 主机名在 dedicated.server.reinstall.Customizations.hostname，
 			// 顶层 customHostname 是旧 /install/start 的写法，reinstall 不认这个字段
-			installParams["customizations"] = map[string]interface{}{"hostname": v}
+			customizations["hostname"] = v
 			state.Logger.Info("设置自定义主机名: "+v, "server_control")
+		}
+		// 官方 api-os-installation 文档:customizations 是 OS 特定问题表
+		// (sshKey / postInstallationScript / language / enableLacpBonding …)。
+		// 键名与取值由 /dedicated/installationTemplate 的 customizeQuestions 定义,
+		// 前端动态渲染后原样回传,这里按 schema 的值类型透传,不替 OVH 做白名单
+		if cm, ok := body["customizations"].(map[string]interface{}); ok {
+			for k, v := range cm {
+				switch v.(type) {
+				case string, bool, float64, int:
+					if vs, isStr := v.(string); isStr && strings.TrimSpace(vs) == "" {
+						continue
+					}
+					customizations[k] = v
+				}
+			}
+		}
+		if len(customizations) > 0 {
+			installParams["customizations"] = customizations
 		}
 
 		useZFS, _ := body["useProxmox9Zfs"].(bool)
@@ -611,7 +675,7 @@ func InstallOS(state *app.State) gin.HandlerFunc {
 		if hasCustomStorage && schemeName != "" {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"success": false,
-				"error":   "自定义存储配置与内置分区方案只能选择一种",
+				"error":   "自定义存储配置与内置分区方案只能选择一种", "code": "EA940C92F",
 			})
 			return
 		}
@@ -632,7 +696,7 @@ func InstallOS(state *app.State) gin.HandlerFunc {
 			if raw, ok := body["zfsRaidLevel"]; ok && raw != nil {
 				v, ok := numconv.ToInt64(raw)
 				if !ok {
-					c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "zfsRaidLevel 必须是整数"})
+					c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "zfsRaidLevel 必须是整数", "code": "E83AB4138"})
 					return
 				}
 				raidLevel = v
@@ -641,6 +705,8 @@ func InstallOS(state *app.State) gin.HandlerFunc {
 				c.JSON(http.StatusBadRequest, gin.H{
 					"success": false,
 					"error":   fmt.Sprintf("RAID 级别 %d 不受支持，可选：0/1/5/6/7/10", raidLevel),
+					"code":    "ZFS_RAID_LEVEL_UNSUPPORTED",
+					"params":  map[string]interface{}{"level": raidLevel},
 				})
 				return
 			}
@@ -648,13 +714,13 @@ func InstallOS(state *app.State) gin.HandlerFunc {
 			if raw, ok := body["zfsVzSize"]; ok && raw != nil {
 				v, ok := numconv.ToInt64(raw)
 				if !ok {
-					c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "zfsVzSize 必须是整数(MB)"})
+					c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "zfsVzSize 必须是整数(MB)", "code": "E6D5BF3D6"})
 					return
 				}
 				vzSizeMB = v
 			}
 			if vzSizeMB < 0 {
-				c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "/var/lib/vz 容量不能为负数"})
+				c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "/var/lib/vz 容量不能为负数", "code": "E348BDC21"})
 				return
 			}
 			state.Logger.Info(fmt.Sprintf("🎯 使用 Proxmox 9 + ZFS 根文件系统预设 (RAID%d)", raidLevel), "server_control")
@@ -701,6 +767,8 @@ func InstallOS(state *app.State) gin.HandlerFunc {
 				c.JSON(http.StatusBadRequest, gin.H{
 					"success": false,
 					"error":   fmt.Sprintf("该服务器只有 %d 块磁盘，无法使用 RAID%d，请改用 RAID0", diskCount, raidLevel),
+					"code":    "ZFS_SINGLE_DISK_RAID",
+					"params":  map[string]interface{}{"count": diskCount, "level": raidLevel},
 				})
 				return
 			}
@@ -717,6 +785,11 @@ func InstallOS(state *app.State) gin.HandlerFunc {
 					"success": false,
 					"error": fmt.Sprintf("/var/lib/vz 容量 %dMB 超出可用范围：本机 RAID%d 下可用约 %dMB，扣除 /boot %dMB 和 swap %dMB 后，该值必须小于 %dMB",
 						vzSizeMB, raidLevel, usableCapacityMB, bootSizeMB, swapSizeMB, usableCapacityMB-bootSwapMB),
+					"code":   "ZFS_VZ_OVER_LIMIT",
+					"params": map[string]interface{}{
+						"vz": vzSizeMB, "level": raidLevel, "usable": usableCapacityMB,
+						"boot": bootSizeMB, "swap": swapSizeMB, "max": usableCapacityMB - bootSwapMB,
+					},
 				})
 				return
 			}
@@ -773,9 +846,16 @@ func InstallOS(state *app.State) gin.HandlerFunc {
 		} else if hasCustomStorage {
 			// 之前是把前端的 storageConfig 原样透传，字段名/类型跟 schema 对不上，
 			// 硬件 RAID 重装 100% 被 OVH 拒；现在显式映射成 schema 结构
-			storage, serr := normalizeStorageConfig(body["storageConfig"])
-			if serr != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": serr.Error()})
+			storage, serr2 := normalizeStorageConfig(body["storageConfig"])
+			if serr2 != nil {
+				resp2 := gin.H{"success": false, "error": ovh.Explain(serr2)}
+				// 结构化校验错误带 code + params,前端按语言插值出译文
+				var se *storageError
+				if errors.As(serr2, &se) {
+					resp2["code"] = se.code
+					resp2["params"] = se.params
+				}
+				c.JSON(http.StatusBadRequest, resp2)
 				return
 			}
 			state.Logger.Info("使用自定义存储配置", "server_control")
@@ -801,7 +881,7 @@ func InstallOS(state *app.State) gin.HandlerFunc {
 		var result map[string]interface{}
 		if err := client.Post("/dedicated/server/"+svc+"/reinstall", installParams, &result); err != nil {
 			state.Logger.Error("重装服务器 "+svc+" 系统失败: "+err.Error(), "server_control")
-			c.JSON(http.StatusBadGateway, gin.H{"success": false, "error": "OVH API错误: " + err.Error()})
+			c.JSON(http.StatusBadGateway, gin.H{"success": false, "error": "OVH API错误: " + ovh.Explain(err)})
 			return
 		}
 		state.Logger.Info("服务器 "+svc+" 系统重装请求已发送，模板: "+templateName, "server_control")
@@ -957,7 +1037,7 @@ func GetInstallStatus(state *app.State) gin.HandlerFunc {
 						c.JSON(http.StatusOK, gin.H{
 							"success":         true,
 							"hasInstallation": false,
-							"message":         "当前没有正在进行的安装",
+							"message":         "当前没有正在进行的安装", "code": "E2BA2B9D1",
 						})
 						return
 					}
@@ -967,20 +1047,20 @@ func GetInstallStatus(state *app.State) gin.HandlerFunc {
 					var info map[string]interface{}
 					if serr := client.Get("/dedicated/server/"+svc, &info); serr != nil {
 						state.Logger.Error("获取服务器 "+svc+" 安装状态失败(服务器不可访问): "+serr.Error(), "server_control")
-						c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "服务器不存在或不属于当前账户"})
+						c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "服务器不存在或不属于当前账户", "code": "E834268F5"})
 						return
 					}
 					state.Logger.Info("服务器 "+svc+" 当前没有正在进行的安装", "server_control")
 					c.JSON(http.StatusOK, gin.H{
 						"success":         true,
 						"hasInstallation": false,
-						"message":         "当前没有正在进行的安装",
+						"message":         "当前没有正在进行的安装", "code": "E2BA2B9D1",
 					})
 					return
 				}
 			}
 			state.Logger.Error("获取服务器 "+svc+" 安装状态失败: "+err.Error(), "server_control")
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		elapsedTime := 0
@@ -995,17 +1075,25 @@ func GetInstallStatus(state *app.State) gin.HandlerFunc {
 		totalSteps := len(progressArr)
 		completed := 0
 		hasError := false
+		stopping := false
 		formatted := []gin.H{}
 		for _, sRaw := range progressArr {
 			step, _ := sRaw.(map[string]interface{})
 			st, _ := step["status"].(string)
 			comment, _ := step["comment"].(string)
 			errMsg, _ := step["error"].(string)
+			// dedicated.server.InstallationProgressStatusEnum 三区一致:
+			// [doing, done, error, expired, idle, pending, stopping, todo]
+			// 以前只认 done/error —— expired(超时) 和 stopping(中止中) 会让进度条
+			// 永远停在中间不动,用户以为还在装,一直等下去。
 			if st == "done" {
 				completed++
 			}
-			if st == "error" {
+			if st == "error" || st == "expired" {
 				hasError = true
+			}
+			if st == "stopping" {
+				stopping = true
 			}
 			formatted = append(formatted, gin.H{
 				"comment":         translateInstallStep(comment),
@@ -1032,6 +1120,7 @@ func GetInstallStatus(state *app.State) gin.HandlerFunc {
 				"totalSteps":         totalSteps,
 				"completedSteps":     completed,
 				"hasError":           hasError,
+				"stopping":           stopping,
 				"allDone":            allDone,
 				"progressUnknown":    progressUnknown,
 				"steps":              formatted,
@@ -1052,7 +1141,7 @@ func GetServerTasks(state *app.State) gin.HandlerFunc {
 		var taskIDs []interface{}
 		if err := client.Get("/dedicated/server/"+svc+"/task", &taskIDs); err != nil {
 			state.Logger.Error("获取服务器 "+svc+" 任务列表失败: "+err.Error(), "server_control")
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		// schema 只承诺返回 long[]、没承诺顺序，所以先自己按 id 升序排再取最近 10 个
@@ -1155,12 +1244,12 @@ func GetTaskAvailableTimeslots(state *app.State) gin.HandlerFunc {
 		}
 		periodStart, ok := normalizeAPIDate(c.Query("periodStart"))
 		if !ok {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "periodStart 必须是 YYYY-MM-DD 或 ISO8601 时间"})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "periodStart 必须是 YYYY-MM-DD 或 ISO8601 时间", "code": "E36D84314"})
 			return
 		}
 		periodEnd, ok := normalizeAPIDate(c.Query("periodEnd"))
 		if !ok {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "periodEnd 必须是 YYYY-MM-DD 或 ISO8601 时间"})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "periodEnd 必须是 YYYY-MM-DD 或 ISO8601 时间", "code": "E6E5E89F8"})
 			return
 		}
 		state.Logger.Info(fmt.Sprintf("[Task] 查询任务 %s 的可用时间段 %s -> %s", taskID, periodStart, periodEnd), "server_control")
@@ -1180,18 +1269,18 @@ func GetTaskAvailableTimeslots(state *app.State) gin.HandlerFunc {
 						"success":             true,
 						"timeslots":           []interface{}{},
 						"scheduleNotRequired": true,
-						"message":             "该任务无需预约",
+						"message":             "该任务无需预约", "code": "E4F64261F",
 					})
 					return
 				}
 				if apiErr.Code == http.StatusNotFound {
 					state.Logger.Warn("[Task] 任务或服务器不存在: "+err.Error(), "server_control")
-					c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "任务或服务器不存在"})
+					c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "任务或服务器不存在", "code": "ECE34F4F3"})
 					return
 				}
 			}
 			state.Logger.Error("[Task] 可用时间段API错误: "+err.Error(), "server_control")
-			c.JSON(http.StatusBadGateway, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusBadGateway, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		if slots == nil {
@@ -1220,7 +1309,7 @@ func ScheduleTaskTimeslot(state *app.State) gin.HandlerFunc {
 			HasPerformedBackup *bool  `json:"hasPerformedBackup"`
 		}
 		if err := c.ShouldBindJSON(&body); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "请求体格式错误: " + err.Error()})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "请求体格式错误: " + ovh.Explain(err)})
 			return
 		}
 		wanted := strings.TrimSpace(body.WantedBeginingDate)
@@ -1228,19 +1317,19 @@ func ScheduleTaskTimeslot(state *app.State) gin.HandlerFunc {
 			wanted = strings.TrimSpace(body.StartDate)
 		}
 		if wanted == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少 wantedBeginingDate (ISO8601 日期时间)"})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少 wantedBeginingDate (ISO8601 日期时间)", "code": "E21D1E278"})
 			return
 		}
 		wantedTime, perr := time.Parse(time.RFC3339, wanted)
 		if perr != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "wantedBeginingDate 必须是 ISO8601 日期时间，例如 2026-01-02T15:04:05Z"})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "wantedBeginingDate 必须是 ISO8601 日期时间，例如 2026-01-02T15:04:05Z", "code": "E6FD24026"})
 			return
 		}
 		// hasPerformedBackup 是 schema 必填项，缺了 OVH 必 400，所以在这里就要求调用方显式表态。
 		// 但 false 在 schema 里是合法取值（它是"你是否已备份"的如实回答，不是开关），
 		// 上一轮直接 400 拒掉等于把 OVH 允许的调用变成不可达，这里改成原样透传 + 记一条警告日志。
 		if body.HasPerformedBackup == nil {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少 hasPerformedBackup：预约干预前必须确认是否已备份数据"})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少 hasPerformedBackup：预约干预前必须确认是否已备份数据", "code": "E9222DCA1"})
 			return
 		}
 		if !*body.HasPerformedBackup {
@@ -1258,7 +1347,7 @@ func ScheduleTaskTimeslot(state *app.State) gin.HandlerFunc {
 				switch apiErr.Code {
 				case http.StatusNotFound:
 					state.Logger.Warn("[Task] 任务或服务器不存在: "+err.Error(), "server_control")
-					c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "任务或服务器不存在"})
+					c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "任务或服务器不存在", "code": "ECE34F4F3"})
 					return
 				case http.StatusBadRequest, http.StatusConflict:
 					// OVH 的业务校验（任务不支持预约、时间段已被占用等）原样透出
@@ -1268,10 +1357,10 @@ func ScheduleTaskTimeslot(state *app.State) gin.HandlerFunc {
 				}
 			}
 			state.Logger.Error("[Task] 预约任务API错误: "+err.Error(), "server_control")
-			c.JSON(http.StatusBadGateway, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusBadGateway, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		state.Logger.Info(fmt.Sprintf("[Task] 任务 %s 干预时间预约成功", taskID), "server_control")
-		c.JSON(http.StatusOK, gin.H{"success": true, "message": "干预时间已预约"})
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "干预时间已预约", "code": "E98AC2C1C"})
 	}
 }

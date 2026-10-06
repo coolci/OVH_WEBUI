@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/http";
 import { qk } from "@/lib/query";
+import type { PartialList } from "./partial-list";
+import { useActiveAccount } from "@/hooks/use-active-account";
 
 /* ────────────── 类型定义 ────────────── */
 
@@ -20,8 +22,10 @@ export interface OwnedVps {
   vcore: number;
   memoryMB: number;
   diskGB: number;
-  status: string;       // billing status
-  renewalType: boolean;
+  /** billing status。serviceInfos 拉取失败时为 null —— 「没查到」不是一种状态，别渲染成「unknown」 */
+  status: string | null;
+  /** 是否自动续费。null = 这次没查到（serviceInfos 失败或 renew 为空），必须和 false（确实没开）分开显示 */
+  renewalType: boolean | null;
   error?: string;
 }
 
@@ -32,10 +36,16 @@ export interface VpsServiceInfo {
   renewalType: boolean;
   renewalPeriod: number;
   renewalDeleteAtExpiration: boolean;
-  terminationScheduled?: boolean;
   renewalForced: boolean;
   renewalManualPayment: boolean;
   possibleRenewPeriod: number[];
+  /** 终止状态权威来源(lifecycle.pendingActions);读不到时后端不下发 */
+  terminationScheduled?: boolean;
+  /** 哪种终止(立即 / 到期 / 合同期结束),见独服侧同名字段说明 */
+  terminationAction?: string;
+  /** 读 lifecycle 失败,状态未经验证 */
+  terminationStateUnknown?: boolean;
+  terminationDate?: string;
 }
 
 export interface VpsIp {
@@ -78,8 +88,6 @@ export interface VpsSnapshot {
   region: string;
 }
 
-import { useActiveAccount } from "./use-active-account";
-
 /* ────────────── List + Info + Status ────────────── */
 
 export function useOwnedVps() {
@@ -105,33 +113,8 @@ export function useVpsInfo(svc: string | null) {
   });
 }
 
-/** 服务端口探测结果。US 区没有这个 OVH 端点，后端返 200 + status:null + unsupported:true */
-export interface VpsServiceStatusResult {
-  status: Record<string, any> | null;
-  unsupported?: boolean;
-  unauthorized?: boolean;
-  message?: string;
-  region?: string;
-}
-
-/** VPS 网络服务存活探测(ping/dns/http/https/smtp/ssh) — 跟 info.state 不一样 */
-export function useVpsServiceStatus(svc: string | null) {
-  return useQuery({
-    queryKey: qk.vpsControl.status(svc || ""),
-    queryFn: async (): Promise<VpsServiceStatusResult> => {
-      const res = await api.get(`/vps-control/${svc}/status`);
-      return {
-        status: (res.data?.status ?? null) as Record<string, any> | null,
-        unsupported: res.data?.unsupported === true,
-        unauthorized: res.data?.unauthorized === true,
-        message: res.data?.message,
-        region: res.data?.region,
-      };
-    },
-    enabled: !!svc,
-    staleTime: 30_000,
-  });
-}
+/* (useVpsServiceStatus / VpsServiceStatusResult 已删:/vps/{sn}/status 被 OVH 废弃,
+   无替代端点 —— 见 vps-control.tsx 里同名面板的删除说明。) */
 
 export function useVpsServiceInfo(svc: string | null) {
   return useQuery({
@@ -201,8 +184,6 @@ export function useVpsStart(svc: string) {
   return useMutation({
     mutationFn: async () => (await api.post(`/vps-control/${svc}/start`)).data,
     onSuccess: () => {
-      // 不要用 qk.vpsControl.list()：它会带上 accountId=""，和真实 key
-      // ["vps-control","list",accountId] 对不上，开机后列表状态不刷新。
       qc.invalidateQueries({ queryKey: ["vps-control", "list"] });
       qc.invalidateQueries({ queryKey: qk.vpsControl.info(svc) });
     },
@@ -221,14 +202,8 @@ export function useVpsStop(svc: string) {
 }
 
 export function useVpsReboot(svc: string) {
-  const qc = useQueryClient();
   return useMutation({
     mutationFn: async () => (await api.post(`/vps-control/${svc}/reboot`)).data,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["vps-control", "list"] });
-      qc.invalidateQueries({ queryKey: qk.vpsControl.info(svc) });
-      qc.invalidateQueries({ queryKey: qk.vpsControl.tasks(svc) });
-    },
   });
 }
 
@@ -241,15 +216,12 @@ export function useVpsConsoleUrl(svc: string) {
   });
 }
 
-export function useVpsSetPassword(svc: string) {
-  return useMutation({
-    mutationFn: async () => (await api.post(`/vps-control/${svc}/password`)).data,
-  });
-}
+/* (useVpsSetPassword 已删:/vps/{sn}/setPassword 被 OVH 废弃,无替代端点;
+   新做法 = 重装时让 OVH 重发密码,或预装 SSH key。) */
 
 /* ────────────── Reinstall ────────────── */
 
-/** 当前安装的系统信息(EU /distribution / US /images/current) */
+/** 当前安装的系统信息(/vps/{sn}/images/current;旧 /distribution 已废弃停用) */
 export function useVpsCurrentOS(svc: string | null) {
   return useQuery({
     queryKey: qk.vpsControl.currentOS(svc || ""),
@@ -269,48 +241,51 @@ export function useVpsCurrentOS(svc: string | null) {
   });
 }
 
+/** 模板列表 + 部分失败信息。kind 决定 reinstall 用 templateId 还是 imageId（后端按 endpoint 自动分路） */
+export interface VpsTemplateList extends PartialList<VpsTemplate> {
+  kind: TemplateKind | "";
+}
+
+/**
+ * 系统模板列表。
+ * 后端现在区分「详情全挂」和「账户真没模板」：全挂返 500（这里直接抛出去让 isError 生效），
+ * 部分挂返 200 + partial/failed。组件必须把 isError 渲染成「读取失败，请重试」，
+ * 而不是沿用「暂无可用模板」那句空态文案 —— 那会让用户以为账户没模板从而放弃重试。
+ */
 export function useVpsTemplates(svc: string | null) {
   return useQuery({
     queryKey: qk.vpsControl.templates(svc || ""),
-    queryFn: async () => {
+    queryFn: async (): Promise<VpsTemplateList> => {
       const res = await api.get(`/vps-control/${svc}/templates`);
-      return (res.data?.templates || []) as VpsTemplate[];
+      const failedCount = Number(res.data?.failed) || 0;
+      return {
+        items: (res.data?.templates || []) as VpsTemplate[],
+        kind: (res.data?.kind || "") as TemplateKind | "",
+        partial: res.data?.partial === true || failedCount > 0,
+        failedCount,
+      };
     },
     enabled: !!svc,
     staleTime: 5 * 60_000,
   });
 }
 
-export interface VpsRebuildInput {
-  imageId?: string | number;
-  templateId?: string | number; // 兼容旧名
-  sshKey?: string[];
-  doNotSendPassword?: boolean;
-}
-
-/** VPS 重建系统: 走 /vps-control/:svc/rebuild (OVH /rebuild 端点) */
-export function useRebuildVps(svc: string) {
+export function useReinstallVps(svc: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (vars: VpsRebuildInput) => {
-      const payload = {
-        imageId: vars.imageId || vars.templateId,
-        templateId: vars.templateId || vars.imageId,
-        sshKey: vars.sshKey,
-        doNotSendPassword: vars.doNotSendPassword,
-      };
-      return (await api.post(`/vps-control/${svc}/rebuild`, payload)).data;
-    },
+    // 全量走 /vps/{sn}/rebuild(body vps.rebuild.post):imageId + 单个 sshKey +
+    // doNotSendPassword。旧 reinstall 的 language/softwareId 字段 rebuild 不收,
+    // 别再让调用方以为选了语言会生效。
+    mutationFn: async (vars: {
+      templateId: number | string; // 语义是 imageId;数字是旧缓存,后端转字符串
+      sshKey?: string[];
+      doNotSendPassword?: boolean;
+    }) => (await api.post(`/vps-control/${svc}/reinstall`, vars)).data,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.vpsControl.tasks(svc) });
-      qc.invalidateQueries({ queryKey: qk.vpsControl.currentOS(svc) });
-      qc.invalidateQueries({ queryKey: qk.vpsControl.info(svc) });
     },
   });
 }
-
-/** 兼容旧命名 */
-export const useReinstallVps = useRebuildVps;
 
 /* ────────────── Tasks ────────────── */
 
@@ -399,25 +374,29 @@ export function useChangeVpsContact() {
   });
 }
 
+/**
+ * VPS 的到期终止策略。和独服同理：**不要**用 /terminate（那是立即终止）。
+ * 到期终止只能通过 PUT /services/{serviceId} 的 terminationPolicy 设置。
+ */
+export function useUpdateVpsTerminationPolicy() {
+  return useMutation({
+    mutationFn: async (vars: { serviceName: string; policy: string }) =>
+      (await api.put(`/vps-control/${vars.serviceName}/termination-policy`, {
+        policy: vars.policy,
+      })).data,
+  });
+}
+
+/**
+ * ⚠️ 立即终止 —— 提交并确认后 OVH 会**当场暂停** VPS，
+ * 并邮件通知「5 天内不付款就彻底清除硬盘数据」。
+ * 想要「到期才终止」请用 useUpdateVpsTerminationPolicy，不要用这个。
+ * 目前界面上没有入口，保留仅为将来做「立即终止」时复用。
+ */
 export function useTerminateVps() {
   return useMutation({
     mutationFn: async (vars: { serviceName: string }) =>
       (await api.post(`/vps-control/${vars.serviceName}/terminate`)).data,
-  });
-}
-
-/** 到期终止策略。不要用 POST /terminate —— 那是立即终止。 */
-export function useUpdateVpsTerminationPolicy(serviceName: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (vars: { policy: string }) =>
-      (await api.put(`/vps-control/${serviceName}/termination-policy`, vars)).data as {
-        success: boolean;
-        message: string;
-      },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.vpsControl.serviceInfo(serviceName) });
-    },
   });
 }
 
@@ -461,31 +440,42 @@ export function useDeleteVpsSecondaryDns(svc: string) {
   });
 }
 
+/**
+ * VPS 附加选项(ftpbackup / veeam / snapshot / automatedBackup / windows / cpanel / plesk / additionalDisk)。
+ *
+ * manageEndpointsAvailable=false 表示"这个选项在当前账户所在区域没有专属管理端点":
+ * 美区 OVHcloud 的 /vps/{sn}/backupftp 与 /vps/{sn}/veeam 整套端点都不存在(EU/CA 才有),
+ * 但 /vps/{sn}/option 照样把它们列出来(三区的 VpsOptionEnum 完全一致)。
+ * 前端必须据此把「管理」入口置灰并显示 unsupportedReason,而不是让用户点进去吃一串 404。
+ *
+ * 注意:它只说"没有管理端点",不代表选项没生效、也不影响退订 ——
+ * DELETE /vps/{sn}/option/{option} 三区都注册,所以别拿它去禁用「取消选项」。
+ */
+export interface VpsOption {
+  option: string;
+  state?: string;
+  /** false = 该选项在本区没有专属管理端点(后端 handlers/vps_control_misc.go 打的标记) */
+  manageEndpointsAvailable?: boolean;
+  /** manageEndpointsAvailable=false 时的中文原因 */
+  unsupportedReason?: string;
+  /** 打标记时后端带回的大区,目前只会是 "US" */
+  region?: string;
+  [k: string]: any;
+}
+
 export function useVpsOptions(svc: string | null) {
   return useQuery({
     queryKey: qk.vpsControl.options(svc || ""),
     queryFn: async () => {
       const res = await api.get(`/vps-control/${svc}/options`);
-      return (res.data?.options || []) as any[];
+      return (res.data?.options || []) as VpsOption[];
     },
     enabled: !!svc,
   });
 }
 
-export function useDeleteVpsOption(svc: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (vars: { option: string; deleteNow?: boolean }) => {
-      const qs = vars.deleteNow ? "?deleteNow=true" : "";
-      return (await api.delete(`/vps-control/${svc}/options/${encodeURIComponent(vars.option)}${qs}`)).data as {
-        success: boolean;
-        message?: string;
-        deleteNow?: boolean;
-      };
-    },
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.vpsControl.options(svc) }),
-  });
-}
+/* (useDeleteVpsOption 已删:DELETE /vps/{sn}/option/{option} 已从三区 schema 消失,
+   取消选项只能到 OVH 控制台。它本来就没有 UI 调用方。) */
 
 /* ────────────── Engagement(合同期) ────────────── */
 
@@ -562,7 +552,10 @@ export interface VpsMitigationIp {
 }
 
 export interface VpsMitigationBlock {
+  /** OVH 认的带掩码 ipBlock，后端保证以本行的 ipAddress 开头（归一化失败时就是裸 IP） */
   ipBlock: string;
+  /** 裸 IP。要显示地址就直接用它，别再从 ipBlock 上 split("/") 反推 */
+  ipAddress?: string;
   mitigations: VpsMitigationIp[];
   error?: string;
 }

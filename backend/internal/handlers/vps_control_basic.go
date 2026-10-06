@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"net/http"
-	"net/url"
 	"sync"
 
 	"github.com/gin-gonic/gin"
@@ -29,6 +28,12 @@ import (
 // 其余路径(ips / snapshot / option / secondaryDnsDomains / automatedBackup /
 // serviceInfos / tasks / rebuild / images/* / getConsoleUrl / datacenter …)三区都有,
 // 只是 US 上整片 vps 命名空间标了 BETA —— BETA 不影响可调用性,不做门控。
+//
+// ⚠️ 2026-10:OVH 把上面那批"US 缺失"端点中的 5 个标记废弃(EU/CA,删除日期
+// 2026-10-15,无 replacement):/status /distribution /templates /reinstall /setPassword。
+// 其中 /templates /distribution /reinstall 在本仓库有 images/rebuild 的结构性退路,
+// 到期自动降级;/status /setPassword 无替代,各自 handler 里对 404/410 有明确提示。
+// DELETE /vps/{sn}/option/{option} 则已直接从三区 schema 消失。
 //
 // 门控一律走 ovh.EndpointRegion,不要在各 handler 里再写 `acc.Endpoint == "ovh-us"`:
 // endpoint 是用户可填的自由字符串,还有 kimsufi-* / soyoustart-* 品牌别名,
@@ -78,13 +83,8 @@ func ListVps(state *app.State) gin.HandlerFunc {
 		var names []string
 		if err := client.Get("/vps", &names); err != nil {
 			state.Logger.Error("获取 VPS 列表失败: "+err.Error(), "vps_control")
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
-		}
-		if acc, ok := ovhAccountFor(state, c); ok && acc.ID != "" {
-			for _, name := range names {
-				RegisterVpsOwner(name, acc.ID)
-			}
 		}
 		state.Logger.Info("获取 VPS 列表成功", "vps_control")
 
@@ -210,7 +210,7 @@ func GetVpsInfo(state *app.State) gin.HandlerFunc {
 		}
 		var info map[string]interface{}
 		if err := client.Get("/vps/"+svc, &info); err != nil {
-			ovhRespondError(c, err, "获取 VPS 详情失败")
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"success": true, "info": info})
@@ -226,7 +226,7 @@ func GetVpsServiceStatus(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"success": true, "status": nil, "removed": true,
-			"message": "OVH 已下线 VPS 端口探测接口(2026-10-15 废弃,无替代)。想看端口存活请自行用外部监控",
+			"message": "OVH 已下线 VPS 端口探测接口(2026-10-15 废弃,无替代)。想看端口存活请自行用外部监控", "code": "ECC15035A",
 		})
 	}
 }
@@ -243,7 +243,7 @@ func GetVpsServiceInfo(state *app.State) gin.HandlerFunc {
 		}
 		var info map[string]interface{}
 		if err := client.Get("/vps/"+svc+"/serviceInfos", &info); err != nil {
-			ovhRespondError(c, err, "获取 VPS 服务信息失败")
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		renew, _ := info["renew"].(map[string]interface{})
@@ -308,7 +308,7 @@ func UpdateVpsRenewal(state *app.State) gin.HandlerFunc {
 
 		var info map[string]interface{}
 		if err := client.Get("/vps/"+svc+"/serviceInfos", &info); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		renew, _ := info["renew"].(map[string]interface{})
@@ -316,7 +316,7 @@ func UpdateVpsRenewal(state *app.State) gin.HandlerFunc {
 			renew = map[string]interface{}{}
 		}
 		if f, ok := renew["forced"].(bool); ok && f {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "该 VPS 处于 OVH 合同期内,续费策略由 OVH 锁定"})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "该 VPS 处于 OVH 合同期内,续费策略由 OVH 锁定", "code": "E552F23C1"})
 			return
 		}
 		// 同独服:service.RenewType 的 automatic / deleteAtExpiration / forced
@@ -341,10 +341,10 @@ func UpdateVpsRenewal(state *app.State) gin.HandlerFunc {
 			// 也**不能**指向 POST /terminate——那是立即终止,提交即暂停服务器,真实踩过。
 			// 唯一正确的路是 PUT /services/{serviceId} 的 terminationPolicy。
 			c.JSON(http.StatusBadRequest, gin.H{"success": false,
-				"error": "到期终止请用 PUT termination-policy 接口(terminationPolicy=terminateAtExpirationDate);不要调 /terminate——那是立即终止,提交即暂停服务"})
+				"error": "到期终止请用 PUT termination-policy 接口(terminationPolicy=terminateAtExpirationDate);不要调 /terminate——那是立即终止,提交即暂停服务", "code": "ECBAA0559"})
 			return
 		default:
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "mode 必须是 auto / manual / delete 之一"})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "mode 必须是 auto / manual / delete 之一", "code": "EA464F1AF"})
 			return
 		}
 		if body.Period > 0 {
@@ -355,11 +355,11 @@ func UpdateVpsRenewal(state *app.State) gin.HandlerFunc {
 		// services.Service 只有 renew 可写,整对象发回去会被 400
 		if err := client.Put("/vps/"+svc+"/serviceInfos",
 			map[string]interface{}{"renew": next}, nil); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		state.Logger.Info("VPS "+svc+" 续费策略已更新: "+body.Mode, "vps_control")
-		c.JSON(http.StatusOK, gin.H{"success": true, "message": "续费策略已更新"})
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "续费策略已更新", "code": "ED101FDC4"})
 	}
 }
 
@@ -375,12 +375,11 @@ func GetVpsIps(state *app.State) gin.HandlerFunc {
 		}
 		var ips []string
 		if err := client.Get("/vps/"+svc+"/ips", &ips); err != nil {
-			ovhRespondError(c, err, "获取 VPS IP 失败")
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		details := parallelGetStringKeys(client, ips, func(ip string) string {
-			// IPv6 含冒号,不转义会被当成 URL 分段,详情全 404,列表只剩光秃 IP。
-			return "/vps/" + svc + "/ips/" + url.PathEscape(ip)
+			return "/vps/" + svc + "/ips/" + ip
 		}, 8)
 		list := []gin.H{}
 		for i, ip := range ips {
@@ -423,13 +422,13 @@ func SetVpsIpReverse(state *app.State) gin.HandlerFunc {
 		// vps.Ip 里只有 reverse 可写(ipAddress / type / version / gateway /
 		// geolocation / macAddress 都是只读),所以不需要先 GET 再 merge ——
 		// 那样反而会把只读字段一起发回去,被 OVH 400 掉
-		if err := client.Put("/vps/"+svc+"/ips/"+url.PathEscape(ip),
+		if err := client.Put("/vps/"+svc+"/ips/"+ip,
 			map[string]interface{}{"reverse": body.Reverse}, nil); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		state.Logger.Info("VPS "+svc+" IP "+ip+" 反向 DNS 设为 "+body.Reverse, "vps_control")
-		c.JSON(http.StatusOK, gin.H{"success": true, "message": "反向 DNS 已更新"})
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "反向 DNS 已更新", "code": "E79027532"})
 	}
 }
 
@@ -448,7 +447,7 @@ func GetVpsDatacenter(state *app.State) gin.HandlerFunc {
 		}
 		var dc map[string]interface{}
 		if err := client.Get("/vps/"+svc+"/datacenter", &dc); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"success": true, "datacenter": dc})

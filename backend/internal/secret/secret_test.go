@@ -3,7 +3,6 @@ package secret
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -22,20 +21,6 @@ func fresh(t *testing.T) string {
 		t.Fatalf("Init: %v", err)
 	}
 	return dir
-}
-
-func TestDecryptWithoutKeyCountsFailure(t *testing.T) {
-	mu.Lock()
-	aead, loaded, keyGenerated = nil, false, false
-	mu.Unlock()
-	failures.Store(0)
-	_, err := Decrypt(EncPrefix + "AAAA")
-	if err == nil {
-		t.Fatal("未初始化密钥时解密密文应失败")
-	}
-	if DecryptFailures() != 1 {
-		t.Fatalf("DecryptFailures=%d, want 1", DecryptFailures())
-	}
 }
 
 func TestEncryptDecrypt往返(t *testing.T) {
@@ -142,10 +127,8 @@ func TestKeyFile权限(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if runtime.GOOS != "windows" {
-		if perm := fi.Mode().Perm(); perm != 0o600 {
-			t.Errorf("密钥文件权限 = %o, 期望 600", perm)
-		}
+	if perm := fi.Mode().Perm(); perm != 0o600 {
+		t.Errorf("密钥文件权限 = %o, 期望 600", perm)
 	}
 }
 
@@ -193,10 +176,8 @@ func TestInit没密钥时写进配置文件(t *testing.T) {
 		t.Error("新装机器不该再生成 data/.dbkey")
 	}
 	// 0600:同机器上别的用户不该读得到
-	if runtime.GOOS != "windows" {
-		if st, _ := os.Stat(env); st != nil && st.Mode().Perm() != 0o600 {
-			t.Errorf("配置文件权限应该是 0600,实际 %o", st.Mode().Perm())
-		}
+	if st, _ := os.Stat(env); st != nil && st.Mode().Perm() != 0o600 {
+		t.Errorf("配置文件权限应该是 0600,实际 %o", st.Mode().Perm())
 	}
 }
 

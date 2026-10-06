@@ -1,4 +1,4 @@
-﻿package db
+package db
 
 import (
 	"testing"
@@ -6,6 +6,14 @@ import (
 	"github.com/ovh-webui/server/internal/types"
 )
 
+// VPS 订阅的自动下单配置必须真的落库。
+//
+// 这四个字段(AutoOrder / Quantity / AutoPay / OS)在 types 里早就有,
+// 但表里一直没列、行结构也没映射 —— 写入被静默丢弃,读回来全是零值。
+// 后果:VPS 自动下单重启即失效(界面开关还亮着),而且删任意账户时
+// reloadAfterAccountDelete 会用零值回灌内存,当场清零。
+//
+// 这个测试锁住往返一致性,防止以后加字段又忘了加列。
 func TestVPSSubscriptionRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	database, err := Open(dir)
@@ -22,6 +30,7 @@ func TestVPSSubscriptionRoundTrip(t *testing.T) {
 		LastStatus: map[string]string{"gra": "available"},
 		History:    []map[string]interface{}{},
 		CreatedAt:  types.NowISO(),
+		// 以下四个是曾经被静默丢弃的
 		AutoOrderAccountID: "acc-1",
 		AutoOrder:          true,
 		Quantity:           3,

@@ -70,6 +70,10 @@ func hintFor(e *ovhsdk.APIError) string {
 
 	// —— 先按原文认。这些说法的含义与状态码无关 ——
 	switch {
+	case strings.Contains(lower, "reboot has already been requested"):
+		// OVH 对同一台机器的重启防抖(实测回 403 而不是 409,状态码认不出来)。
+		// 它不是权限问题:已经有一个重启在跑了,这次请求要做的件事已经在发生
+		return "这台服务器已经有一个重启在进行中,等它完成即可(不需要重新授权或改凭据)"
 	case strings.Contains(lower, "invalid token"), strings.Contains(lower, "token is invalid"):
 		return "这里的 token 不是 API 密钥,而是 OVH **发到邮箱里**的一次性确认令牌。" +
 			"它填错、过期或已经用过都会这样 —— 回邮件重新抄一遍,或让 OVH 重发一封"
@@ -111,4 +115,47 @@ func hintFor(e *ovhsdk.APIError) string {
 		return "OVH 拒绝了这次操作"
 	}
 	return "调用 OVH 失败"
+}
+
+// IsRebootAlreadyRequested 认出 OVH 的重启防抖。
+// 实测独服回 403 + "A reboot has already been requested"(不是 409),
+// 状态码认不出来只能按原文匹配;含义是"已有一个重启在跑",不是权限问题。
+// VPS 等其它产品线同义文案一并覆盖。
+func IsRebootAlreadyRequested(err error) bool {
+	if err == nil {
+		return false
+	}
+	lower := strings.ToLower(err.Error())
+	return strings.Contains(lower, "reboot has already been requested") ||
+		strings.Contains(lower, "a reboot is already in progress")
+}
+
+// IsTaskConflict 认出 OVH 的任务冲突/进行中拒绝。
+// VPS 任务链(rebuild/start/stop/snapshot/revert)和部分独服操作在
+// 已有任务在跑时被拒,文案族:"task is already running"/"another task" /
+// "already in progress" / "Cannot ... while ... in status"。
+// 状态码不可靠(实测有 403 也有 409),按原文匹配为准。
+func IsTaskConflict(err error) bool {
+	if err == nil {
+		return false
+	}
+	var apiErr *ovhsdk.APIError
+	if errors.As(err, &apiErr) && apiErr.Code == 409 {
+		return true
+	}
+	lower := strings.ToLower(err.Error())
+	for _, needle := range []string{
+		"task is already running",
+		"another task",
+		"already in progress",
+		"task is pending",
+		"while the vps is in status",
+		"current status of the server does not allow",
+		"action pending",
+	} {
+		if strings.Contains(lower, needle) {
+			return true
+		}
+	}
+	return false
 }

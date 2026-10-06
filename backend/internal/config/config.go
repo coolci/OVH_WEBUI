@@ -27,7 +27,6 @@ func encryptConfig(c types.Config) types.Config {
 	c.ConsumerKey = secret.Encrypt(c.ConsumerKey)
 	c.AppKey = secret.Encrypt(c.AppKey)
 	c.TgToken = secret.Encrypt(c.TgToken)
-	c.TgWebhookSecret = secret.Encrypt(c.TgWebhookSecret)
 	return c
 }
 
@@ -45,7 +44,6 @@ func decryptConfig(c types.Config) types.Config {
 	c.AppSecret = dec(c.AppSecret)
 	c.ConsumerKey = dec(c.ConsumerKey)
 	c.TgToken = dec(c.TgToken)
-	c.TgWebhookSecret = dec(c.TgWebhookSecret)
 	return c
 }
 
@@ -71,6 +69,7 @@ func New(database *db.DB) *Store {
 	if s.cfg.IAM == "" {
 		s.cfg.IAM = "go-ovh-" + strings.ToLower(s.cfg.Zone)
 	}
+	// 老配置里没有这两个字段(读出来是 0),补成默认值让 Get() 永远给出明确的数
 	s.cfg.DefaultRetryInterval = types.ClampRetryInterval(s.cfg.DefaultRetryInterval, types.DefaultTaskRetryInterval)
 	s.cfg.QuickOrderRetryInterval = types.ClampRetryInterval(s.cfg.QuickOrderRetryInterval, types.DefaultQuickRetryInterval)
 	return s
@@ -105,8 +104,6 @@ func (s *Store) Set(c types.Config) error {
 	if c.IAM == "" {
 		c.IAM = "go-ovh-" + strings.ToLower(c.Zone)
 	}
-	c.DefaultRetryInterval = types.ClampRetryInterval(c.DefaultRetryInterval, types.DefaultTaskRetryInterval)
-	c.QuickOrderRetryInterval = types.ClampRetryInterval(c.QuickOrderRetryInterval, types.DefaultQuickRetryInterval)
 	s.cfg = c
 	snapshot := s.cfg
 	s.mu.Unlock()

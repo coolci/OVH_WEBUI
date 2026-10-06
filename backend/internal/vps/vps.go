@@ -15,7 +15,6 @@ import (
 	"github.com/ovh-webui/server/internal/notify"
 	"github.com/ovh-webui/server/internal/numconv"
 	"github.com/ovh-webui/server/internal/ovh"
-	"github.com/ovh-webui/server/internal/telegram"
 	"github.com/ovh-webui/server/internal/types"
 )
 
@@ -79,7 +78,7 @@ func checkNotifyOrStop(state *app.State) bool {
 		return true
 	}
 	// 与服务器监控同一口径:所有通道都不可用才停,只挂一条不影响
-	ok, reason := notify.AnyAvailable(state, true)
+	ok, reason := notify.AnyAvailable(state, false) // 周期性只查配置,不发真消息(issue #2)
 	tgCheckMu.Lock()
 	lastTGCheck = time.Now()
 	tgCheckMu.Unlock()
@@ -173,7 +172,45 @@ func bodySnippet(b []byte) string {
 //
 // 还有一个坑:US 站点**不**校验 ovhSubsidiary —— 传 IE/FR 一样 200,返回的却是美国机房。
 // 串区在美区不会报错,只能在本地先用 ovh.KnownSubsidiary / SubsidiaryRegion 兜住。
+// pickOSStatus 按订阅勾选的系统挑库存字段。
+//
+// 两个都勾(或都不勾)时用通用 status;只勾一个时读对应的 linuxStatus / windowsStatus。
+// 字段缺失时回落到 status —— 宁可按通用库存报,也不要因为字段没有就当成无货,
+// 那会让监控静默失效。
+// vpsStockAvailable 白名单:vps.order.rule.DatacenterStatusEnum 三区一致 =
+// [available, out-of-stock, out-of-stock-preorder-allowed],只有 available 能下单。
+// 用白名单而不是排除法 —— OVH 加新取值时,未知值一律按"无货"处理才安全。
+func vpsStockAvailable(status string) bool { return status == "available" }
+
+func pickOSStatus(dc map[string]interface{}, linux, windows bool) string {
+	get := func(k string) string {
+		v, _ := dc[k].(string)
+		return v
+	}
+	general := get("status")
+	switch {
+	case linux && !windows:
+		if s := get("linuxStatus"); s != "" {
+			return s
+		}
+	case windows && !linux:
+		if s := get("windowsStatus"); s != "" {
+			return s
+		}
+	}
+	return general
+}
+
+// CheckVPSDCAvailability 查某机型在某子公司的各机房库存。
+// osFilter 非空时作为 os query 参数带给 OVH(订阅里选的安装系统)。
 func CheckVPSDCAvailability(state *app.State, planCode, ovhSubsidiary string) (map[string]interface{}, error) {
+	return checkVPSDCAvailabilityOS(state, planCode, ovhSubsidiary, "", "")
+}
+
+// accountID 决定这次查询从哪个出口发出去。
+// VPS 的可用性轮询是每轮都打的高频路径 —— 不跟着账户的代理走的话,
+// 即便每个账户都配了代理,这些请求仍然从本机真实 IP 发出,出口隔离漏了一半。
+func checkVPSDCAvailabilityOS(state *app.State, planCode, ovhSubsidiary, osFilter, accountID string) (map[string]interface{}, error) {
 	sub := NormalizeSubsidiary(ovhSubsidiary)
 	planCode = strings.TrimSpace(planCode)
 	if sub == "" {
@@ -195,13 +232,24 @@ func CheckVPSDCAvailability(state *app.State, planCode, ovhSubsidiary string) (m
 	params := url.Values{}
 	params.Set("ovhSubsidiary", sub)
 	params.Set("planCode", planCode)
+	if os := strings.TrimSpace(osFilter); os != "" {
+		// schema: GET /vps/order/rule/datacenter 有可选 query os
+		// ("VPS OS selection in order api")。订阅选了系统就带上,
+		// 让 OVH 直接按目标系统算库存,而不是拿通用库存去猜
+		params.Set("os", os)
+	}
 	fullURL := u + "?" + params.Encode()
 
 	state.Logger.Info(fmt.Sprintf("检查VPS可用性: %s (subsidiary: %s, 站点: %s)", planCode, sub, RegionLabel(region)), "vps_monitor")
 
 	req, _ := http.NewRequest(http.MethodGet, fullURL, nil)
 	req.Header.Set("accept", "application/json")
-	client := &http.Client{Timeout: 10 * time.Second}
+	client, cerr := state.HTTPClientFor(accountID, 10*time.Second)
+	if cerr != nil {
+		// 配了代理却建不出来 —— 不退回直连。退回的表现是一切正常、
+		// 隔离却已经没了,而用户无从察觉。
+		return nil, &CheckError{Msg: "出站代理配置有问题: " + cerr.Error(), Retryable: false}
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		// 网络抖动:下一轮还有机会
@@ -349,39 +397,35 @@ func SendSummaryNotification(state *app.State, planCode, ovhSubsidiary string, d
 	var emoji, title string
 	switch changeType {
 	case "initial":
-		emoji, title = "📊", "VPS 状态概览"
+		emoji, title = "📊", "VPS初始状态"
 	case "available":
-		emoji, title = "🎉", "发现 VPS 有货！"
+		emoji, title = "🎉", "VPS补货通知"
 	default:
-		emoji, title = "📦", "VPS 已下架"
+		emoji, title = "📦", "VPS下架通知"
 	}
 	var sb strings.Builder
 	sb.WriteString(emoji + " " + title + "\n\n")
-	sb.WriteString("📦 套餐: " + planDisplay + "\n")
-	sb.WriteString("📦 型号: " + planCode + "\n")
+	sb.WriteString("套餐: " + planDisplay + "\n")
 	if sub := NormalizeSubsidiary(ovhSubsidiary); sub != "" {
-		sb.WriteString("🌐 区域: " + sub + " (" + RegionLabel(ovh.SubsidiaryRegion(sub)) + ")\n")
+		sb.WriteString("子公司: " + sub + " / " + RegionLabel(ovh.SubsidiaryRegion(sub)) + "\n")
 	}
-
-	sb.WriteString(fmt.Sprintf("\n📍 机房列表 (%d个):\n", len(dcs)))
-	for _, dc := range dcs {
+	sb.WriteString("时间: " + time.Now().Format("2006-01-02 15:04:05") + "\n\n")
+	for idx, dc := range dcs {
 		st, _ := dc["status"].(string)
 		statusCN, ok := statusMap[st]
 		if !ok {
 			statusCN = st
 		}
+		name, _ := dc["name"].(string)
 		code, _ := dc["code"].(string)
-		dcName := telegram.DisplayDCFull(code)
-		line := "• " + dcName + " · " + statusCN
+		sb.WriteString(fmt.Sprintf("%d. %s (%s)\n   状态: %s", idx+1, name, code, statusCN))
 		if days, ok := numconv.ToInt64(dc["days"]); ok && days > 0 {
-			line += fmt.Sprintf(" (预计 %d天内交付)", days)
+			sb.WriteString(fmt.Sprintf(" | 预计交付: %d天", days))
 		}
-		sb.WriteString(line + "\n")
+		sb.WriteString("\n")
 	}
-
-	sb.WriteString("\n⏱️ " + time.Now().Format("15:04:05"))
 	if changeType == "available" {
-		sb.WriteString("\n💡 请前往网页控制台或使用 /buy 极速下单")
+		sb.WriteString("\n💡 快去抢购吧！")
 	}
 	result := notify.Broadcast(state, sb.String(), nil) > 0
 	if result {
@@ -439,7 +483,7 @@ func monitorLoopGen(state *app.State, gen int64) {
 				if ovhSub == "" {
 					ovhSub = DefaultSubsidiary(state, sub.AutoOrderAccountID)
 				}
-				currentData, err := CheckVPSDCAvailability(state, sub.PlanCode, ovhSub)
+				currentData, err := checkVPSDCAvailabilityOS(state, sub.PlanCode, ovhSub, sub.OS, sub.AutoOrderAccountID)
 				if err != nil {
 					logCheckFailure(state, sub.ID, sub.PlanCode, ovhSub, err)
 					continue
@@ -456,6 +500,10 @@ func monitorLoopGen(state *app.State, gen int64) {
 				newAvailable := []map[string]interface{}{}
 				newUnavailable := []map[string]interface{}{}
 				isFirstCheckOverall := len(lastStatus) == 0
+				// 勾了机房却一个都没匹配上 = 这条订阅永远不会响。
+				// 不报出来的话它和"这些机房目前无货"表现完全一样:
+				// 界面正常、日志干净、就是永远不动。
+				matchedDC := false
 
 				for _, dcRaw := range dcsRaw {
 					dc, ok := dcRaw.(map[string]interface{})
@@ -464,14 +512,26 @@ func monitorLoopGen(state *app.State, gen int64) {
 					}
 					code, _ := dc["code"].(string)
 					name, _ := dc["datacenter"].(string)
-					currentStatus, _ := dc["status"].(string)
+					// 按订阅勾选的系统取对应字段。schema 的 vps.order.rule.Datacenter
+					// 有 status / linuxStatus / windowsStatus 三个,三区都有 ——
+					// 以前只读 status,导致界面上的「监控系统」勾选框完全是摆设:
+					// 只勾 Windows 的用户在 Linux 有货时照样收到补货通知,
+					// 开了自动下单还会白跑一整条建车链路,到 checkout 才失败。
+					currentStatus := pickOSStatus(dc, sub.MonitorLinux, sub.MonitorWindows)
 					daysI64, _ := numconv.ToInt64(dc["daysBeforeDelivery"])
 					days := int(daysI64)
 
 					if len(monitoredDCs) > 0 {
 						found := false
 						for _, m := range monitoredDCs {
-							if m == code {
+							// 必须不分大小写。这一边是 OVH 返回的 code
+							// (可用性接口给的是 GRA / BHS / US-EAST-VA 这种大写,
+							// 见 purchase.go 的 dcRegion 表),另一边是用户在输入框里
+							// **手打**的一串文本,中间没有任何一层做过归一。
+							// 用 == 的话大小写一对不上就全部 continue 掉:
+							// 订阅恒定 0 状态更新、不发通知、不下单,而界面上它
+							// 显示得完全正常 —— 这是最难被发现的那种坏法。
+							if strings.EqualFold(strings.TrimSpace(m), code) {
 								found = true
 								break
 							}
@@ -480,6 +540,7 @@ func monitorLoopGen(state *app.State, gen int64) {
 							continue
 						}
 					}
+					matchedDC = true
 					oldStatus, hasOld := lastStatus[code]
 					if !hasOld {
 						initialAvailable = append(initialAvailable, map[string]interface{}{
@@ -488,7 +549,7 @@ func monitorLoopGen(state *app.State, gen int64) {
 							"status": currentStatus,
 							"days":   days,
 						})
-						if currentStatus != "out-of-stock" && currentStatus != "out-of-stock-preorder-allowed" {
+						if vpsStockAvailable(currentStatus) {
 							sub.History = append(sub.History, map[string]interface{}{
 								"timestamp":      time.Now().Format(time.RFC3339Nano),
 								"datacenter":     name,
@@ -499,8 +560,11 @@ func monitorLoopGen(state *app.State, gen int64) {
 							})
 						}
 					} else {
-						wasUnavail := oldStatus == "out-of-stock" || oldStatus == "out-of-stock-preorder-allowed"
-						isUnavail := currentStatus == "out-of-stock" || currentStatus == "out-of-stock-preorder-allowed"
+						// 白名单判据,和独服的 ovh.IsAvailableForOrder 同口径。
+						// 以前用排除法列举 out-of-stock*,OVH 若新增一个"买不了"的取值
+						// (独服那边就有 comingSoon),会被判成有货 → 误报 + 误下单。
+						wasUnavail := !vpsStockAvailable(oldStatus)
+						isUnavail := !vpsStockAvailable(currentStatus)
 						if wasUnavail && !isUnavail {
 							newAvailable = append(newAvailable, map[string]interface{}{
 								"name":   name,
@@ -534,6 +598,23 @@ func monitorLoopGen(state *app.State, gen int64) {
 						}
 					}
 					lastStatus[code] = currentStatus
+				}
+
+				if len(monitoredDCs) > 0 && !matchedDC {
+					// 把 OVH 这次真正返回的机房码一并写出来,用户照着改就行。
+					// 最常见的原因是机房码打错了或大小写/前缀不对
+					// (比如把 US-EAST-VA 写成 va)。
+					avail := make([]string, 0, len(dcsRaw))
+					for _, dcRaw := range dcsRaw {
+						if dc, ok := dcRaw.(map[string]interface{}); ok {
+							if c, _ := dc["code"].(string); c != "" {
+								avail = append(avail, c)
+							}
+						}
+					}
+					state.Logger.Warn(fmt.Sprintf(
+						"VPS 订阅 %s 指定的机房 %v 一个都不在 OVH 返回的列表里,这条订阅不会有任何通知。OVH 当前返回:%v",
+						sub.PlanCode, monitoredDCs, avail), "vps_monitor")
 				}
 
 				if isFirstCheckOverall && len(initialAvailable) > 0 && sub.NotifyAvailable {

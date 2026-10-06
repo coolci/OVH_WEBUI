@@ -45,7 +45,7 @@ func GetInternal(state *app.State, accountID, planCode, datacenter string, optio
 
 	client, err := state.OVH.ClientFor(accountID)
 	if err != nil {
-		return Result{Success: false, Error: "未配置OVH API密钥: " + err.Error()}
+		return Result{Success: false, Error: "未配置OVH API密钥: " + ovh.Explain(err)}
 	}
 	acc, _ := state.FindAccount(accountID)
 	subsidiary := orderSubsidiary(state, acc)
@@ -69,14 +69,10 @@ func GetInternal(state *app.State, accountID, planCode, datacenter string, optio
 	if err := client.Post("/order/cart", map[string]interface{}{
 		"ovhSubsidiary": subsidiary,
 	}, &cartResult); err != nil {
-		return Result{Success: false, Error: err.Error()}
+		return Result{Success: false, Error: ovh.Explain(err)}
 	}
 	cartID, _ = cartResult["cartId"].(string)
 	state.Logger.Debug("购物车创建成功，ID: "+cartID, "price")
-
-	if err := client.Post("/order/cart/"+cartID+"/assign", nil, nil); err != nil {
-		return Result{Success: false, Error: "绑定购物车失败：" + err.Error()}
-	}
 
 	// 2. 添加基础商品。
 	// duration/pricingMode 在 order.cart.GenericProductCreation 里是必填,合法组合来自
@@ -95,7 +91,7 @@ func GetInternal(state *app.State, accountID, planCode, datacenter string, optio
 		}, &itemResult)
 	}
 	if err := postBase(); err != nil {
-		msg := err.Error()
+		msg := ovh.Explain(err)
 		if d, pm, found := lookupEcoPricing(state, client, cartID, planCode, baseDuration); found &&
 			(d != baseDuration || pm != basePricingMode) {
 			state.Logger.Warn(fmt.Sprintf("以 %s/%s 加购 %s 失败(%s)，改用目录计价 %s/%s 重试",
@@ -104,7 +100,7 @@ func GetInternal(state *app.State, accountID, planCode, datacenter string, optio
 			err = postBase()
 		}
 		if err != nil {
-			msg = err.Error()
+			msg = ovh.Explain(err)
 			if strings.Contains(msg, "is not available in") {
 				state.Logger.Warn("配置在指定数据中心不可用: "+msg, "price")
 				return Result{Success: false, Error: "该配置在指定数据中心不可用"}
@@ -190,7 +186,7 @@ func GetInternal(state *app.State, accountID, planCode, datacenter string, optio
 				// 机房没设上 → 购物车停留在 OVH 默认机房,summary 出来的是"别的机房的价格"。
 				// 把它当成用户请求机房的价格返回会直接误导买不买的决策,必须硬失败。
 				state.Logger.Error(fmt.Sprintf("设置机房 %s 失败: %s，本次询价作废", cfg.value, err.Error()), "price")
-				return Result{Success: false, Error: "无法把购物车配置到指定机房：" + err.Error()}
+				return Result{Success: false, Error: "无法把购物车配置到指定机房:" + ovh.Explain(err)}
 			}
 			// os / region 是 requiredConfiguration 里的必填项,没设上时价格可能仍然算得出来,
 			// 但 purchase.go 对同样的失败是 fail-fast,所以这里标 degraded 让下单闸门拒绝放行。
@@ -262,7 +258,13 @@ func GetInternal(state *app.State, accountID, planCode, datacenter string, optio
 		state.Logger.Info(fmt.Sprintf("共添加 %d 个选项: %v", len(addedPlanCodes), addedPlanCodes), "price")
 	}
 
-	// 5. 获取 summary。
+	// 5. 绑定购物车。schema 里 POST /order/cart/{cartId}/assign 只有 path 参数、没有 body,
+	// 传 {} 会被算进请求签名,OVH 收紧校验时会变成 400
+	if err := client.Post("/order/cart/"+cartID+"/assign", nil, nil); err != nil {
+		state.Logger.Warn("绑定购物车失败（可能不需要）: "+err.Error(), "price")
+	}
+
+	// 6. 获取 summary。
 	// 这里以前还会先 GET /order/cart/{cartId}：但 order.cart.Cart.items 是 long[](纯 itemId),
 	// 按对象数组解析永远拿不到明细，白白多一次能让整次询价硬失败的调用，已删。
 	// 逐项明细改从 summary(order.Order)的 details(order.OrderDetail[]) 取。
@@ -270,15 +272,7 @@ func GetInternal(state *app.State, accountID, planCode, datacenter string, optio
 	// 之前 Go 静默忽略会导致瞬断时 success:true 但价格全 nil，前端误以为有效价格 0
 	var cartSummary map[string]interface{}
 	if err := client.Get("/order/cart/"+cartID+"/summary", &cartSummary); err != nil {
-		msg := err.Error()
-		if strings.Contains(msg, "is not available in") {
-			state.Logger.Warn(fmt.Sprintf("%s 在 %s 不可用: %s", planCode, datacenter, msg), "price")
-			return Result{
-				Success: false,
-				Error: fmt.Sprintf("该配置在机房 %s 不可用（该机型/配置未在该机房提供或未开放订购）。请尝试更换为该机型支持的机房。", strings.ToUpper(datacenter)),
-			}
-		}
-		return Result{Success: false, Error: msg}
+		return Result{Success: false, Error: ovh.Explain(err)}
 	}
 
 	priceInfo := &PriceInfo{
@@ -299,14 +293,16 @@ func GetInternal(state *app.State, accountID, planCode, datacenter string, optio
 			withoutTaxVal, _ := extractPriceField(pricesField["withoutTax"])
 			taxVal, _ := extractPriceField(pricesField["tax"])
 
+			// 币种只存在于每个 order.Price 对象里(withTax / withoutTax / tax 各带一份),
+			// order.OrderPrices **没有**顶层 currencyCode —— 这里以前会去读那个字段,
+			// 它在三个区的 schema 里都不存在,恒为 nil,是一句基于错误假设的死代码。
+			// 依次从三个价格对象里取,哪个有就用哪个。
 			currency := withTaxCurrency
 			if currency == "" {
-				if c, ok := pricesField["currencyCode"].(string); ok {
-					currency = c
-				}
+				_, currency = extractPriceField(pricesField["withoutTax"])
 			}
 			if currency == "" {
-				_, currency = extractPriceField(pricesField["withoutTax"])
+				_, currency = extractPriceField(pricesField["tax"])
 			}
 			// 以前这里兜底写死 "EUR"。币种是跟子公司走的,不是跟站点走的:
 			// 实测公开目录 locale.currencyCode —— IE=EUR / CA=QC=CAD / US=WE=WS=USD /
@@ -399,7 +395,7 @@ func orderSubsidiary(state *app.State, acc types.OVHAccount) string {
 
 // regionAllowedValues / pickAllowedRegion 与 purchase.go 的同名函数保持同一份逻辑。
 //
-// schema 里 order.cart.ItemConfiguration 只声明 label/required/type,但三区实测
+// schema 里 order.cart.ConfigurationRequirements 只声明 label/required/type,但三区实测
 // GET /order/cart/{cartId}/item/{itemId}/requiredConfiguration 都会带 allowedValues,
 // 而且这份值是按"这辆车的子公司 + 这个 planCode"算出来的,天然是本区正确值:
 // US 车 → ["united_states"],EU/CA 车 → ["canada","europe"]。

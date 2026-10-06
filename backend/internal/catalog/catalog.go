@@ -917,12 +917,19 @@ func LoadServerList(state *app.State, accountID string) ([]types.ServerPlan, int
 							serverInfo.Memory = defaultAddon
 						}
 					case (strings.Contains(familyName, "storage") || strings.Contains(familyName, "disk") || strings.Contains(familyName, "drive") ||
-						strings.Contains(familyName, "ssd") || strings.Contains(familyName, "hdd") || strings.Contains(familyName, "nvme") ||
-						strings.Contains(familyName, "sas")) && serverInfo.Storage == "N/A":
-						if disp := ParseStorageAddonDisplay(defaultAddon); disp != "" {
-							serverInfo.Storage = disp
+						strings.Contains(familyName, "ssd") || strings.Contains(familyName, "hdd")) && serverInfo.Storage == "N/A":
+						hybridRe := regexp.MustCompile(`(?i)hybridsoftraid-(\d+)x(\d+)(sa|ssd|hdd)-(\d+)x(\d+)(nvme|ssd|hdd)`)
+						if m := hybridRe.FindStringSubmatch(defaultAddon); m != nil {
+							serverInfo.Storage = fmt.Sprintf("混合RAID %sx %sGB %s + %sx %sGB %s",
+								m[1], m[2], strings.ToUpper(m[3]), m[4], m[5], strings.ToUpper(m[6]))
 						} else {
-							serverInfo.Storage = defaultAddon
+							storRe := regexp.MustCompile(`(?i)(raid|softraid)-(\d+)x(\d+)(ssd|hdd|nvme|sa)`)
+							if m := storRe.FindStringSubmatch(defaultAddon); m != nil {
+								serverInfo.Storage = fmt.Sprintf("%s %sx %sGB %s",
+									strings.ToUpper(m[1]), m[2], m[3], strings.ToUpper(m[4]))
+							} else {
+								serverInfo.Storage = defaultAddon
+							}
 						}
 					case (strings.Contains(familyName, "bandwidth") || strings.Contains(familyName, "traffic") || strings.Contains(familyName, "network")) && serverInfo.Bandwidth == "N/A":
 						serverInfo.Bandwidth = parseBandwidthValue(defaultAddon, &serverInfo)

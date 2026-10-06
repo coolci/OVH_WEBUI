@@ -1,4 +1,4 @@
-﻿package purchase
+package purchase
 
 import (
 	"errors"
@@ -9,6 +9,9 @@ import (
 	ovhsdk "github.com/ovh/go-ovh/ovh"
 )
 
+// 429 曾经被算成一次"真正的下单失败尝试"。补货那一刻所有人都在打同一个接口,
+// OVH 限流是常态 —— MaxRetries=5 / retryInterval=10s 的任务会在不到一分钟里
+// 被自己判死,而那一分钟正是唯一有货的窗口。
 func TestTransientDoesNotBurnRetryBudget(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -41,6 +44,7 @@ func TestTransientDoesNotBurnRetryBudget(t *testing.T) {
 			if got := IsTransient(c.err); got != c.transient {
 				t.Fatalf("IsTransient(%v) = %v, 期望 %v", c.err, got, c.transient)
 			}
+			// Attempted 是 FailureCount 的开关:transient 必须不计数
 			if got := attemptOutcome(c.err).Attempted; got == c.transient && c.err != nil {
 				t.Fatalf("attemptOutcome(%v).Attempted = %v,与 transient=%v 矛盾", c.err, got, c.transient)
 			}
@@ -48,6 +52,7 @@ func TestTransientDoesNotBurnRetryBudget(t *testing.T) {
 	}
 }
 
+// 包了一层的错误也要认得出来 —— 代码里到处是 fmt.Errorf("...: %w", err)
 func TestTransientThroughWrappedError(t *testing.T) {
 	wrapped := fmt.Errorf("加购基础商品失败: %w", &ovhsdk.APIError{Code: 429})
 	if !IsTransient(wrapped) {
@@ -55,6 +60,7 @@ func TestTransientThroughWrappedError(t *testing.T) {
 	}
 }
 
+// net.Error 的 Timeout() 路径
 type fakeTimeout struct{}
 
 func (fakeTimeout) Error() string   { return "some opaque failure" }

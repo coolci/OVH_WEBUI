@@ -128,7 +128,7 @@ func EnterRescue(state *app.State) gin.HandlerFunc {
 		if !body.Confirm {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"success": false,
-				"error":   "进入救援模式会立刻重启服务器,请在请求里带 confirm:true 确认",
+				"error":   "进入救援模式会立刻重启服务器,请在请求里带 confirm:true 确认", "code": "E0DA171AC",
 			})
 			return
 		}
@@ -161,7 +161,7 @@ func EnterRescue(state *app.State) gin.HandlerFunc {
 			if !ok {
 				c.JSON(http.StatusBadRequest, gin.H{
 					"success": false,
-					"error":   "这台服务器没有可用的救援启动项(OVH 返回的 bootType=rescue 列表是空的)",
+					"error":   "这台服务器没有可用的救援启动项(OVH 返回的 bootType=rescue 列表是空的)", "code": "EF8C25932",
 				})
 				return
 			}
@@ -186,6 +186,17 @@ func EnterRescue(state *app.State) gin.HandlerFunc {
 		// 改完 netboot 以为就进救援了,其实机器还在正常系统里。
 		var task map[string]interface{}
 		if err := client.Post("/dedicated/server/"+svc+"/reboot", nil, &task); err != nil {
+			// 重启防抖(已有重启在进行):启动项已切好,机器这次重启就会进救援 —— 流程等价于成功
+			if ovh.IsRebootAlreadyRequested(err) {
+				state.Logger.Warn("服务器 "+svc+" 救援启动已设置,且已有重启在进行中(无需再发)", "server_control")
+				c.JSON(http.StatusOK, gin.H{
+					"success": true,
+					"bootId":  bootID,
+					"message": "救援启动项已设置,并且服务器已有一个重启在进行中 —— 这次重启就会进入救援模式。" +
+						"约 3~5 分钟后可用 root 登录,密码发到" + rescueMailHint(body.Email) + ";修好之后记得点「退出救援模式」",
+				})
+				return
+			}
 			state.Logger.Error("服务器 "+svc+" 重启失败(救援启动已设置): "+err.Error(), "server_control")
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"success": false,
@@ -225,7 +236,7 @@ func ExitRescue(state *app.State) gin.HandlerFunc {
 		if !body.Confirm {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"success": false,
-				"error":   "退出救援模式会立刻重启服务器,请在请求里带 confirm:true 确认",
+				"error":   "退出救援模式会立刻重启服务器,请在请求里带 confirm:true 确认", "code": "E4F860E38",
 			})
 			return
 		}
@@ -242,13 +253,13 @@ func ExitRescue(state *app.State) gin.HandlerFunc {
 		if len(boots) == 0 {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"success": false,
-				"error":   "OVH 没有返回硬盘启动项(bootType=harddisk),无法自动切回,请到启动模式页手动选择",
+				"error":   "OVH 没有返回硬盘启动项(bootType=harddisk),无法自动切回,请到启动模式页手动选择", "code": "E46BFD00A",
 			})
 			return
 		}
 		bootID, ok := numconv.ToInt64(boots[0]["bootId"])
 		if !ok {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "硬盘启动项的 bootId 解析失败"})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "硬盘启动项的 bootId 解析失败", "code": "EC659066B"})
 			return
 		}
 		if err := client.Put("/dedicated/server/"+svc, map[string]interface{}{"bootId": bootID}, nil); err != nil {
@@ -257,6 +268,16 @@ func ExitRescue(state *app.State) gin.HandlerFunc {
 		}
 		var task map[string]interface{}
 		if err := client.Post("/dedicated/server/"+svc+"/reboot", nil, &task); err != nil {
+			if ovh.IsRebootAlreadyRequested(err) {
+				// 已有重启在进行 + 启动项已切回硬盘 → 那次重启就会回到正常系统
+				state.Logger.Warn("服务器 "+svc+" 已切回硬盘启动,且已有重启在进行中(无需再发)", "server_control")
+				c.JSON(http.StatusOK, gin.H{
+					"success": true, "bootId": bootID,
+					"message": "已切回硬盘启动,并且服务器已有一个重启在进行中 —— 这次重启就会回到正常系统,约 3~5 分钟",
+					"code":    "EA0CDDD4E",
+				})
+				return
+			}
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"success": false,
 				"error":   "已改回硬盘启动,但重启没发出去(" + ovh.Explain(err) + ")。手动重启一次即可",
@@ -266,7 +287,8 @@ func ExitRescue(state *app.State) gin.HandlerFunc {
 		state.Logger.Info(fmt.Sprintf("服务器 %s 已退出救援模式并重启(bootId=%d)", svc, bootID), "server_control")
 		c.JSON(http.StatusOK, gin.H{
 			"success": true, "bootId": bootID, "task": task,
-			"message": "已切回硬盘启动并重启,约 3~5 分钟后恢复正常系统",
+			"message": "已切回硬盘启动并重启,约 3~5 分钟后恢复正常系统", "code": "E9F35BA62",
 		})
 	}
 }
+

@@ -1,17 +1,24 @@
+import i18n from "@/i18n";
 import type { ServerOption } from "@/hooks/use-servers";
 
 /** 选项分组类别（对齐 OVH 官方 catalog 的 addonFamilies：memory / storage / system-storage / bandwidth + 派生） */
 export type OptionGroupKey = "cpu" | "memory" | "systemStorage" | "storage" | "bandwidth" | "vrack" | "other";
 
-export const OPTION_GROUP_LABELS: Record<OptionGroupKey, string> = {
-  cpu: "CPU / 处理器",
-  memory: "内存",
-  systemStorage: "系统盘",
-  storage: "存储 / 数据盘",
-  bandwidth: "带宽 / 网络",
-  vrack: "vRack 内网",
-  other: "其他",
+/** 组标题文案的 i18n key(commons.optionGroup.group.*) */
+const OPTION_GROUP_LABEL_KEYS: Record<OptionGroupKey, string> = {
+  cpu: "cpu",
+  memory: "memory",
+  systemStorage: "systemStorage",
+  storage: "storage",
+  bandwidth: "bandwidth",
+  vrack: "vrack",
+  other: "other",
 };
+
+/** 组标题(跟随语言)。旧导出 OPTION_GROUP_LABELS 是模块加载时定死的中文,换语言后不会变,故改为函数 */
+export function optionGroupLabel(key: OptionGroupKey): string {
+  return i18n.t(`commons.optionGroup.group.${OPTION_GROUP_LABEL_KEYS[key]}`);
+}
 
 /**
  * 排除许可证 / 操作系统 / 控制面板等非硬件选项（旧前端 filteredOptions 逻辑）
@@ -133,23 +140,36 @@ export function formatOptionDisplay(option: ServerOption, group: OptionGroupKey)
   if (group === "storage" || group === "systemStorage") {
     const hybrid = v.match(/hybridsoftraid-(\d+)x(\d+)(sa|ssd|hdd)-(\d+)x(\d+)(nvme|ssd|hdd)/i);
     if (hybrid) {
-      return `混合 ${hybrid[1]}× ${hybrid[2]}GB ${hybrid[3].toUpperCase()} + ${hybrid[4]}× ${hybrid[5]}GB ${hybrid[6].toUpperCase()}`;
+      return i18n.t("commons.option.hybridStorage", {
+        firstCount: hybrid[1],
+        firstSize: hybrid[2],
+        firstType: hybrid[3].toUpperCase(),
+        secondCount: hybrid[4],
+        secondSize: hybrid[5],
+        secondType: hybrid[6].toUpperCase(),
+      });
     }
     const std = v.match(/(raid|softraid)-(\d+)x(\d+)(sa|ssd|hdd|nvme)/i);
     if (std) {
       return `${std[1].toUpperCase()} ${std[2]}× ${std[3]}GB ${std[4].toUpperCase()}`;
     }
     // noraid-0disk 之类 = "无盘 / 系统盘空"
-    if (/noraid-0/i.test(v) || /0disk/i.test(v)) return "无盘";
+    if (/noraid-0/i.test(v) || /0disk/i.test(v)) return i18n.t("commons.option.noDisk");
   }
   if (group === "bandwidth") {
-    if (v.toLowerCase().includes("unlimited")) return "无限流量";
+    if (v.toLowerCase().includes("unlimited")) return i18n.t("commons.option.unlimitedTraffic");
     const combined = v.match(/traffic-(\d+)(tb|gb|mb)-(\d+)/i);
     if (combined) {
-      return `${combined[3]} Mbps · ${combined[1]} ${combined[2].toUpperCase()} 流量`;
+      return i18n.t("commons.option.bandwidthTraffic", {
+        speed: combined[3],
+        size: combined[1],
+        unit: combined[2].toUpperCase(),
+      });
     }
     const traffic = v.match(/traffic-(\d+)(tb|gb)/i);
-    if (traffic) return `${traffic[1]} ${traffic[2].toUpperCase()} 流量`;
+    if (traffic) {
+      return i18n.t("commons.option.traffic", { size: traffic[1], unit: traffic[2].toUpperCase() });
+    }
     const bw = v.match(/bandwidth-(\d+)/i);
     if (bw) {
       const speed = parseInt(bw[1]);
@@ -160,7 +180,9 @@ export function formatOptionDisplay(option: ServerOption, group: OptionGroupKey)
     const m = v.match(/vrack-bandwidth-(\d+)/i);
     if (m) {
       const speed = parseInt(m[1]);
-      return speed >= 1000 ? `${speed / 1000} Gbps 内网` : `${speed} Mbps 内网`;
+      return speed >= 1000
+        ? i18n.t("commons.option.vrackSpeed", { speed: `${speed / 1000}`, unit: "Gbps" })
+        : i18n.t("commons.option.vrackSpeed", { speed: `${speed}`, unit: "Mbps" });
     }
   }
   return option.label;
@@ -171,9 +193,13 @@ export function formatOptionDisplay(option: ServerOption, group: OptionGroupKey)
  *   ram-64g-ecc-2133-24sk60      → 64 GB
  *   softraid-2x480ssd-24sk60     → SOFTRAID 2× 480GB SSD
  *
- * 队列项和监控订阅存下来的是 addon planCode 快照，机型下架或目录没拉到时
- * 拿不到 ServerOption。classifyOption / formatOptionDisplay 本来就靠 value 正则，
- * 直接喂一个只有 value 的壳即可。认不出就原样返回 code。
+ * 为什么需要"只吃 code"的版本：队列项和监控订阅存下来的是 addon planCode，
+ * 它们是**当时那一刻的快照** —— 机型可能已经下架、目录可能没拉到，
+ * 这两种情况下都拿不到对应的 ServerOption。而 classifyOption / formatOptionDisplay
+ * 本来就是靠 value 的正则在判，不依赖目录，所以直接喂一个只有 value 的壳就行。
+ *
+ * 认不出来就原样返回 code —— 显示一串看不懂的代码，也好过显示"3 个配置"
+ * 这种既看不出是什么、又无法排查的说法。
  */
 export function describeOptionCode(code: string): string {
   const v = code.trim();

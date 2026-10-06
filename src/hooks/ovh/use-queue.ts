@@ -2,6 +2,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/http";
 import { qk } from "@/lib/query";
 import { toast } from "sonner";
+import i18n from "@/i18n";
+import { apiMessage } from "@/lib/api-error";
+import { clampOrderPlan, MAX_ORDER_QUANTITY, MAX_ORDER_FANOUT } from "@/lib/order-limits";
+import { errorMessage } from "@/components/common/LoadFailed";
 
 export type QueueStatus = "pending" | "running" | "paused" | "completed" | "failed";
 
@@ -29,6 +33,19 @@ export interface QueueItem {
   configSniperTaskId?: string;
 }
 
+/** 抢购队列列表 */
+export function useQueueList() {
+  return useQuery({
+    queryKey: qk.queue.list(),
+    // Array.isArray:调用方直接 .filter/.map,truthy 非数组会整页白屏
+    queryFn: async () => {
+      const d = (await api.get<QueueItem[]>("/queue")).data;
+      return Array.isArray(d) ? d : [];
+    },
+    refetchInterval: 5000,
+  });
+}
+
 export interface PurchaseTiming {
   at: string;
   totalMs: number;
@@ -37,21 +54,21 @@ export interface PurchaseTiming {
   outcome: "ordered" | "unavailable" | "failed";
 }
 
-/** 每条抢购链路（机型@机房）最近一轮的阶段耗时 */
+/**
+ * 每条抢购链路（机型@机房）最近一轮的阶段耗时。
+ *
+ * 抢购还在跑的时候，用户最想知道的是"我到底卡在哪一步" ——
+ * 是 OVH 一直没货（那就换机型），还是每轮建购物车要 3 秒（那就换台机器）。
+ * 轮询频率和队列一致，多一个请求换一个能直接采取行动的答案。
+ */
 export function usePurchaseTimings() {
   return useQuery({
     queryKey: ["queue", "timings"],
     queryFn: async () =>
-      (await api.get<{ timings: Record<string, PurchaseTiming> }>("/queue/timings")).data.timings,
-    refetchInterval: 5000,
-  });
-}
-
-/** 抢购队列列表 */
-export function useQueueList() {
-  return useQuery({
-    queryKey: qk.queue.list(),
-    queryFn: async () => (await api.get<QueueItem[]>("/queue")).data,
+      // ?? {} 不能省:queryFn 返回 undefined 会被 react-query 当成错误抛出,
+      // 整个 timings 查询翻进 isError,页面顶部弹一条"耗时读取失败"的横幅 ——
+      // 而真实情况只是这一轮还没有任何计时数据。
+      (await api.get<{ timings: Record<string, PurchaseTiming> }>("/queue/timings")).data?.timings ?? {},
     refetchInterval: 5000,
   });
 }
@@ -73,14 +90,27 @@ export function useCreateQueueItem() {
       retryInterval?: number;
       quantity?: number;
       autoPay?: boolean;
-      force?: boolean;
     }) => {
-      const qty = Math.max(1, payload.quantity ?? 1);
       const dcs = payload.datacenters;
+      // 上界以前完全没有:填 9999 × 5 个机房 = 近 5 万次串行 POST。
+      // 后端 EnqueueItems 也会拒,但那是在发出几百个请求之后 —— 这里先收住。
+      const plan = clampOrderPlan(dcs.length, payload.quantity ?? 1);
+      const qty = plan.quantity;
+      if (plan.clamped) {
+        toast.warning(
+          i18n.t("hooksMsg.queue.clampedWarning", {
+            maxQty: MAX_ORDER_QUANTITY,
+            maxTasks: MAX_ORDER_FANOUT,
+            qty,
+            total: plan.total,
+          })
+        );
+      }
       let success = 0;
       let failed = 0;
-      let lastError = "";
-      let canForce = false;
+      // 第一条失败原因要留下来。以前是 catch 里 failed++ 就完了,
+      // 用户看到「N 个任务创建失败」却不知道为什么(比如撞上了队列总量闸门)。
+      let firstError = "";
       for (const dc of dcs) {
         for (let i = 0; i < qty; i++) {
           try {
@@ -91,25 +121,22 @@ export function useCreateQueueItem() {
               retryInterval: payload.retryInterval,
               options: payload.options || [],
               autoPay: payload.autoPay ?? false,
-              force: payload.force ?? false,
             });
             success++;
           } catch (e: any) {
             failed++;
-            lastError = e?.response?.data?.error || e?.message || "任务创建失败";
-            if (e?.response?.data?.can_force) {
-              canForce = true;
-            }
+            if (!firstError) firstError = errorMessage(e);
           }
         }
       }
-      return { success, failed, total: dcs.length * qty, error: lastError, canForce };
+      if (failed > 0 && firstError) toast.error(i18n.t("hooksMsg.queue.someFailed", { reason: firstError }));
+      return { success, failed, total: dcs.length * qty, firstError };
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.queue.list() });
       qc.invalidateQueries({ queryKey: qk.stats() });
     },
-    onError: (e: any) => toast.error(e.response?.data?.error || "添加任务失败"),
+    onError: (e: any) => toast.error(apiMessage(e) || i18n.t("hooksMsg.queue.addFailed")),
   });
 }
 
@@ -120,10 +147,11 @@ export function useToggleQueueItem() {
     mutationFn: async ({ id, action }: { id: string; action: "pause" | "resume" }) =>
       (await api.put(`/queue/${id}/status`, { status: action === "pause" ? "paused" : "running" })).data,
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.queue.list() }),
-    onError: (e: any) => toast.error(e.response?.data?.error || "操作失败"),
+    onError: (e: any) => toast.error(apiMessage(e) || i18n.t("hooksMsg.queue.actionFailed")),
   });
 }
 
+/** 删除单个任务 */
 /** 改单条任务的重试间隔。处理器每轮都读任务上的值，所以下一轮就生效 */
 export function useUpdateQueueInterval() {
   const qc = useQueryClient();
@@ -132,13 +160,12 @@ export function useUpdateQueueInterval() {
       (await api.put(`/queue/${id}/interval`, { retryInterval })).data,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.queue.list() });
-      toast.success("重试间隔已更新");
+      toast.success(i18n.t("hooksMsg.queue.intervalUpdated"));
     },
-    onError: (e: any) => toast.error(e.response?.data?.error || "修改失败"),
+    onError: (e: any) => toast.error(apiMessage(e) || i18n.t("hooksMsg.queue.intervalSetFailed")),
   });
 }
 
-/** 删除单个任务 */
 export function useRemoveQueueItem() {
   const qc = useQueryClient();
   return useMutation({
@@ -147,7 +174,7 @@ export function useRemoveQueueItem() {
       qc.invalidateQueries({ queryKey: qk.queue.list() });
       qc.invalidateQueries({ queryKey: qk.stats() });
     },
-    onError: (e: any) => toast.error(e.response?.data?.error || "删除失败"),
+    onError: (e: any) => toast.error(apiMessage(e) || i18n.t("hooksMsg.queue.removeFailed")),
   });
 }
 
@@ -159,8 +186,8 @@ export function useClearQueue() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.queue.list() });
       qc.invalidateQueries({ queryKey: qk.stats() });
-      toast.success("已清空队列");
+      toast.success(i18n.t("hooksMsg.queue.cleared"));
     },
-    onError: (e: any) => toast.error(e.response?.data?.error || "清空失败"),
+    onError: (e: any) => toast.error(apiMessage(e) || i18n.t("hooksMsg.queue.clearFailed")),
   });
 }

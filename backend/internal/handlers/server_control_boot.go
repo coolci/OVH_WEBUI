@@ -10,6 +10,7 @@ import (
 
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/numconv"
+	"github.com/ovh-webui/server/internal/ovh"
 )
 
 // GetBootConfig GET /api/server-control/:service_name/boot
@@ -23,7 +24,7 @@ func GetBootConfig(state *app.State) gin.HandlerFunc {
 		}
 		var info map[string]interface{}
 		if err := client.Get("/dedicated/server/"+svc, &info); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		bootID := info["bootId"]
@@ -33,7 +34,7 @@ func GetBootConfig(state *app.State) gin.HandlerFunc {
 		// 用户以为机器不支持切 rescue，实际是调用失败，必须原样报出来
 		if err := client.Get("/dedicated/server/"+svc+"/boot", &bootList); err != nil {
 			state.Logger.Error("获取服务器 "+svc+" 启动模式列表失败: "+err.Error(), "server_control")
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		// 并发拉每个 boot id 的详情
@@ -102,7 +103,7 @@ func SetBootConfig(state *app.State) gin.HandlerFunc {
 		// 之前 Go 把字符串直接塞进 body 会被 OVH 拒
 		bootID, err := strconv.ParseInt(bootIDStr, 10, 64)
 		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "boot_id 必须是整数"})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "boot_id 必须是整数", "code": "EECA8B342"})
 			return
 		}
 		client, err := ovhClientFor(state, c)
@@ -127,11 +128,11 @@ func SetBootConfig(state *app.State) gin.HandlerFunc {
 			"bootId": bootID,
 		}, nil); err != nil {
 			state.Logger.Error("设置服务器 "+svc+" 启动模式失败: "+err.Error(), "server_control")
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		state.Logger.Info(fmt.Sprintf("服务器 %s 启动模式已设置为 %d", svc, bootID), "server_control")
-		c.JSON(http.StatusOK, gin.H{"success": true, "message": "启动模式已更新，重启后生效"})
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "启动模式已更新，重启后生效", "code": "EDC39F7DF"})
 	}
 }
 
@@ -146,7 +147,7 @@ func GetMonitoringStatus(state *app.State) gin.HandlerFunc {
 		}
 		var info map[string]interface{}
 		if err := client.Get("/dedicated/server/"+svc, &info); err != nil {
-			ovhRespondError(c, err, "获取监控状态失败")
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		// 缺失时默认 false
@@ -175,7 +176,7 @@ func SetMonitoringStatus(state *app.State) gin.HandlerFunc {
 			Monitoring *bool `json:"monitoring"`
 		}
 		if err := c.ShouldBindJSON(&body); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "请求体格式错误: " + err.Error()})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "请求体格式错误: " + ovh.Explain(err)})
 			return
 		}
 		enabled := body.Enabled
@@ -183,7 +184,7 @@ func SetMonitoringStatus(state *app.State) gin.HandlerFunc {
 			enabled = body.Monitoring
 		}
 		if enabled == nil {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少 enabled 参数（必须显式传 true 或 false）"})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少 enabled 参数（必须显式传 true 或 false）", "code": "E574F984F"})
 			return
 		}
 		// PUT /dedicated/server/{serviceName} 只发要改的那一个属性,不要"补全"。
@@ -203,7 +204,7 @@ func SetMonitoringStatus(state *app.State) gin.HandlerFunc {
 			"monitoring": *enabled,
 		}, nil); err != nil {
 			state.Logger.Error("设置服务器 "+svc+" 监控失败: "+err.Error(), "server_control")
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		statusText := "开启"
@@ -226,7 +227,7 @@ func GetBootModes(state *app.State) gin.HandlerFunc {
 		}
 		var info map[string]interface{}
 		if err := client.Get("/dedicated/server/"+svc, &info); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		currentBootID := info["bootId"]
@@ -235,7 +236,7 @@ func GetBootModes(state *app.State) gin.HandlerFunc {
 		// 同 GetBootConfig：吞掉这个错误会让 boot-mode 页面显示成空列表且无任何提示
 		if err := client.Get("/dedicated/server/"+svc+"/boot", &bootIDs); err != nil {
 			state.Logger.Error("获取服务器 "+svc+" 启动模式列表失败: "+err.Error(), "server_control")
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		// 并发拉每个 boot id 详情
@@ -314,7 +315,7 @@ func ChangeBootMode(state *app.State) gin.HandlerFunc {
 		}
 		_ = c.ShouldBindJSON(&body)
 		if body.BootID == 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少bootId参数"})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少bootId参数", "code": "E81B66FDC"})
 			return
 		}
 		state.Logger.Info(fmt.Sprintf("[Boot] 切换服务器 %s 启动模式到 %d", svc, body.BootID), "server_control")
@@ -334,13 +335,13 @@ func ChangeBootMode(state *app.State) gin.HandlerFunc {
 		if err := client.Put("/dedicated/server/"+svc, map[string]interface{}{
 			"bootId": body.BootID,
 		}, nil); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		state.Logger.Info("[Boot] 启动模式切换成功，需要重启服务器生效", "server_control")
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
-			"message": "启动模式已切换，需要重启服务器生效",
+			"message": "启动模式已切换，需要重启服务器生效", "code": "E859A0AA0",
 			"bootId":  body.BootID,
 		})
 	}

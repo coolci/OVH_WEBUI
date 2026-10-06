@@ -14,6 +14,8 @@ import (
 
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/numconv"
+	"github.com/ovh-webui/server/internal/ovh"
+	"github.com/ovh-webui/server/internal/types"
 )
 
 // hardwareParallelGetDetails 与 util.go 的 parallelGetDetails 行为一致,但额外把每个
@@ -78,7 +80,7 @@ func GetHardwareInfo(state *app.State) gin.HandlerFunc {
 		var hardware map[string]interface{}
 		if err := client.Get("/dedicated/server/"+svc+"/specifications/hardware", &hardware); err != nil {
 			state.Logger.Error("获取服务器 "+svc+" 硬件信息失败: "+err.Error(), "server_control")
-			ovhRespondError(c, err, "获取硬件信息失败")
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		// 缺字段补 N/A / 0 / {} / []，
@@ -117,7 +119,7 @@ func GetNetworkSpecs(state *app.State) gin.HandlerFunc {
 		}
 		var network map[string]interface{}
 		if err := client.Get("/dedicated/server/"+svc+"/specifications/network", &network); err != nil {
-			ovhRespondError(c, err, "获取网络规格失败")
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{
@@ -147,7 +149,7 @@ func GetServerIPs(state *app.State) gin.HandlerFunc {
 		}
 		var list []string
 		if err := client.Get("/dedicated/server/"+svc+"/ips", &list); err != nil {
-			ovhRespondError(c, err, "获取 IP 列表失败")
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		// 并发拉每个 IP 的详情
@@ -192,7 +194,7 @@ func GetReverseDNS(state *app.State) gin.HandlerFunc {
 		}
 		var ipBlocks []string
 		if err := client.Get("/dedicated/server/"+svc+"/ips", &ipBlocks); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		// 1) 每个 IP 块并发拉 reverse 列表(块下哪些具体 IP 配了反向)
@@ -320,13 +322,13 @@ func SetReverseDNS(state *app.State) gin.HandlerFunc {
 		}
 		_ = c.ShouldBindJSON(&body)
 		if body.IP == "" || body.Reverse == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "IP地址和反向DNS不能为空"})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "IP地址和反向DNS不能为空", "code": "E907CF2B8"})
 			return
 		}
 		// 找该 IP 所在的服务器 IP 块
 		block, err := findIPBlockForServer(client, svc, body.IP)
 		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		encoded := strings.ReplaceAll(block, "/", "%2F")
@@ -334,11 +336,11 @@ func SetReverseDNS(state *app.State) gin.HandlerFunc {
 			"ipReverse": body.IP,
 			"reverse":   body.Reverse,
 		}, nil); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		state.Logger.Info("服务器 "+svc+" IP "+body.IP+" 反向DNS已设置为 "+body.Reverse, "server_control")
-		c.JSON(http.StatusOK, gin.H{"success": true, "message": "反向DNS已设置"})
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "反向DNS已设置", "code": "E3BD7C8AF"})
 	}
 }
 
@@ -355,16 +357,16 @@ func DeleteReverseDNS(state *app.State) gin.HandlerFunc {
 		}
 		block, err := findIPBlockForServer(client, svc, ip)
 		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		encoded := strings.ReplaceAll(block, "/", "%2F")
 		if err := client.Delete("/ip/"+encoded+"/reverse/"+ip, nil); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		state.Logger.Info("服务器 "+svc+" IP "+ip+" 反向DNS已删除", "server_control")
-		c.JSON(http.StatusOK, gin.H{"success": true, "message": "反向DNS已删除"})
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "反向DNS已删除", "code": "E480066AC"})
 	}
 }
 
@@ -418,7 +420,7 @@ func GetServiceInfo(state *app.State) gin.HandlerFunc {
 		var info map[string]interface{}
 		if err := client.Get("/dedicated/server/"+svc+"/serviceInfos", &info); err != nil {
 			state.Logger.Error("获取服务器 "+svc+" 服务信息失败: "+err.Error(), "server_control")
-			ovhRespondError(c, err, "获取服务信息失败")
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		renew, _ := info["renew"].(map[string]interface{})
@@ -493,7 +495,7 @@ func UpdateServiceRenewal(state *app.State) gin.HandlerFunc {
 
 		var info map[string]interface{}
 		if err := client.Get("/dedicated/server/"+svc+"/serviceInfos", &info); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		renew, _ := info["renew"].(map[string]interface{})
@@ -504,7 +506,7 @@ func UpdateServiceRenewal(state *app.State) gin.HandlerFunc {
 		if f, ok := renew["forced"].(bool); ok && f {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"success": false,
-				"error":   "该服务器处于 OVH 合同期(engaged),续费策略由 OVH 锁定,无法修改",
+				"error":   "该服务器处于 OVH 合同期(engaged),续费策略由 OVH 锁定,无法修改", "code": "E8F1028D1",
 			})
 			return
 		}
@@ -536,10 +538,10 @@ func UpdateServiceRenewal(state *app.State) gin.HandlerFunc {
 			// 也**不能**指向 POST /terminate——那是立即终止,提交即暂停服务器,真实踩过。
 			// 唯一正确的路是 PUT /services/{serviceId} 的 terminationPolicy。
 			c.JSON(http.StatusBadRequest, gin.H{"success": false,
-				"error": "到期终止请用 PUT termination-policy 接口(terminationPolicy=terminateAtExpirationDate);不要调 /terminate——那是立即终止,提交即暂停服务"})
+				"error": "到期终止请用 PUT termination-policy 接口(terminationPolicy=terminateAtExpirationDate);不要调 /terminate——那是立即终止,提交即暂停服务", "code": "ECBAA0559"})
 			return
 		default:
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "mode 必须是 auto / manual / delete 之一"})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "mode 必须是 auto / manual / delete 之一", "code": "EA464F1AF"})
 			return
 		}
 		// period 可空:用户指定了就用,否则沿用 OVH 当前值
@@ -555,11 +557,11 @@ func UpdateServiceRenewal(state *app.State) gin.HandlerFunc {
 		if err := client.Put("/dedicated/server/"+svc+"/serviceInfos",
 			map[string]interface{}{"renew": next}, nil); err != nil {
 			state.Logger.Error("修改服务器 "+svc+" 续费策略失败: "+err.Error(), "server_control")
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		state.Logger.Info("服务器 "+svc+" 续费策略已更新: mode="+body.Mode, "server_control")
-		c.JSON(http.StatusOK, gin.H{"success": true, "message": "续费策略已更新"})
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "续费策略已更新", "code": "ED101FDC4"})
 	}
 }
 
@@ -580,7 +582,7 @@ func ChangeContact(state *app.State) gin.HandlerFunc {
 			state.Logger.Warn("账户所在大区 "+region+" 不提供服务器联系人变更(changeContact),已拦截请求", "server_control")
 			c.JSON(http.StatusBadRequest, gin.H{
 				"success":     false,
-				"error":       "美区账户不支持通过 API 变更服务器联系人 —— OVHcloud US 没有 NIC 联系人系统,请在 OVHcloud US 控制台或联系客服办理",
+				"error":       "美区账户不支持通过 API 变更服务器联系人 —— OVHcloud US 没有 NIC 联系人系统,请在 OVHcloud US 控制台或联系客服办理", "code": "ED999C012",
 				"unsupported": true,
 				"region":      region,
 			})
@@ -604,20 +606,20 @@ func ChangeContact(state *app.State) gin.HandlerFunc {
 			params["contactBilling"] = v
 		}
 		if len(params) == 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "至少需要指定一个联系人（管理员、技术或计费）"})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "至少需要指定一个联系人（管理员、技术或计费）", "code": "E06AF4A77"})
 			return
 		}
 		// OVH 这个接口返回 long[](任务 ID 数组),不是 map
 		var taskIDs []int64
 		if err := client.Post("/dedicated/server/"+svc+"/changeContact", params, &taskIDs); err != nil {
 			state.Logger.Error("变更服务器 "+svc+" 联系人失败: "+err.Error(), "server_control")
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		state.Logger.Info(fmt.Sprintf("服务器 %s 联系人变更请求已提交: %v, tasks=%v", svc, params, taskIDs), "server_control")
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
-			"message": "联系人变更请求已提交",
+			"message": "联系人变更请求已提交", "code": "EA0AA106E",
 			"taskIds": taskIDs,
 		})
 	}
@@ -634,7 +636,7 @@ func GetInterventions(state *app.State) gin.HandlerFunc {
 		}
 		var ids []interface{}
 		if err := client.Get("/dedicated/server/"+svc+"/intervention", &ids); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		// 并发拉详情。失败的条目不能静默丢弃,否则限流/权限问题会让列表凭空变短
@@ -678,7 +680,7 @@ func GetInterventionDetail(state *app.State) gin.HandlerFunc {
 		}
 		var d map[string]interface{}
 		if err := client.Get("/dedicated/server/"+svc+"/intervention/"+id, &d); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"success": true, "intervention": d})
@@ -696,7 +698,7 @@ func GetPlannedInterventions(state *app.State) gin.HandlerFunc {
 		}
 		var ids []interface{}
 		if err := client.Get("/dedicated/server/"+svc+"/plannedIntervention", &ids); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		// 并发拉详情。同 GetInterventions:失败要显式暴露,不能让列表静默变空
@@ -740,7 +742,7 @@ func GetPlannedInterventionDetail(state *app.State) gin.HandlerFunc {
 		}
 		var d map[string]interface{}
 		if err := client.Get(fmt.Sprintf("/dedicated/server/%s/plannedIntervention/%s", svc, id), &d); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"success": true, "plannedIntervention": d})
@@ -801,11 +803,8 @@ func parseMemorySlots(raw interface{}) []string {
 			}
 		}
 	case string:
-		for _, s := range strings.Split(v, ",") {
-			if s = strings.TrimSpace(s); s != "" {
-				out = append(out, s)
-			}
-		}
+		// 全角逗号同样要认,理由见 types.SplitList
+		out = append(out, types.SplitList(v)...)
 	}
 	return out
 }
@@ -822,12 +821,9 @@ func HardwareReplace(state *app.State) gin.HandlerFunc {
 		var body map[string]interface{}
 		_ = c.ShouldBindJSON(&body)
 		componentType, _ := body["componentType"].(string)
-		if componentType == "" {
-			componentType, _ = body["type"].(string)
-		}
 		comment, _ := body["comment"].(string)
 		if componentType == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少 componentType 参数"})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少 componentType 参数", "code": "E9871712B"})
 			return
 		}
 		var result map[string]interface{}
@@ -842,13 +838,15 @@ func HardwareReplace(state *app.State) gin.HandlerFunc {
 			// 故障盘必须由调用方显式给出,拿不到就宁可 400 也不发这张工单。
 			disks, derr := parseReplaceDisks(body["disks"])
 			if derr != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": derr.Error()})
+				c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": ovh.Explain(derr)})
 				return
 			}
 			if len(disks) == 0 {
+				// 两种模式都不能空列表:inverse=false 空 = 没告诉 OVH 换哪块;
+				// inverse=true 空 = "未列出的全换" = 整机所有盘。
 				c.JSON(http.StatusBadRequest, gin.H{
 					"success": false,
-					"error":   "请指定要更换的故障硬盘：disks 至少需要一项且包含 disk_serial（硬盘序列号）",
+					"error":   "disks 不能为空：正常模式填故障盘序列号；故障盘序列号读不出来时用 inverse=true 并填所有【健康盘】的序列号", "code": "EA0B09D1D",
 				})
 				return
 			}
@@ -898,7 +896,7 @@ func HardwareReplace(state *app.State) gin.HandlerFunc {
 			return
 		}
 		if err2 != nil {
-			errMsg := err2.Error()
+			errMsg := ovh.Explain(err2)
 			state.Logger.Error("硬件更换失败: "+svc+" - "+componentType+" - "+errMsg, "server_control")
 			if strings.Contains(errMsg, "Action pending") {
 				ticketID := "未知"
@@ -916,8 +914,26 @@ func HardwareReplace(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": errMsg})
 			return
 		}
-		state.Logger.Info("硬件更换请求已发送: "+svc+" - "+componentType, "server_control")
-		c.JSON(http.StatusOK, gin.H{"success": true, "message": "硬件更换请求已发送", "task": result})
+		// 响应是 support.NewMessageInfo:ticketId / ticketNumber / messageId / additionalNotice。
+		// 工单号必须回给用户 —— OVH 的整个更换流程是工单制的,拿不到号就没法去帮助中心跟进
+		ticketNumber := numconv.ToString(result["ticketNumber"])
+		ticketID := numconv.ToString(result["ticketId"])
+		notice, _ := result["additionalNotice"].(string)
+		msg := "硬件更换工单已提交"
+		if ticketNumber != "" && ticketNumber != "0" {
+			msg += "，工单号 #" + ticketNumber
+		} else if ticketID != "" && ticketID != "0" {
+			msg += "，工单 ID " + ticketID
+		}
+		state.Logger.Info("硬件更换请求已发送: "+svc+" - "+componentType+" - "+msg, "server_control")
+		c.JSON(http.StatusOK, gin.H{
+			"success":      true,
+			"message":      msg,
+			"ticketNumber": ticketNumber,
+			"ticketId":     ticketID,
+			"notice":       notice,
+			"task":         result,
+		})
 	}
 }
 
@@ -938,11 +954,11 @@ func GetHardwareRaidProfiles(state *app.State) gin.HandlerFunc {
 					"success":   true,
 					"profiles":  []interface{}{},
 					"supported": false,
-					"message":   "此服务器不支持硬件RAID",
+					"message":   "此服务器不支持硬件RAID", "code": "EBE4D06BC",
 				})
 				return
 			}
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"success": true, "profiles": profiles, "supported": true})
@@ -960,7 +976,7 @@ func GetHardwareDiskInfo(state *app.State) gin.HandlerFunc {
 		}
 		var hardware map[string]interface{}
 		if err := client.Get("/dedicated/server/"+svc+"/specifications/hardware", &hardware); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		diskGroups := map[string]interface{}{}
@@ -1020,13 +1036,13 @@ func GetPartitionSchemes(state *app.State) gin.HandlerFunc {
 		}
 		templateName := c.Query("templateName")
 		if templateName == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少templateName参数"})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少templateName参数", "code": "EB164A0F1"})
 			return
 		}
 		encodedTpl := url.PathEscape(templateName)
 		var schemes []string
 		if err := client.Get("/dedicated/installationTemplate/"+encodedTpl+"/partitionScheme", &schemes); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		// 双层嵌套并发：先并发拉每个 scheme 的 info + partition list，

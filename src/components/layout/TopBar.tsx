@@ -15,6 +15,7 @@ import { useBackendConnection } from "@/hooks/useApi";
 import { useRecentLogs } from "@/hooks/use-logs";
 import { useAccounts } from "@/hooks/use-accounts";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
+import { LanguageToggle } from "@/components/layout/LanguageToggle";
 import {
   Popover,
   PopoverContent,
@@ -145,6 +146,9 @@ export function TopBar() {
           <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary/70 animate-pulse" />
           <span>{time.toLocaleTimeString("zh-CN", { hour12: false })}</span>
         </div>
+
+        {/* 多语言切换 */}
+        <LanguageToggle />
 
         {/* 外观主题切换 */}
         <ThemeToggle />

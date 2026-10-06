@@ -4,25 +4,24 @@ import axios from "axios";
 import { KeyRound, Loader2, Globe, Settings as SettingsIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { api, setActiveServerControlAccount } from "@/lib/http";
-import { OVH_SUBSIDIARIES } from "@/lib/ovh-subsidiaries";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
+import { api } from "@/lib/http";
+import { apiMessage } from "@/lib/api-error";
+import { qk } from "@/lib/query";
+import { OVH_SUBSIDIARIES, subsidiaryLabel } from "@/lib/ovh-subsidiaries";
+import { apiBaseUrlForEndpoint, endpointRegion } from "@/lib/ovh-regions";
 import { OvhTokenGuide } from "@/components/common/OvhTokenGuide";
 
 const PREFETCH_STALE = 2 * 60 * 60_000;
 
 /** 凭据存好后立刻预热三件套. 用户切到 servers 页时直接命中,不会再"加载中" */
 function prefetchAfterCredsSaved(qc: ReturnType<typeof useQueryClient>, zone: string) {
+  // key 必须跟 useServers 完全一致(含 accountId 维度),否则预热的是一条谁也读不到的缓存。
+  // 刚建完账户时还没有"活跃账户",useServers 那边也是空字符串 → 默认视角。
   void qc.prefetchQuery({
-    queryKey: ["servers", "list", { showApiServers: true }] as const,
+    queryKey: qk.servers.list(true, ""),
     queryFn: async () => {
       const res = await api.get("/servers", { params: { showApiServers: true } });
       return res.data.servers || res.data || [];
@@ -39,15 +38,12 @@ function prefetchAfterCredsSaved(qc: ReturnType<typeof useQueryClient>, zone: st
     },
     staleTime: PREFETCH_STALE,
   });
-  const meta = OVH_SUBSIDIARIES.find((s) => s.code === zone);
-  const baseUrl =
-    meta?.endpoint === "ovh-us"
-      ? "https://api.us.ovhcloud.com"
-      : meta?.endpoint === "ovh-ca"
-        ? "https://ca.api.ovh.com"
-        : "https://eu.api.ovh.com";
+  // 站点/大区判定统一走 lib/ovh-regions,不再在这里另写一张 endpoint→URL 表;
+  // queryKey 也必须跟 useAvailability 一致(按大区分桶),否则预热等于白拉一份 ~9MB 数据。
+  const endpoint = OVH_SUBSIDIARIES.find((s) => s.code === zone)?.endpoint;
+  const baseUrl = apiBaseUrlForEndpoint(endpoint);
   void qc.prefetchQuery({
-    queryKey: ["availability", "all", "auto"] as const,
+    queryKey: qk.availability.all(endpointRegion(endpoint)),
     queryFn: async () => {
       const res = await axios.get(`${baseUrl}/v1/dedicated/server/datacenter/availabilities`, {
         timeout: 30000,
@@ -68,8 +64,8 @@ interface AccountForm {
   zone: string;
 }
 
-const DEFAULT_FORM: AccountForm = {
-  name: "默认账户",
+/** 默认账户名跟随语言;放在 useState 惰性初始化里取,避免模块加载时冻结语言 */
+const DEFAULT_FORM: Omit<AccountForm, "name"> = {
   appKey: "",
   appSecret: "",
   consumerKey: "",
@@ -124,12 +120,19 @@ export function OvhCredsGate({ children }: { children: ReactNode }) {
 
 function AccountOverlay({ onSuccess }: { onSuccess: () => void }) {
   const qc = useQueryClient();
-  const [form, setForm] = useState<AccountForm>(DEFAULT_FORM);
+  const { t } = useTranslation();
+  const [form, setForm] = useState<AccountForm>(() => ({
+    ...DEFAULT_FORM,
+    name: t("commons.credsGate.defaultAccountName"),
+  }));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string>("");
 
   const set = (k: keyof AccountForm, v: string) =>
     setForm((prev) => ({ ...prev, [k]: v }));
+
+  // token 申请页按站点分:EU / US / CA 三站的 token 互不通用,链接必须跟着所选子公司走
+  const tokenSiteUrl = apiBaseUrlForEndpoint(endpointForZone(form.zone || "IE"));
 
   const canSubmit =
     form.name.trim() &&
@@ -153,114 +156,95 @@ function AccountOverlay({ onSuccess }: { onSuccess: () => void }) {
         endpoint: endpointForZone(zone),
         setDefault: true, // 首次创建自动设默认
       });
-      const newId = res.data?.account?.id as string | undefined;
-      if (newId) {
-        setActiveServerControlAccount(newId);
-      }
       qc.invalidateQueries({ queryKey: ["accounts", "list"] });
+      // 后端 /accounts 会带回 subsidiaryWarning:凭据能用,但这个账户在 OVH 那边属于另一个子公司。
+      // 它不影响 valid,却决定目录/价格/库存/下单 region 打到哪个站点,所以必须当场说出来。
+      const warning: string = res.data?.subsidiaryWarning || "";
       if (res.data?.valid === false) {
         setError(
-          "账户已保存,但 OVH 验证失败。检查 APP KEY / APP SECRET / CONSUMER KEY 是否匹配所选子公司。可以先进入再到设置页修复。"
+          t("commons.credsGate.savedButInvalid") + (warning ? " " + warning : "")
         );
         // 验证失败也放行,不强卡用户
         prefetchAfterCredsSaved(qc, zone);
         onSuccess();
         return;
       }
+      if (warning) {
+        // 凭据没问题就放行,但这层引导页马上会被 onSuccess 卸载,setError 用户根本看不到 ——
+        // 用长时间 toast 把错配带到主界面上,让用户去设置页把 zone 改对再下单。
+        toast.warning(warning, { duration: 20000 });
+      }
       prefetchAfterCredsSaved(qc, zone);
       onSuccess();
     } catch (e: any) {
-      setError(e?.response?.data?.error || e?.message || "保存失败");
+      setError(apiMessage(e) || t("commons.credsGate.saveFailed"));
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-[90] bg-background/95 backdrop-blur-sm flex justify-center px-4 py-8 overflow-y-auto">
-      <div className="w-full max-w-lg my-auto border border-border rounded-2xl bg-background p-7 space-y-5">
+    <div className="fixed inset-0 z-[90] bg-background/95 backdrop-blur-sm flex items-center justify-center px-4 py-8 overflow-y-auto">
+      <div className="w-full max-w-lg border border-border rounded-2xl bg-background p-7 space-y-5">
         <div className="flex items-center gap-2.5">
           <div className="w-10 h-10 rounded-xl bg-secondary flex items-center justify-center">
             <Globe className="w-5 h-5" />
           </div>
           <div>
-            <h2 className="text-lg font-semibold leading-tight">添加第一个 OVH 账户</h2>
+            <h2 className="text-lg font-semibold leading-tight">{t("commons.credsGate.title")}</h2>
             <p className="text-[12px] text-muted-foreground mt-0.5">
-              系统支持多账户,先添加一个用起来,后续可以在"设置 → 账户"加更多
+              {t("commons.credsGate.subtitle")}
             </p>
           </div>
         </div>
 
         <div className="space-y-3.5">
-          <Field label="账户名称 *" hint="本地区分用，例如：主号 / 小号 A">
+          <Field label={t("commons.credsGate.nameLabel")} hint={t("commons.credsGate.nameHint")}>
             <Input
               autoFocus
               value={form.name}
               onChange={(e) => set("name", e.target.value)}
-              placeholder="主号"
+              placeholder={t("commons.credsGate.namePlaceholder")}
             />
           </Field>
-
-          {/* Zone 放前面：与申请 Token 的子公司一致，避免默认 IE 误用 */}
-          <Field
-            label="OVH 子公司 (Zone) *"
-            hint="须与创建 Token 时选择的 subsidiary 一致；决定 API 区域与目录币种"
-          >
+          {/* 子公司必须排在密钥前面:token 申请地址跟着它变,
+              先填密钥再选站点的话,用户很可能已经在错误的站点申请过一遍了。 */}
+          {/* 大白话说明放在前面,Endpoint / IAM 这种只有开发者关心的排后面 */}
+          <Field label={t("commons.credsGate.zoneLabel")}>
             <Select value={form.zone} onValueChange={(v) => set("zone", v)}>
-              <SelectTrigger className="h-11 font-medium">
-                <SelectValue placeholder="请选择子公司" />
+              <SelectTrigger>
+                <SelectValue />
               </SelectTrigger>
-              <SelectContent position="popper" sideOffset={4} className="z-[300] max-h-[min(20rem,50vh)]">
-                <SelectGroup>
-                  <SelectLabel>欧洲 · eu.api.ovh.com</SelectLabel>
-                  {OVH_SUBSIDIARIES.filter((s) => s.endpoint === "ovh-eu").map((s) => (
-                    <SelectItem key={s.code} value={s.code}>
-                      {s.code} · {s.label}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-                <SelectGroup>
-                  <SelectLabel>美国 · api.us.ovhcloud.com</SelectLabel>
-                  {OVH_SUBSIDIARIES.filter((s) => s.endpoint === "ovh-us").map((s) => (
-                    <SelectItem key={s.code} value={s.code}>
-                      {s.code} · {s.label}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-                <SelectGroup>
-                  <SelectLabel>加拿大 / 亚太 · ca.api.ovh.com</SelectLabel>
-                  {OVH_SUBSIDIARIES.filter((s) => s.endpoint === "ovh-ca").map((s) => (
-                    <SelectItem key={s.code} value={s.code}>
-                      {s.code} · {s.label}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
+              <SelectContent>
+                {OVH_SUBSIDIARIES.map((s) => (
+                  <SelectItem key={s.code} value={s.code}>
+                    {s.code} · {subsidiaryLabel(s.code)}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
-            <p className="mt-1.5 text-[11px] text-muted-foreground">
-              当前 Endpoint{" "}
-              <code className="rounded bg-muted px-1 py-0.5 font-mono">
-                {endpointForZone(form.zone)}
-              </code>
-              {" · "}
-              IAM{" "}
-              <code className="rounded bg-muted px-1 py-0.5 font-mono">
-                go-ovh-{form.zone.toLowerCase()}
-              </code>
+            <p className="text-[11px] text-muted-foreground mt-1.5">
+              {t("commons.credsGate.zoneHelp")}
+            </p>
+            <p className="text-[10px] text-muted-foreground/80 mt-1">
+              Endpoint <code className="px-1 py-0.5 bg-muted rounded">{endpointForZone(form.zone)}</code>
+              {" · "}IAM <code className="px-1 py-0.5 bg-muted rounded">go-ovh-{form.zone.toLowerCase()}</code>
+              {t("commons.credsGate.endpointDerived")}
             </p>
           </Field>
 
           <OvhTokenGuide endpoint={endpointForZone(form.zone || "IE")} />
 
-          <Field label="APP KEY *">
-            <PasswordInput value={form.appKey} onChange={(v) => set("appKey", v)} placeholder="xxxxxxxxxxxxxxxx" />
+          <Field label={t("commons.credsGate.appKeyLabel")} hint={t("commons.credsGate.appKeyHint")}>
+            <PasswordInput value={form.appKey} onChange={(v) => set("appKey", v)} placeholder={t("commons.credsGate.credPlaceholder")} />
           </Field>
-          <Field label="APP SECRET *">
-            <PasswordInput value={form.appSecret} onChange={(v) => set("appSecret", v)} placeholder="xxxxxxxxxxxxxxxx" />
+          <Field label={t("commons.credsGate.appSecretLabel")} hint={t("commons.credsGate.appSecretHint")}>
+            <PasswordInput value={form.appSecret} onChange={(v) => set("appSecret", v)} placeholder={t("commons.credsGate.credPlaceholder")} />
           </Field>
-          <Field label="CONSUMER KEY *">
-            <PasswordInput value={form.consumerKey} onChange={(v) => set("consumerKey", v)} placeholder="xxxxxxxxxxxxxxxx" />
+          <Field label={t("commons.credsGate.consumerKeyLabel")} hint={t("commons.credsGate.consumerKeyHint")}>
+            <PasswordInput value={form.consumerKey} onChange={(v) => set("consumerKey", v)} placeholder={t("commons.credsGate.credPlaceholder")} />
           </Field>
+
 
           {error && <p className="text-[12px] text-destructive">{error}</p>}
         </div>
@@ -269,46 +253,16 @@ function AccountOverlay({ onSuccess }: { onSuccess: () => void }) {
           {submitting ? (
             <>
               <Loader2 className="w-4 h-4 animate-spin mr-1.5" />
-              验证并创建…
+              {t("commons.credsGate.verifying")}
             </>
           ) : (
             <>
               <SettingsIcon className="w-4 h-4 mr-1.5" />
-              创建并进入
+              {t("commons.credsGate.createAndEnter")}
             </>
           )}
         </Button>
 
-        <p className="text-[10px] leading-relaxed text-muted-foreground">
-          凭据仅存本机 SQLite。申请 Token 请按 Zone 打开对应控制台：
-          <a
-            href="https://eu.api.ovh.com/createToken/"
-            target="_blank"
-            rel="noreferrer"
-            className="mx-1 underline"
-          >
-            EU
-          </a>
-          /
-          <a
-            href="https://ca.api.ovh.com/createToken/"
-            target="_blank"
-            rel="noreferrer"
-            className="mx-1 underline"
-          >
-            CA
-          </a>
-          /
-          <a
-            href="https://api.us.ovhcloud.com/createToken/"
-            target="_blank"
-            rel="noreferrer"
-            className="mx-1 underline"
-          >
-            US
-          </a>
-          。
-        </p>
       </div>
     </div>
   );

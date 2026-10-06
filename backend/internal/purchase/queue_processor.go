@@ -10,7 +10,6 @@ import (
 
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/notify"
-	"github.com/ovh-webui/server/internal/telegram"
 	"github.com/ovh-webui/server/internal/types"
 )
 
@@ -18,7 +17,7 @@ const concurrentBatchSize = 10
 
 // failNotice 把同一批任务的终止通知合并成一条。
 //
-// 为什么必须合并:一条 /buy 最多扇出 60 个任务,
+// 为什么必须合并:一条 /buy 最多扇出 60 个任务(MaxOrderFanout),
 // 而跨区 planCode 这类 Fatal 是**每个任务第一轮就判**的 ——
 // 不合并的话用户会在几秒内收到 60 条一模一样的消息,
 // 手机被刷屏不说,真正要看的那条原因也被淹了。
@@ -94,9 +93,9 @@ func (f *failNotifier) take(item *types.QueueItem, reason string, fatal bool) (s
 func buildTaskFailedMessage(item *types.QueueItem, reason string, fatal bool) string {
 	var b strings.Builder
 	if fatal {
-		b.WriteString("🛑 抢购任务已停止（重试也不会变）\n\n")
+		b.WriteString("🛑 抢购任务已停止（重试也不会变）" + "\n" + "\n")
 	} else {
-		b.WriteString("⚠️ 抢购任务已停止（连续下单失败）\n\n")
+		b.WriteString("⚠️ 抢购任务已停止（连续下单失败）" + "\n" + "\n")
 	}
 	b.WriteString("型号：" + item.PlanCode + "\n")
 	if item.Datacenter != "" {
@@ -104,13 +103,13 @@ func buildTaskFailedMessage(item *types.QueueItem, reason string, fatal bool) st
 	}
 	b.WriteString("原因：" + reason + "\n")
 	if fatal {
-		b.WriteString("\n这类失败换个时间点重试结果一样，需要先改掉原因。\n" +
-			"常见的是型号和账户不在同一个区 —— 三个大区的目录互不相通，\n" +
-			"同一台机器在不同区是不同的型号代码。发 /accounts 看当前账户。\n")
+		b.WriteString("\n" + "这类失败换个时间点重试结果一样，需要先改掉原因。" + "\n" +
+			"常见的是型号和账户不在同一个区 —— 三个大区的目录互不相通，" + "\n" +
+			"同一台机器在不同区是不同的型号代码。发 /accounts 看当前账户。" + "\n")
 	} else {
-		b.WriteString("\n库存可能已经被抢完。想接着抢就重新下一单。\n")
+		b.WriteString("\n" + "库存可能已经被抢完。想接着抢就重新下一单。" + "\n")
 	}
-	b.WriteString("\n查看 /tasks · 网页抢购历史里有完整报错")
+	b.WriteString("\n" + "查看 /queue · 历史里有完整报错")
 	return b.String()
 }
 
@@ -168,6 +167,9 @@ func ProcessQueueLoop(state *app.State) {
 			if ap != bp {
 				return ap < bp
 			}
+			// CreatedAt 是 types.NowISO() 写的,不带时区,RFC3339Nano 解不出来。
+			// 以前这里两个 t 都是零值 → at.After(bt) 恒 false → 同优先级的任务
+			// 排序完全没生效,先入队的不一定先跑。ParseTS 两种历史格式都认。
 			at, _ := types.ParseTS(a.CreatedAt)
 			bt, _ := types.ParseTS(b.CreatedAt)
 			return at.After(bt)
@@ -279,6 +281,9 @@ func ProcessQueueLoop(state *app.State) {
 						}
 					}
 					state.QueueMu.Unlock()
+					// 成功即落库,不等轮末:checkout 成功到 SaveQueue 之间崩溃的话,
+					// 重启后任务复活再买一台(真金白银)。失败轮不落 —— 高频且可重建
+					_ = state.SaveQueue()
 					procMu.Lock()
 					processedIDs = append(processedIDs, it.ID)
 					procMu.Unlock()
@@ -332,9 +337,6 @@ func ProcessQueueLoop(state *app.State) {
 				}
 				if stopReason == "" {
 					return
-				}
-				if snapshot.TelegramMessageID != 0 {
-					telegram.NotifyTaskProgress(state, &snapshot, "failed", map[string]string{"reason": stopReason})
 				}
 				if !outcome.Fatal {
 					// 确定性失败的原因 PurchaseServer 已经写进 history 了;

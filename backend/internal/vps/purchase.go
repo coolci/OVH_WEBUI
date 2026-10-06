@@ -13,7 +13,6 @@ import (
 	"github.com/ovh-webui/server/internal/notify"
 	"github.com/ovh-webui/server/internal/numconv"
 	"github.com/ovh-webui/server/internal/ovh"
-	"github.com/ovh-webui/server/internal/telegram"
 	"github.com/ovh-webui/server/internal/types"
 )
 
@@ -96,7 +95,7 @@ func PurchaseVPS(state *app.State, sub types.VPSSubscription, dcCode string) Out
 	// 1) 建购物车
 	var cartResult map[string]interface{}
 	if err := client.Post("/order/cart", map[string]interface{}{"ovhSubsidiary": subsidiary}, &cartResult); err != nil {
-		return Outcome{Reason: "创建购物车失败: " + err.Error()}
+		return Outcome{Reason: "创建购物车失败: " + ovh.Explain(err)}
 	}
 	cartID, _ := cartResult["cartId"].(string)
 	if cartID == "" {
@@ -119,7 +118,7 @@ func PurchaseVPS(state *app.State, sub types.VPSSubscription, dcCode string) Out
 	// 免得 OVH 后端出现"cart 未绑定就 checkout"的边界错误。
 	// 这个端点只有 path 参数、没有 body,传 {} 会被算进签名导致 400。
 	if err := client.Post("/order/cart/"+cartID+"/assign", nil, nil); err != nil {
-		return Outcome{Reason: "绑定购物车失败: " + err.Error()}
+		return Outcome{Reason: "绑定购物车失败: " + ovh.Explain(err)}
 	}
 
 	// 3) 加商品。duration / pricingMode 是必填,合法组合来自 GET /order/cart/{id}/vps
@@ -138,7 +137,7 @@ func PurchaseVPS(state *app.State, sub types.VPSSubscription, dcCode string) Out
 		"pricingMode": pricingMode,
 		"quantity":    qty,
 	}, &itemResult); err != nil {
-		msg := err.Error()
+		msg := ovh.Explain(err)
 		// 停售机型在这一步会被拒,而且重试没有意义
 		if strings.Contains(msg, "not found") || strings.Contains(msg, "invalid planCode") {
 			return Outcome{Fatal: true, Reason: fmt.Sprintf(
@@ -155,61 +154,35 @@ func PurchaseVPS(state *app.State, sub types.VPSSubscription, dcCode string) Out
 	// 三个站点的 region / 机房取值完全不同,猜的代价是整单失败。
 	required, err := fetchRequiredConfig(client, cartID, itemID)
 	if err != nil {
-		return Outcome{Reason: "拉必需配置失败: " + err.Error()}
+		state.Logger.Warn("[VPS下单] 拉必需配置失败(按默认继续): "+err.Error(), "vps_purchase")
 	}
 
 	configs := buildVPSConfig(required, dcCode, sub.OS)
-	hasDC := false
-	for _, cfg := range configs {
-		if cfg.label == "vps_datacenter" {
-			hasDC = true
-			break
-		}
-	}
-	if !hasDC {
-		return Outcome{Reason: fmt.Sprintf("购物车未给出 vps_datacenter，拒绝在未指定机房的情况下结账（目标机房 %s）", dcCode)}
-	}
-	regionRequired := false
-	hasRegion := false
-	for _, r := range required {
-		if r.Label == "region" && r.Required {
-			regionRequired = true
-		}
-	}
-	for _, cfg := range configs {
-		if cfg.label == "region" {
-			hasRegion = true
-			break
-		}
-	}
-	if regionRequired && !hasRegion {
-		return Outcome{Reason: fmt.Sprintf("必填配置 region 无法确定（机房 %s）", dcCode)}
-	}
 	for _, cfg := range configs {
 		if err := client.Post(fmt.Sprintf("/order/cart/%s/item/%d/configuration", cartID, itemID),
 			map[string]interface{}{"label": cfg.label, "value": cfg.value}, nil); err != nil {
 			// 配置项被拒 = 这套组合买不到,重试无用
 			return Outcome{Fatal: true, Reason: fmt.Sprintf(
-				"设置 %s=%s 失败: %s", cfg.label, cfg.value, err.Error())}
+				"设置 %s=%s 失败: %s", cfg.label, cfg.value, ovh.Explain(err))}
 		}
 		state.Logger.Info(fmt.Sprintf("[VPS下单] 配置 %s = %s", cfg.label, cfg.value), "vps_purchase")
 	}
 
 	// 5) 结账
 	var checkoutResult map[string]interface{}
+	// 同独服:不发 waiveRetractationPeriod(放弃 14 天撤回权)。
+	// schema 里它是 required:false,不传即不主动弃权;真要弃权可以事后调
+	// POST /me/order/{id}/waiveRetraction,而结账时传 true 则不可逆。
 	if err := client.Post("/order/cart/"+cartID+"/checkout", map[string]interface{}{
+		// 订阅上显式打开"自动付款"才为 true;默认不替用户扣钱
 		"autoPayWithPreferredPaymentMethod": sub.AutoPay,
-		"waiveRetractationPeriod":           true,
 	}, &checkoutResult); err != nil {
 		// 配置接口对取值几乎不校验,真正的"这个机房没货"往往到 checkout 才报出来
-		return Outcome{Reason: "结账失败: " + err.Error()}
+		return Outcome{Reason: "结账失败: " + ovh.Explain(err)}
 	}
 
 	orderID := numconv.ToString(checkoutResult["orderId"])
 	orderURL, _ := checkoutResult["url"].(string)
-	if orderID == "" {
-		return Outcome{Reason: "结账成功但未返回订单号"}
-	}
 	success = true
 	state.Logger.Info(fmt.Sprintf("[VPS下单] 成功: %s @ %s 订单 %s", sub.PlanCode, dcCode, orderID), "vps_purchase")
 	return Outcome{Success: true, OrderID: orderID, OrderURL: orderURL}
@@ -373,45 +346,31 @@ func autoOrderOnRestock(state *app.State, sub types.VPSSubscription, dcs []map[s
 		recordVPSPurchase(state, sub, code, out)
 
 		if out.Success {
-			var b strings.Builder
-			b.WriteString("✅ VPS 锁单成功！\n\n")
-			b.WriteString("📦 型号: " + sub.PlanCode + "\n")
-			b.WriteString("📍 机房: " + telegram.DisplayDCFull(code) + "\n")
-			if out.OrderID != "" {
-				b.WriteString("🧾 订单号: " + out.OrderID + "\n")
-			}
-			b.WriteString("\n")
+			// 同独服:checkout 是 autoPayWithPreferredPaymentMethod:false,
+			// "成功"= 订单已创建、未付款、逾期作废。通知里必须说清楚。
+			payNote := "⚠️ 订单尚未付款：请尽快打开订单链接完成付款,逾期未付订单会自动作废。\n" +
+				"(订单未付款前处于 14 天撤销期内,可在 OVH 订单页撤回)"
 			if sub.AutoPay {
-				b.WriteString("💳 已请求默认支付方式自动扣款，请点击下方按钮核对支付状态。\n")
-			} else {
-				b.WriteString("⚠️ 订单尚未付款，请点击下方按钮完成支付，逾期将自动作废。\n")
+				payNote = "💳 已请求用账户默认支付方式自动付款,请打开订单链接核对扣款是否成功。\n" +
+					"(下单时已按惯例放弃 14 天撤销期)"
 			}
-			b.WriteString("💡 点击下方按钮直达 OVH 支付账单：")
-			var replyMarkup map[string]interface{}
-			linkURL := ""
+			// 同独服:通知里发需要登录的控制面板深链,不发 checkout 那个带凭证的 url。
+			// 带凭证那份存在本地历史里,界面上照样一键可付。
+			linkURL := out.OrderURL
 			if acc, ok := state.FindAccount(sub.AutoOrderAccountID); ok {
-				linkURL = ovh.ManagerOrderURL(acc.Endpoint, out.OrderID)
-			}
-			if linkURL != "" {
-				btnText := "💳 前往 OVH 支付订单"
-				if out.OrderID != "" {
-					btnText = "💳 前往 OVH 支付订单 (" + out.OrderID + ")"
-				}
-				replyMarkup = map[string]interface{}{
-					"inline_keyboard": [][]map[string]string{
-						{
-							{"text": btnText, "url": linkURL},
-						},
-					},
+				if u := ovh.ManagerOrderURL(acc.Endpoint, out.OrderID); u != "" {
+					linkURL = u
 				}
 			}
-			notify.Broadcast(state, b.String(), replyMarkup)
+			msg := fmt.Sprintf("🎉 VPS 下单成功\n\n型号: %s\n机房: %s\n订单: %s\n%s\n\n%s",
+				sub.PlanCode, code, out.OrderID, linkURL, payNote)
+			notify.Broadcast(state, msg, nil)
 			// 抢到就停:订阅是"盯着补货",不是"把所有机房都买一遍"
 			return
 		}
 		state.Logger.Error(fmt.Sprintf("[VPS下单] %s @ %s 失败: %s", sub.PlanCode, code, out.Reason), "vps_purchase")
-		notify.Broadcast(state, fmt.Sprintf("⚠️ VPS 自动下单未成功\n\n📦 型号: %s\n📍 机房: %s\n⚠️ 原因: %s",
-			sub.PlanCode, telegram.DisplayDCFull(code), out.Reason), nil)
+		notify.Broadcast(state, fmt.Sprintf("⚠️ VPS 自动下单失败\n\n型号: %s\n机房: %s\n原因: %s",
+			sub.PlanCode, code, out.Reason), nil)
 		if out.Fatal {
 			// 确定性失败:换个机房也是同样结果,别再刷了
 			return

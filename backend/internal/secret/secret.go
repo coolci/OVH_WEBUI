@@ -235,6 +235,10 @@ func Decrypt(stored string) (string, error) {
 	mu.RLock()
 	defer mu.RUnlock()
 	if !loaded {
+		// 这条分支也要计数:否则 .dbkey 损坏时 DecryptFailures() 恒为 0、
+		// KeyWasGenerated() 也是 false(没生成,是解析失败),两道启动保护同时哑火,
+		// 只剩一行"凭据加密未启用"的 Warn。而此时 Encrypt 是原样返回,
+		// 用户重新录入的凭据会静默存成明文。
 		failures.Add(1)
 		return "", errors.New("数据库里是加密的凭据,但当前没有可用的密钥(检查 " + KeyEnv + " 或 data/.dbkey)")
 	}

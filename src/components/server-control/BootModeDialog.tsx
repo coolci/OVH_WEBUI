@@ -4,8 +4,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/common/Skeleton";
 import { EmptyState } from "@/components/common/EmptyState";
+import { LoadFailed } from "@/components/common/LoadFailed";
 import { useServerBootModes, useSetServerBootMode, useRebootServer, type BootMode } from "@/hooks/use-server-control";
 import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
+import { errorMessage } from "@/components/common/LoadFailed";
 
 /** 启动模式对话框：列出所有可选启动模式，点击非当前项即切换 + 自动重启（对齐旧前端） */
 export function BootModeDialog({
@@ -20,6 +23,7 @@ export function BootModeDialog({
   const q = useServerBootModes(serviceName, open);
   const setBoot = useSetServerBootMode();
   const reboot = useRebootServer();
+  const { t } = useTranslation();
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
 
   const handlePick = (mode: BootMode) => {
@@ -30,17 +34,17 @@ export function BootModeDialog({
   const handleConfirm = async (mode: BootMode) => {
     try {
       await setBoot.mutateAsync({ serviceName, bootId: mode.id });
-      toast.success("启动模式已切换");
+      toast.success(t("ctrl.boot.toast.switched"));
       try {
         await reboot.mutateAsync(serviceName);
-        toast.success("服务器已重启，启动模式生效");
+        toast.success(t("ctrl.boot.toast.rebooted"));
       } catch {
-        toast.warning("启动模式已切换，但重启失败，请手动重启");
+        toast.warning(t("ctrl.boot.toast.rebootFailed"));
       }
       onOpenChange(false);
       setConfirmingId(null);
     } catch (e: any) {
-      toast.error(e?.response?.data?.error || "切换启动模式失败");
+      toast.error(errorMessage(e));
     }
   };
 
@@ -48,8 +52,8 @@ export function BootModeDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[95vw] sm:w-full sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>启动模式</DialogTitle>
-          <DialogDescription>选择服务器的启动模式。切换后将自动重启服务器以生效。</DialogDescription>
+          <DialogTitle>{t("ctrl.boot.title")}</DialogTitle>
+          <DialogDescription>{t("ctrl.boot.desc")}</DialogDescription>
         </DialogHeader>
 
         {q.isPending ? (
@@ -58,8 +62,12 @@ export function BootModeDialog({
               <Skeleton key={i} className="h-28 rounded-2xl" />
             ))}
           </div>
+        ) : q.isError ? (
+          // 「暂无可选启动模式」会被读成"这台机器不能切启动模式",用户就放弃进 rescue 了 ——
+          // 而救援模式往往正是机器出问题时唯一的自救路径。读失败必须写成读失败。
+          <LoadFailed icon={HardDrive} title={t("ctrl.boot.loadFailed")} error={q.error} onRetry={() => q.refetch()} />
         ) : (q.data || []).length === 0 ? (
-          <EmptyState icon={HardDrive} title="暂无可选启动模式" />
+          <EmptyState icon={HardDrive} title={t("ctrl.boot.empty")} />
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[70vh] sm:max-h-[60vh] overflow-y-auto pr-1">
             {(q.data || []).map((mode) => {
@@ -68,7 +76,8 @@ export function BootModeDialog({
               return (
                 <button
                   key={mode.id}
-                  disabled={mode.active || setBoot.isPending || reboot.isPending}
+                  // error 的行是占位数据(bootType/description 不可信)，切过去等于拿未知配置重启机器
+                  disabled={mode.active || !!mode.error || setBoot.isPending || reboot.isPending}
                   onClick={() => handlePick(mode)}
                   className={`p-4 border rounded-2xl text-left transition-colors flex flex-col items-center text-center gap-2 ${
                     mode.active
@@ -82,7 +91,13 @@ export function BootModeDialog({
                       <h4 className="text-[13px] font-semibold">{mode.bootType}</h4>
                       {mode.active && <Check className="w-3.5 h-3.5" />}
                     </div>
-                    <p className="text-[11px] text-muted-foreground line-clamp-2">{mode.description}</p>
+                    {mode.error ? (
+                      <p className="text-[11px] text-destructive line-clamp-2" title={mode.error}>
+                        {t("ctrl.boot.modeFailed")}
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-muted-foreground line-clamp-2">{mode.description}</p>
+                    )}
                   </div>
                   {isConfirming && !mode.active && (
                     <div className="flex gap-2 w-full mt-1">
@@ -95,7 +110,7 @@ export function BootModeDialog({
                           handleConfirm(mode);
                         }}
                       >
-                        {setBoot.isPending || reboot.isPending ? "切换中…" : "确认切换并重启"}
+                        {setBoot.isPending || reboot.isPending ? t("ctrl.boot.switching") : t("ctrl.boot.confirmSwitch")}
                       </Button>
                       <Button
                         size="sm"
@@ -105,7 +120,7 @@ export function BootModeDialog({
                           setConfirmingId(null);
                         }}
                       >
-                        取消
+                        {t("common.cancel")}
                       </Button>
                     </div>
                   )}
@@ -117,7 +132,7 @@ export function BootModeDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            关闭
+            {t("common.close")}
           </Button>
         </DialogFooter>
       </DialogContent>

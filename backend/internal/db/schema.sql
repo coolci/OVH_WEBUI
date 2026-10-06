@@ -52,8 +52,7 @@ CREATE TABLE IF NOT EXISTS queue (
   quick_order            INTEGER NOT NULL DEFAULT 0,
   priority               INTEGER NOT NULL DEFAULT 0,
   from_telegram          INTEGER NOT NULL DEFAULT 0,
-  config_sniper_task_id  TEXT    NOT NULL DEFAULT '',
-  force_order            INTEGER NOT NULL DEFAULT 0
+  config_sniper_task_id  TEXT    NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_queue_status     ON queue(status);
 CREATE INDEX IF NOT EXISTS idx_queue_plan_code  ON queue(plan_code);
@@ -187,13 +186,26 @@ CREATE TABLE IF NOT EXISTS telegram_updates (
 CREATE INDEX IF NOT EXISTS idx_tg_updates_processed ON telegram_updates(processed_at);
 
 -- ===========================================
--- telegram_short_ids: Telegram 回调短 ID 映射持久化
--- 解决重启后内联按钮失效、会话过期、碰撞等问题
+-- app_devices: App 配对设备(令牌只存 SHA-256 摘要)
+-- 手机丢了在网页端单独吊销,不用换主密钥、其他设备不掉线。
 -- ===========================================
-CREATE TABLE IF NOT EXISTS telegram_short_ids (
-  short_id   TEXT PRIMARY KEY,
-  full_id    TEXT NOT NULL,
-  category   TEXT NOT NULL DEFAULT '',
-  created_at INTEGER NOT NULL
+CREATE TABLE IF NOT EXISTS app_devices (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  name        TEXT NOT NULL,
+  token_hash  TEXT NOT NULL UNIQUE,
+  created_at  TEXT NOT NULL,
+  last_used   TEXT,
+  revoked_at  TEXT                            -- 非空 = 已吊销
 );
-CREATE INDEX IF NOT EXISTS idx_short_ids_created ON telegram_short_ids(created_at);
+
+-- ===========================================
+-- app_pairing_codes: 一次性配对码(2 分钟有效)
+-- 兑换走单条 UPDATE 原子认领(used_at IS NULL AND expires_at > now),
+-- 并发重放只有一个连接能成功 —— 与 telegram_order_buttons 同一模式。
+-- ===========================================
+CREATE TABLE IF NOT EXISTS app_pairing_codes (
+  code       TEXT PRIMARY KEY,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  used_at    TEXT
+);

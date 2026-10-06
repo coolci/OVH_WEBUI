@@ -2,12 +2,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/http";
 import { qk } from "@/lib/query";
 import { toast } from "sonner";
+import i18n from "@/i18n";
+import { apiMessage, bodyMessage } from "@/lib/api-error";
 
 export interface MonitorSubscription {
   planCode: string;
   serverName?: string;
   datacenters: string[];
-  options?: string[];
   notifyAvailable: boolean;
   notifyUnavailable: boolean;
   autoOrder?: boolean;
@@ -16,6 +17,14 @@ export interface MonitorSubscription {
   autoOrderAccountId?: string;
   /** 下单成功后自动付款(显式开关,默认关) */
   autoPay?: boolean;
+  /**
+   * 只盯这套配置(addon planCode 列表)。空 / 缺省 = 盯该型号的全部配置。
+   *
+   * 一个 planCode 底下常有好几套内存/存储组合，而通知和自动下单是**按配置逐套**
+   * 触发的 —— 不限定配置时「自动抢 1 台」会变成「每套配置在每个机房各抢 1 台」。
+   * 后端引擎一直支持这个字段，只是前端以前没接，所以网页建的订阅永远是「盯全部」。
+   */
+  options?: string[];
   lastStatus: Record<string, string>;
   createdAt: string;
 }
@@ -46,7 +55,12 @@ export interface MonitorHistoryEntry {
 export function useMonitorList() {
   return useQuery({
     queryKey: qk.monitor.list(),
-    queryFn: async () => (await api.get<MonitorSubscription[]>("/monitor/subscriptions")).data,
+    // Array.isArray:调用方直接 subs.map,truthy 非数组(响应被代理层改写等)
+    // 会让整个监控页白屏 —— 宁可当空列表走"暂无订阅"空态
+    queryFn: async () => {
+      const d = (await api.get<MonitorSubscription[]>("/monitor/subscriptions")).data;
+      return Array.isArray(d) ? d : [];
+    },
   });
 }
 
@@ -69,7 +83,7 @@ export function useMonitorHistory(planCode: string | null) {
   });
 }
 
-/** 新增订阅（POST；已存在时后端会更新配置） */
+/** 新增 / 修改订阅 */
 export function useUpsertMonitorSubscription() {
   const qc = useQueryClient();
   return useMutation({
@@ -78,17 +92,20 @@ export function useUpsertMonitorSubscription() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.monitor.list() });
       qc.invalidateQueries({ queryKey: qk.monitor.status() });
-      toast.success("订阅已保存");
+      toast.success(i18n.t("hooksMsg.monitor.saved"));
     },
-    onError: (e: any) =>
-      toast.error(e.response?.data?.message || e.response?.data?.error || "保存失败"),
+    onError: (e: any) => toast.error(apiMessage(e) || i18n.t("hooksMsg.monitor.saveFailed")),
   });
 }
 
-/** 创建新订阅（对外更语义化的别名） */
-export const useCreateMonitorSubscription = useUpsertMonitorSubscription;
-
-/** 原地更新订阅 PUT */
+/**
+ * 修改已有订阅（PUT，只改配置不重置状态）。
+ *
+ * 为什么不复用上面的 POST：POST 语义上是"新增"，前端也是照着新增的表单发的整包。
+ * 而 PUT 只发改动过的字段，后端拿当前值兜底 —— 这样"只改一个数量"不会顺带
+ * 把机房列表覆盖成空。两边的状态（LastStatus / History）都不会动，
+ * 否则一台本来就有货的机器会在下一轮被当成"补货了"，发一条假通知外加真下单。
+ */
 export function useUpdateMonitorSubscription() {
   const qc = useQueryClient();
   return useMutation({
@@ -97,28 +114,32 @@ export function useUpdateMonitorSubscription() {
       ...patch
     }: Partial<MonitorSubscription> & { planCode: string }) =>
       (await api.put(`/monitor/subscriptions/${encodeURIComponent(planCode)}`, patch)).data,
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       qc.invalidateQueries({ queryKey: qk.monitor.list() });
       qc.invalidateQueries({ queryKey: qk.monitor.status() });
-      toast.success("订阅已更新");
+      if (data?.regionWarning) toast.warning(data.regionWarning);
+      else toast.success(bodyMessage(data) || i18n.t("hooksMsg.monitor.updated"));
     },
     onError: (e: any) =>
-      toast.error(e.response?.data?.message || e.response?.data?.error || "更新失败"),
+      toast.error(apiMessage(e) || i18n.t("hooksMsg.monitor.updateFailed")),
   });
 }
+
+/** 创建新订阅（对外更语义化的别名） */
+export const useCreateMonitorSubscription = useUpsertMonitorSubscription;
 
 /** 移除订阅 */
 export function useRemoveMonitorSubscription() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (planCode: string) =>
-      (await api.delete(`/monitor/subscriptions/${encodeURIComponent(planCode)}`)).data,
+      (await api.delete(`/monitor/subscriptions/${planCode}`)).data,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.monitor.list() });
       qc.invalidateQueries({ queryKey: qk.monitor.status() });
-      toast.success("已删除订阅");
+      toast.success(i18n.t("hooksMsg.monitor.deleted"));
     },
-    onError: (e: any) => toast.error(e.response?.data?.error || "删除失败"),
+    onError: (e: any) => toast.error(apiMessage(e) || i18n.t("hooksMsg.monitor.deleteFailed")),
   });
 }
 
@@ -130,8 +151,26 @@ export function useClearMonitor() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.monitor.list() });
       qc.invalidateQueries({ queryKey: qk.monitor.status() });
-      toast.success("已清空全部订阅");
+      toast.success(i18n.t("hooksMsg.monitor.cleared"));
     },
-    onError: (e: any) => toast.error(e.response?.data?.error || "清空失败"),
+    onError: (e: any) => toast.error(apiMessage(e) || i18n.t("hooksMsg.monitor.clearFailed")),
+  });
+}
+
+/** 设置检查间隔（秒）。后端会夹到 5-3600，返回真正生效的值。 */
+export function useSetMonitorInterval() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (interval: number) =>
+      (await api.put("/monitor/interval", { interval })).data as {
+        status: string;
+        message: string;
+        check_interval: number;
+      },
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: qk.monitor.status() });
+      toast.success(bodyMessage(data) || i18n.t("hooksMsg.monitor.intervalUpdated"));
+    },
+    onError: (e: any) => toast.error(apiMessage(e) || i18n.t("hooksMsg.monitor.intervalSetFailed")),
   });
 }

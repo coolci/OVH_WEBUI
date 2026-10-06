@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -16,26 +17,10 @@ import (
 	"github.com/ovh-webui/server/internal/ovh"
 )
 
-// managerOrderURL 订单在 OVH 控制面板里的深链。
-//
-// 三个大区各有各的控制面板,彼此不认对方的订单号(账户体系本来就独立):
-//
-//	EU → https://www.ovh.com/manager/      (301 → manager.eu.ovhcloud.com)
-//	CA → https://ca.ovh.com/manager/       (301 → manager.ca.ovhcloud.com)
-//	US → https://us.ovhcloud.com/manager/  (301 → manager.us.ovhcloud.com)
-//
-// 以前这里写死 www.ovh.com,US / CA 账户点开链接会落到欧洲面板,
-// 面板里根本没有这个订单号,只能看到一个"订单不存在"。
-// 直接用重定向后的 manager.*.ovhcloud.com,少一跳也少一次 www 侧的地区改写。
+// managerOrderURL 订单在 OVH 控制面板里的深链。实现已挪到 internal/ovh,
+// 通知侧也要用同一份(见 ovh.ManagerOrderURL 里关于凭证链接的说明)。
 func managerOrderURL(endpoint string, orderID int64) string {
-	host := "manager.eu.ovhcloud.com"
-	switch ovh.EndpointRegion(endpoint) {
-	case "US":
-		host = "manager.us.ovhcloud.com"
-	case "CA":
-		host = "manager.ca.ovhcloud.com"
-	}
-	return fmt.Sprintf("https://%s/dedicated/#/billing/order?orderId=%d", host, orderID)
+	return ovh.ManagerOrderURL(endpoint, strconv.FormatInt(orderID, 10))
 }
 
 // orderMappingEntry 一个账户的订单映射结果
@@ -65,14 +50,26 @@ func invalidateOrderMappingCache(accountID string) {
 	orderMappingMu.Unlock()
 }
 
-// cachedOrderMapping 获取指定账户已缓存的订单映射（未命中或过期返回 false）
-func cachedOrderMapping(accountID string) (map[string]interface{}, bool) {
+// orderMappingFor 只读订单映射缓存,不触发同步。
+//
+// 为什么不复用 GetOrderMapping 的同步逻辑:那是一次几十个 OVH 请求、要跑好几秒的
+// 全量扫描(/dedicated/server + 每台的 serviceInfos + /me/order + 每单的 details)。
+// 撤回入口只是页面上一个小卡片,不该因为渲染它就把账户配额打一遍 ——
+// 而这个配额和抢购主链路是共用的。
+//
+// 缓存冷时返回 ok=false,调用方据此提示"去点同步订单",而不是自己发起同步。
+func orderMappingFor(state *app.State, c *gin.Context) (map[string]interface{}, error) {
+	acc, ok := ovhAccountFor(state, c)
+	if !ok {
+		return nil, fmt.Errorf("未配置 OVH 账户")
+	}
 	orderMappingMu.Lock()
 	defer orderMappingMu.Unlock()
-	if e, hit := orderMappingCache[accountID]; hit && time.Since(e.at) < orderMappingDuration {
-		return e.mapping, true
+	entry, hit := orderMappingCache[acc.ID]
+	if !hit || time.Since(entry.at) >= orderMappingDuration {
+		return nil, fmt.Errorf("订单映射尚未同步或已过期,请先在服务器控制页点「同步订单」")
 	}
-	return nil, false
+	return entry.mapping, nil
 }
 
 // GetOrderMapping GET /api/server-control/order-mapping
@@ -122,7 +119,7 @@ func GetOrderMapping(state *app.State) gin.HandlerFunc {
 			// /dedicated/server 没有"未开通"语义:没有服务器时返回空数组而不是报错。
 			// 所以这里的任何错误都是真错误,原样回给前端,不要退化成 30 天窗口再报 success。
 			state.Logger.Error("获取服务器列表失败: "+err.Error(), "server_control")
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "获取服务器列表失败: " + err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "获取服务器列表失败: " + ovh.Explain(err)})
 			return
 		}
 		svcDetails, svcFailed, svcErr := parallelGetStringsCounted(client, serverList, func(sn string) string {
@@ -193,7 +190,7 @@ func GetOrderMapping(state *app.State) gin.HandlerFunc {
 			// 干脆不传 date.*,改成按订单号倒序回扫最近 usOrderScanLimit 个,再用订单自己的 date 本地过滤。
 			if err := client.Get("/me/order", &allOrderIDs); err != nil {
 				state.Logger.Error("获取订单列表失败: "+err.Error(), "server_control")
-				c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "获取订单列表失败: " + err.Error()})
+				c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "获取订单列表失败: " + ovh.Explain(err)})
 				return
 			}
 			sort.Slice(allOrderIDs, func(i, j int) bool { return allOrderIDs[i] > allOrderIDs[j] })
@@ -239,7 +236,7 @@ func GetOrderMapping(state *app.State) gin.HandlerFunc {
 			path := "/me/order?date.from=" + url.QueryEscape(dateFromStr) + "&date.to=" + url.QueryEscape(dateToStr)
 			if err := client.Get(path, &allOrderIDs); err != nil {
 				state.Logger.Error("获取订单列表失败: "+err.Error(), "server_control")
-				c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "获取订单列表失败: " + err.Error()})
+				c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "获取订单列表失败: " + ovh.Explain(err)})
 				return
 			}
 		}

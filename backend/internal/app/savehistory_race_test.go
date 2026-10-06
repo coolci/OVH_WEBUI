@@ -1,4 +1,4 @@
-﻿package app
+package app
 
 import (
 	"fmt"
@@ -27,9 +27,13 @@ func newTestState(t *testing.T) *State {
 	return NewState(storage.Paths{DataDir: dir}, config.New(database), lg, database)
 }
 
+// 八处 go state.SaveHistory() 并发跑,而 SaveHistory 是
+// "拍内存快照 → 全表 DELETE+INSERT",快照和写库之间没有跨越锁。
+// 问题:后拍快照的可能先落库,导致新数据被旧快照覆盖。
 func TestSaveHistoryConcurrentLastWriteWins(t *testing.T) {
 	s := newTestState(t)
 
+	// 模拟真实场景:一边不断追加历史(下单成功),一边并发触发保存
 	var wg sync.WaitGroup
 	const n = 60
 	for i := 0; i < n; i++ {
@@ -44,6 +48,7 @@ func TestSaveHistoryConcurrentLastWriteWins(t *testing.T) {
 	}
 	wg.Wait()
 
+	// 内存里有 n 条。库里应该也是 n 条 —— 除非旧快照覆盖了新的
 	got, err := s.DB.ListHistory()
 	if err != nil {
 		t.Fatalf("list: %v", err)
@@ -59,6 +64,8 @@ func TestSaveHistoryConcurrentLastWriteWins(t *testing.T) {
 	}
 }
 
+// 队列同理:抢购任务的增删改也走 SaveQueue 全表覆盖。
+// 丢队列任务 = 抢购任务凭空消失,比丢历史更直接影响抢购。
 func TestSaveQueueConcurrentLastWriteWins(t *testing.T) {
 	s := newTestState(t)
 

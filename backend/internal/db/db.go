@@ -115,19 +115,21 @@ func (db *DB) migrate() error {
 		return err
 	}
 	// options:只盯某一套配置(空=全部配置,即老行为)。
+	// ListMonitorSubscriptions 是 SELECT * + sqlx 严格映射,
+	// 只加结构体字段不加列会让整个订阅列表报 missing destination name —— 必须同一次上线。
 	if err := db.addColumnIfMissing("monitor_subscriptions", "options", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
 		return err
 	}
 	if err := db.addColumnIfMissing("vps_subscriptions", "auto_order_account_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
-	// ovh_accounts 的按账户出站配置与凭据状态(PRD §2.2 / D-01)
+	// ovh_accounts 的按账户出站配置:代理地址 + 指纹。
+	// ListAccounts 用的是显式列名 + sqlx 严格映射,只加结构体字段不加列
+	// 会让整个账户列表报 missing destination name —— 两者必须同一次上线。
+	// proxy_url 带凭据,和三个 API 密钥一样是加密后的密文。
 	for _, c := range [][2]string{
 		{"proxy_url", "TEXT NOT NULL DEFAULT ''"},
 		{"fingerprint", "TEXT NOT NULL DEFAULT ''"},
-		{"cred_state", "TEXT NOT NULL DEFAULT 'unverified'"},
-		{"cred_checked_at", "TEXT NOT NULL DEFAULT ''"},
-		{"cred_evidence", "TEXT NOT NULL DEFAULT ''"},
 	} {
 		if err := db.addColumnIfMissing("ovh_accounts", c[0], c[1]); err != nil {
 			return err
@@ -139,20 +141,6 @@ func (db *DB) migrate() error {
 	if err := db.addColumnIfMissing("telegram_order_buttons", "account_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
-	if err := db.addColumnIfMissing("telegram_order_buttons", "used_at", "REAL NOT NULL DEFAULT 0"); err != nil {
-		return err
-	}
-	if err := db.addColumnIfMissing("queue", "telegram_chat_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
-		return err
-	}
-	if err := db.addColumnIfMissing("queue", "telegram_message_id", "INTEGER NOT NULL DEFAULT 0"); err != nil {
-		return err
-	}
-	if err := db.addColumnIfMissing("queue", "force_order", "INTEGER NOT NULL DEFAULT 0"); err != nil {
-		return err
-	}
-	// 清理 14 天前的旧短 ID 映射，避免表无限增长
-	_, _ = db.DeleteExpiredShortIDs(time.Now().Unix() - 14*86400)
 	return nil
 }
 

@@ -28,8 +28,11 @@ export const qk = {
   stats: () => ["stats"] as const,
 
   // 服务器列表（含可用性）
+  // accountId 进 key:后端 /api/servers 按 ?account= 分桶返回该账户所属子公司的目录
+  // (EU/US/CA 三区机型集合不同)，不分 key 会把上一个账户的机型列表留给下一个账户看
   servers: {
-    list: (showApiServers: boolean) => ["servers", "list", { showApiServers }] as const,
+    list: (showApiServers: boolean, accountId: string) =>
+      ["servers", "list", { showApiServers, accountId }] as const,
     availability: (planCode: string) => ["servers", "availability", planCode] as const,
   },
 
@@ -58,9 +61,19 @@ export const qk = {
   },
 
   // 服务器控制（已购）
+  //
+  // 注意 list / contactRequests 必须带 accountId。
+  // 账户是在**请求**里注入的(api.ts 的拦截器加 ?account=),但 key 里没有它 ——
+  // 于是两个账户共用同一份缓存。切账户时虽然 invalidate 了,invalidate 只是标记过期
+  // 并在后台重拉,期间组件读到的 data 仍是上一个账户的:切过去的那几百毫秒里
+  // 看到的是别人的服务器列表、别人的 /me 身份信息;重拉一旦失败,就一直停在那儿。
+  // 把账户放进 key,切换即缓存未命中 → 走骨架屏,不会串号。
+  // (按 serviceName 索引的那些不用带:serviceName 在 OVH 全局唯一。)
   serverControl: {
-    list: (accountId?: string) => ["server-control", "list", accountId || ""] as const,
+    list: (accountId: string) => ["server-control", "list", accountId] as const,
     hardware: (serviceName: string) => ["server-control", "hardware", serviceName] as const,
+    rescue: (serviceName: string) => ["server-control", "rescue", serviceName] as const,
+    spla: (serviceName: string) => ["server-control", "spla", serviceName] as const,
     serviceInfo: (serviceName: string) => ["server-control", "service-info", serviceName] as const,
     ips: (serviceName: string) => ["server-control", "ips", serviceName] as const,
     interventions: (serviceName: string) => ["server-control", "interventions", serviceName] as const,
@@ -90,7 +103,7 @@ export const qk = {
     options: (serviceName: string) => ["server-control", "options", serviceName] as const,
     ipSpecs: (serviceName: string) => ["server-control", "ip-specs", serviceName] as const,
     networkSpecs: (serviceName: string) => ["server-control", "network-specs", serviceName] as const,
-    contactRequests: (accountId?: string) => ["server-control", "contact-requests", accountId || ""] as const,
+    contactRequests: (accountId: string) => ["server-control", "contact-requests", accountId] as const,
     engagement: (serviceName: string) => ["server-control", "engagement", serviceName] as const,
     engagementAvailable: (serviceName: string) => ["server-control", "engagement-available", serviceName] as const,
     engagementRequest: (serviceName: string) => ["server-control", "engagement-request", serviceName] as const,
@@ -101,7 +114,7 @@ export const qk = {
 
   // VPS 控制(已购 VPS 管理,跟监控库存的 vpsMonitor 不同)
   vpsControl: {
-    list: (accountId?: string) => ["vps-control", "list", accountId || ""] as const,
+    list: (accountId: string) => ["vps-control", "list", accountId] as const,
     info: (svc: string) => ["vps-control", "info", svc] as const,
     status: (svc: string) => ["vps-control", "status", svc] as const,
     serviceInfo: (svc: string) => ["vps-control", "service-info", svc] as const,
@@ -121,31 +134,42 @@ export const qk = {
     mitigation: (svc: string) => ["vps-control", "mitigation", svc] as const,
   },
 
-  // 账户
-  accounts: {
-    list: () => ["accounts", "list"] as const,
-    proxyStatus: () => ["accounts", "proxy-status"] as const,
-    proxyTest: (id: string) => ["accounts", id, "proxy-test"] as const,
-    proxyCheck: (id: string) => ["accounts", id, "proxy-check"] as const,
-  },
+  // 账户。这三个是"当前账户是谁 / 它的退款和邮件",同上必须带 accountId ——
+  // 不带的话切账户的瞬间会把上一个账户的身份、KYC 状态、退款记录显示给下一个账户。
   account: {
-    info: (accountId?: string) => ["account", "info", accountId || ""] as const,
-    refunds: (accountId?: string) => ["account", "refunds", accountId || ""] as const,
-    emails: (accountId?: string) => ["account", "emails", accountId || ""] as const,
+    info: (accountId: string) => ["account", "info", accountId] as const,
+    refunds: (accountId: string) => ["account", "refunds", accountId] as const,
+    emails: (accountId: string) => ["account", "emails", accountId] as const,
+  },
+
+  // 账户的出站代理:健康状况 + 最近一次出口 IP 测试。
+  //
+  // proxyStatus 是真的去问后端(30 秒一轮),proxyTest 不是 —— 它没有对应的 GET,
+  // 只是「测试出口 IP」那一下把结果塞进缓存的存放处(见 use-accounts 的 useProxyTest)。
+  // 走 query 缓存而不是组件 state,是因为测试在编辑框里点、结果要显示在账户列表上:
+  // 多个账户的出口 IP 并排比对是确认隔离生效的唯一手段,两个账户同一个 IP 就等于没生效。
+  accounts: {
+    proxyStatus: () => ["accounts", "proxy-status"] as const,
+    proxyTest: (accountId: string) => ["accounts", "proxy-test", accountId] as const,
+    // 链路检测同理,也没有对应的 GET,只是「链路检测」那一下把结果存起来的地方。
+    // 它比出口 IP 测试贵得多(每个目标真打 3 次),所以结果必须留住:
+    // 关掉弹窗再打开看到的是上次那份 + 那次的时间,而不是又去打一轮 OVH。
+    proxyCheck: (accountId: string) => ["accounts", "proxy-check", accountId] as const,
   },
 
   // 历史与日志
   history: () => ["history"] as const,
-  logs: {
-    all: () => ["logs"] as const,
-    list: (p: { limit?: number; level?: string; source?: string; order?: string }) =>
-      ["logs", "list", p] as const,
-  },
+  logs: () => ["logs"] as const,
 
   // 设置
   settings: {
     config: () => ["settings", "config"] as const,
     cacheInfo: () => ["settings", "cache-info"] as const,
     telegramPoller: () => ["settings", "telegram-poller"] as const,
+  },
+
+  // App 配对(设备令牌)
+  app: {
+    devices: () => ["app", "devices"] as const,
   },
 } as const;

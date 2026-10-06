@@ -1,0 +1,3985 @@
+{
+  "DELETE /dedicated/server/{serviceName}/features/backupCloud": {
+    "CA": {
+      "status": "BETA",
+      "response": "void",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "BETA",
+      "response": "void",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "void",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "DELETE /dedicated/server/{serviceName}/features/backupFTP": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.Task",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.Task",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "DELETE /dedicated/server/{serviceName}/secondaryDnsDomains/{domain}": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "path:domain:string:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "path:domain:string:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "path:domain:string:true",
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "DELETE /dedicated/server/{serviceName}/vrack/{vrack}": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "vrack.Task",
+      "params": [
+        "path:serviceName:string:true",
+        "path:vrack:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "vrack.Task",
+      "params": [
+        "path:serviceName:string:true",
+        "path:vrack:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "vrack.Task",
+      "params": [
+        "path:serviceName:string:true",
+        "path:vrack:string:true"
+      ]
+    }
+  },
+  "DELETE /ip/{ip}/mitigation/{ipOnMitigation}": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "ip.MitigationIp",
+      "params": [
+        "path:ip:ipBlock:true",
+        "path:ipOnMitigation:ipv4:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "ip.MitigationIp",
+      "params": [
+        "path:ip:ipBlock:true",
+        "path:ipOnMitigation:ipv4:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "ip.MitigationIp",
+      "params": [
+        "path:ip:ipBlock:true",
+        "path:ipOnMitigation:ipv4:true"
+      ]
+    }
+  },
+  "DELETE /ip/{ip}/reverse/{ipReverse}": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "path:ip:ipBlock:true",
+        "path:ipReverse:ip:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "path:ip:ipBlock:true",
+        "path:ipReverse:ip:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "path:ip:ipBlock:true",
+        "path:ipReverse:ip:true"
+      ]
+    }
+  },
+  "DELETE /order/cart/{cartId}": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "path:cartId:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "path:cartId:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "path:cartId:string:true"
+      ]
+    }
+  },
+  "DELETE /services/{serviceId}/billing/engagement/request": {
+    "CA": {
+      "status": "BETA",
+      "response": "void",
+      "params": [
+        "path:serviceId:long:true"
+      ]
+    },
+    "EU": {
+      "status": "BETA",
+      "response": "void",
+      "params": [
+        "path:serviceId:long:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "void",
+      "params": [
+        "path:serviceId:long:true"
+      ]
+    }
+  },
+  "DELETE /vps/{serviceName}/secondaryDnsDomains/{domain}": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "path:domain:string:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "path:domain:string:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "void",
+      "params": [
+        "path:domain:string:true",
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "DELETE /vps/{serviceName}/snapshot": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "vps.Task",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "vps.Task",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "vps.Task",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/installationTemplate": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "string[]"
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "string[]"
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "string[]"
+    }
+  },
+  "GET /dedicated/installationTemplate/{templateName}": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "dedicated.installationTemplate.Templates",
+      "params": [
+        "path:templateName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "dedicated.installationTemplate.Templates",
+      "params": [
+        "path:templateName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "dedicated.installationTemplate.Templates",
+      "params": [
+        "path:templateName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/installationTemplate/{templateName}/partitionScheme": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "string[]",
+      "params": [
+        "path:templateName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "string[]",
+      "params": [
+        "path:templateName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "string[]",
+      "params": [
+        "path:templateName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/installationTemplate/{templateName}/partitionScheme/{schemeName}": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "dedicated.installationTemplate.templatePartitioningSchemes",
+      "params": [
+        "path:schemeName:string:true",
+        "path:templateName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "dedicated.installationTemplate.templatePartitioningSchemes",
+      "params": [
+        "path:schemeName:string:true",
+        "path:templateName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "dedicated.installationTemplate.templatePartitioningSchemes",
+      "params": [
+        "path:schemeName:string:true",
+        "path:templateName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/installationTemplate/{templateName}/partitionScheme/{schemeName}/partition": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "string[]",
+      "params": [
+        "path:schemeName:string:true",
+        "path:templateName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "string[]",
+      "params": [
+        "path:schemeName:string:true",
+        "path:templateName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "string[]",
+      "params": [
+        "path:schemeName:string:true",
+        "path:templateName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/installationTemplate/{templateName}/partitionScheme/{schemeName}/partition/{mountpoint}": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "dedicated.installationTemplate.templatePartitions",
+      "params": [
+        "path:mountpoint:string:true",
+        "path:schemeName:string:true",
+        "path:templateName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "dedicated.installationTemplate.templatePartitions",
+      "params": [
+        "path:mountpoint:string:true",
+        "path:schemeName:string:true",
+        "path:templateName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "dedicated.installationTemplate.templatePartitions",
+      "params": [
+        "path:mountpoint:string:true",
+        "path:schemeName:string:true",
+        "path:templateName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/server": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "string[]",
+      "params": [
+        "query:iamTags:map[string][]iam.resource.TagFilter:false"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "string[]",
+      "params": [
+        "query:iamTags:map[string][]iam.resource.TagFilter:false"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "string[]",
+      "params": [
+        "query:iamTags:map[string][]iam.resource.TagFilter:false"
+      ]
+    }
+  },
+  "GET /dedicated/server/datacenter/availabilities": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "dedicated.DatacenterAvailability[]",
+      "params": [
+        "query:datacenters:string:false",
+        "query:excludeDatacenters:boolean:false",
+        "query:gpu:string:false",
+        "query:memory:string:false",
+        "query:planCode:string:false",
+        "query:server:string:false",
+        "query:storage:string:false",
+        "query:systemStorage:string:false"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "dedicated.DatacenterAvailability[]",
+      "params": [
+        "query:datacenters:string:false",
+        "query:excludeDatacenters:boolean:false",
+        "query:gpu:string:false",
+        "query:memory:string:false",
+        "query:planCode:string:false",
+        "query:server:string:false",
+        "query:storage:string:false",
+        "query:systemStorage:string:false"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "dedicated.DatacenterAvailability[]",
+      "params": [
+        "query:datacenters:string:false",
+        "query:excludeDatacenters:boolean:false",
+        "query:gpu:string:false",
+        "query:memory:string:false",
+        "query:planCode:string:false",
+        "query:server:string:false",
+        "query:storage:string:false",
+        "query:systemStorage:string:false"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.DedicatedWithIAM",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.DedicatedWithIAM",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.DedicatedWithIAM",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/backupCloudOfferDetails": {
+    "CA": {
+      "status": "BETA",
+      "response": "dedicated.server.backup.BackupOffer",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "BETA",
+      "response": "dedicated.server.backup.BackupOffer",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "dedicated.server.backup.BackupOffer",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/biosSettings": {
+    "CA": {
+      "status": "BETA",
+      "response": "dedicated.biosSettings.BiosSettings",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "BETA",
+      "response": "dedicated.biosSettings.BiosSettings",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "dedicated.biosSettings.BiosSettings",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/biosSettings/sgx": {
+    "CA": {
+      "status": "BETA",
+      "response": "dedicated.biosSettingsSgx.BiosSettingsSgx",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "BETA",
+      "response": "dedicated.biosSettingsSgx.BiosSettingsSgx",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "dedicated.biosSettingsSgx.BiosSettingsSgx",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/boot": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "long[]",
+      "params": [
+        "path:serviceName:string:true",
+        "query:bootType:dedicated.server.BootTypeEnum:false"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "long[]",
+      "params": [
+        "path:serviceName:string:true",
+        "query:bootType:dedicated.server.BootTypeEnum:false"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "long[]",
+      "params": [
+        "path:serviceName:string:true",
+        "query:bootType:dedicated.server.BootTypeEnum:false"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/boot/{bootId}": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.Netboot",
+      "params": [
+        "path:bootId:long:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.Netboot",
+      "params": [
+        "path:bootId:long:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.Netboot",
+      "params": [
+        "path:bootId:long:true",
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/burst": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.ServerBurst",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.ServerBurst",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.ServerBurst",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/features/backupCloud": {
+    "CA": {
+      "status": "BETA",
+      "response": "dedicated.server.BackupCloud",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "BETA",
+      "response": "dedicated.server.BackupCloud",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "dedicated.server.BackupCloud",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/features/backupFTP": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.BackupFtp",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.BackupFtp",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/features/backupFTP/access": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "ipBlock[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "ipBlock[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/features/backupFTP/authorizableBlocks": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "ipBlock[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "ipBlock[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/features/firewall": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.Firewall",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.Firewall",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.Firewall",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/features/ipmi": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.Ipmi",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.Ipmi",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.Ipmi",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/features/ipmi/access": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.IpmiAccessValue",
+      "params": [
+        "path:serviceName:string:true",
+        "query:type:dedicated.server.IpmiAccessTypeEnum:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.IpmiAccessValue",
+      "params": [
+        "path:serviceName:string:true",
+        "query:type:dedicated.server.IpmiAccessTypeEnum:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.IpmiAccessValue",
+      "params": [
+        "path:serviceName:string:true",
+        "query:type:dedicated.server.IpmiAccessTypeEnum:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/install/compatibleTemplates": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.InstallTemplate",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.InstallTemplate",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.InstallTemplate",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/install/hardwareRaidProfile": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.HardwareRaidProfile",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.HardwareRaidProfile",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.HardwareRaidProfile",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/install/status": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.InstallationProgressStatus",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.InstallationProgressStatus",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.InstallationProgressStatus",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/intervention": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "long[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "long[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "long[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/intervention/{interventionId}": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.Intervention",
+      "params": [
+        "path:interventionId:long:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.Intervention",
+      "params": [
+        "path:interventionId:long:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.Intervention",
+      "params": [
+        "path:interventionId:long:true",
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/ipCanBeMovedTo": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "path:serviceName:string:true",
+        "query:ip:ipBlock:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "path:serviceName:string:true",
+        "query:ip:ipBlock:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "path:serviceName:string:true",
+        "query:ip:ipBlock:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/ipCountryAvailable": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.IpCountryEnum[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.IpCountryEnum[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.IpCountryEnum[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/ips": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "ipBlock[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "ipBlock[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "ipBlock[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/license/compliantWindows": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "license.WindowsOsVersionEnum[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "license.WindowsOsVersionEnum[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "license.WindowsOsVersionEnum[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/license/compliantWindowsSqlServer": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "license.WindowsSqlVersionEnum[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "license.WindowsSqlVersionEnum[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "license.WindowsSqlVersionEnum[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/networkInterfaceController": {
+    "CA": {
+      "status": "BETA",
+      "response": "macAddress[]",
+      "params": [
+        "path:serviceName:string:true",
+        "query:linkType:dedicated.networkInterfaceController.NetworkInterfaceControllerLinkTypeEnum:false"
+      ]
+    },
+    "EU": {
+      "status": "BETA",
+      "response": "macAddress[]",
+      "params": [
+        "path:serviceName:string:true",
+        "query:linkType:dedicated.networkInterfaceController.NetworkInterfaceControllerLinkTypeEnum:false"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "macAddress[]",
+      "params": [
+        "path:serviceName:string:true",
+        "query:linkType:dedicated.networkInterfaceController.NetworkInterfaceControllerLinkTypeEnum:false"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/networkInterfaceController/{mac}/mrtg": {
+    "CA": {
+      "status": "BETA",
+      "response": "dedicated.server.MrtgTimestampValue[]",
+      "params": [
+        "path:mac:macAddress:true",
+        "path:serviceName:string:true",
+        "query:period:dedicated.server.MrtgPeriodEnum:true",
+        "query:type:dedicated.server.MrtgTypeEnum:true"
+      ]
+    },
+    "EU": {
+      "status": "BETA",
+      "response": "dedicated.server.MrtgTimestampValue[]",
+      "params": [
+        "path:mac:macAddress:true",
+        "path:serviceName:string:true",
+        "query:period:dedicated.server.MrtgPeriodEnum:true",
+        "query:type:dedicated.server.MrtgTypeEnum:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "dedicated.server.MrtgTimestampValue[]",
+      "params": [
+        "path:mac:macAddress:true",
+        "path:serviceName:string:true",
+        "query:period:dedicated.server.MrtgPeriodEnum:true",
+        "query:type:dedicated.server.MrtgTypeEnum:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/ongoing": {
+    "CA": {
+      "status": "BETA",
+      "response": "dedicated.ExposedTask[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "BETA",
+      "response": "dedicated.ExposedTask[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "dedicated.ExposedTask[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/option": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.OptionEnum[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.OptionEnum[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.OptionEnum[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/orderable/bandwidth": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.BandwidthOrderable",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.BandwidthOrderable",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.BandwidthOrderable",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/orderable/ip": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.IpOrderable",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.IpOrderable",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.IpOrderable",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/orderable/traffic": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.TrafficOrderable",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.TrafficOrderable",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.TrafficOrderable",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/plannedIntervention": {
+    "CA": {
+      "status": "BETA",
+      "response": "long[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "BETA",
+      "response": "long[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "long[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/plannedIntervention/{interventionId}": {
+    "CA": {
+      "status": "BETA",
+      "response": "dedicated.server.PlannedIntervention",
+      "params": [
+        "path:interventionId:long:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "BETA",
+      "response": "dedicated.server.PlannedIntervention",
+      "params": [
+        "path:interventionId:long:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "dedicated.server.PlannedIntervention",
+      "params": [
+        "path:interventionId:long:true",
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/secondaryDnsDomains": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "string[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "string[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "string[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/serviceInfos": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "services.Service",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "services.Service",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "services.Service",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/specifications/hardware": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.HardwareSpecifications",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.HardwareSpecifications",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.HardwareSpecifications",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/specifications/ip": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.IpOrderable",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.IpOrderable",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.IpOrderable",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/specifications/network": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.NetworkSpecifications",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.NetworkSpecifications",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.NetworkSpecifications",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/spla": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "long[]",
+      "params": [
+        "path:serviceName:string:true",
+        "query:status:dedicated.server.SplaStatusEnum:false",
+        "query:type:dedicated.server.SplaTypeEnum:false"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "long[]",
+      "params": [
+        "path:serviceName:string:true",
+        "query:status:dedicated.server.SplaStatusEnum:false",
+        "query:type:dedicated.server.SplaTypeEnum:false"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "long[]",
+      "params": [
+        "path:serviceName:string:true",
+        "query:status:dedicated.server.SplaStatusEnum:false",
+        "query:type:dedicated.server.SplaTypeEnum:false"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/task": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "long[]",
+      "params": [
+        "path:serviceName:string:true",
+        "query:function:dedicated.TaskFunctionEnum:false",
+        "query:status:dedicated.TaskStatusEnum:false"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "long[]",
+      "params": [
+        "path:serviceName:string:true",
+        "query:function:dedicated.TaskFunctionEnum:false",
+        "query:status:dedicated.TaskStatusEnum:false"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "long[]",
+      "params": [
+        "path:serviceName:string:true",
+        "query:function:dedicated.TaskFunctionEnum:false",
+        "query:status:dedicated.TaskStatusEnum:false"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/task/{taskId}": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.Task",
+      "params": [
+        "path:serviceName:string:true",
+        "path:taskId:long:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.Task",
+      "params": [
+        "path:serviceName:string:true",
+        "path:taskId:long:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.Task",
+      "params": [
+        "path:serviceName:string:true",
+        "path:taskId:long:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/task/{taskId}/availableTimeslots": {
+    "CA": {
+      "status": "BETA",
+      "response": "dedicated.PlannedInterventionTimeSlot[]",
+      "params": [
+        "path:serviceName:string:true",
+        "path:taskId:long:true",
+        "query:periodEnd:date:true",
+        "query:periodStart:date:true"
+      ]
+    },
+    "EU": {
+      "status": "BETA",
+      "response": "dedicated.PlannedInterventionTimeSlot[]",
+      "params": [
+        "path:serviceName:string:true",
+        "path:taskId:long:true",
+        "query:periodEnd:date:true",
+        "query:periodStart:date:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "dedicated.PlannedInterventionTimeSlot[]",
+      "params": [
+        "path:serviceName:string:true",
+        "path:taskId:long:true",
+        "query:periodEnd:date:true",
+        "query:periodStart:date:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/virtualMac": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "string[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "string[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "string[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/virtualNetworkInterface": {
+    "CA": {
+      "status": "BETA",
+      "response": "uuid[]",
+      "params": [
+        "path:serviceName:string:true",
+        "query:enabled:boolean:false",
+        "query:mode:dedicated.virtualNetworkInterface.VirtualNetworkInterfaceModeEnum:false",
+        "query:name:string:false",
+        "query:vrack:string:false"
+      ]
+    },
+    "EU": {
+      "status": "BETA",
+      "response": "uuid[]",
+      "params": [
+        "path:serviceName:string:true",
+        "query:enabled:boolean:false",
+        "query:mode:dedicated.virtualNetworkInterface.VirtualNetworkInterfaceModeEnum:false",
+        "query:name:string:false",
+        "query:vrack:string:false"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "uuid[]",
+      "params": [
+        "path:serviceName:string:true",
+        "query:enabled:boolean:false",
+        "query:mode:dedicated.virtualNetworkInterface.VirtualNetworkInterfaceModeEnum:false",
+        "query:name:string:false",
+        "query:vrack:string:false"
+      ]
+    }
+  },
+  "GET /dedicated/server/{serviceName}/vrack": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "string[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "string[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "string[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /ip": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "ipBlock[]",
+      "params": [
+        "query:campus:string:false",
+        "query:description:string:false",
+        "query:iamTags:map[string][]iam.resource.TagFilter:false",
+        "query:ip:ipBlock:false",
+        "query:isAdditionalIp:boolean:false",
+        "query:routedTo.serviceName:string:false",
+        "query:type:ip.IpTypeEnum:false",
+        "query:version:ip.IpVersionEnum:false"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "ipBlock[]",
+      "params": [
+        "query:campus:string:false",
+        "query:description:string:false",
+        "query:iamTags:map[string][]iam.resource.TagFilter:false",
+        "query:ip:ipBlock:false",
+        "query:isAdditionalIp:boolean:false",
+        "query:routedTo.serviceName:string:false",
+        "query:type:ip.IpTypeEnum:false",
+        "query:version:ip.IpVersionEnum:false"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "ipBlock[]",
+      "params": [
+        "query:campus:string:false",
+        "query:description:string:false",
+        "query:iamTags:map[string][]iam.resource.TagFilter:false",
+        "query:ip:ipBlock:false",
+        "query:isAdditionalIp:boolean:false",
+        "query:routedTo.serviceName:string:false",
+        "query:type:ip.IpTypeEnum:false",
+        "query:version:ip.IpVersionEnum:false"
+      ]
+    }
+  },
+  "GET /ip/{ip}": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "ip.IpWithIAM",
+      "params": [
+        "path:ip:ipBlock:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "ip.IpWithIAM",
+      "params": [
+        "path:ip:ipBlock:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "ip.IpWithIAM",
+      "params": [
+        "path:ip:ipBlock:true"
+      ]
+    }
+  },
+  "GET /ip/{ip}/mitigation": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "ipv4[]",
+      "params": [
+        "path:ip:ipBlock:true",
+        "query:auto:boolean:false",
+        "query:state:ip.MitigationStateEnum:false"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "ipv4[]",
+      "params": [
+        "path:ip:ipBlock:true",
+        "query:auto:boolean:false",
+        "query:state:ip.MitigationStateEnum:false"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "ipv4[]",
+      "params": [
+        "path:ip:ipBlock:true",
+        "query:auto:boolean:false",
+        "query:state:ip.MitigationStateEnum:false"
+      ]
+    }
+  },
+  "GET /ip/{ip}/mitigation/{ipOnMitigation}": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "ip.MitigationIp",
+      "params": [
+        "path:ip:ipBlock:true",
+        "path:ipOnMitigation:ipv4:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "ip.MitigationIp",
+      "params": [
+        "path:ip:ipBlock:true",
+        "path:ipOnMitigation:ipv4:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "ip.MitigationIp",
+      "params": [
+        "path:ip:ipBlock:true",
+        "path:ipOnMitigation:ipv4:true"
+      ]
+    }
+  },
+  "GET /ip/{ip}/reverse": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "ip[]",
+      "params": [
+        "path:ip:ipBlock:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "ip[]",
+      "params": [
+        "path:ip:ipBlock:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "ip[]",
+      "params": [
+        "path:ip:ipBlock:true"
+      ]
+    }
+  },
+  "GET /ip/{ip}/reverse/{ipReverse}": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "ip.ReverseIp",
+      "params": [
+        "path:ip:ipBlock:true",
+        "path:ipReverse:ip:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "ip.ReverseIp",
+      "params": [
+        "path:ip:ipBlock:true",
+        "path:ipReverse:ip:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "ip.ReverseIp",
+      "params": [
+        "path:ip:ipBlock:true",
+        "path:ipReverse:ip:true"
+      ]
+    }
+  },
+  "GET /me": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "nichandle.Nichandle"
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "nichandle.Nichandle"
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "nichandle.Nichandle"
+    }
+  },
+  "GET /me/bill": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "string[]",
+      "params": [
+        "query:category:billing.CategoryEnum:false",
+        "query:date.from:datetime:false",
+        "query:date.to:datetime:false",
+        "query:orderId:long:false"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "string[]",
+      "params": [
+        "query:category:billing.CategoryEnum:false",
+        "query:date.from:datetime:false",
+        "query:date.to:datetime:false",
+        "query:orderId:long:false"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "string[]",
+      "params": [
+        "query:date.from:datetime:false",
+        "query:date.to:datetime:false",
+        "query:orderId:long:false"
+      ]
+    }
+  },
+  "GET /me/credit/balance": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "string[]",
+      "params": [
+        "query:type:me.credit.balance.TypeEnum:false"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "string[]",
+      "params": [
+        "query:type:me.credit.balance.TypeEnum:false"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "string[]",
+      "params": [
+        "query:type:me.credit.balance.TypeEnum:false"
+      ]
+    }
+  },
+  "GET /me/notification/email/history": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "long[]"
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "long[]"
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "long[]"
+    }
+  },
+  "GET /me/order": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "long[]",
+      "params": [
+        "query:date.from:datetime:false",
+        "query:date.to:datetime:false"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "long[]",
+      "params": [
+        "query:date.from:datetime:false",
+        "query:date.to:datetime:false"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "long[]"
+    }
+  },
+  "GET /me/order/{orderId}": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "billing.Order",
+      "params": [
+        "path:orderId:long:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "billing.Order",
+      "params": [
+        "path:orderId:long:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "billing.Order",
+      "params": [
+        "path:orderId:long:true"
+      ]
+    }
+  },
+  "GET /me/order/{orderId}/details": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "long[]",
+      "params": [
+        "path:orderId:long:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "long[]",
+      "params": [
+        "path:orderId:long:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "long[]",
+      "params": [
+        "path:orderId:long:true"
+      ]
+    }
+  },
+  "GET /me/order/{orderId}/details/{orderDetailId}": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "billing.OrderDetail",
+      "params": [
+        "path:orderDetailId:long:true",
+        "path:orderId:long:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "billing.OrderDetail",
+      "params": [
+        "path:orderDetailId:long:true",
+        "path:orderId:long:true"
+      ]
+    }
+  },
+  "GET /me/order/{orderId}/status": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "billing.order.OrderStatusEnum",
+      "params": [
+        "path:orderId:long:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "billing.order.OrderStatusEnum",
+      "params": [
+        "path:orderId:long:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "billing.order.OrderStatusEnum",
+      "params": [
+        "path:orderId:long:true"
+      ]
+    }
+  },
+  "GET /me/subAccount": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "long[]"
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "long[]"
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "long[]"
+    }
+  },
+  "GET /me/task/contactChange": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "long[]",
+      "params": [
+        "query:askingAccount:string:false",
+        "query:state:nichandle.changeContact.TaskStateEnum:false",
+        "query:toAccount:string:false"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "long[]",
+      "params": [
+        "query:askingAccount:string:false",
+        "query:state:nichandle.changeContact.TaskStateEnum:false",
+        "query:toAccount:string:false"
+      ]
+    }
+  },
+  "GET /me/task/contactChange/{id}": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "nichandle.contactChange.Task",
+      "params": [
+        "path:id:long:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "nichandle.contactChange.Task",
+      "params": [
+        "path:id:long:true"
+      ]
+    }
+  },
+  "GET /order/cart/{cartId}/eco": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "order.cart.GenericProductDefinition[]",
+      "params": [
+        "path:cartId:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "order.cart.GenericProductDefinition[]",
+      "params": [
+        "path:cartId:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "order.cart.GenericProductDefinition[]",
+      "params": [
+        "path:cartId:string:true"
+      ]
+    }
+  },
+  "GET /order/cart/{cartId}/eco/options": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "order.cart.GenericOptionDefinition[]",
+      "params": [
+        "path:cartId:string:true",
+        "query:planCode:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "order.cart.GenericOptionDefinition[]",
+      "params": [
+        "path:cartId:string:true",
+        "query:planCode:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "order.cart.GenericOptionDefinition[]",
+      "params": [
+        "path:cartId:string:true",
+        "query:planCode:string:true"
+      ]
+    }
+  },
+  "GET /order/cart/{cartId}/item/{itemId}/requiredConfiguration": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "order.cart.ConfigurationRequirements[]",
+      "params": [
+        "path:cartId:string:true",
+        "path:itemId:long:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "order.cart.ConfigurationRequirements[]",
+      "params": [
+        "path:cartId:string:true",
+        "path:itemId:long:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "order.cart.ConfigurationRequirements[]",
+      "params": [
+        "path:cartId:string:true",
+        "path:itemId:long:true"
+      ]
+    }
+  },
+  "GET /order/cart/{cartId}/summary": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "order.Order",
+      "params": [
+        "path:cartId:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "order.Order",
+      "params": [
+        "path:cartId:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "order.Order",
+      "params": [
+        "path:cartId:string:true"
+      ]
+    }
+  },
+  "GET /order/cart/{cartId}/vps": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "order.cart.GenericProductDefinition[]",
+      "params": [
+        "path:cartId:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "order.cart.GenericProductDefinition[]",
+      "params": [
+        "path:cartId:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "order.cart.GenericProductDefinition[]",
+      "params": [
+        "path:cartId:string:true"
+      ]
+    }
+  },
+  "GET /order/catalog/public/eco": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "order.catalog.public.Catalog",
+      "params": [
+        "query:ovhSubsidiary:nichandle.OvhSubsidiaryEnum:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "order.catalog.public.Catalog",
+      "params": [
+        "query:ovhSubsidiary:nichandle.OvhSubsidiaryEnum:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "order.catalog.public.Catalog",
+      "params": [
+        "query:ovhSubsidiary:nichandle.OvhSubsidiaryEnum:true"
+      ]
+    }
+  },
+  "GET /order/catalog/public/vps": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "order.catalog.public.Catalog",
+      "params": [
+        "query:ovhSubsidiary:nichandle.OvhSubsidiaryEnum:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "order.catalog.public.Catalog",
+      "params": [
+        "query:ovhSubsidiary:nichandle.OvhSubsidiaryEnum:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "order.catalog.public.Catalog",
+      "params": [
+        "query:ovhSubsidiary:nichandle.OvhSubsidiaryEnum:true"
+      ]
+    }
+  },
+  "GET /services/{serviceId}": {
+    "CA": {
+      "status": "BETA",
+      "response": "services.expanded.Service",
+      "params": [
+        "path:serviceId:long:true"
+      ]
+    },
+    "EU": {
+      "status": "BETA",
+      "response": "services.expanded.Service",
+      "params": [
+        "path:serviceId:long:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "services.expanded.Service",
+      "params": [
+        "path:serviceId:long:true"
+      ]
+    }
+  },
+  "GET /services/{serviceId}/billing/engagement": {
+    "CA": {
+      "status": "BETA",
+      "response": "services.billing.engagement.Engagement",
+      "params": [
+        "path:serviceId:long:true"
+      ]
+    },
+    "EU": {
+      "status": "BETA",
+      "response": "services.billing.engagement.Engagement",
+      "params": [
+        "path:serviceId:long:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "services.billing.engagement.Engagement",
+      "params": [
+        "path:serviceId:long:true"
+      ]
+    }
+  },
+  "GET /services/{serviceId}/billing/engagement/available": {
+    "CA": {
+      "status": "BETA",
+      "response": "services.billing.Pricing[]",
+      "params": [
+        "path:serviceId:long:true"
+      ]
+    },
+    "EU": {
+      "status": "BETA",
+      "response": "services.billing.Pricing[]",
+      "params": [
+        "path:serviceId:long:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "services.billing.Pricing[]",
+      "params": [
+        "path:serviceId:long:true"
+      ]
+    }
+  },
+  "GET /services/{serviceId}/billing/engagement/request": {
+    "CA": {
+      "status": "BETA",
+      "response": "services.billing.engagement.EngagementRequest",
+      "params": [
+        "path:serviceId:long:true"
+      ]
+    },
+    "EU": {
+      "status": "BETA",
+      "response": "services.billing.engagement.EngagementRequest",
+      "params": [
+        "path:serviceId:long:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "services.billing.engagement.EngagementRequest",
+      "params": [
+        "path:serviceId:long:true"
+      ]
+    }
+  },
+  "GET /vps": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "string[]",
+      "params": [
+        "query:iamTags:map[string][]iam.resource.TagFilter:false"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "string[]",
+      "params": [
+        "query:iamTags:map[string][]iam.resource.TagFilter:false"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "string[]",
+      "params": [
+        "query:iamTags:map[string][]iam.resource.TagFilter:false"
+      ]
+    }
+  },
+  "GET /vps/order/rule/datacenter": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "vps.order.rule.Datacenters",
+      "params": [
+        "query:os:string:false",
+        "query:ovhSubsidiary:nichandle.OvhSubsidiaryEnum:true",
+        "query:planCode:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "vps.order.rule.Datacenters",
+      "params": [
+        "query:os:string:false",
+        "query:ovhSubsidiary:nichandle.OvhSubsidiaryEnum:true",
+        "query:planCode:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "vps.order.rule.Datacenters",
+      "params": [
+        "query:os:string:false",
+        "query:ovhSubsidiary:nichandle.OvhSubsidiaryEnum:true",
+        "query:planCode:string:true"
+      ]
+    }
+  },
+  "GET /vps/{serviceName}": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "vps.VPSWithIAM",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "vps.VPSWithIAM",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "vps.VPSWithIAM",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /vps/{serviceName}/automatedBackup": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "vps.AutomatedBackup",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "vps.AutomatedBackup",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "vps.AutomatedBackup",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /vps/{serviceName}/datacenter": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "vps.Datacenter",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "vps.Datacenter",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "vps.Datacenter",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /vps/{serviceName}/images/available": {
+    "CA": {
+      "status": "BETA",
+      "response": "string[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "BETA",
+      "response": "string[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "string[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /vps/{serviceName}/images/current": {
+    "CA": {
+      "status": "BETA",
+      "response": "vps.Image",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "BETA",
+      "response": "vps.Image",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "vps.Image",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /vps/{serviceName}/ips": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "ip[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "ip[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "ip[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /vps/{serviceName}/option": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "vps.VpsOptionEnum[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "vps.VpsOptionEnum[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "vps.VpsOptionEnum[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /vps/{serviceName}/secondaryDnsDomains": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "string[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "string[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "string[]",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /vps/{serviceName}/serviceInfos": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "services.Service",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "services.Service",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "services.Service",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /vps/{serviceName}/snapshot": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "vps.Snapshot",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "vps.Snapshot",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "vps.Snapshot",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "GET /vps/{serviceName}/tasks": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "long[]",
+      "params": [
+        "path:serviceName:string:true",
+        "query:state:vps.TaskStateEnum:false",
+        "query:type:vps.TaskTypeEnum:false"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "long[]",
+      "params": [
+        "path:serviceName:string:true",
+        "query:state:vps.TaskStateEnum:false",
+        "query:type:vps.TaskTypeEnum:false"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "long[]",
+      "params": [
+        "path:serviceName:string:true",
+        "query:state:vps.TaskStateEnum:false",
+        "query:type:vps.TaskTypeEnum:false"
+      ]
+    }
+  },
+  "GET /vps/{serviceName}/tasks/{id}": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "vps.Task",
+      "params": [
+        "path:id:long:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "vps.Task",
+      "params": [
+        "path:id:long:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "vps.Task",
+      "params": [
+        "path:id:long:true",
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "POST /dedicated/server/{serviceName}/changeContact": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "long[]",
+      "params": [
+        "body:contactAdmin:string:false",
+        "body:contactBilling:string:false",
+        "body:contactTech:string:false",
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "long[]",
+      "params": [
+        "body:contactAdmin:string:false",
+        "body:contactBilling:string:false",
+        "body:contactTech:string:false",
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "POST /dedicated/server/{serviceName}/confirmTermination": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "string",
+      "params": [
+        "body:commentary:string:false",
+        "body:futureUse:service.TerminationFutureUseEnum:false",
+        "body:reason:service.TerminationReasonEnum:false",
+        "body:token:string:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "string",
+      "params": [
+        "body:commentary:string:false",
+        "body:futureUse:service.TerminationFutureUseEnum:false",
+        "body:reason:service.TerminationReasonEnum:false",
+        "body:token:string:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "string",
+      "params": [
+        "body:commentary:string:false",
+        "body:futureUse:service.TerminationFutureUseEnum:false",
+        "body:reason:service.TerminationReasonEnum:false",
+        "body:token:string:true",
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "POST /dedicated/server/{serviceName}/features/backupCloud": {
+    "CA": {
+      "status": "BETA",
+      "response": "dedicated.server.BackupCloud",
+      "params": [
+        "body:cloudProjectId:string:false",
+        "body:projectDescription:string:false",
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "BETA",
+      "response": "dedicated.server.BackupCloud",
+      "params": [
+        "body:cloudProjectId:string:false",
+        "body:projectDescription:string:false",
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "dedicated.server.BackupCloud",
+      "params": [
+        "body:cloudProjectId:string:false",
+        "body:projectDescription:string:false",
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "POST /dedicated/server/{serviceName}/features/backupCloud/password": {
+    "CA": {
+      "status": "BETA",
+      "response": "dedicated.server.backup.BackupPassword",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "BETA",
+      "response": "dedicated.server.backup.BackupPassword",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "dedicated.server.backup.BackupPassword",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "POST /dedicated/server/{serviceName}/features/backupFTP": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.Task",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.Task",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "POST /dedicated/server/{serviceName}/features/backupFTP/access": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.Task",
+      "params": [
+        "body:cifs:boolean:true",
+        "body:ftp:boolean:false",
+        "body:ipBlock:ipBlock:true",
+        "body:nfs:boolean:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.Task",
+      "params": [
+        "body:cifs:boolean:true",
+        "body:ftp:boolean:false",
+        "body:ipBlock:ipBlock:true",
+        "body:nfs:boolean:true",
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "POST /dedicated/server/{serviceName}/features/backupFTP/password": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.Task",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.Task",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "POST /dedicated/server/{serviceName}/features/ipmi/access": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.Task",
+      "params": [
+        "body:ipToAllow:ipv4:false",
+        "body:sshKey:text:false",
+        "body:ttl:dedicated.server.CacheTTLEnum:true",
+        "body:type:dedicated.server.IpmiAccessTypeEnum:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.Task",
+      "params": [
+        "body:ipToAllow:ipv4:false",
+        "body:sshKey:text:false",
+        "body:ttl:dedicated.server.CacheTTLEnum:true",
+        "body:type:dedicated.server.IpmiAccessTypeEnum:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.Task",
+      "params": [
+        "body:ipToAllow:ipv4:false",
+        "body:sshKey:text:false",
+        "body:ttl:dedicated.server.CacheTTLEnum:true",
+        "body:type:dedicated.server.IpmiAccessTypeEnum:true",
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "POST /dedicated/server/{serviceName}/ipMove": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.Task",
+      "params": [
+        "body:ip:ipBlock:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.Task",
+      "params": [
+        "body:ip:ipBlock:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.Task",
+      "params": [
+        "body:ip:ipBlock:true",
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "POST /dedicated/server/{serviceName}/ola/aggregation": {
+    "CA": {
+      "status": "BETA",
+      "response": "dedicated.server.Task",
+      "params": [
+        "body:name:string:true",
+        "body:virtualNetworkInterfaces:uuid[]:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "BETA",
+      "response": "dedicated.server.Task",
+      "params": [
+        "body:name:string:true",
+        "body:virtualNetworkInterfaces:uuid[]:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "dedicated.server.Task",
+      "params": [
+        "body:name:string:true",
+        "body:virtualNetworkInterfaces:uuid[]:true",
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "POST /dedicated/server/{serviceName}/ola/reset": {
+    "CA": {
+      "status": "BETA",
+      "response": "dedicated.server.Task",
+      "params": [
+        "body:virtualNetworkInterface:uuid:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "BETA",
+      "response": "dedicated.server.Task",
+      "params": [
+        "body:virtualNetworkInterface:uuid:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "dedicated.server.Task",
+      "params": [
+        "body:virtualNetworkInterface:uuid:true",
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "POST /dedicated/server/{serviceName}/reboot": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.Task",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.Task",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.Task",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "POST /dedicated/server/{serviceName}/reinstall": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.task.Response",
+      "params": [
+        "body::dedicated.server.Reinstall:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.task.Response",
+      "params": [
+        "body::dedicated.server.Reinstall:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.task.Response",
+      "params": [
+        "body::dedicated.server.Reinstall:true",
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "POST /dedicated/server/{serviceName}/secondaryDnsDomains": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "body:domain:string:true",
+        "body:ip:ipv4:false",
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "body:domain:string:true",
+        "body:ip:ipv4:false",
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "body:domain:string:true",
+        "body:ip:ipv4:false",
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "POST /dedicated/server/{serviceName}/spla": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "long",
+      "params": [
+        "body:serialNumber:string:true",
+        "body:type:dedicated.server.SplaTypeEnum:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "long",
+      "params": [
+        "body:serialNumber:string:true",
+        "body:type:dedicated.server.SplaTypeEnum:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "long",
+      "params": [
+        "body:serialNumber:string:true",
+        "body:type:dedicated.server.SplaTypeEnum:true",
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "POST /dedicated/server/{serviceName}/support/replace/cooling": {
+    "CA": {
+      "status": "BETA",
+      "response": "support.NewMessageInfo",
+      "params": [
+        "body:comment:text:true",
+        "body:details:text:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "BETA",
+      "response": "support.NewMessageInfo",
+      "params": [
+        "body:comment:text:true",
+        "body:details:text:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "support.NewMessageInfo",
+      "params": [
+        "body:comment:text:true",
+        "body:details:text:true",
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "POST /dedicated/server/{serviceName}/support/replace/hardDiskDrive": {
+    "CA": {
+      "status": "BETA",
+      "response": "support.NewMessageInfo",
+      "params": [
+        "body:comment:text:true",
+        "body:disks:dedicated.server.SupportReplaceHddInfo[]:true",
+        "body:inverse:boolean:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "BETA",
+      "response": "support.NewMessageInfo",
+      "params": [
+        "body:comment:text:true",
+        "body:disks:dedicated.server.SupportReplaceHddInfo[]:true",
+        "body:inverse:boolean:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "support.NewMessageInfo",
+      "params": [
+        "body:comment:text:true",
+        "body:disks:dedicated.server.SupportReplaceHddInfo[]:true",
+        "body:inverse:boolean:true",
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "POST /dedicated/server/{serviceName}/support/replace/memory": {
+    "CA": {
+      "status": "BETA",
+      "response": "support.NewMessageInfo",
+      "params": [
+        "body:comment:text:true",
+        "body:details:text:true",
+        "body:slots:string[]:false",
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "BETA",
+      "response": "support.NewMessageInfo",
+      "params": [
+        "body:comment:text:true",
+        "body:details:text:true",
+        "body:slots:string[]:false",
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "support.NewMessageInfo",
+      "params": [
+        "body:comment:text:true",
+        "body:details:text:true",
+        "body:slots:string[]:false",
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "POST /dedicated/server/{serviceName}/task/{taskId}/cancel": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "path:serviceName:string:true",
+        "path:taskId:long:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "path:serviceName:string:true",
+        "path:taskId:long:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "path:serviceName:string:true",
+        "path:taskId:long:true"
+      ]
+    }
+  },
+  "POST /dedicated/server/{serviceName}/task/{taskId}/schedule": {
+    "CA": {
+      "status": "BETA",
+      "response": "void",
+      "params": [
+        "body:hasPerformedBackup:boolean:true",
+        "body:wantedBeginingDate:datetime:true",
+        "path:serviceName:string:true",
+        "path:taskId:long:true"
+      ]
+    },
+    "EU": {
+      "status": "BETA",
+      "response": "void",
+      "params": [
+        "body:hasPerformedBackup:boolean:true",
+        "body:wantedBeginingDate:datetime:true",
+        "path:serviceName:string:true",
+        "path:taskId:long:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "void",
+      "params": [
+        "body:hasPerformedBackup:boolean:true",
+        "body:wantedBeginingDate:datetime:true",
+        "path:serviceName:string:true",
+        "path:taskId:long:true"
+      ]
+    }
+  },
+  "POST /dedicated/server/{serviceName}/terminate": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "string",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "string",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "string",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "POST /dedicated/server/{serviceName}/virtualMac": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.Task",
+      "params": [
+        "body:ipAddress:ipv4:true",
+        "body:type:dedicated.server.VmacTypeEnum:true",
+        "body:virtualMachineName:string:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.Task",
+      "params": [
+        "body:ipAddress:ipv4:true",
+        "body:type:dedicated.server.VmacTypeEnum:true",
+        "body:virtualMachineName:string:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "dedicated.server.Task",
+      "params": [
+        "body:ipAddress:ipv4:true",
+        "body:type:dedicated.server.VmacTypeEnum:true",
+        "body:virtualMachineName:string:true",
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "POST /ip/{ip}/mitigation": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "ip.MitigationIp",
+      "params": [
+        "body:ipOnMitigation:ipv4:true",
+        "path:ip:ipBlock:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "ip.MitigationIp",
+      "params": [
+        "body:ipOnMitigation:ipv4:true",
+        "path:ip:ipBlock:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "ip.MitigationIp",
+      "params": [
+        "body:ipOnMitigation:ipv4:true",
+        "path:ip:ipBlock:true"
+      ]
+    }
+  },
+  "POST /ip/{ip}/reverse": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "ip.ReverseIp",
+      "params": [
+        "body:ipReverse:ip:true",
+        "body:reverse:string:true",
+        "path:ip:ipBlock:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "ip.ReverseIp",
+      "params": [
+        "body:ipReverse:ip:true",
+        "body:reverse:string:true",
+        "path:ip:ipBlock:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "ip.ReverseIp",
+      "params": [
+        "body:ipReverse:ip:true",
+        "body:reverse:string:true",
+        "path:ip:ipBlock:true"
+      ]
+    }
+  },
+  "POST /me/order/{orderId}/retraction": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "body:comment:text:false",
+        "body:reason:billing.order.RetractionReasonEnum:true",
+        "path:orderId:long:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "body:comment:text:false",
+        "body:reason:billing.order.RetractionReasonEnum:true",
+        "path:orderId:long:true"
+      ]
+    }
+  },
+  "POST /me/task/contactChange/{id}/accept": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "body:token:string:true",
+        "path:id:long:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "body:token:string:true",
+        "path:id:long:true"
+      ]
+    }
+  },
+  "POST /me/task/contactChange/{id}/refuse": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "body:token:string:true",
+        "path:id:long:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "body:token:string:true",
+        "path:id:long:true"
+      ]
+    }
+  },
+  "POST /me/task/contactChange/{id}/resendEmail": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "path:id:long:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "path:id:long:true"
+      ]
+    }
+  },
+  "POST /order/cart": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "order.cart.Cart",
+      "params": [
+        "body::order.cart.Creation:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "order.cart.Cart",
+      "params": [
+        "body::order.cart.Creation:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "order.cart.Cart",
+      "params": [
+        "body::order.cart.Creation:true"
+      ]
+    }
+  },
+  "POST /order/cart/{cartId}/assign": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "path:cartId:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "path:cartId:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "path:cartId:string:true"
+      ]
+    }
+  },
+  "POST /order/cart/{cartId}/checkout": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "order.Order",
+      "params": [
+        "body::order.cart.Checkout:true",
+        "path:cartId:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "order.Order",
+      "params": [
+        "body::order.cart.Checkout:true",
+        "path:cartId:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "order.Order",
+      "params": [
+        "body::order.cart.Checkout:true",
+        "path:cartId:string:true"
+      ]
+    }
+  },
+  "POST /order/cart/{cartId}/eco": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "order.cart.Item",
+      "params": [
+        "body::order.cart.GenericProductCreation:true",
+        "path:cartId:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "order.cart.Item",
+      "params": [
+        "body::order.cart.GenericProductCreation:true",
+        "path:cartId:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "order.cart.Item",
+      "params": [
+        "body::order.cart.GenericProductCreation:true",
+        "path:cartId:string:true"
+      ]
+    }
+  },
+  "POST /order/cart/{cartId}/eco/options": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "order.cart.Item",
+      "params": [
+        "body::order.cart.GenericOptionCreation:true",
+        "path:cartId:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "order.cart.Item",
+      "params": [
+        "body::order.cart.GenericOptionCreation:true",
+        "path:cartId:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "order.cart.Item",
+      "params": [
+        "body::order.cart.GenericOptionCreation:true",
+        "path:cartId:string:true"
+      ]
+    }
+  },
+  "POST /order/cart/{cartId}/item/{itemId}/configuration": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "order.cart.ConfigurationItem",
+      "params": [
+        "body::order.cart.ItemConfigurationCreation:true",
+        "path:cartId:string:true",
+        "path:itemId:long:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "order.cart.ConfigurationItem",
+      "params": [
+        "body::order.cart.ItemConfigurationCreation:true",
+        "path:cartId:string:true",
+        "path:itemId:long:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "order.cart.ConfigurationItem",
+      "params": [
+        "body::order.cart.ItemConfigurationCreation:true",
+        "path:cartId:string:true",
+        "path:itemId:long:true"
+      ]
+    }
+  },
+  "POST /order/cart/{cartId}/vps": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "order.cart.Item",
+      "params": [
+        "body::order.cart.GenericProductCreation:true",
+        "path:cartId:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "order.cart.Item",
+      "params": [
+        "body::order.cart.GenericProductCreation:true",
+        "path:cartId:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "order.cart.Item",
+      "params": [
+        "body::order.cart.GenericProductCreation:true",
+        "path:cartId:string:true"
+      ]
+    }
+  },
+  "POST /services/{serviceId}/billing/engagement/request": {
+    "CA": {
+      "status": "BETA",
+      "response": "services.billing.engagement.EngagementRequest",
+      "params": [
+        "body::services.billing.engagement.EngagementRequestCreation:true",
+        "path:serviceId:long:true"
+      ]
+    },
+    "EU": {
+      "status": "BETA",
+      "response": "services.billing.engagement.EngagementRequest",
+      "params": [
+        "body::services.billing.engagement.EngagementRequestCreation:true",
+        "path:serviceId:long:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "services.billing.engagement.EngagementRequest",
+      "params": [
+        "body::services.billing.engagement.EngagementRequestCreation:true",
+        "path:serviceId:long:true"
+      ]
+    }
+  },
+  "POST /vps/{serviceName}/changeContact": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "long[]",
+      "params": [
+        "body::services.changeContact:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "long[]",
+      "params": [
+        "body::services.changeContact:true",
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "POST /vps/{serviceName}/confirmTermination": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "string",
+      "params": [
+        "body::services.confirmTermination:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "string",
+      "params": [
+        "body::services.confirmTermination:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "string",
+      "params": [
+        "body::services.confirmTermination:true",
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "POST /vps/{serviceName}/createSnapshot": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "vps.Task",
+      "params": [
+        "body::vps.createSnapshot.post:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "vps.Task",
+      "params": [
+        "body::vps.createSnapshot.post:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "vps.Task",
+      "params": [
+        "body::vps.createSnapshot.post:true",
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "POST /vps/{serviceName}/getConsoleUrl": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "string",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "string",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "string",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "POST /vps/{serviceName}/reboot": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "vps.Task",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "vps.Task",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "vps.Task",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "POST /vps/{serviceName}/rebuild": {
+    "CA": {
+      "status": "BETA",
+      "response": "vps.Task",
+      "params": [
+        "body::vps.rebuild.post:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "BETA",
+      "response": "vps.Task",
+      "params": [
+        "body::vps.rebuild.post:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "vps.Task",
+      "params": [
+        "body::vps.rebuild.post:true",
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "POST /vps/{serviceName}/secondaryDnsDomains": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "body::vps.secondaryDnsDomains.post:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "body::vps.secondaryDnsDomains.post:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "void",
+      "params": [
+        "body::vps.secondaryDnsDomains.post:true",
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "POST /vps/{serviceName}/snapshot/revert": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "vps.Task",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "vps.Task",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "vps.Task",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "POST /vps/{serviceName}/start": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "vps.Task",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "vps.Task",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "vps.Task",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "POST /vps/{serviceName}/stop": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "vps.Task",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "vps.Task",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "vps.Task",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "POST /vps/{serviceName}/terminate": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "string",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "string",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "string",
+      "params": [
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "PUT /dedicated/server/{serviceName}": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "body::dedicated.server.Dedicated:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "body::dedicated.server.Dedicated:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "body::dedicated.server.Dedicated:true",
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "PUT /dedicated/server/{serviceName}/burst": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "body::dedicated.server.ServerBurst:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "body::dedicated.server.ServerBurst:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "body::dedicated.server.ServerBurst:true",
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "PUT /dedicated/server/{serviceName}/features/firewall": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "body::dedicated.server.Firewall:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "body::dedicated.server.Firewall:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "body::dedicated.server.Firewall:true",
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "PUT /dedicated/server/{serviceName}/serviceInfos": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "body::services.Service:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "body::services.Service:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "body::services.Service:true",
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "PUT /services/{serviceId}": {
+    "CA": {
+      "status": "BETA",
+      "response": "void",
+      "params": [
+        "body::services.update.Service:true",
+        "path:serviceId:long:true"
+      ]
+    },
+    "EU": {
+      "status": "BETA",
+      "response": "void",
+      "params": [
+        "body::services.update.Service:true",
+        "path:serviceId:long:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "void",
+      "params": [
+        "body::services.update.Service:true",
+        "path:serviceId:long:true"
+      ]
+    }
+  },
+  "PUT /services/{serviceId}/billing/engagement/endRule": {
+    "CA": {
+      "status": "BETA",
+      "response": "void",
+      "params": [
+        "body::services.billing.engagement.UpdateEndRuleRequest:true",
+        "path:serviceId:long:true"
+      ]
+    },
+    "EU": {
+      "status": "BETA",
+      "response": "void",
+      "params": [
+        "body::services.billing.engagement.UpdateEndRuleRequest:true",
+        "path:serviceId:long:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "void",
+      "params": [
+        "body::services.billing.engagement.UpdateEndRuleRequest:true",
+        "path:serviceId:long:true"
+      ]
+    }
+  },
+  "PUT /vps/{serviceName}": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "body::vps.VPS:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "body::vps.VPS:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "void",
+      "params": [
+        "body::vps.VPS:true",
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "PUT /vps/{serviceName}/ips/{ipAddress}": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "body::vps.Ip:true",
+        "path:ipAddress:ip:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "body::vps.Ip:true",
+        "path:ipAddress:ip:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "void",
+      "params": [
+        "body::vps.Ip:true",
+        "path:ipAddress:ip:true",
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "PUT /vps/{serviceName}/serviceInfos": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "body::services.Service:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "body::services.Service:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "void",
+      "params": [
+        "body::services.Service:true",
+        "path:serviceName:string:true"
+      ]
+    }
+  },
+  "PUT /vps/{serviceName}/snapshot": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "body::vps.Snapshot:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "body::vps.Snapshot:true",
+        "path:serviceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "void",
+      "params": [
+        "body::vps.Snapshot:true",
+        "path:serviceName:string:true"
+      ]
+    }
+  }
+}

@@ -15,20 +15,17 @@ type Config struct {
 	IAM         string `json:"iam"`
 	Zone        string `json:"zone"`
 
-	// TgWebhookSecret Telegram setWebhook 的 secret_token。Telegram 会在每次回调里带
-	// X-Telegram-Bot-Api-Secret-Token 头，用它证明请求真的来自 Telegram。
-	// 首次需要时自动生成并落库；GetSettings 不会把它回给前端。
-	TgWebhookSecret string `json:"tgWebhookSecret,omitempty"`
 	// NotifyWebhookURL 第二条通知通道:一个接收 JSON POST 的地址(钉钉/飞书/Bark/自建都行)。
 	// 补货监控的全部价值就是"有货那一刻你能收到消息",单通道意味着 Telegram 一挂就全盲。
 	NotifyWebhookURL string `json:"notifyWebhookUrl,omitempty"`
-	// TgWebhookSecretRegistered secret 是否已经推给 Telegram（setWebhook 成功过）。
-	// false 时 webhook 处于兼容模式：不强制校验 secret，避免升级后老用户的按钮直接全挂。
-	TgWebhookSecretRegistered bool `json:"tgWebhookSecretRegistered,omitempty"`
 
 	// DefaultRetryInterval 新建抢购任务的默认重试间隔(秒)。
+	// 网页弹窗、TG /buy、上架通知里的一键下单按钮不显式指定时都用它。
+	// 以前四条入队路径各写各的(30 / 30 / 30,前端弹窗还显示 60),用户既改不了也对不上。
 	DefaultRetryInterval int `json:"defaultRetryInterval,omitempty"`
-	// QuickOrderRetryInterval 监控触发的自动下单用的重试间隔(秒)。
+	// QuickOrderRetryInterval 监控触发的自动下单(/watch 自动抢)用的重试间隔(秒)。
+	// 单独一个值是因为场景不同:货刚出现那一刻要抢,窗口可能只有几十秒,
+	// 所以默认比普通任务激进得多;但太密会吃 OVH 的 429,这里交给用户自己权衡。
 	QuickOrderRetryInterval int `json:"quickOrderRetryInterval,omitempty"`
 }
 
@@ -38,13 +35,36 @@ const (
 	DefaultQuickRetryInterval = 2
 	MinRetryInterval          = 1
 	MaxRetryInterval          = 86400
-
-	// MaxQueueItems 队列上限(兼容旧代码，别名指向 MaxQueueSize 500)
-	MaxQueueItems = MaxQueueSize
 )
 
 // ClampRetryInterval 把重试间隔夹到合法区间;<= 0 视为"没设",退回 fallback。
-// 间隔为 0 时处理器 `now - last >= 0` 恒真,任务会每秒重试把 OVH 刷到 429。
+//
+// 处理器、入队路径、设置保存都走这一个函数。0 必须兜住:处理器的就绪判断是
+// `now - last >= interval`,间隔为 0 时恒真,任务会每秒重试一次把 OVH 刷到 429 ——
+// 旧库里 retry_interval 列后加的行、任何忘了设这个字段的入队路径都会踩到。
+// —— 下单规模上限 ——
+//
+// 这几个数原来只写在 telegram 包里,于是只有 TG 那条路受保护。
+// 网页端建任务的循环是 `for dc { for i < qty { POST /queue } }`,两个上界都没有:
+// 数量填 9999、选 5 个机房 = 约 5 万次串行请求,浏览器卡死、库里塞 5 万条任务,
+// 而每一条都是一次真实的下单尝试。多打一个数字的代价不该是这个。
+//
+// 放在 types 里是为了让所有入队路径共用同一份约束 —— 之前"能力在一条路径有、
+// 另一条没有"已经出过好几次问题了。
+const (
+	// MaxOrderQuantity 单个机房最多下几台。
+	// 没有上限时 "planCode 4000000000" 会让入队方先把 40 亿个 QueueItem
+	// append 进一个切片 —— 进程当场 OOM 被杀。
+	MaxOrderQuantity = 20
+	// MaxOrderFanout 一次操作最多创建多少个抢购任务。
+	// 不指定机房时任务数 = 配置数 × 机房数 × 数量,很容易远超用户直觉。
+	MaxOrderFanout = 60
+	// MaxQueueItems 队列里最多存多少条任务。
+	// 这是最后一道闸:不管任务从哪条路进来(网页 / 快速下单 / TG / 监控自动下单),
+	// 超过这个数一律拒绝。每条任务都是一次真实下单尝试,正常用法离这个数很远。
+	MaxQueueItems = 500
+)
+
 func ClampRetryInterval(v, fallback int) int {
 	if v <= 0 {
 		v = fallback
@@ -100,13 +120,25 @@ type OVHAccount struct {
 	ConsumerKey string `json:"consumerKey"`
 	IAM         string `json:"iam"`       // go-ovh-<zone-lower>
 	IsDefault   bool   `json:"isDefault"` // 默认账户（未指定时 fallback 用它）
-	CreatedAt          string `json:"createdAt"`
-	ProxyURL           string `json:"proxyUrl,omitempty"`
-	Fingerprint        string `json:"fingerprint,omitempty"`
-	CredState          string `json:"credState,omitempty"`          // unverified / verified / invalid / expired (D-01)
-	CredCheckedAt      string `json:"credCheckedAt,omitempty"`
-	CredEvidence       string `json:"credEvidence,omitempty"`
-	VerificationReason string `json:"verificationReason,omitempty"`
+	CreatedAt   string `json:"createdAt"`
+
+	// ProxyURL 这个账户的出站代理。空 = 直连。
+	//
+	//	http://user:pass@host:port
+	//	socks5://user:pass@host:port
+	//
+	// 为什么要按账户隔离出口:OVH 的限流是按来源 IP 算的,多个账户共用一个出口时
+	// 一个账户被限流会把其它账户一起拖下水 —— 而这恰好发生在补货那一刻。
+	//
+	// 带凭据,所以和 AppSecret 一样加密落盘;GetAccounts 回前端时打码。
+	ProxyURL string `json:"proxyUrl,omitempty"`
+
+	// Fingerprint 出站指纹配置名(见 internal/netfp.Profiles)。空 = default。
+	//
+	// 注意它能做到的程度有限:Go 标准库不允许控制 JA3 的主要构成要素
+	// (套件顺序被忽略、TLS 1.3 套件不可配、扩展顺序固定),
+	// 所以这里改的是 TLS 版本区间、ALPN/h2、以及 UA 这类头。详见 netfp 包的说明。
+	Fingerprint string `json:"fingerprint,omitempty"`
 }
 
 // QueueItem 抢购队列项
@@ -134,13 +166,8 @@ type QueueItem struct {
 	// (checkout 的 autoPayWithPreferredPaymentMethod,schema 描述:
 	// "order will be automatically paid with preferred payment method")。
 	// 默认 false:自动扣钱必须是用户显式打开的开关,不能是隐含行为。
-	AutoPay bool `json:"autoPay,omitempty"`
-	// Force 用户强制允许自定义或未收录型号入队
-	Force              bool   `json:"force,omitempty"`
+	AutoPay            bool   `json:"autoPay,omitempty"`
 	ConfigSniperTaskID string `json:"configSniperTaskId,omitempty"`
-	// Telegram 进度回写：入队时记下原消息，抢购过程用 editMessageText 更新。
-	TelegramChatID    string `json:"telegramChatId,omitempty"`
-	TelegramMessageID int64  `json:"telegramMessageId,omitempty"`
 }
 
 // PriceInfo 价格信息
@@ -245,7 +272,16 @@ type Subscription struct {
 	Quantity           int                        `json:"quantity,omitempty"`
 	AutoOrderAccountID string                     `json:"autoOrderAccountId,omitempty"` // 空 = 触发时只通知不下单
 	// AutoPay 下单成功后用默认支付方式自动付款(显式开关,默认关)
-	AutoPay bool     `json:"autoPay,omitempty"`
+	AutoPay bool `json:"autoPay,omitempty"`
+	// Options 只盯这套配置(addon planCode 列表,如 ram-64g / softraid-2x480ssd)。
+	//
+	// 空 = 盯这个 planCode 的**全部**配置,也是一直以来的行为。
+	//
+	// 为什么需要它:一个 planCode 底下往往有好几套内存/存储组合,监控是按
+	// planCode 做的,通知和自动下单则是**按配置逐套触发**。于是
+	// "自动抢 1 台"在三套配置同时补货时会下三次单(还要再乘以机房数) ——
+	// 用户想要的往往是"只盯 64G + 2x480SSD 那套"。
+	// 没有这个字段之前,他没有任何办法表达这件事。
 	Options []string `json:"options,omitempty"`
 }
 

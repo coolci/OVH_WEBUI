@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ovh-webui/server/internal/app"
+	"github.com/ovh-webui/server/internal/netfp"
 	"github.com/ovh-webui/server/internal/ovh"
 )
 
@@ -67,7 +68,9 @@ var probeRegionHasPlan = func(region, planCode string) (bool, error) {
 	q.Set("planCode", planCode)
 	reqURL := ovh.APIBaseURLForRegion(region) + "/v1/dedicated/server/datacenter/availabilities?" + q.Encode()
 
-	client := &http.Client{Timeout: 20 * time.Second}
+	// 区域探测是在"还不知道该用哪个账户"的时候跑的,天然没有账户维度,
+	// 走统一出口
+	client := netfp.Shared(20 * time.Second)
 	resp, err := client.Get(reqURL)
 	if err != nil {
 		return false, err

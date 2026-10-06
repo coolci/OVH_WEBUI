@@ -36,15 +36,15 @@ func QuickOrder(state *app.State) gin.HandlerFunc {
 		}
 		_ = c.ShouldBindJSON(&body)
 		if body.PlanCode == "" || body.Datacenter == "" {
-			c.JSON(http.StatusOK, gin.H{"success": false, "error": "缺少 planCode 或 datacenter"})
+			c.JSON(http.StatusOK, gin.H{"success": false, "error": "缺少 planCode 或 datacenter", "code": "E75DA4B08"})
 			return
 		}
 		if body.AccountID == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少 account_id"})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少 account_id", "code": "E34CBF1D4"})
 			return
 		}
 		if _, ok := state.FindAccount(body.AccountID); !ok {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "account_id 不存在"})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "account_id 不存在", "code": "E7B315B13"})
 			return
 		}
 		options := body.Options
@@ -134,24 +134,46 @@ func QuickOrder(state *app.State) gin.HandlerFunc {
 		}
 		if priceResult.Price == nil {
 			state.Logger.Warn("快速下单前价格校验失败: price字段缺失", "quick_order")
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "价格查询返回数据格式异常：缺少price字段"})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "价格查询返回数据格式异常：缺少price字段", "code": "EBCF58A32"})
 			return
 		}
 		withTaxRaw, _ := priceResult.Price.Prices["withTax"]
 		if withTaxRaw == nil {
 			state.Logger.Warn("快速下单前价格缺失或无效: "+body.PlanCode+"@"+body.Datacenter, "quick_order")
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "该组合暂无有效价格，暂不支持下单"})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "该组合暂无有效价格，暂不支持下单", "code": "EE94F16EB"})
 			return
 		}
 		if f, ok := numconv.ToFloat64(withTaxRaw); ok && f == 0 {
 			state.Logger.Warn("快速下单前价格缺失或无效: "+body.PlanCode+"@"+body.Datacenter, "quick_order")
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "该组合暂无有效价格，暂不支持下单"})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "该组合暂无有效价格，暂不支持下单", "code": "EE94F16EB"})
 			return
 		}
 
 		// 去重:防止同一 plan@dc + 同 options 的任务被重复入队(除非监控来源 + 显式跳过)
 		quickOrderMu.Lock()
 		defer quickOrderMu.Unlock()
+		// 监控跳过的只是"队列里已有同配置任务"检查 —— 它在补货窗口内本来就该能重新入队。
+		// 但"120 秒内同配置已成功下过单"这道闸门对监控同样生效:监控的 lastStatus 在
+		// 验价 429 抖动时会走 price_check_failed → available 的来回,状态机表达不了
+		// "这个窗口已经买过",唯一能表达的就是近期成功史,跳过它 = 同一窗口重复下单
+		if body.FromMonitor && body.SkipDuplicateCheck {
+			fp0 := fingerprint(options)
+			nowTS0 := time.Now().Unix()
+			state.HistoryMu.Lock()
+			for i := len(state.History) - 1; i >= 0; i-- {
+				h := state.History[i]
+				if h.PlanCode == body.PlanCode && h.Datacenter == body.Datacenter && h.Status == "success" &&
+					fingerprint(h.Options) == fp0 {
+					if t, ok := types.ParseTS(h.PurchaseTime); ok && nowTS0-t.Unix() < 120 {
+						state.HistoryMu.Unlock()
+						state.Logger.Info("监控来源:近期已成功下过同配置订单,拒绝(防同窗口重复下单)", "quick_order")
+						c.JSON(http.StatusTooManyRequests, gin.H{"success": false, "error": "该配置刚刚已成功下单(120 秒内),不再重复下单", "code": "EF4FA206C"})
+						return
+					}
+				}
+			}
+			state.HistoryMu.Unlock()
+		}
 		if !(body.FromMonitor && body.SkipDuplicateCheck) {
 			fp := fingerprint(options)
 			state.QueueMu.Lock()
@@ -161,7 +183,7 @@ func QuickOrder(state *app.State) gin.HandlerFunc {
 					fingerprint(it.Options) == fp {
 					state.QueueMu.Unlock()
 					state.Logger.Info("检测到重复的队列任务（含配置），拒绝再次入队", "quick_order")
-					c.JSON(http.StatusTooManyRequests, gin.H{"success": false, "error": "已存在相同配置的购买任务，稍后再试"})
+					c.JSON(http.StatusTooManyRequests, gin.H{"success": false, "error": "已存在相同配置的购买任务，稍后再试", "code": "EE77AF09E"})
 					return
 				}
 			}
@@ -173,11 +195,14 @@ func QuickOrder(state *app.State) gin.HandlerFunc {
 				h := state.History[i]
 				if h.PlanCode == body.PlanCode && h.Datacenter == body.Datacenter && h.Status == "success" &&
 					fingerprint(h.Options) == fp {
+					// PurchaseTime 是 types.NowISO() 写的,不带时区 —— 用 RFC3339Nano
+					// 解必然失败,于是这道"刚刚已经买成过同款,别再买一次"的闸门
+					// 一直是死代码。它拦的是重复扣款,不是显示问题。
 					if t, ok := types.ParseTS(h.PurchaseTime); ok {
 						if nowTS-t.Unix() < 120 {
 							state.HistoryMu.Unlock()
 							state.Logger.Info("检测到近期成功订单，拒绝再次入队", "quick_order")
-							c.JSON(http.StatusTooManyRequests, gin.H{"success": false, "error": "刚刚已成功下过同配置订单，稍后再试"})
+							c.JSON(http.StatusTooManyRequests, gin.H{"success": false, "error": "刚刚已成功下过同配置订单，稍后再试", "code": "EF4FA206C"})
 							return
 						}
 					}
@@ -203,7 +228,8 @@ func QuickOrder(state *app.State) gin.HandlerFunc {
 			// 一旦库存持续可见而下单侧连续吃 429/5xx,任务用尽轮次置 failed 后
 			// 就再也没人补这一枪 —— 自动下单会静默停摆到库存先消失再回来。
 			// 20 次真实失败已经足够说明不是偶发抖动;确定性错误另有 Fatal 闸门当场终止。
-			MaxRetries:    20,
+			MaxRetries: 20,
+			// 监控触发的自动下单用单独的(更激进的)间隔,设置页可改
 			RetryInterval: state.Config.QuickOrderRetryInterval(),
 			CreatedAt:     now,
 			UpdatedAt:     now,

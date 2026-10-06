@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/ovh-webui/server/internal/app"
+	"github.com/ovh-webui/server/internal/ovh"
 )
 
 // GetMitigation GET /api/server-control/:service_name/mitigation
@@ -29,7 +30,7 @@ func GetMitigation(state *app.State) gin.HandlerFunc {
 		}
 		var ipBlocks []string
 		if err := client.Get("/dedicated/server/"+svc+"/ips", &ipBlocks); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		type ipResult struct {
@@ -126,14 +127,14 @@ func EnableMitigation(state *app.State) gin.HandlerFunc {
 		ip := c.Param("ip")
 		ipBlock := c.Query("block")
 		if ipBlock == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少 block 参数(IP 所属的 ipBlock)"})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少 block 参数(IP 所属的 ipBlock)", "code": "E3694F9E8"})
 			return
 		}
 		// OVH ipOnMitigation 字段是 ipv4 类型,IPv6 走过去会 400
 		if !strings.Contains(ip, ".") || strings.Contains(ip, ":") {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"success": false,
-				"error":   "OVH anti-DDoS Mitigation 只支持 IPv4。IPv6 地址默认有网络层免疫",
+				"error":   "OVH anti-DDoS Mitigation 只支持 IPv4。IPv6 地址默认有网络层免疫", "code": "E694446BE",
 			})
 			return
 		}
@@ -146,11 +147,11 @@ func EnableMitigation(state *app.State) gin.HandlerFunc {
 		var result map[string]interface{}
 		if err := client.Post("/ip/"+encoded+"/mitigation",
 			map[string]interface{}{"ipOnMitigation": ip}, &result); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		state.Logger.Info("启用 IP "+ip+" 的永久 DDoS 缓解", "server_control")
-		c.JSON(http.StatusOK, gin.H{"success": true, "message": "DDoS 缓解已启用", "mitigation": result})
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "DDoS 缓解已启用", "code": "ED793E10A", "mitigation": result})
 	}
 }
 
@@ -161,11 +162,11 @@ func DisableMitigation(state *app.State) gin.HandlerFunc {
 		ip := c.Param("ip")
 		ipBlock := c.Query("block")
 		if ipBlock == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少 block 参数"})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少 block 参数", "code": "E4079B204"})
 			return
 		}
 		if !strings.Contains(ip, ".") || strings.Contains(ip, ":") {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "IPv6 不支持 anti-DDoS Mitigation"})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "IPv6 不支持 anti-DDoS Mitigation", "code": "ED5483A75"})
 			return
 		}
 		client, err := ovhClientFor(state, c)
@@ -175,10 +176,10 @@ func DisableMitigation(state *app.State) gin.HandlerFunc {
 		}
 		encoded := strings.ReplaceAll(ipBlock, "/", "%2F")
 		if err := client.Delete("/ip/"+encoded+"/mitigation/"+ip, nil); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		state.Logger.Info("关闭 IP "+ip+" 的永久 DDoS 缓解", "server_control")
-		c.JSON(http.StatusOK, gin.H{"success": true, "message": "DDoS 缓解已关闭"})
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "DDoS 缓解已关闭", "code": "E3830D769"})
 	}
 }

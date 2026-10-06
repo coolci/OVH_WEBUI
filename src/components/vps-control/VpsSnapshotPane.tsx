@@ -7,13 +7,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/common/Skeleton";
 import { EmptyState } from "@/components/common/EmptyState";
+import { LoadFailed, errorMessage } from "@/components/common/LoadFailed";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { Trans, useTranslation } from "react-i18next";
+import { fmtDateTime } from "@/i18n/format";
 
 /** VPS 快照管理:OVH 免费档同时只允许 1 个,所以本 pane 只展示单快照 + 操作 */
 export function VpsSnapshotPane({ serviceName }: { serviceName: string }) {
+  const { t } = useTranslation();
   const snap = useVpsSnapshot(serviceName);
   const create = useCreateVpsSnapshot(serviceName);
   const update = useUpdateVpsSnapshot(serviceName);
@@ -28,52 +32,65 @@ export function VpsSnapshotPane({ serviceName }: { serviceName: string }) {
   const [editDesc, setEditDesc] = useState("");
 
   if (snap.isPending) return <Skeleton className="h-40 rounded-2xl" />;
+  // 快照读失败 ≠ 没有快照。
+  // 后端在 OVH 返 404(确实没做过快照)时会转成 200 + snapshot:null,所以走到 isError 一定是没问到。
+  // 这时如果还按下面的「暂无快照」渲染,有两个实打实的后果:
+  //   1. 用户以为回滚点没了,白白重做一遍准备工作,或者干脆放弃回滚;
+  //   2. 顺手点「创建快照」,撞上 OVH 的"已存在快照"(免费档每台只允许 1 个),白等一次报错。
+  if (snap.isError) {
+    return (
+      <LoadFailed
+        icon={Camera}
+        title={t("vps.snapshot.loadFailed")}
+        error={snap.error}
+        onRetry={() => snap.refetch()}
+      />
+    );
+  }
 
   const handleCreate = async () => {
     try {
       await create.mutateAsync({ description: createDesc });
-      toast.success("快照创建任务已提交,通常 1-3 分钟完成");
+      toast.success(t("vps.snapshot.toast.created"));
       setCreateOpen(false);
       setCreateDesc("");
     } catch (e: any) {
-      toast.error(e?.response?.data?.error || "创建失败");
+      toast.error(errorMessage(e));
     }
   };
 
   const handleRevert = async () => {
     if (revertConfirm !== serviceName) {
-      toast.error("VPS 名称不匹配");
+      toast.error(t("vps.snapshot.toast.nameMismatch"));
       return;
     }
     try {
       await revert.mutateAsync();
-      toast.success("回滚任务已提交,VPS 即将进入维护态");
+      toast.success(t("vps.snapshot.toast.reverted"));
       setRevertOpen(false);
       setRevertConfirm("");
     } catch (e: any) {
-      toast.error(e?.response?.data?.error || "回滚失败");
+      toast.error(errorMessage(e));
     }
   };
 
-  const [deleteOpen, setDeleteOpen] = useState(false);
-
   const handleDelete = async () => {
+    if (!confirm(t("vps.snapshot.deleteConfirm"))) return;
     try {
       await remove.mutateAsync();
-      toast.success("快照已删除");
-      setDeleteOpen(false);
+      toast.success(t("vps.snapshot.toast.deleted"));
     } catch (e: any) {
-      toast.error(e?.response?.data?.error || "删除失败");
+      toast.error(errorMessage(e));
     }
   };
 
   const handleEditDesc = async () => {
     try {
       await update.mutateAsync({ description: editDesc });
-      toast.success("快照描述已更新");
+      toast.success(t("vps.snapshot.toast.descUpdated"));
       setEditOpen(false);
     } catch (e: any) {
-      toast.error(e?.response?.data?.error || "更新失败");
+      toast.error(errorMessage(e));
     }
   };
 
@@ -83,13 +100,13 @@ export function VpsSnapshotPane({ serviceName }: { serviceName: string }) {
         <div className="border border-border rounded-2xl p-6">
           <EmptyState
             icon={Camera}
-            title="暂无快照"
-            description="OVH 免费档每台 VPS 同时只能存 1 个快照。改大动作前先做一个,出问题能 1 分钟回滚"
+            title={t("vps.snapshot.empty")}
+            description={t("vps.snapshot.emptyDesc")}
           />
           <div className="flex justify-center mt-2">
             <Button onClick={() => setCreateOpen(true)} disabled={create.isPending}>
               <Plus className="w-4 h-4 mr-1" />
-              创建快照
+              {t("vps.snapshot.createBtn")}
             </Button>
           </div>
         </div>
@@ -108,18 +125,22 @@ export function VpsSnapshotPane({ serviceName }: { serviceName: string }) {
   const s = snap.data;
   return (
     <div className="space-y-3">
-      <div className="border border-emerald-500/40 bg-emerald-500/5 rounded-2xl p-4 space-y-2.5">
+      <div className="border border-success/40 bg-success/5 rounded-2xl p-4 space-y-2.5">
         <div className="flex items-center gap-2 flex-wrap">
-          <Camera className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-          <h3 className="text-sm font-semibold">当前快照</h3>
+          <Camera className="w-4 h-4 text-success" />
+          <h3 className="text-sm font-semibold">{t("vps.snapshot.currentTitle")}</h3>
           <code className="ml-auto text-[10px] font-mono text-muted-foreground">#{s.id}</code>
         </div>
         <div className="text-[12px] space-y-1">
           {s.description && <div className="font-medium">{s.description}</div>}
           <div className="text-muted-foreground">
-            创建时间: {s.creationDate ? new Date(s.creationDate).toLocaleString("zh-CN") : "—"}
+            {t("vps.snapshot.creationDate", {
+              time: s.creationDate ? fmtDateTime(s.creationDate) : "—",
+            })}
           </div>
-          {s.region && <div className="text-muted-foreground">区域: {s.region}</div>}
+          {s.region && (
+            <div className="text-muted-foreground">{t("vps.snapshot.region", { region: s.region })}</div>
+          )}
         </div>
         <div className="flex flex-wrap gap-2 pt-1">
           <Button
@@ -131,7 +152,7 @@ export function VpsSnapshotPane({ serviceName }: { serviceName: string }) {
             }}
           >
             <Pencil className="w-3.5 h-3.5 mr-1" />
-            改描述
+            {t("vps.snapshot.editDescBtn")}
           </Button>
           <Button
             size="sm"
@@ -140,17 +161,17 @@ export function VpsSnapshotPane({ serviceName }: { serviceName: string }) {
             disabled={revert.isPending}
           >
             <RotateCcw className="w-3.5 h-3.5 mr-1" />
-            回滚到此快照
+            {t("vps.snapshot.revertBtn")}
           </Button>
-          <Button size="sm" variant="outline" onClick={() => setDeleteOpen(true)} disabled={remove.isPending}>
+          <Button size="sm" variant="outline" onClick={handleDelete} disabled={remove.isPending}>
             <Trash2 className="w-3.5 h-3.5 mr-1" />
-            删除快照
+            {t("vps.snapshot.deleteBtn")}
           </Button>
         </div>
       </div>
 
       <p className="text-[11px] text-muted-foreground px-1">
-        免费档单 VPS 只能存 1 个快照。要做新快照得先删旧的。
+        {t("vps.snapshot.singleWarn")}
       </p>
 
       {/* 创建快照对话框(仅用于「改描述」时复用?其实不需要这里渲染,数据存在时不会触发 createOpen) */}
@@ -167,19 +188,19 @@ export function VpsSnapshotPane({ serviceName }: { serviceName: string }) {
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>修改快照描述</DialogTitle>
+            <DialogTitle>{t("vps.snapshot.editTitle")}</DialogTitle>
           </DialogHeader>
           <Input
             value={editDesc}
             onChange={(e) => setEditDesc(e.target.value)}
-            placeholder="给快照一段描述,方便日后辨识"
+            placeholder={t("vps.snapshot.descPlaceholder")}
           />
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditOpen(false)}>
-              取消
+              {t("common.cancel")}
             </Button>
             <Button onClick={handleEditDesc} disabled={update.isPending}>
-              {update.isPending ? "保存中…" : "保存"}
+              {update.isPending ? t("vps.snapshot.saving") : t("common.save")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -191,21 +212,25 @@ export function VpsSnapshotPane({ serviceName }: { serviceName: string }) {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-destructive" />
-              回滚到此快照?
+              {t("vps.snapshot.revertTitle")}
             </DialogTitle>
-            <DialogDescription>这个操作不可逆</DialogDescription>
+            <DialogDescription>{t("vps.snapshot.revertDesc")}</DialogDescription>
           </DialogHeader>
           <div className="border border-destructive/40 bg-destructive/5 rounded-xl p-3 space-y-1.5 text-[12px]">
-            <p className="font-semibold text-destructive">快照之后所有改动会丢失:</p>
+            <p className="font-semibold text-destructive">{t("vps.snapshot.revertWarnTitle")}</p>
             <ul className="list-disc pl-5 text-muted-foreground space-y-0.5">
-              <li>文件系统回到 {new Date(s.creationDate).toLocaleString("zh-CN")} 那一刻</li>
-              <li>VPS 会自动重启,期间几分钟无法访问</li>
-              <li>IP / 密码 等元数据不变</li>
+              <li>{t("vps.snapshot.revertItemFs", { time: fmtDateTime(s.creationDate) })}</li>
+              <li>{t("vps.snapshot.revertItemReboot")}</li>
+              <li>{t("vps.snapshot.revertItemMeta")}</li>
             </ul>
           </div>
           <div>
             <label className="text-[12px] block mb-1.5">
-              请输入 VPS 名称 <code className="font-mono">{serviceName}</code> 确认:
+              <Trans
+                i18nKey="vps.snapshot.confirmNameLabel"
+                values={{ name: serviceName }}
+                components={{ code: <code className="font-mono" /> }}
+              />
             </label>
             <Input
               value={revertConfirm}
@@ -215,48 +240,14 @@ export function VpsSnapshotPane({ serviceName }: { serviceName: string }) {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setRevertOpen(false)}>
-              取消
+              {t("common.cancel")}
             </Button>
             <Button
               variant="destructive"
               onClick={handleRevert}
               disabled={revert.isPending || revertConfirm !== serviceName}
             >
-              {revert.isPending ? "回滚中…" : "确认回滚"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* 删除快照确认 */}
-      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-destructive" />
-              删除当前快照？
-            </DialogTitle>
-            <DialogDescription>
-              确定要删除快照 #{s.id} 吗？删除后将无法恢复，且无法再回滚至此版本。
-            </DialogDescription>
-          </DialogHeader>
-          <div className="border border-destructive/40 bg-destructive/5 rounded-xl p-3 space-y-1 text-[12px]">
-            <p className="font-semibold text-destructive">删除快照不会影响当前运行中的 VPS：</p>
-            <ul className="list-disc pl-5 text-muted-foreground space-y-0.5">
-              <li>释放免费档快照配额，以便后续创建新快照</li>
-              <li>历史快照数据将永久清除</li>
-            </ul>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteOpen(false)}>
-              取消
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleDelete}
-              disabled={remove.isPending}
-            >
-              {remove.isPending ? "删除中…" : "确认删除"}
+              {revert.isPending ? t("vps.snapshot.reverting") : t("vps.snapshot.revertConfirmBtn")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -280,24 +271,25 @@ function CreateDialog({
   onConfirm: () => void;
   pending: boolean;
 }) {
+  const { t } = useTranslation();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>创建快照</DialogTitle>
-          <DialogDescription>OVH 会暂停 VPS 30 秒-3 分钟做快照,期间网络中断</DialogDescription>
+          <DialogTitle>{t("vps.snapshot.createTitle")}</DialogTitle>
+          <DialogDescription>{t("vps.snapshot.createDesc")}</DialogDescription>
         </DialogHeader>
         <Input
           value={desc}
           onChange={(e) => setDesc(e.target.value)}
-          placeholder="描述(可选),如 装 nginx 前"
+          placeholder={t("vps.snapshot.createPlaceholder")}
         />
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            取消
+            {t("common.cancel")}
           </Button>
           <Button onClick={onConfirm} disabled={pending}>
-            {pending ? "创建中…" : "创建快照"}
+            {pending ? t("vps.snapshot.creating") : t("vps.snapshot.createBtn")}
           </Button>
         </DialogFooter>
       </DialogContent>

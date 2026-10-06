@@ -101,28 +101,36 @@ func (m *Monitor) defaultCurrencyForAccount(accountID string) string {
 // 加区账户的监控里是有歧义的,CAD 和 USD 差着三成汇率。
 // 没有独占符号的币种(MAD/TND/XOF...)直接印 ISO 代码。
 func formatMoney(currency string, v float64) string {
+	return formatAmount(currency, v) + "/月"
+}
+
+// formatAmount 只格式化金额,不带周期后缀。
+//
+// 拆出来是因为安装费是**一次性**的 —— 用 formatMoney 会印成 "€17.99/月",
+// 把一笔一次性费用说成月付,直接误导花多少钱。
+func formatAmount(currency string, v float64) string {
 	switch strings.ToUpper(currency) {
 	case "EUR":
-		return fmt.Sprintf("€%.2f/月", v)
+		return fmt.Sprintf("€%.2f", v)
 	case "GBP":
-		return fmt.Sprintf("£%.2f/月", v)
+		return fmt.Sprintf("£%.2f", v)
 	case "INR":
-		return fmt.Sprintf("₹%.2f/月", v)
+		return fmt.Sprintf("₹%.2f", v)
 	case "PLN":
-		return fmt.Sprintf("%.2f zł/月", v)
+		return fmt.Sprintf("%.2f zł", v)
 	case "USD":
-		return fmt.Sprintf("US$%.2f/月", v)
+		return fmt.Sprintf("US$%.2f", v)
 	case "CAD":
-		return fmt.Sprintf("CA$%.2f/月", v)
+		return fmt.Sprintf("CA$%.2f", v)
 	case "AUD":
-		return fmt.Sprintf("A$%.2f/月", v)
+		return fmt.Sprintf("A$%.2f", v)
 	case "SGD":
-		return fmt.Sprintf("S$%.2f/月", v)
+		return fmt.Sprintf("S$%.2f", v)
 	case "":
 		// 连账户子公司都推不出来:只给数字 + 明确提示,不冒充任何币种
-		return fmt.Sprintf("%.2f/月(币种未知)", v)
+		return fmt.Sprintf("%.2f(币种未知)", v)
 	default:
-		return fmt.Sprintf("%.2f %s/月", v, strings.ToUpper(currency))
+		return fmt.Sprintf("%.2f %s", v, strings.ToUpper(currency))
 	}
 }
 
@@ -306,4 +314,25 @@ func (m *Monitor) getPriceWithTimeout(planCode, datacenter string, configInfo ma
 		m.state.Logger.Warn("价格获取超时，发送不带价格的通知。后台请求将继续运行直到完成。", "monitor")
 		return "", errMsg
 	}
+}
+
+// installPriceText 这套配置的一次性安装费。拿不到就返回空串 —— 通知里那一行直接不出现。
+//
+// 用目录算而不是询价:询价要建购物车 → 加商品 → 拿 summary → 删车,一次好几秒,
+// 而补货通知的全部价值就是"有货那一刻立刻发出去"。目录有 2 小时缓存,也不占账户配额。
+func (m *Monitor) installPriceText(planCode, accountID string, options []string) string {
+	p, err := catalog.PriceForOptions(m.state, accountID, planCode, options)
+	if err != nil {
+		m.state.Logger.Debug("安装费取不到("+planCode+"): "+err.Error(), "monitor")
+		return ""
+	}
+	if p.Install <= 0 {
+		return ""
+	}
+	text := formatAmount(p.Currency, p.Install)
+	if p.Partial {
+		// 有 addon 不在目录里 —— 这个数字偏低。说出来,别让用户按一个错的预期下单。
+		text += "（部分 addon 未计入，实际可能更高）"
+	}
+	return text
 }

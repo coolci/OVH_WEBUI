@@ -1,7 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
 import { api } from "@/lib/http";
+import { toast } from "sonner";
+import i18n from "@/i18n";
 import { qk } from "@/lib/query";
+import { apiMessage, bodyMessage } from "@/lib/api-error";
+import type { PartialList } from "./partial-list";
+import { useActiveAccount } from "@/hooks/use-active-account";
 
 export interface OwnedServer {
   serviceName: string;
@@ -13,6 +17,21 @@ export interface OwnedServer {
   ip: string;
   os: string;
   orderId?: string | number;
+  reverse?: string;
+  monitoring?: boolean;
+  professionalUse?: boolean;
+  bootId?: number | null;
+  /**
+   * 列表接口里的自动续费状态。
+   * true=已开自动续费 / false=确实没开 / null|undefined=这次没查到。
+   * 三态必须分开渲染：把 null 当成 false 显示成「手动」会让用户以为自己已经关过了，
+   * 实际上机器可能正在自动续费（或反过来漏续费），这正是后端改用 *bool 的原因。
+   */
+  renewalType?: boolean | null;
+  /** 有值表示这台机器的 serviceInfos 没拉到（renewalType/status 因此不可信），组件应提示可重试 */
+  svcInfoError?: string;
+  /** 有值表示这台机器连详情都没拉到，除 serviceName/name 外其它字段都缺 */
+  error?: string;
 }
 
 export interface HardwareInfo {
@@ -29,14 +48,28 @@ export interface ServiceInfo {
   status: string;
   expiration: string;
   creation: string;
-  /** 是否启用自动续费(后端解析 OVH renew.automatic) */
+  /**
+   * 是否启用自动续费(后端解析 OVH renew.automatic)。
+   * 这里是单台机器的 /serviceinfo 接口，后端拿不到 renew 就整个请求报错，
+   * 不会像列表接口那样出现 null，所以保持 boolean —— 别跟 OwnedServer.renewalType 混淆。
+   */
   renewalType: boolean;
   /** 续费周期,单位月(1 / 3 / 6 / 12 等) */
   renewalPeriod: number;
-  /** 到期是否自动删除服务 —— true 等于"到期断网回收"（lifecycle 读不到时兜底） */
+  /** 到期是否自动删除服务 —— true 等于"到期断网回收" */
   renewalDeleteAtExpiration: boolean;
-  /** 已预约到期终止（以 lifecycle.pendingActions 为准） */
+  /** 终止状态的权威来源:GET /services/{id} 的 lifecycle.pendingActions。
+   *  旧字段 renewalDeleteAtExpiration 会不会随 terminationPolicy 同步,OVH 文档没说,
+   *  显示"当前是不是到期终止"以这个为准。读不到时后端不下发,前端回退旧字段。 */
   terminationScheduled?: boolean;
+  /** 具体是哪种终止(services.expanded.Lifecycle.ActionEnum):
+   *  terminate=立即终止处理中 / terminateAtExpirationDate=到期终止 /
+   *  terminateAtEngagementDate=合同期结束终止 / deleteAtExpiration=到期注销。
+   *  「立即」和「到期」后果天差地别,不能都显示成"到期终止" */
+  terminationAction?: string;
+  /** 读 lifecycle 失败 —— 此时旧字段没有验证过,必须显示"状态未知"而不是假装知道 */
+  terminationStateUnknown?: boolean;
+  terminationDate?: string;
   /** OVH 是否强制自动续费(部分付费服务) */
   renewalForced: boolean;
   /** 是否要求手动支付(true 时余额扣款会跳过,需用户手动付) */
@@ -44,8 +77,6 @@ export interface ServiceInfo {
   /** OVH 允许的续费周期列表(月数),前端 select 选项用 */
   possibleRenewPeriod: number[];
 }
-
-import { useActiveAccount } from "./use-active-account";
 
 /**
  * 已购服务器列表（后端返回 { success, servers, total }）
@@ -58,13 +89,12 @@ export function useOwnedServers() {
     queryFn: async () => {
       const res = await api.get("/server-control/list");
       const raw = (res.data?.servers || []) as OwnedServer[];
-      // 排除明确不可用账单状态；保留 detail 失败(无 state)与 hacked 等，避免整表消失
       return raw.filter((s) => {
         const state = s.state?.toLowerCase();
         const status = s.status?.toLowerCase();
         if (status === "expired" || status === "suspended") return false;
-        if (state === "suspended") return false;
-        return true;
+        if (state === "error" || state === "suspended") return false;
+        return state === "ok" || state === "active";
       });
     },
     staleTime: 60_000,
@@ -115,9 +145,68 @@ export function useUpdateRenewal(serviceName: string) {
 
 /* ──────────── 到期终止策略 ──────────── */
 
+/** 终止状态的显示信息。四种 pendingAction 后果完全不同,必须分开说。 */
+export function terminationLabel(info: {
+  terminationScheduled?: boolean;
+  terminationAction?: string;
+  terminationStateUnknown?: boolean;
+  renewalDeleteAtExpiration?: boolean;
+}): { text: string; danger: boolean; title: string } | null {
+  // 读失败:不要用没验证过的旧字段冒充真相。销毁级状态宁可说"不知道"
+  if (info.terminationStateUnknown) {
+    return {
+      text: i18n.t("hooksMsg.server.termination.unknownText"),
+      danger: true,
+      title: i18n.t("hooksMsg.server.termination.unknownTitle"),
+    };
+  }
+  const on = info.terminationScheduled ?? info.renewalDeleteAtExpiration;
+  if (!on) return null;
+  switch (info.terminationAction) {
+    case "terminate":
+      return {
+        text: i18n.t("hooksMsg.server.termination.immediateText"),
+        danger: true,
+        title: i18n.t("hooksMsg.server.termination.immediateTitle"),
+      };
+    case "terminateAtEngagementDate":
+      return {
+        text: i18n.t("hooksMsg.server.termination.engagementText"),
+        danger: false,
+        title: i18n.t("hooksMsg.server.termination.engagementTitle"),
+      };
+    case "terminateAtExpirationDate":
+    case "deleteAtExpiration":
+      return {
+        text: i18n.t("hooksMsg.server.termination.expirationText"),
+        danger: false,
+        title: i18n.t("hooksMsg.server.termination.expirationTitle"),
+      };
+    default:
+      // scheduled=true 但拿不到具体 action(比如走了旧字段兜底)
+      return {
+        text: i18n.t("hooksMsg.server.termination.scheduledText"),
+        danger: false,
+        title: i18n.t("hooksMsg.server.termination.scheduledTitle"),
+      };
+  }
+}
+
 /**
- * 设置终止策略。不要用 POST /terminate —— 那是立即终止。
- * policy: empty | terminateAtExpirationDate | terminateAtEngagementDate
+ * 设置终止策略。
+ *
+ * **不要**用 POST /terminate —— 那是「立即终止」，提交后 OVH 当场把服务器暂停，
+ * 并邮件通知「5 天内不付款就彻底清除硬盘数据」。这个坑真实踩过一次。
+ *
+ * OVH 的生命周期动作枚举把两件事分得很清楚：
+ *   terminate                  立即终止
+ *   terminateAtExpirationDate  到期终止（用到当期结束）
+ * 到期终止只能通过 PUT /services/{serviceId} 的 terminationPolicy 设置。
+ *
+ * policy 取值：
+ *   empty                      不终止 / 撤销已提交的到期终止
+ *   terminateAtExpirationDate  到期日终止
+ *   terminateAtEngagementDate  合同期结束时终止
  */
 export function useUpdateTerminationPolicy(serviceName: string) {
   const qc = useQueryClient();
@@ -225,11 +314,22 @@ export function useDeleteEngagementRequest(serviceName: string) {
   });
 }
 
-/** 改 engagement 到期策略 */
+/** services.billing.engagement.EndStrategyEnum，后端也按这份白名单校验 */
+export type EngagementEndStrategy =
+  | "CANCEL_SERVICE"
+  | "REACTIVATE_ENGAGEMENT"
+  | "STOP_ENGAGEMENT_FALLBACK_DEFAULT_PRICE"
+  | "STOP_ENGAGEMENT_KEEP_PRICE";
+
+/**
+ * 改 engagement 到期策略。
+ * CANCEL_SERVICE = 承诺期结束后直接销毁服务器，不可撤销，所以后端要求带 confirm:true；
+ * 组件必须先弹二次确认框拿到用户明确同意，再传 confirm。其余三个策略不需要 confirm。
+ */
 export function useUpdateEngagementEndRule(serviceName: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (vars: { strategy: string }) => {
+    mutationFn: async (vars: { strategy: EngagementEndStrategy | string; confirm?: boolean }) => {
       const res = await api.put(`/server-control/${serviceName}/engagement/end-rule`, vars);
       return res.data;
     },
@@ -300,20 +400,13 @@ export function useDisableMitigation(serviceName: string) {
   });
 }
 
-/** IP 列表（后端返回 { success, ips: [{ ip, type, family, ... }] }） */
+/** IP 列表（后端返回 { success, ips: [{ ip, type, ... }] }） */
 export function useServerIps(serviceName: string | null) {
   return useQuery({
     queryKey: qk.serverControl.ips(serviceName || ""),
     queryFn: async () => {
       const res = await api.get(`/server-control/${serviceName}/ips`);
-      return (res.data?.ips || []) as Array<{
-        ip: string;
-        type: string;
-        family?: string;
-        description?: string;
-        routedTo?: string;
-        inferred?: boolean;
-      }>;
+      return (res.data?.ips || []) as Array<{ ip: string; type: string }>;
     },
     enabled: !!serviceName,
   });
@@ -331,13 +424,36 @@ export function useServerInterventions(serviceName: string | null) {
   });
 }
 
-/** 网络接口（后端返回 { success, interfaces: [...] }） */
+/**
+ * 后端「主键列表 + 并发拉详情」类接口的统一读法：
+ * 详情拉挂的行仍会返回，只是带 _detailError；partial/failedCount 说明这次少了几行的详情。
+ */
+function readPartialList<T>(data: any, listKey: string): PartialList<T> {
+  const failedCount = Number(data?.failedCount) || 0;
+  return {
+    items: (data?.[listKey] || []) as T[],
+    partial: data?.partial === true || failedCount > 0,
+    failedCount,
+  };
+}
+
+/** 详情拉取失败的行会带上这个字段，组件应给该行加「获取失败」标记 */
+export interface DetailErrorMarked {
+  _detailError?: string;
+}
+
+export interface NetworkInterface extends DetailErrorMarked {
+  mac: string;
+  linkType?: string;
+}
+
+/** 网络接口（后端返回 { success, interfaces, partial, failedCount }） */
 export function useServerNetworkInterfaces(serviceName: string | null) {
   return useQuery({
     queryKey: qk.serverControl.networkInterfaces(serviceName || ""),
-    queryFn: async () => {
+    queryFn: async (): Promise<PartialList<NetworkInterface>> => {
       const res = await api.get(`/server-control/${serviceName}/network-interfaces`);
-      return (res.data?.interfaces || []) as Array<{ mac: string; linkType?: string }>;
+      return readPartialList<NetworkInterface>(res.data, "interfaces");
     },
     enabled: !!serviceName,
   });
@@ -349,6 +465,13 @@ export interface BootMode {
   description: string;
   kernel: string;
   active: boolean;
+  /**
+   * 有值表示这一项的详情没拉到（bootType/description/kernel 是占位值）。
+   * 后端保留占位而不是丢条目，就是为了别让启动模式凭空少几个；
+   * 组件应把这一行标成「获取失败，可重试」并禁止直接切换过去。
+   * 后端另有 failed 计数，等于带 error 的行数。
+   */
+  error?: string;
 }
 
 /** 启动模式（后端返回 { success, bootModes: [...] }） */
@@ -383,6 +506,13 @@ export interface ServerTask {
   status: string;
   startDate: string;
   doneDate: string;
+  comment?: string;
+  /**
+   * 有值表示这条任务的详情没拉到（function/status 是占位值 N/A / unknown）。
+   * 不显示的话用户会以为任务真的处于 unknown 状态，从而重复提交同一个操作。
+   * 后端另有 failed 计数，等于带 error 的行数。
+   */
+  error?: string;
 }
 
 /** 服务器运维任务列表（后端返回 { success, tasks: [...] }） */
@@ -402,6 +532,17 @@ export interface OSTemplate {
   distribution: string;
   family: string;
   bitFormat: number;
+  /** 官方 installationTemplate 元数据(可选:详情拉失败时缺省) */
+  filesystems?: string[];
+  lvmReady?: boolean;
+  noPartitioning?: boolean;
+  softRaidOnlyMirroring?: boolean;
+  customizeQuestions?: Array<{
+    name: string;
+    description?: string;
+    required?: boolean;
+    type?: string;
+  }>;
 }
 
 /**
@@ -459,16 +600,17 @@ export interface DiskGroupDisk {
   unit: string;
   technology?: string;
   interface?: string;
-  /** OVH dedicated.server.DiskTypeEnum: NVMe / SSD / SAS / SATA / Unknown */
+  /** OVH dedicated.server.DiskTypeEnum:NVMe / SSD / SAS / SATA / Unknown */
   diskType?: string;
 }
 export interface DiskGroup {
-  id?: number;
   raidController?: string;
-  /** 区分 SSD 和机械盘的唯一依据 —— 混合盘靠它决定系统装哪一组 */
+  disks: DiskGroupDisk[];
+  /** 后端一直在发这个字段(server_control_hardware.go),只是类型里漏了声明。
+   *  它是区分 SSD 和机械盘的唯一依据 —— 混合盘要靠它决定系统装哪一组。 */
   diskType?: string;
   description?: string;
-  disks: DiskGroupDisk[];
+  id?: number;
 }
 
 export function useServerDiskInfo(serviceName: string | null, enabled = true) {
@@ -494,8 +636,16 @@ export function useServerRaidProfiles(serviceName: string | null, enabled = true
           supported: res.data?.supported !== false,
           profiles: (res.data?.profiles || []) as any[],
         };
-      } catch {
-        return { supported: false, profiles: [] as any[] };
+      } catch (e: any) {
+        // 404 / 501 = OVH 明确回答"这台机器没有硬件 RAID 控制器",这是业务事实,照常返回 supported:false。
+        // 其余(断网 / 5xx / 超时)是"我们没问到",必须抛出去让 isError 生效。
+        // 以前一律 catch 成 supported:false,isError 结构上永远是 false,重装对话框于是在读失败时
+        // 也斩钉截铁地写「此服务器不支持硬件 RAID」—— 用户照着改用软 RAID,按下的是不可逆的重装。
+        const status = e?.response?.status;
+        if (status === 404 || status === 501) {
+          return { supported: false, profiles: [] as any[] };
+        }
+        throw e;
       }
     },
     enabled: !!serviceName && enabled,
@@ -531,6 +681,10 @@ export interface CustomPartition {
   type: string;
   raid?: string; // raid0/raid1/...
   diskGroupId?: number;
+  /** 官方 extras.lv.name:LVM 逻辑卷名(同 RAID 的 LV 后端自动同 VG) */
+  lvName?: string;
+  /** 官方 extras.zp.name:ZFS zpool 名(同名数据集合并同一 zpool) */
+  zpoolName?: string;
 }
 
 /** 重装系统：完整版（template / hostname / Proxmox ZFS / 硬件 RAID / 软 RAID / 自定义分区 / 内置分区方案） */
@@ -538,6 +692,15 @@ export interface ReinstallArgs {
   serviceName: string;
   templateName: string;
   customHostname?: string;
+  /** OS 特定定制(官方 customizeQuestions 的答案:sshKey / postInstallationScript / language / enableLacpBonding…) */
+  customizations?: Record<string, string | boolean>;
+  /** 非安装盘组的保留声明(官方 Data erasure:erase:false 保留该组数据) */
+  keepDiskGroups?: number[];
+  /** 软 RAID 参与磁盘数(官方 partitioning.disks;空 = 全部盘) */
+  softwareRaidDisks?: number;
+  /** 硬件 RAID arrays(RAID10 阵列数)/ spares(热备盘数) */
+  hwRaidArrays?: number;
+  hwRaidSpares?: number;
   // Proxmox 9 + ZFS（仅当 templateName === 'proxmox9_64' 时）
   useProxmox9Zfs?: boolean;
   zfsRaidLevel?: 0 | 1;
@@ -552,12 +715,25 @@ export interface ReinstallArgs {
   diskGroups?: Record<string, DiskGroup>; // 用于硬件 RAID 时拼 disks 列表
 }
 
+export interface ReinstallResult {
+  success: boolean;
+  message?: string;
+  taskId?: number;
+  /**
+   * 后端忽略了哪份存储配置的说明（例如同时勾了 Proxmox 9 + ZFS 和高级存储配置时，
+   * ZFS 预设优先、另一份被忽略）。装是能装成的，但用户得知道自己填的东西没生效，
+   * 组件应该用 toast.warning 逐条显示。
+   */
+  warnings?: string[];
+}
+
 export function useReinstallServer() {
   return useMutation({
     mutationFn: async (args: ReinstallArgs) => {
       const installData: any = {
         templateName: args.templateName,
         customHostname: args.customHostname || undefined,
+        customizations: args.customizations && Object.keys(args.customizations).length > 0 ? args.customizations : undefined,
         useProxmox9Zfs: !!args.useProxmox9Zfs,
         zfsRaidLevel: args.useProxmox9Zfs ? args.zfsRaidLevel : undefined,
         zfsVzSize: args.useProxmox9Zfs ? args.zfsVzSize : undefined,
@@ -571,7 +747,7 @@ export function useReinstallServer() {
 
       if (useCustom) {
         // 按 diskGroupId 分组
-        const groups = new Map<number, any>();
+        const groups = new Map<string, any>();
         let partitions = args.customPartitions || [];
         // 启用软 RAID 但未自定义分区 → 默认根分区软 RAID
         if (args.useSoftwareRaid && partitions.length === 0) {
@@ -583,48 +759,126 @@ export function useReinstallServer() {
               order: 1,
               type: "primary",
               raid: args.softwareRaidLevel || "raid1",
-              diskGroupId: 0,
             },
           ];
         }
+        // 磁盘组编号从 1 起（官方分区文档：默认装在 diskGroupId 1 上），
+        // 而且文档写明「the API only supports OS installation and storage
+        // customisation on 1 single disk group」—— 所以没显式选组时用 0 当键
+        // 会造出一个不存在的组，还会把分区和硬件 RAID 拆成两个 storage 条目，
+        // 变成「在 0 组上分区、在 1 组上做 RAID」这种 OVH 不接受的配置。
+        // 用 undefined 当键表示「没选，交给 OVH 用默认组」，发送时也不带这个字段。
+        const DEFAULT_GID = "default";
+        const gidKey = (v?: number) => (v && v > 0 ? String(v) : DEFAULT_GID);
+        // 官方 partitioning.disks:软 RAID 只用前 N 块盘(不填 = 全部盘参与)。
+        // 单盘装系统、其余盘留给数据这类布局的唯一开关
+        if (args.useSoftwareRaid && args.softwareRaidDisks && args.softwareRaidDisks > 0) {
+          const dgid = groups.has(DEFAULT_GID) ? DEFAULT_GID : groups.keys().next().value as string;
+          const g0 = groups.get(dgid);
+          if (g0 && g0.partitioning) g0.partitioning.disks = args.softwareRaidDisks;
+        }
         partitions.forEach((p) => {
-          const gid = p.diskGroupId ?? 0;
-          if (!groups.has(gid)) groups.set(gid, { diskGroupId: gid, partitioning: { layout: [] } });
+          const gid = gidKey(p.diskGroupId);
+          if (!groups.has(gid)) {
+            const entry: any = { partitioning: { layout: [] } };
+            if (gid !== DEFAULT_GID) entry.diskGroupId = Number(gid);
+            groups.set(gid, entry);
+          }
           const g = groups.get(gid);
           const ovhP: any = { mountPoint: p.mountpoint, fileSystem: p.filesystem, size: p.size || 0 };
           if (p.raid) {
             const m = p.raid.match(/raid(\d+)/);
             if (m) ovhP.raidLevel = parseInt(m[1]);
           }
+          // 官方 extras:lv = LVM 逻辑卷名(后端自动把同 RAID 的 LV 归进同一 VG);
+          // zp = ZFS zpool 名(同名数据集同池,便于高级特性隔离 /boot)
+          if (p.lvName?.trim()) ovhP.extras = { ...(ovhP.extras || {}), lv: { name: p.lvName.trim() } };
+          if (p.filesystem === "zfs" && p.zpoolName?.trim()) {
+            ovhP.extras = { ...(ovhP.extras || {}), zp: { name: p.zpoolName.trim() } };
+          }
           g.partitioning.layout.push(ovhP);
         });
-        // 硬件 RAID
+        // 硬件 RAID。
+        // schema dedicated.server.reinstall.storage.HardwareRaid 只有 arrays / disks(long) / raidLevel / spares：
+        // disks 是「参与阵列的磁盘数量」而不是磁盘编号数组，mode / name / step 是旧 partitionScheme 的字段，
+        // 不在 schema 里。后端虽然做了兼容映射，但继续发旧字段会掩盖前端和 schema 的偏差，所以这里直接按 schema 发。
+        // 副作用：OVH 不接受「指定用哪几块盘」，只能给数量，磁盘选择交给 OVH。
         if (args.hardwareRaid) {
           Object.entries(args.hardwareRaid).forEach(([gidStr, raidMode]) => {
             if (!raidMode) return;
-            const gid = parseInt(gidStr);
-            if (!groups.has(gid)) groups.set(gid, { diskGroupId: gid });
+            const parsed = parseInt(gidStr);
+            // 分区全落在默认组、RAID 也没选组时，两边必须并进同一个 storage 条目，
+            // 否则就成了「两个组各配一半」。RAID 自己选了真实组号时按它自己的组走 ——
+            // 以前只看分区侧，分区在默认组 + RAID 选组 2 会被错并进默认组条目
+            const parsedKey = gidKey(parsed);
+            const gid =
+              groups.size === 1 && groups.has(DEFAULT_GID) && parsedKey === DEFAULT_GID
+                ? DEFAULT_GID
+                : parsedKey;
+            if (!groups.has(gid)) {
+              const entry: any = {};
+              if (gid !== DEFAULT_GID) entry.diskGroupId = Number(gid);
+              groups.set(gid, entry);
+            }
             const g = groups.get(gid);
             if (!g.hardwareRaid) g.hardwareRaid = [];
-            const level = raidMode.replace("raid", "");
-            g.hardwareRaid.push({
-              disks: args.diskGroups?.[gidStr]?.disks?.map((d) => d.number) || [],
-              mode: level,
-              name: `raid${level}`,
-              step: 1,
-            });
+            const level = parseInt(raidMode.replace("raid", ""), 10);
+            if (Number.isNaN(level)) return;
+            const diskCount = args.diskGroups?.[gidStr]?.disks?.length || 0;
+            const item: { raidLevel: number; disks?: number; arrays?: number; spares?: number } = { raidLevel: level };
+            // 0 表示「不知道这组有几块盘」，省略让 OVH 用默认值，别发 disks:0
+            if (diskCount > 0) item.disks = diskCount;
+            // 官方 partitioning-ovh:arrays 用于 RAID10(如 12 盘 4 arrays = 4×RAID1 再 RAID0);
+            // spares 是热备盘数。都只在用户显式填了才发
+            if (args.hwRaidArrays && args.hwRaidArrays > 0 && level === 10) item.arrays = args.hwRaidArrays;
+            if (args.hwRaidSpares && args.hwRaidSpares > 0) item.spares = args.hwRaidSpares;
+            g.hardwareRaid.push(item);
           });
         }
+        // 官方 Data erasure:非安装盘组只带 erase:false 即"保留该组数据"。
+        // 默认 OVH 会擦所有盘组 —— 混合盘机器想保住数据盘,这是唯一手段
         const storageArray = Array.from(groups.values());
+        for (const keepGid of args.keepDiskGroups ?? []) {
+          storageArray.push({ diskGroupId: keepGid, erase: false });
+        }
         if (storageArray.length > 0) installData.storageConfig = storageArray;
       } else if (args.partitionSchemeName) {
         installData.partitionSchemeName = args.partitionSchemeName;
       }
 
       const res = await api.post(`/server-control/${args.serviceName}/install`, installData);
-      return res.data;
+      return res.data as ReinstallResult;
     },
   });
+}
+
+export interface InstallStep {
+  /** 已翻译成中文的步骤名 */
+  comment: string;
+  /** OVH 原文，翻译表没覆盖到时可回退显示 */
+  commentOriginal: string;
+  status: string; // todo / doing / done / error
+  error: string;
+}
+
+export interface InstallStatus {
+  elapsedTime: number;
+  progressPercentage: number;
+  totalSteps: number;
+  completedSteps: number;
+  hasError: boolean;
+  /** 有步骤处于 stopping（安装正在中止）—— 既不是错误也不是正常进行中。
+   *  schema 的 InstallationProgressStatusEnum 有 8 个值，以前只认 done/error，
+   *  expired（超时，现已并入 hasError）和 stopping 会让进度条永远卡住不动。 */
+  stopping?: boolean;
+  allDone: boolean;
+  /**
+   * true = OVH 这次没返回 progress（schema 里它可空）。
+   * 此时 progressPercentage 恒为 0、allDone 恒为 false，但那不代表「一步都没做」。
+   * 组件必须显示「进度暂不可用」，否则用户会盯着一个永远停在 0% 的进度条。
+   */
+  progressUnknown: boolean;
+  steps: InstallStep[];
 }
 
 /** 安装进度（前端轮询用，旧前端每 5s 轮一次）（后端返回 { success, hasInstallation, status: {...} }） */
@@ -635,7 +889,7 @@ export function useInstallStatus(serviceName: string | null, enabled = true) {
       const res = await api.get(`/server-control/${serviceName}/install/status`);
       return {
         hasInstallation: res.data?.hasInstallation !== false,
-        status: res.data?.status || null,
+        status: (res.data?.status || null) as InstallStatus | null,
       };
     },
     enabled: !!serviceName && enabled,
@@ -653,13 +907,21 @@ export function useServerBiosSettings(serviceName: string | null, enabled = true
     queryFn: async () => {
       try {
         const res = await api.get(`/server-control/${serviceName}/bios-settings`);
+        // SGX 只是个可选子项,单独拿不到不算整体失败,所以只有它继续吞成 null
         const sgxRes = await api.get(`/server-control/${serviceName}/bios-settings/sgx`).catch(() => null);
         return {
-          settings: res.data || {},
+          settings: (res.data || {}) as any,
           sgx: sgxRes?.data?.sgx ?? sgxRes?.data?.data ?? sgxRes?.data ?? null,
         };
-      } catch {
-        return { settings: {}, sgx: null };
+      } catch (e: any) {
+        // 404 / 501 = 这个机型压根不暴露 BIOS 设置,是业务事实,返回空对象让界面走空态。
+        // 其余错误必须抛出去:以前一律 catch 成 {},isError 永远是 false,对话框只会写
+        // 「未获取到 BIOS 设置」—— 跟"这机器确实没有"长得一模一样,用户根本不会想到去重试。
+        const status = e?.response?.status;
+        if (status === 404 || status === 501) {
+          return { settings: {} as any, sgx: null };
+        }
+        throw e;
       }
     },
     enabled: !!serviceName && enabled,
@@ -761,28 +1023,75 @@ export function useSetFirewall() {
 
 // ───────────────────────────────── Backup FTP ─────────────────────────────────
 
-/** Backup FTP：可能 notAvailable / notActivated / 正常对象 */
+/** ACL 一行。详情没拉到时只有 ipBlock + error */
+export interface BackupFtpAccessEntry {
+  ipBlock: string;
+  ftp?: boolean;
+  nfs?: boolean;
+  cifs?: boolean;
+  isApplied?: boolean;
+  error?: string;
+}
+
+export interface BackupFtpResult {
+  backupFtp?: Record<string, any> | null;
+  accessList?: BackupFtpAccessEntry[];
+  /** ACL 详情拉取失败的条数（后端 failedCount） */
+  accessFailedCount?: number;
+  /** ACL 列表整体拉取失败时的原因（不影响主信息展示） */
+  accessError?: string;
+  /** 该区域/该机器没有备份FTP能力（US 区，或 OVH 说 cannot benefit） */
+  notAvailable?: boolean;
+  /** 功能存在但未激活 —— 只有这一种情况才该显示「激活」按钮 */
+  notActivated?: boolean;
+  /** 服务器不存在或不属于当前账户：显示 error/reason，不要给激活按钮 */
+  unknownService?: boolean;
+  error?: string;
+  /** OVH 原文，用于排查 */
+  reason?: string;
+}
+
+/** Backup FTP：可能 notAvailable / notActivated / unknownService / 正常对象 */
 export function useServerBackupFtp(serviceName: string | null) {
   return useQuery({
     queryKey: qk.serverControl.backupFtp(serviceName || ""),
-    queryFn: async () => {
+    queryFn: async (): Promise<BackupFtpResult> => {
       try {
         const res = await api.get(`/server-control/${serviceName}/backup-ftp`);
+        // 后端用 200 + success:false 表达「US 区没这功能」和「服务器不属于本账户」
+        // ——这两种都不是 404「未激活」，必须把原因原样带出去，否则会渲染成一个点了必失败的激活按钮
         if (res.data?.success === false) {
-          return { notAvailable: true, error: res.data?.error } as any;
+          return {
+            // notAvailable 一律置 true：现网组件就是靠它走「不可用 + 显示 error」分支的，
+            // unknownService 只是额外的细分标记（组件可据此换成「服务器不属于当前账户」的文案）
+            notAvailable: true,
+            unknownService: res.data?.unknownService === true,
+            error: res.data?.error,
+            reason: res.data?.reason,
+          };
         }
         // 尝试同时取 access 列表
-        let accessList: any[] = [];
+        let accessList: BackupFtpAccessEntry[] = [];
+        let accessFailedCount = 0;
+        let accessError: string | undefined;
         try {
           const accRes = await api.get(`/server-control/${serviceName}/backup-ftp/access`);
-          accessList = accRes.data?.accessList || [];
-        } catch {
-          /* 访问列表拿不到不算失败 */
+          accessList = (accRes.data?.accessList || []) as BackupFtpAccessEntry[];
+          accessFailedCount = Number(accRes.data?.failedCount) || 0;
+        } catch (e: any) {
+          // 访问列表拿不到不算整体失败，但要说明「列表为空是没查到」而不是「没配过 IP」
+          accessError = e?.response?.data?.error || e?.message || i18n.t("hooksMsg.server.backupAclLoadFailed");
         }
-        return { backupFtp: res.data?.backupFtp || null, accessList } as any;
+        return { backupFtp: res.data?.backupFtp || null, accessList, accessFailedCount, accessError };
       } catch (e: any) {
-        if (e?.response?.status === 404) return { notActivated: true } as any;
-        return { notAvailable: true, error: e?.response?.data?.error || e?.message } as any;
+        if (e?.response?.status === 404) {
+          // US 区的写操作/查询被拦时也是 404，但带 notAvailable，别把它当成「未激活」
+          if (e?.response?.data?.notAvailable === true) {
+            return { notAvailable: true, error: e?.response?.data?.error };
+          }
+          return { notActivated: true };
+        }
+        return { notAvailable: true, error: e?.response?.data?.error || e?.message };
       }
     },
     enabled: !!serviceName,
@@ -802,14 +1111,114 @@ export function useActivateBackupFtp() {
   });
 }
 
+/** 关闭备份FTP服务（会删掉里面的备份，调用方必须先二次确认） */
+export function useDeleteBackupFtp() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (serviceName: string) => {
+      const res = await api.delete(`/server-control/${serviceName}/backup-ftp`);
+      return res.data;
+    },
+    onSuccess: (_, serviceName) => {
+      qc.invalidateQueries({ queryKey: qk.serverControl.backupFtp(serviceName) });
+    },
+  });
+}
+
+/** 重置备份FTP密码（新密码由 OVH 发到账户邮箱，接口不返回明文） */
+export function useResetBackupFtpPassword() {
+  return useMutation({
+    mutationFn: async (serviceName: string) => {
+      const res = await api.post(`/server-control/${serviceName}/backup-ftp/password`);
+      return res.data;
+    },
+  });
+}
+
+/** 可授权的 IP 段列表（给「添加访问 IP」做候选） */
+export function useBackupFtpAuthorizableBlocks(serviceName: string | null, enabled = true) {
+  return useQuery({
+    queryKey: [...qk.serverControl.backupFtpAccess(serviceName || ""), "authorizable"] as const,
+    queryFn: async () => {
+      const res = await api.get(`/server-control/${serviceName}/backup-ftp/authorizable-blocks`);
+      return (res.data?.blocks || []) as string[];
+    },
+    enabled: !!serviceName && enabled,
+  });
+}
+
+/** 添加备份FTP访问 IP。ftp 默认 true，nfs/cifs 默认 false（与后端一致） */
+export function useAddBackupFtpAccess() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: {
+      serviceName: string;
+      ipBlock: string;
+      ftp?: boolean;
+      nfs?: boolean;
+      cifs?: boolean;
+    }) => {
+      const res = await api.post(`/server-control/${vars.serviceName}/backup-ftp/access`, {
+        ipBlock: vars.ipBlock,
+        ftp: vars.ftp ?? true,
+        nfs: !!vars.nfs,
+        cifs: !!vars.cifs,
+      });
+      return res.data;
+    },
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: qk.serverControl.backupFtp(vars.serviceName) });
+    },
+  });
+}
+
+/**
+ * 删除备份FTP访问 IP。
+ * ipBlock 是带掩码的 CIDR（37.59.1.0/28），放在路径里那个 "/" 会被 gin 还原成新的一段导致 404，
+ * 所以走 ?ipBlock= query 形式 —— 后端的路径形式只作兼容兜底。
+ */
+export function useDeleteBackupFtpAccess() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { serviceName: string; ipBlock: string }) => {
+      const res = await api.delete(
+        `/server-control/${vars.serviceName}/backup-ftp/access?ipBlock=${encodeURIComponent(vars.ipBlock)}`
+      );
+      return res.data;
+    },
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: qk.serverControl.backupFtp(vars.serviceName) });
+    },
+  });
+}
+
 // ───────────────────────────────── Secondary DNS / vMAC / vRack ─────────────────────────────────
+
+export interface SecondaryDnsDomain extends DetailErrorMarked {
+  domain: string;
+  dns?: string;
+  ipMaster?: string;
+}
+
+export interface VirtualMacEntry extends DetailErrorMarked {
+  macAddress: string;
+  type?: string;
+  ipAddress?: string;
+  virtualNetworkInterface?: string;
+}
+
+export interface VrackEntry extends DetailErrorMarked {
+  vrackName: string;
+  name?: string;
+  description?: string;
+}
 
 export function useServerSecondaryDns(serviceName: string | null) {
   return useQuery({
     queryKey: qk.serverControl.secondaryDns(serviceName || ""),
-    queryFn: async () => {
+    queryFn: async (): Promise<PartialList<SecondaryDnsDomain>> => {
       const res = await api.get(`/server-control/${serviceName}/secondary-dns`);
-      return (res.data?.domains || []) as any[];
+      return readPartialList<SecondaryDnsDomain>(res.data, "domains");
     },
     enabled: !!serviceName,
   });
@@ -818,9 +1227,9 @@ export function useServerSecondaryDns(serviceName: string | null) {
 export function useServerVirtualMac(serviceName: string | null) {
   return useQuery({
     queryKey: qk.serverControl.virtualMac(serviceName || ""),
-    queryFn: async () => {
+    queryFn: async (): Promise<PartialList<VirtualMacEntry>> => {
       const res = await api.get(`/server-control/${serviceName}/virtual-mac`);
-      return (res.data?.virtualMacs || []) as any[];
+      return readPartialList<VirtualMacEntry>(res.data, "virtualMacs");
     },
     enabled: !!serviceName,
   });
@@ -829,9 +1238,9 @@ export function useServerVirtualMac(serviceName: string | null) {
 export function useServerVrack(serviceName: string | null) {
   return useQuery({
     queryKey: qk.serverControl.vrack(serviceName || ""),
-    queryFn: async () => {
+    queryFn: async (): Promise<PartialList<VrackEntry>> => {
       const res = await api.get(`/server-control/${serviceName}/vrack`);
-      return (res.data?.vracks || []) as any[];
+      return readPartialList<VrackEntry>(res.data, "vracks");
     },
     enabled: !!serviceName,
   });
@@ -859,12 +1268,18 @@ export function useServerOrderable(serviceName: string | null) {
   });
 }
 
+export interface ServerOptionEntry extends DetailErrorMarked {
+  option: string;
+  state?: string;
+  expirationDate?: string;
+}
+
 export function useServerOptions(serviceName: string | null) {
   return useQuery({
     queryKey: qk.serverControl.options(serviceName || ""),
-    queryFn: async () => {
+    queryFn: async (): Promise<PartialList<ServerOptionEntry>> => {
       const res = await api.get(`/server-control/${serviceName}/options`);
-      return (res.data?.options || []) as any[];
+      return readPartialList<ServerOptionEntry>(res.data, "options");
     },
     enabled: !!serviceName,
   });
@@ -894,20 +1309,23 @@ export function useServerNetworkSpecs(serviceName: string | null, enabled = true
 
 // ───────────────────────────────── Interventions（创建工单） ─────────────────────────────────
 
-/** 故障硬盘。disk_serial 是 OVH schema(dedicated.server.SupportReplaceHddInfo) 的必填字段，
- *  slot_id 可选。字段名保持 snake_case 与官方一致。 */
+/** 故障硬盘。disk_serial 是 OVH schema(dedicated.server.SupportReplaceHddInfo)的必填字段，
+ *  slot_id 可选。字段名保持 snake_case 与官方一致，避免两层转换出错。 */
 export interface FaultyDisk {
   disk_serial: string;
   slot_id?: number;
 }
 
 /** 创建硬件更换工单（硬盘 / 内存 / 散热）。
- *  端点是 POST /server-control/:svc/hardware/replace —— 对应 OVH
- *  POST /dedicated/server/{serviceName}/support/replace/{hardDiskDrive|memory|cooling}。
- *  旧代码发 POST /interventions，后端从未注册（只有 GET），所以此前一直 404。
+ *  端点是 POST /server-control/:svc/hardware/replace —— 旧代码发的 POST /interventions
+ *  后端从未注册（只有 GET），所以这个功能此前一直是 404。
  *
- *  硬盘必须给出故障盘序列号：OVH 的 inverse 语义是「更换所有未列出的盘」，
- *  空列表 + inverse=true 等于申请更换整机每一块硬盘，后端会直接拒绝。 */
+ *  硬盘两种模式(schema 的 inverse 语义,与 OVH 硬盘更换指南一致):
+ *  - inverse=false:disks 是【要换的】故障盘
+ *  - inverse=true :disks 是【不换的】健康盘 —— 故障盘已经坏到读不出序列号时用,
+ *    指南原话"list the serial numbers of the disks that don't need to be replaced"
+ *  两种模式都不能空列表:空 + inverse=true 等于申请更换整机每一块硬盘。
+ *  返回里带 OVH 的工单号(support.NewMessageInfo.ticketNumber),用户拿它去帮助中心跟进。 */
 export function useCreateIntervention() {
   const qc = useQueryClient();
   return useMutation({
@@ -917,18 +1335,22 @@ export function useCreateIntervention() {
       details?: string;
       comment?: string;
       disks?: FaultyDisk[];
+      inverse?: boolean;
       slots?: string[];
     }) => {
-      const res = await api.post(`/server-control/${args.serviceName}/hardware/replace`, {
+      const res = await api.post<{
+        success: boolean;
+        message: string;
+        ticketNumber?: string;
+        ticketId?: string;
+        notice?: string;
+      }>(`/server-control/${args.serviceName}/hardware/replace`, {
         componentType: args.type,
         details: args.details,
         comment: args.comment,
-        ...(args.disks?.length ? { disks: args.disks } : {}),
+        ...(args.disks?.length ? { disks: args.disks, inverse: !!args.inverse } : {}),
         ...(args.slots?.length ? { slots: args.slots } : {}),
       });
-      if (res.data?.success === false) {
-        throw new Error(res.data?.error || "提交失败");
-      }
       return res.data;
     },
     onSuccess: (_, vars) => {
@@ -954,13 +1376,44 @@ export function useChangeContact() {
   });
 }
 
-/** 查询所有变更联系人请求（用户全局而非按服务器）。后端返回 { success, data: [...] } */
+export interface ContactChangeRequestList {
+  requests: any[];
+  /**
+   * true = 当前账户所在区域（US）根本没有 /me/task/contactChange 系列端点，后端返 501。
+   * 这是「该区没有这个能力」而不是「请求失败」，组件应隐藏整个模块或显示 message，
+   * 不要渲染成加载失败让用户反复重试。
+   */
+  unsupported: boolean;
+  message?: string;
+  /** 详情拉取失败的条数（后端同时会带 X-Partial-Failures 头） */
+  failedCount: number;
+}
+
+/** 查询所有变更联系人请求（用户全局而非按服务器）。后端返回 { status, data, total, failed } */
 export function useContactChangeRequests(enabled = true) {
+  const [accountId] = useActiveAccount();
   return useQuery({
-    queryKey: qk.serverControl.contactRequests(),
-    queryFn: async () => {
-      const res = await api.get(`/ovh/contact-change-requests`);
-      return (res.data?.data || res.data?.requests || []) as any[];
+    queryKey: qk.serverControl.contactRequests(accountId),
+    queryFn: async (): Promise<ContactChangeRequestList> => {
+      try {
+        const res = await api.get(`/ovh/contact-change-requests`);
+        return {
+          requests: (res.data?.data || res.data?.requests || []) as any[],
+          unsupported: false,
+          failedCount: Number(res.data?.failed) || 0,
+        };
+      } catch (e: any) {
+        // 501 = 该区不支持，不是错误；其余错误照常抛出去让 isError 生效
+        if (e?.response?.status === 501) {
+          return {
+            requests: [],
+            unsupported: true,
+            message: e?.response?.data?.message || i18n.t("hooksMsg.server.contactUnsupported"),
+            failedCount: 0,
+          };
+        }
+        throw e;
+      }
     },
     enabled,
   });
@@ -981,7 +1434,7 @@ export function useContactRequestAction() {
       return res.data;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.serverControl.contactRequests() });
+      qc.invalidateQueries({ queryKey: ["server-control", "contact-requests"] });
     },
   });
 }
@@ -1011,6 +1464,33 @@ export function useTaskTimeslots(
   });
 }
 
+/**
+ * 给任务改期（干预 / 维护类任务 OVH 要求先选时间段）。
+ * hasPerformedBackup 直接发用户勾选框的真实值：后端不再强制 true，
+ * 未备份也照实转发给 OVH（后端记警告日志），前端替用户勾上等于替他做担保。
+ */
+export function useScheduleTask() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (args: {
+      serviceName: string;
+      taskId: number;
+      /** RFC3339，通常取自 useTaskTimeslots 返回的时间段 */
+      wantedBeginingDate: string;
+      hasPerformedBackup: boolean;
+    }) => {
+      const res = await api.post(`/server-control/${args.serviceName}/tasks/${args.taskId}/schedule`, {
+        wantedBeginingDate: args.wantedBeginingDate,
+        hasPerformedBackup: args.hasPerformedBackup,
+      });
+      return res.data;
+    },
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: qk.serverControl.tasks(vars.serviceName) });
+    },
+  });
+}
+
 /** 重启服务器（mutation 封装） */
 export function useRebootServer() {
   return useMutation({
@@ -1021,18 +1501,31 @@ export function useRebootServer() {
   });
 }
 
-// ───────────────────────────────── 14 天撤单 & 救援模式 ─────────────────────────────────
-
+/** 14 天无理由撤单的资格。eligible=false 时 reason 区分几种完全不同的"不能退" */
 export interface RetractionInfo {
   eligible: boolean;
+  /** waived=下单时弃权 / expired=过期 / order_not_found / order_lookup_failed / order_read_failed / bad_date */
+  reason?: string;
+  message?: string;
   orderId?: number;
+  orderUrl?: string;
+  /** 下单日。撤回期从这天起算，不是从服务器开通日起算 —— 两者常差好几天 */
   orderDate?: string;
   retractionDate?: string;
   hoursLeft?: number;
-  daysLeft?: number;
   reasons?: { value: string; label: string }[];
 }
 
+/**
+ * 这台机器还能不能无理由撤单。
+ *
+ * 判据是 OVH 返回的 retractionDate,不是前端自己算"开通不到 14 天" ——
+ * v0.1.24 之前下的单在结账时就放弃了撤回权,OVH 不给它们 retractionDate。
+ * 自己算的话那些机器会显示一个点了必然失败的退款按钮。
+ *
+ * 不自动重试:订单映射冷的时候后端会返回 order_lookup_failed 让用户去同步,
+ * 反复重试只会对着同一个冷缓存打空枪。
+ */
 export function useRetraction(serviceName: string | null) {
   return useQuery<RetractionInfo>({
     queryKey: ["server-control", "retraction", serviceName],
@@ -1045,6 +1538,7 @@ export function useRetraction(serviceName: string | null) {
   });
 }
 
+/** 提交撤单申请。不可逆:订单退款 + 服务器注销 */
 export function useRequestRetraction(serviceName: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -1058,11 +1552,13 @@ export function useRequestRetraction(serviceName: string) {
     onSuccess: (d: any) => {
       qc.invalidateQueries({ queryKey: ["server-control", "retraction"] });
       qc.invalidateQueries({ queryKey: ["server-control", "list"] });
-      toast.success(d?.message || "撤单申请已提交");
+      toast.success(bodyMessage(d) || i18n.t("hooksMsg.server.retractionSubmitted"));
     },
-    onError: (e: any) => toast.error(e?.response?.data?.error || "撤单申请失败"),
+    onError: (e: any) => toast.error(apiMessage(e) || i18n.t("hooksMsg.server.retractionFailed")),
   });
 }
+
+// ───────────────────────────────── 救援模式 ─────────────────────────────────
 
 export interface RescueBoot {
   bootId: number;
@@ -1070,7 +1566,6 @@ export interface RescueBoot {
   kernel?: string;
   description?: string;
 }
-
 export interface RescueStatus {
   inRescue: boolean;
   currentBoot: number;
@@ -1078,9 +1573,10 @@ export interface RescueStatus {
   boots: RescueBoot[];
 }
 
+/** 这台机现在是不是救援启动 + 有哪些救援项可选 */
 export function useRescueStatus(serviceName: string | null, enabled = true) {
   return useQuery({
-    queryKey: ["server-control", "rescue", serviceName || ""],
+    queryKey: qk.serverControl.rescue(serviceName || ""),
     queryFn: async (): Promise<RescueStatus> => {
       const d = (await api.get(`/server-control/${serviceName}/rescue`)).data;
       return {
@@ -1095,29 +1591,74 @@ export function useRescueStatus(serviceName: string | null, enabled = true) {
   });
 }
 
+/** 进救援:改 netboot + 设收信邮箱 + 重启,一次做完 */
 export function useEnterRescue(serviceName: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (v: { email?: string; sshKey?: string; bootId?: number }) =>
       (await api.post(`/server-control/${serviceName}/rescue`, { ...v, confirm: true })).data,
     onSuccess: (d: any) => {
-      toast.success(d?.message || "已切到救援模式并重启");
-      qc.invalidateQueries({ queryKey: ["server-control", "rescue", serviceName] });
+      toast.success(bodyMessage(d) || i18n.t("hooksMsg.server.rescueEntered"));
+      qc.invalidateQueries({ queryKey: qk.serverControl.rescue(serviceName) });
     },
-    onError: (e: any) => toast.error(e?.response?.data?.error || "进入救援模式失败"),
+    onError: (e: any) => toast.error(apiMessage(e) || i18n.t("hooksMsg.server.rescueEnterFailed")),
   });
 }
 
+/** 退出救援:切回硬盘启动 + 重启 */
 export function useExitRescue(serviceName: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async () =>
       (await api.post(`/server-control/${serviceName}/rescue/exit`, { confirm: true })).data,
     onSuccess: (d: any) => {
-      toast.success(d?.message || "已切回硬盘启动并重启");
-      qc.invalidateQueries({ queryKey: ["server-control", "rescue", serviceName] });
+      toast.success(bodyMessage(d) || i18n.t("hooksMsg.server.rescueExited"));
+      qc.invalidateQueries({ queryKey: qk.serverControl.rescue(serviceName) });
     },
-    onError: (e: any) => toast.error(e?.response?.data?.error || "退出救援模式失败"),
+    onError: (e: any) => toast.error(apiMessage(e) || i18n.t("hooksMsg.server.rescueExitFailed")),
   });
 }
 
+// ───────────────────────────────── SPLA 许可证 ─────────────────────────────────
+
+/** dedicated.server.spla —— schema 字段:id / lastUpdate / serialNumber / status / type */
+export interface SplaLicense {
+  id: number;
+  type: string;   // SplaTypeEnum: os | sqlstd | sqlweb
+  status: string; // SplaStatusEnum: used | waitingToCheck | terminated
+  serialNumber?: string;
+  lastUpdate?: string;
+}
+export interface SplaListResult {
+  list: SplaLicense[];
+  /** 详情部分拉失败:这时不能断言"没有 os 授权",可能只是没查到 */
+  partial: boolean;
+}
+
+export function useSplaList(serviceName: string | null, enabled = true) {
+  return useQuery({
+    queryKey: qk.serverControl.spla(serviceName || ""),
+    queryFn: async (): Promise<SplaListResult> => {
+      const d = (await api.get(`/server-control/${serviceName}/spla`)).data;
+      return {
+        list: Array.isArray(d?.splaList) ? d.splaList : [],
+        partial: d?.partial === true,
+      };
+    },
+    enabled: !!serviceName && enabled,
+    staleTime: 60_000,
+  });
+}
+
+/**
+ * 某一类 SPLA 授权是不是已经登记且有效。
+ *
+ * SplaStatusEnum 只有 used / waitingToCheck / terminated 三个值。
+ * waitingToCheck 也算数 —— OVH 还在核,但记录已经建上了,重复提交没有意义。
+ */
+export function hasActiveSpla(r: SplaListResult | undefined, type: string): boolean {
+  if (!r) return false;
+  return r.list.some(
+    (x) => x.type === type && String(x.status || "").toLowerCase() !== "terminated"
+  );
+}

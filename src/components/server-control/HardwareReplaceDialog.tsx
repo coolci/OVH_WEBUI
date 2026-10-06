@@ -5,10 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useCreateIntervention, type FaultyDisk } from "@/hooks/use-server-control";
 import { toast } from "sonner";
+import { useTranslation, Trans } from "react-i18next";
+import { errorMessage } from "@/components/common/LoadFailed";
 
 type HardwareType = "hardDiskDrive" | "memory" | "cooling" | "";
 
-/** 硬件更换工单：硬盘（必填序列号）/ 内存（必填详情）/ 散热（必填详情） */
+/** 硬件更换工单：硬盘 / 内存（必填详情）/ 散热（必填详情）+ 可选英文备注 */
 export function HardwareReplaceDialog({
   serviceName,
   open,
@@ -18,12 +20,18 @@ export function HardwareReplaceDialog({
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }) {
+  const { t } = useTranslation();
   const mut = useCreateIntervention();
   const [type, setType] = useState<HardwareType>("");
   const [details, setDetails] = useState("");
   const [comment, setComment] = useState("");
-  // 故障盘：每行 "序列号" 或 "序列号 槽位号"。OVH 按 disk_serial 定位要换的盘。
+  // 故障盘序列号（每行一个，可写成 "序列号" 或 "序列号 槽位号"）。
+  // OVH 按 disk_serial 定位要换的盘，拿不到就只能整机换盘，所以这里必填。
   const [diskInput, setDiskInput] = useState("");
+  // 故障盘坏到读不出序列号时,改列【健康盘】让 OVH 换其余的(接口的 inverse 语义,
+  // OVH 硬盘更换指南明确写了这条路)。默认关:正常模式列故障盘。
+  const [inverse, setInverse] = useState(false);
+  // 故障内存槽位（可选，逗号或换行分隔，如 DIMM_A1）
   const [slotInput, setSlotInput] = useState("");
 
   const reset = () => {
@@ -31,9 +39,11 @@ export function HardwareReplaceDialog({
     setDetails("");
     setComment("");
     setDiskInput("");
+    setInverse(false);
     setSlotInput("");
   };
 
+  /** 把每行 "序列号 [槽位号]" 解析成 OVH 要的 {disk_serial, slot_id?} */
   const parseDisks = (raw: string): FaultyDisk[] =>
     raw
       .split(/[\n,]/)
@@ -55,32 +65,43 @@ export function HardwareReplaceDialog({
 
   const handleSubmit = async () => {
     if (!type) {
-      toast.error("请选择硬件类型");
+      toast.error(t("maint.hwReplace.toast.needType"));
       return;
     }
     if ((type === "memory" || type === "cooling") && !details.trim()) {
-      toast.error("此类型需要填写故障详情");
+      toast.error(t("maint.hwReplace.toast.needDetails"));
       return;
     }
     const disks = type === "hardDiskDrive" ? parseDisks(diskInput) : [];
     if (type === "hardDiskDrive" && disks.length === 0) {
-      toast.error("请填写至少一块故障盘的序列号");
+      toast.error(
+        inverse ? t("maint.hwReplace.toast.needInverseDisks") : t("maint.hwReplace.toast.needDisks")
+      );
       return;
     }
     try {
-      await mut.mutateAsync({
+      const res = await mut.mutateAsync({
         serviceName,
         type,
         details: details || undefined,
         comment: comment || undefined,
         disks: disks.length ? disks : undefined,
+        inverse: type === "hardDiskDrive" ? inverse : undefined,
         slots: type === "memory" ? parseSlots(slotInput) : undefined,
       });
-      toast.success("硬件更换工单已提交");
+      // 工单号是后续跟进的唯一凭据,必须让用户看到并留得住(时长拉长)
+      const tn = res?.ticketNumber && res.ticketNumber !== "0" ? res.ticketNumber : "";
+      toast.success(
+        tn
+          ? t("maint.hwReplace.toast.submittedWithTicket", { ticket: tn })
+          : res?.message || t("maint.hwReplace.toast.submitted"),
+        { duration: 12000 }
+      );
+      if (res?.notice) toast.info(res.notice, { duration: 12000 });
       onOpenChange(false);
       reset();
     } catch (e: any) {
-      toast.error(e?.response?.data?.error || e?.message || "提交失败");
+      toast.error(errorMessage(e));
     }
   };
 
@@ -96,31 +117,31 @@ export function HardwareReplaceDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Cpu className="w-5 h-5" />
-            硬件更换申请
+            {t("maint.hwReplace.title")}
           </DialogTitle>
-          <DialogDescription>提交工单后 OVH 客服会安排现场更换硬件，期间服务器可能离线。</DialogDescription>
+          <DialogDescription>{t("maint.hwReplace.desc")}</DialogDescription>
         </DialogHeader>
 
         {!type ? (
           <div className="space-y-3">
-            <p className="text-[13px] font-medium">请选择要更换的硬件类型：</p>
+            <p className="text-[13px] font-medium">{t("maint.hwReplace.pickTitle")}</p>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <TypeCard
                 icon={HardDrive}
-                title="硬盘"
-                description="故障或损坏的硬盘"
+                title={t("maint.hwReplace.hw.diskTitle")}
+                description={t("maint.hwReplace.hw.diskDesc")}
                 onClick={() => setType("hardDiskDrive")}
               />
               <TypeCard
                 icon={Cpu}
-                title="内存 (RAM)"
-                description="故障的内存模块"
+                title={t("maint.hwReplace.hw.memoryTitle")}
+                description={t("maint.hwReplace.hw.memoryDesc")}
                 onClick={() => setType("memory")}
               />
               <TypeCard
                 icon={Activity}
-                title="散热系统"
-                description="风扇或散热器"
+                title={t("maint.hwReplace.hw.coolingTitle")}
+                description={t("maint.hwReplace.hw.coolingDesc")}
                 onClick={() => setType("cooling")}
               />
             </div>
@@ -128,40 +149,54 @@ export function HardwareReplaceDialog({
         ) : (
           <div className="space-y-3">
             <div>
-              <label className="text-[12px] font-semibold block mb-1.5">组件类型</label>
+              <label className="text-[12px] font-semibold block mb-1.5">{t("maint.hwReplace.typeLabel")}</label>
               <div className="flex gap-2">
                 <div className="flex-1 px-3 py-2 border border-border rounded-md text-[13px] bg-secondary/30">
-                  {type === "hardDiskDrive" && "硬盘驱动器"}
-                  {type === "memory" && "内存 (RAM)"}
-                  {type === "cooling" && "散热系统"}
+                  {type === "hardDiskDrive" && t("maint.hwReplace.typeValue.hardDiskDrive")}
+                  {type === "memory" && t("maint.hwReplace.typeValue.memory")}
+                  {type === "cooling" && t("maint.hwReplace.typeValue.cooling")}
                 </div>
-                <Button variant="outline" size="icon" onClick={() => setType("")} title="重新选择">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setType("")}
+                  title={t("maint.hwReplace.reselectTitle")}
+                >
                   <RotateCcw className="w-4 h-4" />
                 </Button>
               </div>
             </div>
 
             <div>
-              <label className="text-[12px] font-semibold block mb-1.5">备注说明（可选，建议英文）</label>
+              <label className="text-[12px] font-semibold block mb-1.5">
+                {t("maint.hwReplace.commentLabel")}
+              </label>
               <textarea
                 rows={3}
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
-                placeholder="Describe the issue in English (optional)…"
-                className="w-full px-3 py-2 border border-border rounded-md text-[13px] bg-background focus:outline-none focus:ring-1 focus:ring-ring resize-none"
+                placeholder={t("maint.hwReplace.commentPlaceholder")}
+                className="w-full px-3 py-2 border border-border rounded-md text-base sm:text-[13px] bg-background focus:outline-none focus:ring-1 focus:ring-ring resize-none"
               />
             </div>
 
             {(type === "memory" || type === "cooling") && (
               <div>
                 <label className="text-[12px] font-semibold block mb-1.5">
-                  故障详情（{type === "memory" ? "内存必填" : "散热必填"}，建议英文）
+                  {t("maint.hwReplace.detailsLabel", {
+                    what:
+                      type === "memory"
+                        ? t("maint.hwReplace.detailReqMemory")
+                        : t("maint.hwReplace.detailReqCooling"),
+                  })}
                 </label>
                 <Input
                   value={details}
                   onChange={(e) => setDetails(e.target.value)}
                   placeholder={
-                    type === "memory" ? "e.g., Memory module failure, slot 1" : "e.g., Fan noise, overheating issue"
+                    type === "memory"
+                      ? t("maint.hwReplace.detailsPlaceholderMemory")
+                      : t("maint.hwReplace.detailsPlaceholderFan")
                   }
                 />
               </div>
@@ -170,19 +205,32 @@ export function HardwareReplaceDialog({
             {type === "hardDiskDrive" && (
               <div className="space-y-2">
                 <label className="text-[12px] font-semibold block">
-                  故障盘序列号（必填，每行一块）
+                  {inverse ? t("maint.hwReplace.diskLabelInverse") : t("maint.hwReplace.diskLabelNormal")}
                 </label>
                 <textarea
                   rows={3}
                   value={diskInput}
                   onChange={(e) => setDiskInput(e.target.value)}
-                  placeholder={"S3Z2NB0K123456\nS3Z2NB0K654321 2   ← 序列号后可跟槽位号"}
-                  className="w-full px-3 py-2 border border-border rounded-md text-[13px] font-mono bg-background focus:outline-none focus:ring-1 focus:ring-ring resize-none"
+                  placeholder={t("maint.hwReplace.diskPlaceholder")}
+                  className="w-full px-3 py-2 border border-border rounded-md text-base sm:text-[13px] font-mono bg-background focus:outline-none focus:ring-1 focus:ring-ring resize-none"
                 />
-                <div className="border border-border bg-secondary/30 rounded-2xl p-3 text-[12px] leading-relaxed text-muted-foreground">
-                  OVH 按 <code className="font-mono text-foreground">disk_serial</code> 定位要换的盘。留空会被判成「更换整机所有硬盘」，后端会直接拒绝。
-                  序列号可在救援系统执行 <code className="font-mono text-foreground">smartctl -i /dev/sdX</code> 或{" "}
-                  <code className="font-mono text-foreground">nvme list</code> 查看。
+                <label className="flex items-start gap-2 cursor-pointer text-[12px]">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={inverse}
+                    onChange={(e) => setInverse(e.target.checked)}
+                  />
+                  <span>
+                    <Trans i18nKey="maint.hwReplace.inverseLabel" components={{ b: <b /> }} />
+                    <span className="block text-muted-foreground">{t("maint.hwReplace.inverseNote")}</span>
+                  </span>
+                </label>
+                <div className="border border-info/40 bg-info/5 rounded-2xl p-3 text-[12px] leading-relaxed">
+                  <Trans
+                    i18nKey="maint.hwReplace.diskGuide"
+                    components={{ code: <code className="font-mono" />, b: <b /> }}
+                  />
                 </div>
               </div>
             )}
@@ -190,7 +238,7 @@ export function HardwareReplaceDialog({
             {type === "memory" && (
               <div>
                 <label className="text-[12px] font-semibold block mb-1.5">
-                  故障内存槽位（可选，逗号或换行分隔，如 DIMM_A1）
+                  {t("maint.hwReplace.slotLabel")}
                 </label>
                 <Input
                   value={slotInput}
@@ -203,10 +251,10 @@ export function HardwareReplaceDialog({
             <div className="border border-warning/40 bg-warning/5 rounded-2xl p-3 text-[12px] flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 text-warning mt-0.5 flex-shrink-0" />
               <ul className="list-disc list-inside leading-relaxed space-y-0.5">
-                <li>系统将创建工单提交给 OVH 客服</li>
-                <li>OVH 将安排硬件更换时间</li>
-                <li>更换期间服务器可能离线</li>
-                <li>进度通过邮件通知</li>
+                <li>{t("maint.hwReplace.flow.ticket")}</li>
+                <li>{t("maint.hwReplace.flow.schedule")}</li>
+                <li>{t("maint.hwReplace.flow.offline")}</li>
+                <li>{t("maint.hwReplace.flow.mail")}</li>
               </ul>
             </div>
           </div>
@@ -215,22 +263,15 @@ export function HardwareReplaceDialog({
         <DialogFooter>
           {type && (
             <Button variant="outline" onClick={() => setType("")}>
-              返回
+              {t("maint.hwReplace.backBtn")}
             </Button>
           )}
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            取消
+            {t("common.cancel")}
           </Button>
           {type && (
-            <Button
-              onClick={handleSubmit}
-              disabled={
-                mut.isPending ||
-                (type === "hardDiskDrive" && !diskInput.trim()) ||
-                ((type === "memory" || type === "cooling") && !details.trim())
-              }
-            >
-              {mut.isPending ? "提交中…" : "提交申请"}
+            <Button onClick={handleSubmit} disabled={mut.isPending}>
+              {mut.isPending ? t("maint.hwReplace.submitting") : t("maint.hwReplace.submitBtn")}
             </Button>
           )}
         </DialogFooter>
