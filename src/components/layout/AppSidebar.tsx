@@ -15,10 +15,13 @@ import {
   CloudLightning,
   Github,
   Flame,
+  PartyPopper,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { QuickOrderDialog } from "@/components/orders/QuickOrderDialog";
 import { BrandBar } from "./BrandBar";
+import { useServerLotterySummary } from "@/hooks/use-server-control";
+import { useTranslation } from "react-i18next";
 
 interface AppSidebarProps {
   onNavigate?: () => void;
@@ -67,6 +70,8 @@ const navGroups = [
 export function AppSidebar({ onNavigate }: AppSidebarProps) {
   const location = useLocation();
   const [quickOrderOpen, setQuickOrderOpen] = useState(false);
+  const { winnerCount } = useServerLotterySummary();
+  const { t } = useTranslation();
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-sidebar">
@@ -83,6 +88,7 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
             <div className="space-y-0.5">
               {group.items.map((item) => {
                 const isActive = location.pathname === item.to;
+                const hasLottery = item.to === "/server-control" && winnerCount > 0;
                 return (
                   <NavLink
                     key={item.to}
@@ -105,12 +111,21 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
                       strokeWidth={isActive ? 2.2 : 1.75}
                     />
                     <span className="truncate">{item.label}</span>
+                    {hasLottery && (
+                      <span
+                        title={t("maint.overview.lottery.navTip", { count: winnerCount })}
+                        className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-md border border-amber-400/30 bg-amber-400/10 px-1.5 py-0.5 text-[10px] font-semibold leading-tight text-amber-700 dark:text-amber-300"
+                      >
+                        <PartyPopper className="h-3 w-3" aria-hidden="true" />
+                        {t("maint.overview.lottery.navBadge", { count: winnerCount })}
+                      </span>
+                    )}
                     {item.to === "/telegram-order" && !isActive && (
                       <span className="ml-auto text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-400/90 font-medium leading-none">
                         TG
                       </span>
                     )}
-                    {isActive && (
+                    {isActive && !hasLottery && (
                       <span className="ml-auto h-1.5 w-1.5 rounded-full bg-primary" />
                     )}
                   </NavLink>

@@ -68,10 +68,12 @@ export const qk = {
   // 并在后台重拉,期间组件读到的 data 仍是上一个账户的:切过去的那几百毫秒里
   // 看到的是别人的服务器列表、别人的 /me 身份信息;重拉一旦失败,就一直停在那儿。
   // 把账户放进 key,切换即缓存未命中 → 走骨架屏,不会串号。
-  // (按 serviceName 索引的那些不用带:serviceName 在 OVH 全局唯一。)
+  // hardware 也带 accountId:中奖提醒会后台读取全部机器，避免账户切换后沿用旧账户的检测结果。
+  // 其余按 serviceName 索引的详情依赖全局唯一的服务名。
   serverControl: {
     list: (accountId: string) => ["server-control", "list", accountId] as const,
-    hardware: (serviceName: string) => ["server-control", "hardware", serviceName] as const,
+    hardware: (serviceName: string, accountId: string) =>
+      ["server-control", "hardware", serviceName, accountId] as const,
     rescue: (serviceName: string) => ["server-control", "rescue", serviceName] as const,
     spla: (serviceName: string) => ["server-control", "spla", serviceName] as const,
     serviceInfo: (serviceName: string) => ["server-control", "service-info", serviceName] as const,
@@ -107,7 +109,10 @@ export const qk = {
     engagement: (serviceName: string) => ["server-control", "engagement", serviceName] as const,
     engagementAvailable: (serviceName: string) => ["server-control", "engagement-available", serviceName] as const,
     engagementRequest: (serviceName: string) => ["server-control", "engagement-request", serviceName] as const,
-    mitigation: (serviceName: string) => ["server-control", "mitigation", serviceName] as const,
+    mitigation: (serviceName: string, accountId?: string) =>
+      accountId === undefined
+        ? ["server-control", "mitigation", serviceName] as const
+        : ["server-control", "mitigation", serviceName, accountId] as const,
     taskTimeslots: (serviceName: string, taskId: number, periodStart: string, periodEnd: string) =>
       ["server-control", "task-timeslots", serviceName, taskId, periodStart, periodEnd] as const,
   },

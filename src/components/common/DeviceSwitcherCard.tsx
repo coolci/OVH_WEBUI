@@ -11,6 +11,8 @@ import {
 import { StatusDot } from "@/components/common/StatusDot";
 import { maskSensitive } from "@/hooks/use-hide-ip";
 import { cn } from "@/lib/utils";
+import { HardwareLotteryBadge } from "@/components/common/HardwareLotteryBadge";
+import type { HardwareLottery } from "@/hooks/use-server-control";
 
 export interface DeviceSwitcherAccount {
   id: string;
@@ -26,6 +28,7 @@ export interface DeviceSwitcherItem {
   datacenter?: string;
   subtext?: string;
   state: "ok" | "running" | "stopped" | "warning" | "error" | string;
+  lottery?: HardwareLottery | null;
 }
 
 export interface DeviceSwitcherCardProps {
@@ -55,7 +58,7 @@ export interface DeviceSwitcherCardProps {
  * - 3 台设备：严格 3 等分网格 (移动端单列，平板/桌面端 3 列对称)。
  * - 4 台设备：移动端 2x2 对称，平板/桌面端 4 列对称。
  * - 5+ 台设备：提供顶栏快速下拉跳转 + 底栏支持左右平滑滚动和轮播。
- * - 1 台设备：仅展示状态与账户，不呈现冗余单项切换按钮。
+ * - 1 台设备：服务器保留卡片以展示中奖提醒；VPS 仅展示状态与账户。
  */
 export function DeviceSwitcherCard({
   deviceType,
@@ -103,6 +106,7 @@ export function DeviceSwitcherCard({
     const isCurrent = item.serviceName === selectedName;
     const isOk = item.state === "ok" || item.state === "running";
     const isWarn = item.state === "stopped" || item.state === "warning";
+    const hasLottery = item.lottery?.checked && item.lottery.won;
 
     return (
       <div
@@ -111,7 +115,9 @@ export function DeviceSwitcherCard({
           "group relative flex flex-col justify-between p-2.5 sm:p-3 rounded-xl border text-left transition-all duration-150 touch-manipulation min-w-0 select-none",
           isCurrent
             ? "border-primary/60 bg-primary/10 text-foreground shadow-sm ring-1 ring-primary/25"
-            : "border-border/60 hover:border-border bg-card/60 hover:bg-muted/60 text-muted-foreground hover:text-foreground"
+            : hasLottery
+              ? "border-amber-400/40 hover:border-amber-400/60 bg-amber-400/5 hover:bg-amber-400/10 text-foreground"
+              : "border-border/60 hover:border-border bg-card/60 hover:bg-muted/60 text-muted-foreground hover:text-foreground"
         )}
       >
         <button
@@ -154,6 +160,11 @@ export function DeviceSwitcherCard({
               </span>
             )}
           </div>
+          {hasLottery && (
+            <div className="mt-2 flex">
+              <HardwareLotteryBadge lottery={item.lottery} />
+            </div>
+          )}
         </button>
 
         {/* 快捷别名修改入口 (右键或悬浮点击) */}
@@ -230,6 +241,7 @@ export function DeviceSwitcherCard({
                           <span className="text-[10px] text-muted-foreground font-sans ml-1">
                             {(it.datacenter || "").toUpperCase()}
                           </span>
+                          <HardwareLotteryBadge lottery={it.lottery} className="font-sans" />
                         </div>
                       </SelectItem>
                     ))}
@@ -261,12 +273,12 @@ export function DeviceSwitcherCard({
           </div>
         </div>
 
-        {/* 底栏: 设备快速切换网格 (当有 2 台及以上机器时展示) */}
-        {count > 1 && (
+        {/* 底栏: 设备快速切换网格，单台服务器也显示中奖标记 */}
+        {(count > 1 || (isServer && count === 1)) && (
           <div className="pt-2.5 border-t border-border/50">
             {/* 2 台机器：严格 2 等分网格，彻底消灭横向截断 */}
-            {count === 2 && (
-              <div className="grid grid-cols-2 gap-2 sm:gap-2.5 w-full">
+            {count <= 2 && (
+              <div className={cn("grid gap-2 sm:gap-2.5 w-full", count === 1 ? "grid-cols-1" : "grid-cols-2")}>
                 {items.map(renderCard)}
               </div>
             )}

@@ -1,21 +1,43 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 	"sync"
 
 	"github.com/gin-gonic/gin"
+	ovhsdk "github.com/ovh/go-ovh/ovh"
 
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/ovh"
 )
 
+// mitigationErrorFields 保留上游诊断信息，区分 IP 对象读取失败与已知缓解状态。
+// 列表里有该 IP 不代表 /ip/{ip}/mitigation 能读取；404 也不代表服务器下线或没有防护。
+func mitigationErrorFields(err error) gin.H {
+	fields := gin.H{"error": ovh.Explain(err), "detail": err.Error()}
+	var apiErr *ovhsdk.APIError
+	if errors.As(err, &apiErr) {
+		fields["upstreamStatus"] = apiErr.Code
+		if apiErr.QueryID != "" {
+			fields["queryId"] = apiErr.QueryID
+		}
+		message := strings.ToLower(apiErr.Message)
+		if apiErr.Code == http.StatusNotFound &&
+			strings.Contains(message, "requested object (ip =") && strings.Contains(message, "does not exist") {
+			fields["errorCode"] = "IP_OBJECT_NOT_FOUND"
+			fields["error"] = "OVH 无法读取该 IP 对象，当前 DDoS 缓解状态未知。请在 OVH 控制台核对该 IP；持续失败请携带查询号联系 OVH 支持。"
+		}
+	}
+	return fields
+}
+
 // GetMitigation GET /api/server-control/:service_name/mitigation
 //
 // 列服务器所有 IP 的 DDoS 缓解状态。
 // OVH 的 /ip/{ip}/mitigation 端点要求 {ip} 是 IP 块(/32 用 %2F 转义),
-// 但是从 /dedicated/server/{svc}/ips 拿到的就是 IP 块格式,直接拼。
+// 使用 /dedicated/server/{svc}/ips 返回的原始块名，不猜测掩码；详情不可读时保留未知状态。
 //
 // 返回结构:
 //
@@ -46,12 +68,11 @@ func GetMitigation(state *app.State) gin.HandlerFunc {
 		var wg sync.WaitGroup
 		for i, blk := range ipBlocks {
 			// /ip/{ip}/mitigation 返回 ipv4[]，ip.MitigationIp.ipOnMitigation 也是 ipv4：
-			// anti-DDoS Mitigation 只覆盖 IPv4。对 IPv6 块发请求只会换回一条 OVH 报错，
-			// 白白污染页面，不如直接标注跳过（与 Enable/DisableMitigation 的 IPv6 判断一致）。
+			// 该查询接口仅支持 IPv4，跳过 IPv6；接口的限制不能用于判断 IPv6 防护状态。
 			if strings.Contains(blk, ":") {
 				results[i] = ipResult{
 					block: blk,
-					note:  "IPv6 不支持 anti-DDoS Mitigation（IPv6 默认有网络层免疫）",
+					note:  "此 IPv4 缓解接口不支持 IPv6，不能据此判断 IPv6 防护状态",
 				}
 				continue
 			}
@@ -90,6 +111,9 @@ func GetMitigation(state *app.State) gin.HandlerFunc {
 								"permanent":      false,
 								"_detailError":   err.Error(),
 							}
+							for key, value := range mitigationErrorFields(err) {
+								details[jdx][key] = value
+							}
 							return
 						}
 						details[jdx] = d
@@ -105,7 +129,9 @@ func GetMitigation(state *app.State) gin.HandlerFunc {
 		for _, r := range results {
 			row := gin.H{"ipBlock": r.block, "mitigations": r.mitigations}
 			if r.err != nil {
-				row["error"] = r.err.Error()
+				for key, value := range mitigationErrorFields(r.err) {
+					row[key] = value
+				}
 				state.Logger.Warn("[Mitigation] 获取 "+r.block+" 缓解列表失败: "+r.err.Error(), "server_control")
 			}
 			if r.note != "" {
@@ -120,66 +146,27 @@ func GetMitigation(state *app.State) gin.HandlerFunc {
 	}
 }
 
-// EnableMitigation POST /api/server-control/:service_name/mitigation/:ip
-// 对指定 IP 开 permanent mitigation。注意 :ip 参数是单个 IPv4,所属 block 用 query ?block=xxx
+// 永久缓解已于 2025 年退役。POST /ip/{ip}/mitigation 虽然仍存在，但手动创建
+// 不再启用 permanent 模式，不能将创建对象成功报告成“已开启永久防护”。
+// 官方依据: https://github.com/ovh/infrastructure-roadmap/issues/282 及现行 /ip.json。
+func permanentMitigationRemoved(c *gin.Context) {
+	c.JSON(http.StatusGone, gin.H{
+		"success": false,
+		"error":   "OVH 已停用 IP 永久缓解模式。自动 DDoS 防护无需手动开启，当前页面仅查询缓解状态。",
+		"code":    "PERMANENT_MITIGATION_REMOVED",
+	})
+}
+
+// EnableMitigation 保留本地路由兼容，明确拒绝已退役的永久模式操作。
 func EnableMitigation(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		ip := c.Param("ip")
-		ipBlock := c.Query("block")
-		if ipBlock == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少 block 参数(IP 所属的 ipBlock)", "code": "E3694F9E8"})
-			return
-		}
-		// OVH ipOnMitigation 字段是 ipv4 类型,IPv6 走过去会 400
-		if !strings.Contains(ip, ".") || strings.Contains(ip, ":") {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"success": false,
-				"error":   "OVH anti-DDoS Mitigation 只支持 IPv4。IPv6 地址默认有网络层免疫", "code": "E694446BE",
-			})
-			return
-		}
-		client, err := ovhClientFor(state, c)
-		if err != nil {
-			noOVHResp(c)
-			return
-		}
-		encoded := strings.ReplaceAll(ipBlock, "/", "%2F")
-		var result map[string]interface{}
-		if err := client.Post("/ip/"+encoded+"/mitigation",
-			map[string]interface{}{"ipOnMitigation": ip}, &result); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
-			return
-		}
-		state.Logger.Info("启用 IP "+ip+" 的永久 DDoS 缓解", "server_control")
-		c.JSON(http.StatusOK, gin.H{"success": true, "message": "DDoS 缓解已启用", "code": "ED793E10A", "mitigation": result})
+		permanentMitigationRemoved(c)
 	}
 }
 
-// DisableMitigation DELETE /api/server-control/:service_name/mitigation/:ip?block=...
-// 关闭指定 IP 的 permanent mitigation。auto mitigation 在攻击时仍会自动启用。
+// DisableMitigation 不删除自动缓解对象，避免把只读状态查询混成防护开关。
 func DisableMitigation(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		ip := c.Param("ip")
-		ipBlock := c.Query("block")
-		if ipBlock == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少 block 参数", "code": "E4079B204"})
-			return
-		}
-		if !strings.Contains(ip, ".") || strings.Contains(ip, ":") {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "IPv6 不支持 anti-DDoS Mitigation", "code": "ED5483A75"})
-			return
-		}
-		client, err := ovhClientFor(state, c)
-		if err != nil {
-			noOVHResp(c)
-			return
-		}
-		encoded := strings.ReplaceAll(ipBlock, "/", "%2F")
-		if err := client.Delete("/ip/"+encoded+"/mitigation/"+ip, nil); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
-			return
-		}
-		state.Logger.Info("关闭 IP "+ip+" 的永久 DDoS 缓解", "server_control")
-		c.JSON(http.StatusOK, gin.H{"success": true, "message": "DDoS 缓解已关闭", "code": "E3830D769"})
+		permanentMitigationRemoved(c)
 	}
 }

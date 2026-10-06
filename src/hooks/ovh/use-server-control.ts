@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { queryOptions, useQueries, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/http";
 import { toast } from "sonner";
 import i18n from "@/i18n";
@@ -106,7 +106,7 @@ export function useOwnedServers() {
   return useQuery({
     queryKey: qk.serverControl.list(accountId),
     queryFn: async () => {
-      const res = await api.get("/server-control/list");
+      const res = await api.get("/server-control/list", { params: { account: accountId } });
       const raw = (res.data?.servers || []) as OwnedServer[];
       return raw.filter((s) => {
         const state = s.state?.toLowerCase();
@@ -117,20 +117,64 @@ export function useOwnedServers() {
       });
     },
     staleTime: 60_000,
+    enabled: !!accountId,
   });
 }
 
-/** 硬件信息（后端返回 { success, hardware: {...} }） */
-export function useServerHardware(serviceName: string | null) {
-  return useQuery({
-    queryKey: qk.serverControl.hardware(serviceName || ""),
-    queryFn: async () => {
-      const res = await api.get(`/server-control/${serviceName}/hardware`);
+/** 导航提醒和概览共享硬件请求及缓存，切账户时隔离检测结果。 */
+function serverHardwareQueryOptions(serviceName: string, accountId: string) {
+  return queryOptions({
+    queryKey: qk.serverControl.hardware(serviceName, accountId),
+    queryFn: async ({ signal }) => {
+      const res = await api.get(`/server-control/${encodeURIComponent(serviceName)}/hardware`, {
+        params: { account: accountId },
+        signal,
+      });
       const hw = (res.data?.hardware || null) as HardwareInfo | null;
       return hw ? { ...hw, lottery: (res.data?.lottery || null) as HardwareLottery | null } : null;
     },
-    enabled: !!serviceName,
+    // 硬件变动不频繁，切页面时复用结果；手动刷新仍会重新检测。
+    staleTime: 10 * 60_000,
+    enabled: !!serviceName && !!accountId,
   });
+}
+
+/** 硬件信息（后端返回 { success, hardware: {...}, lottery: {...} }） */
+export function useServerHardware(serviceName: string | null) {
+  const [accountId] = useActiveAccount();
+  return useQuery(serverHardwareQueryOptions(serviceName || "", accountId));
+}
+
+/** 检查当前账户的全部机器，进入控制页之前也能在导航看到中奖提醒。 */
+export function useServerLotterySummary() {
+  const [accountId] = useActiveAccount();
+  const qc = useQueryClient();
+  const serversQuery = useOwnedServers();
+  const servers = serversQuery.data || [];
+  const hardwareQueries = useQueries({
+    queries: servers.map((server) => serverHardwareQueryOptions(server.serviceName, accountId)),
+  });
+  const byServiceName = new Map<string, HardwareLottery>();
+  servers.forEach((server, index) => {
+    const lottery = hardwareQueries[index].data?.lottery;
+    if (lottery?.checked && lottery.won) byServiceName.set(server.serviceName, lottery);
+  });
+
+  const refresh = async () => {
+    const result = await serversQuery.refetch();
+    await Promise.all((result.data || []).map((server) => qc.invalidateQueries({
+      queryKey: qk.serverControl.hardware(server.serviceName, accountId),
+      exact: true,
+    })));
+  };
+
+  return {
+    serversQuery,
+    byServiceName,
+    winnerCount: byServiceName.size,
+    isFetching: serversQuery.isFetching || hardwareQueries.some((query) => query.isFetching),
+    refresh,
+  };
 }
 
 
@@ -363,25 +407,33 @@ export function useUpdateEngagementEndRule(serviceName: string) {
 
 export interface MitigationIp {
   ipOnMitigation: string;
-  state: string; // activated / pending / disabled / ...
+  state: string; // ok / creationPending / removalPending / unknown
   auto: boolean;
   permanent: boolean;
+  error?: string;
+  errorCode?: string;
+  detail?: string;
+  queryId?: string;
 }
 
 export interface MitigationBlock {
   ipBlock: string;
   mitigations: MitigationIp[];
   error?: string;
+  errorCode?: string;
+  detail?: string;
+  queryId?: string;
 }
 
 export function useMitigation(serviceName: string | null) {
+  const [accountId] = useActiveAccount();
   return useQuery({
-    queryKey: qk.serverControl.mitigation(serviceName || ""),
+    queryKey: qk.serverControl.mitigation(serviceName || "", accountId),
     queryFn: async () => {
-      const res = await api.get(`/server-control/${serviceName}/mitigation`);
+      const res = await api.get(`/server-control/${serviceName}/mitigation`, { params: { account: accountId } });
       return (res.data?.ips || []) as MitigationBlock[];
     },
-    enabled: !!serviceName,
+    enabled: !!serviceName && !!accountId,
     // 过渡态自动轮询(creationPending/removalPending → ok 通常 30 秒-2 分钟)
     refetchInterval: (q) => {
       const data = q.state.data as MitigationBlock[] | undefined;

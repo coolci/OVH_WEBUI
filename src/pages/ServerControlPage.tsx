@@ -13,7 +13,7 @@ import { StatusDot } from "@/components/common/StatusDot";
 import { Skeleton } from "@/components/common/Skeleton";
 import { EmptyState } from "@/components/common/EmptyState";
 import {
-  useOwnedServers,
+  useServerLotterySummary,
   useServerServiceInfo,
   useServerMonitoring,
   useToggleMonitoring,
@@ -46,7 +46,7 @@ const EMPTY_SERVERS: OwnedServer[] = [];
 
 /** 服务器控制中心：顶部下拉切换服务器 + 4 tab 详情 */
 function ServerControlPage() {
-  const q = useOwnedServers();
+  const { serversQuery: q, byServiceName: lotteries, isFetching, refresh } = useServerLotterySummary();
   const { hidden, toggle } = useHideIp();
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<null | OwnedServer>(null);
@@ -104,8 +104,8 @@ function ServerControlPage() {
               </TooltipTrigger>
               <TooltipContent>{hidden ? "已隐藏敏感信息 · 点击显示" : "隐藏 IP"}</TooltipContent>
             </Tooltip>
-            <Button size="sm" className="h-8 gap-1.5 text-xs font-medium rounded-lg shadow-sm px-3" onClick={() => q.refetch()} disabled={q.isFetching} title="刷新服务器状态">
-              <RefreshCw className={cn("w-3.5 h-3.5", q.isFetching && "animate-spin")} />
+            <Button size="sm" className="h-8 gap-1.5 text-xs font-medium rounded-lg shadow-sm px-3" onClick={() => void refresh()} disabled={isFetching} title="刷新服务器状态与中奖检测">
+              <RefreshCw className={cn("w-3.5 h-3.5", isFetching && "animate-spin")} />
               <span>刷新</span>
             </Button>
           </div>
@@ -130,10 +130,11 @@ function ServerControlPage() {
           datacenter: s.datacenter,
           subtext: s.commercialRange || "OVH 独服",
           state: s.state,
+          lottery: lotteries.get(s.serviceName),
         }))}
         selectedName={selectedName || undefined}
         onSelectName={(name) => setSelectedName(name)}
-        isFetching={q.isFetching}
+        isFetching={isFetching}
         hidden={hidden}
         onRename={(serviceName) => {
           const s = servers.find((item) => item.serviceName === serviceName);

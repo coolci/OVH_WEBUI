@@ -8,7 +8,7 @@ function maskBlockValue(v: string, hidden: boolean): string {
 }
 import {
   Zap, Shield, FolderArchive, Globe, Wifi, Network, ShoppingBag, Settings, MapPin,
-  Power, AlertCircle, ShieldAlert, Plus, Trash2, KeyRound,
+  Power, AlertCircle, Plus, Trash2, KeyRound,
 } from "lucide-react";
 import type { OwnedServer } from "@/hooks/use-server-control";
 import {
@@ -22,7 +22,6 @@ import {
   useServerOrderable,
   useServerOptions,
   useServerIpSpecs,
-  useMitigation, useEnableMitigation, useDisableMitigation,
 } from "@/hooks/use-server-control";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,7 +50,6 @@ export function AdvancedTab({ server }: { server: OwnedServer }) {
         <TabsTrigger value="orderable" className="text-[11px] sm:text-[12px] px-2"><ShoppingBag className="w-3.5 h-3.5 mr-1" />{t("maint.advanced.tabs.orderable")}</TabsTrigger>
         <TabsTrigger value="options" className="text-[11px] sm:text-[12px] px-2"><Settings className="w-3.5 h-3.5 mr-1" />{t("maint.advanced.tabs.options")}</TabsTrigger>
         <TabsTrigger value="ip" className="text-[11px] sm:text-[12px] px-2"><MapPin className="w-3.5 h-3.5 mr-1" />{t("maint.advanced.tabs.ip")}</TabsTrigger>
-        <TabsTrigger value="ddos" className="text-[11px] sm:text-[12px] px-2"><ShieldAlert className="w-3.5 h-3.5 mr-1" />DDoS</TabsTrigger>
       </TabsList>
 
       <TabsContent value="burst"><BurstPane serviceName={server.serviceName} /></TabsContent>
@@ -63,7 +61,6 @@ export function AdvancedTab({ server }: { server: OwnedServer }) {
       <TabsContent value="orderable"><OrderablePane serviceName={server.serviceName} /></TabsContent>
       <TabsContent value="options"><OptionsPane serviceName={server.serviceName} /></TabsContent>
       <TabsContent value="ip"><IpSpecsPane serviceName={server.serviceName} /></TabsContent>
-      <TabsContent value="ddos"><MitigationPane serviceName={server.serviceName} /></TabsContent>
     </Tabs>
   );
 }
@@ -759,141 +756,4 @@ function LoadFailed({
 
 function PaneSkeleton() {
   return <Skeleton className="h-40 rounded-2xl" />;
-}
-
-// ─────────────────────────────── DDoS Mitigation ───────────────────────────────
-
-/** OVH MitigationStateEnum(ok / creationPending / removalPending) → 语言包 key */
-const MITIGATION_STATE_KEYS: Record<string, string> = {
-  ok: "maint.advanced.ddos.stateOk",
-  creationPending: "maint.advanced.ddos.stateCreating",
-  removalPending: "maint.advanced.ddos.stateRemoving",
-};
-
-function MitigationPane({ serviceName }: { serviceName: string }) {
-  const { t } = useTranslation();
-  const list = useMitigation(serviceName);
-  const enable = useEnableMitigation(serviceName);
-  const disable = useDisableMitigation(serviceName);
-
-  if (list.isPending) return <PaneSkeleton />;
-
-  const blocks = list.data || [];
-  if (blocks.length === 0) {
-    return <EmptyState icon={ShieldAlert} title={t("maint.advanced.ddos.noIp")} />;
-  }
-
-  const handleToggle = async (ip: string, block: string, currentlyActive: boolean) => {
-    try {
-      if (currentlyActive) {
-        await disable.mutateAsync({ ip, block });
-        toast.success(t("maint.advanced.ddos.toast.off"));
-      } else {
-        await enable.mutateAsync({ ip, block });
-        toast.success(t("maint.advanced.ddos.toast.on"));
-      }
-    } catch (e: any) {
-      // raw 只用于识别 OVH 的两类已知错误;展示一律走 errorMessage 翻译层
-      const raw = String(e?.response?.data?.error || e?.message || "");
-      if (/state need to be ok/i.test(raw)) {
-        toast.error(t("maint.advanced.ddos.toast.stateNotOk"), { duration: 6000 });
-      } else if (/is not valid for type ipv4/i.test(raw)) {
-        toast.error(t("maint.advanced.ddos.toast.ipv6Only"), { duration: 6000 });
-      } else {
-        toast.error(errorMessage(e));
-      }
-    }
-  };
-
-  return (
-    <div className="space-y-3">
-      <p className="text-[11px] text-muted-foreground">
-        {t("maint.advanced.ddos.intro")}
-        <br />
-        <span className="text-warning">{t("maint.advanced.ddos.ipv6Note")}</span>
-      </p>
-      {blocks.map((blk) => {
-        const isV6 = blk.ipBlock.includes(":") && !blk.ipBlock.includes(".");
-        return (
-        <div key={blk.ipBlock} className="border border-border rounded-2xl overflow-hidden">
-          <div className="px-3.5 py-2.5 border-b border-border bg-secondary/30 flex items-center gap-2">
-            <ShieldAlert className="w-3.5 h-3.5 text-muted-foreground" />
-            <code className="text-[12px] font-mono font-semibold">{blk.ipBlock}</code>
-            {isV6 && <span className="text-[10px] text-muted-foreground ml-1">IPv6</span>}
-            {blk.error && <span className="text-[11px] text-destructive ml-auto">{blk.error}</span>}
-          </div>
-          {isV6 ? (
-            <div className="px-3.5 py-3 text-[12px] text-muted-foreground">
-              {t("maint.advanced.ddos.ipv6Row")}
-            </div>
-          ) : blk.mitigations.length === 0 ? (
-            <div className="px-3.5 py-3 text-[12px] text-muted-foreground flex items-center gap-2 flex-wrap">
-              <span>{t("maint.advanced.ddos.noneRow")}</span>
-              <Button
-                size="sm"
-                variant="outline"
-                className="ml-auto h-7"
-                onClick={() => {
-                  const ip = blk.ipBlock.split("/")[0];
-                  handleToggle(ip, blk.ipBlock, false);
-                }}
-                disabled={enable.isPending}
-              >
-                {t("maint.advanced.ddos.enableBtn")}
-              </Button>
-            </div>
-          ) : (
-            <div className="divide-y divide-border">
-              {blk.mitigations.map((m) => {
-                // OVH MitigationStateEnum 只有 creationPending / ok / removalPending
-                const isOk = m.state === "ok";
-                const isCreating = m.state === "creationPending";
-                const isRemoving = m.state === "removalPending";
-                // 详情没拉到的 IP 后端也会保留占位(只有 ipOnMitigation + error)。
-                // 不标出来的话它会显示成一个没有状态的空行，用户以为是 bug。
-                // 注：MitigationIp 类型里还没有 error 字段（在 hooks 层，本次不改），先就地读。
-                const rowErr = (m as unknown as { error?: string }).error;
-                const stateKey = MITIGATION_STATE_KEYS[m.state];
-                return (
-                  <div key={m.ipOnMitigation} className="px-3.5 py-2.5 flex items-center gap-2 text-[12px]">
-                    <code className="font-mono">{m.ipOnMitigation}</code>
-                    {rowErr ? (
-                      <DetailErrorTag message={rowErr} />
-                    ) : (
-                    <Chip tone={mitigationTone(m.state)}>{stateKey ? t(stateKey) : m.state}</Chip>
-                    )}
-                    {m.auto && <span className="text-[11px] text-muted-foreground">{t("maint.advanced.ddos.auto")}</span>}
-                    {m.permanent && <span className="text-[11px] text-success">{t("maint.advanced.ddos.permanent")}</span>}
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="ml-auto h-7"
-                      onClick={() => handleToggle(m.ipOnMitigation, blk.ipBlock, true)}
-                      disabled={disable.isPending || !isOk || !!rowErr}
-                      title={
-                        isCreating
-                          ? t("maint.advanced.ddos.creatingTitle")
-                          : isRemoving
-                            ? t("maint.advanced.ddos.removingTitle")
-                            : ""
-                      }
-                    >
-                      {isCreating ? t("maint.advanced.ddos.creating") : isRemoving ? t("maint.advanced.ddos.removing") : t("maint.advanced.ddos.closeBtn")}
-                    </Button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function mitigationTone(state: string): "success" | "warning" | "default" {
-  if (state === "ok") return "success";
-  if (state === "creationPending" || state === "removalPending") return "warning";
-  return "default";
 }
