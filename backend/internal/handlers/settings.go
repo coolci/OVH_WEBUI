@@ -73,8 +73,8 @@ func SaveSettings(state *app.State) gin.HandlerFunc {
 		// 不重启的话用户换完 Token 保存,界面一切正常,但从此一条命令、
 		// 一个按钮都收不到,而且没有任何地方会提示他。
 		// 首次填 Token 同理:启动时没有 Token,poller 根本没起来。
-		if newCfg.TgToken != prev.TgToken {
-			state.Logger.Info("Telegram Token 已变更,重启长轮询", "telegram")
+		if newCfg.TgToken != prev.TgToken || newCfg.TgChatID != prev.TgChatID || (newCfg.TgToken != "" && !telegram.SnapshotPoller().Running) {
+			state.Logger.Info("Telegram 配置已变更，唤醒并重启长轮询", "telegram")
 			go RestartPoller(state)
 		}
 

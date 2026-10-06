@@ -19,12 +19,23 @@ import (
 	"github.com/ovh-webui/server/internal/types"
 )
 
-// TelegramStatus GET /api/telegram/status
+// TelegramStatus GET /api/telegram/status 与 GET /api/telegram/poller
 func TelegramStatus(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		cfg := state.Config.Get()
+		hasToken := strings.TrimSpace(cfg.TgToken) != ""
+		snap := telegram.SnapshotPoller()
 		c.JSON(http.StatusOK, gin.H{
-			"success": true,
-			"polling": telegram.SnapshotPoller(),
+			"success":      true,
+			"hasToken":     hasToken,
+			"poller":       snap,
+			"polling":      snap,
+			"running":      snap.Running,
+			"configured":   snap.Configured,
+			"botUsername":  snap.BotUsername,
+			"lastError":    snap.LastError,
+			"lastUpdateAt": snap.LastUpdateAt,
+			"offset":       snap.Offset,
 		})
 	}
 }

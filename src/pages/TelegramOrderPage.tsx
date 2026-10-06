@@ -262,7 +262,15 @@ const TelegramOrderPage = () => {
 
   const allowDatacenter = selectedMode === 'queue' || selectedMode === 'price' || selectedMode === 'buy' || selectedMode === 'watch';
   const needsDatacenter = selectedMode === 'queue' || selectedMode === 'price' || selectedMode === 'buy';
-  const isPollerConnected = !!poller.data?.running;
+  const isPollerConnected = !!(
+    poller.data?.running ||
+    poller.data?.polling?.running ||
+    poller.data?.poller?.running
+  );
+  const botUsername =
+    poller.data?.botUsername ||
+    poller.data?.polling?.botUsername ||
+    poller.data?.poller?.botUsername;
 
   return (
     <>
@@ -289,13 +297,13 @@ const TelegramOrderPage = () => {
                 ) : isPollerConnected ? (
                   <span
                     className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2.5 h-8 rounded-lg border border-emerald-500/25 flex-shrink-0"
-                    title={poller.data?.botUsername ? `@${poller.data.botUsername} 轮询正常` : "Bot 轮询正常"}
+                    title={botUsername ? `@${botUsername} 轮询正常` : "Bot 轮询正常"}
                   >
                     <Wifi className="h-3.5 w-3.5" />
                     <span>轮询中</span>
-                    {poller.data?.botUsername ? (
+                    {botUsername ? (
                       <span className="hidden md:inline font-mono text-[11px] text-muted-foreground">
-                        @{poller.data.botUsername}
+                        @{botUsername}
                       </span>
                     ) : null}
                   </span>

@@ -133,6 +133,11 @@ func runPoller(state *app.State, onUpdate func(map[string]interface{}), kick <-c
 			}
 		}
 
+		patchPoller(func(s *PollerStatus) {
+			s.Configured = true
+			s.Running = true
+		})
+
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan struct{})
 		go func() {
