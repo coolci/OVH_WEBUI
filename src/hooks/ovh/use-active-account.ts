@@ -3,9 +3,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   getActiveServerControlAccount,
   setActiveServerControlAccount,
+  getActiveVpsControlAccount,
+  setActiveVpsControlAccount,
 } from "@/lib/http";
 
 const EVT = "ovh-active-account-changed";
+const VPS_EVT = "ovh-active-vps-account-changed";
+const SRV_EVT = "ovh-active-server-account-changed";
 
 export type ActiveAccountResult = [string, (id: string) => void] & {
   accountId: string;
@@ -25,9 +29,11 @@ export function useActiveServerControlAccount(): ActiveAccountResult {
     // 监听跨组件 / 跨 tab 的活跃账户变化
     const onChange = () => setAccountId(getActiveServerControlAccount());
     window.addEventListener(EVT, onChange);
+    window.addEventListener(SRV_EVT, onChange);
     window.addEventListener("storage", onChange);
     return () => {
       window.removeEventListener(EVT, onChange);
+      window.removeEventListener(SRV_EVT, onChange);
       window.removeEventListener("storage", onChange);
     };
   }, []);
@@ -38,12 +44,44 @@ export function useActiveServerControlAccount(): ActiveAccountResult {
     setAccountId(id);
     // 让所有依赖账户的查询重拉
     qc.invalidateQueries({ queryKey: ["server-control"] });
-    qc.invalidateQueries({ queryKey: ["vps-control"] });
     qc.invalidateQueries({ queryKey: ["account"] });
     qc.invalidateQueries({ queryKey: ["ips"] });
     qc.invalidateQueries({ queryKey: ["ssh-keys"] });
     qc.invalidateQueries({ queryKey: ["payment-methods"] });
     qc.invalidateQueries({ queryKey: ["support-tickets"] });
+  };
+
+  const res = [accountId, set] as unknown as ActiveAccountResult;
+  res.accountId = accountId;
+  res.activeAccountId = accountId;
+  res.set = set;
+  res.setActiveAccountId = set;
+  return res;
+}
+
+/** VPS 控制 tab 活跃账户 ID。localStorage 持久化，独立于独服活跃账户。 */
+export function useActiveVpsControlAccount(): ActiveAccountResult {
+  const qc = useQueryClient();
+  const [accountId, setAccountId] = useState<string>(() => getActiveVpsControlAccount());
+
+  useEffect(() => {
+    const onChange = () => setAccountId(getActiveVpsControlAccount());
+    window.addEventListener(EVT, onChange);
+    window.addEventListener(VPS_EVT, onChange);
+    window.addEventListener("storage", onChange);
+    return () => {
+      window.removeEventListener(EVT, onChange);
+      window.removeEventListener(VPS_EVT, onChange);
+      window.removeEventListener("storage", onChange);
+    };
+  }, []);
+
+  const set = (id: string) => {
+    if (id === accountId) return;
+    setActiveVpsControlAccount(id);
+    setAccountId(id);
+    qc.invalidateQueries({ queryKey: ["vps-control"] });
+    qc.invalidateQueries({ queryKey: ["vps-monitor"] });
   };
 
   const res = [accountId, set] as unknown as ActiveAccountResult;

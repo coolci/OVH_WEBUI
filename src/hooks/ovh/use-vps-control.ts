@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/http";
 import { qk } from "@/lib/query";
 import type { PartialList } from "./partial-list";
-import { useActiveAccount } from "@/hooks/use-active-account";
+import { useActiveVpsControlAccount } from "@/hooks/use-active-account";
 
 /* ────────────── 类型定义 ────────────── */
 
@@ -91,7 +91,7 @@ export interface VpsSnapshot {
 /* ────────────── List + Info + Status ────────────── */
 
 export function useOwnedVps() {
-  const [accountId] = useActiveAccount();
+  const [accountId] = useActiveVpsControlAccount();
   return useQuery({
     queryKey: qk.vpsControl.list(accountId),
     queryFn: async () => {

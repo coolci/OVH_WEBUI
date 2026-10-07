@@ -33,7 +33,7 @@ import {
 } from "@/hooks/use-vps-control";
 import { isUsEndpoint, regionLabel, regionLabelOf, endpointRegion } from "@/lib/ovh-regions";
 import { useHideIp, maskSensitive } from "@/hooks/use-hide-ip";
-import { useActiveServerControlAccount } from "@/hooks/use-active-account";
+import { useActiveVpsControlAccount } from "@/hooks/use-active-account";
 import { useAccounts } from "@/hooks/use-accounts";
 import { useServerAliases, useSetServerAlias, aliasOf } from "@/hooks/use-server-aliases";
 import { VpsSnapshotPane } from "@/components/vps-control/VpsSnapshotPane";
@@ -55,7 +55,7 @@ function VpsControlPage() {
   const q = useOwnedVps();
   const { hidden, toggle } = useHideIp();
   const [selectedName, setSelectedName] = useState<string | null>(null);
-  const [activeAccount, setActiveAccount] = useActiveServerControlAccount();
+  const [activeAccount, setActiveAccount] = useActiveVpsControlAccount();
   const { data: accounts } = useAccounts();
   const vpsList = q.data || EMPTY_VPS_LIST;
 

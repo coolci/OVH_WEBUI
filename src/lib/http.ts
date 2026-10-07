@@ -182,16 +182,18 @@ function createApiClient(): AxiosInstance {
     }
 
     // 相对 /api 的路径，或绝对 URL 中含控制/账户段
+    const isVps = url.includes("/vps-control") || url.startsWith("vps-control");
     const needAccount =
+      isVps ||
       url.includes("/server-control") ||
-      url.includes("/vps-control") ||
       url.includes("/ovh/") ||
       url.startsWith("server-control") ||
-      url.startsWith("vps-control") ||
       url.startsWith("ovh/");
 
     if (needAccount && !(config.params && (config.params as Record<string, unknown>).account)) {
-      const acc = getActiveServerControlAccount();
+      const acc = isVps
+        ? (getActiveVpsControlAccount() || getActiveServerControlAccount())
+        : getActiveServerControlAccount();
       if (acc) {
         config.params = { ...(config.params || {}), account: acc };
       }

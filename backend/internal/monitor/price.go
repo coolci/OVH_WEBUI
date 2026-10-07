@@ -1,16 +1,13 @@
 package monitor
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"time"
 
 	"github.com/ovh-webui/server/internal/catalog"
 	"github.com/ovh-webui/server/internal/numconv"
+	"github.com/ovh-webui/server/internal/price"
 )
 
 // optionsFromConfig 取本次配置组合要询价的 addon 列表
@@ -137,34 +134,13 @@ func formatAmount(currency string, v float64) string {
 // 返回 (是否可下单, 失败原因)
 func (m *Monitor) verifyPriceAvailable(planCode, datacenter string, configInfo map[string]interface{}) (bool, string) {
 	options := optionsFromConfig(configInfo)
+	accountID := accountIDFromConfig(configInfo)
 
-	url := "http://127.0.0.1:" + m.state.Port + "/api/internal/monitor/price"
-	body, _ := json.Marshal(map[string]interface{}{
-		"account_id": accountIDFromConfig(configInfo),
-		"plan_code":  planCode,
-		"datacenter": datacenter,
-		"options":    options,
-	})
-	client := &http.Client{Timeout: 30 * time.Second}
-	req, _ := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-API-Key", m.state.APIKey)
-	resp, err := client.Do(req)
-	if err != nil {
-		errMsg := "价格校验API请求失败: " + err.Error()
-		m.state.Logger.Debug(fmt.Sprintf("价格校验API请求失败: %s@%s - %s", planCode, datacenter, err.Error()), "monitor")
-		return false, errMsg
-	}
-	defer resp.Body.Close()
-	respBody, _ := io.ReadAll(resp.Body)
-	var result map[string]interface{}
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		return false, "价格校验API响应解析失败"
-	}
-
-	success, _ := result["success"].(bool)
-	if !success {
-		errMsg, _ := result["error"].(string)
+	// 监控轮询验价: 直接进程内调用带有短 TTL 缓存的 price.GetInternalCached,
+	// 避免 HTTP 回环网络开销与 429 抖动。
+	result := price.GetInternalCached(m.state, accountID, planCode, datacenter, options)
+	if !result.Success {
+		errMsg := result.Error
 		if errMsg == "" {
 			errMsg = "未知错误"
 		}
@@ -176,8 +152,8 @@ func (m *Monitor) verifyPriceAvailable(planCode, datacenter string, configInfo m
 	// 同样的配置在 purchase.go 是 fail-fast、在 quick_order 是 400 拒绝入队,
 	// 这里若只看 success 就会"发有货通知 + 触发自动下单",然后订单静默创建失败,
 	// 用户只看到告警、拿不到机器。校验闸门必须跟下单闸门同口径。
-	if isDegraded, _ := result["degraded"].(bool); isDegraded {
-		reason, _ := result["degradedReason"].(string)
+	if result.Degraded {
+		reason := result.DegradedReason
 		if reason == "" {
 			reason = "购物车必填配置未设置成功"
 		}
@@ -186,18 +162,12 @@ func (m *Monitor) verifyPriceAvailable(planCode, datacenter string, configInfo m
 		return false, errMsg
 	}
 
-	priceRaw, ok := result["price"]
-	if !ok || priceRaw == nil {
+	if result.Price == nil {
 		m.state.Logger.Debug(fmt.Sprintf("价格校验失败: %s@%s - price字段缺失", planCode, datacenter), "monitor")
 		return false, "price字段缺失"
 	}
-	priceInfo, ok := priceRaw.(map[string]interface{})
-	if !ok {
-		m.state.Logger.Debug(fmt.Sprintf("价格校验失败: %s@%s - price字段类型错误", planCode, datacenter), "monitor")
-		return false, "price字段类型错误"
-	}
-	prices, ok := priceInfo["prices"].(map[string]interface{})
-	if !ok {
+	prices := result.Price.Prices
+	if prices == nil {
 		m.state.Logger.Debug(fmt.Sprintf("价格校验失败: %s@%s - prices字段缺失或类型错误", planCode, datacenter), "monitor")
 		return false, "prices字段缺失或类型错误"
 	}
@@ -219,51 +189,25 @@ func (m *Monitor) verifyPriceAvailable(planCode, datacenter string, configInfo m
 
 func (m *Monitor) GetPriceInfoText(planCode, datacenter string, configInfo map[string]interface{}) string {
 	options := optionsFromConfig(configInfo)
+	accountID := accountIDFromConfig(configInfo)
 
 	m.state.Logger.Debug(fmt.Sprintf("开始获取价格: plan_code=%s, datacenter=%s, options=%v",
 		planCode, datacenter, options), "monitor")
 
-	url := "http://127.0.0.1:" + m.state.Port + "/api/internal/monitor/price"
-	body, _ := json.Marshal(map[string]interface{}{
-		"account_id": accountIDFromConfig(configInfo),
-		"plan_code":  planCode,
-		"datacenter": datacenter,
-		"options":    options,
-	})
-	client := &http.Client{Timeout: 30 * time.Second}
-	req, _ := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-API-Key", m.state.APIKey)
-	resp, err := client.Do(req)
-	if err != nil {
-		m.state.Logger.Warn("价格API请求失败: "+err.Error(), "monitor")
+	result := price.GetInternalCached(m.state, accountID, planCode, datacenter, options)
+	if !result.Success {
+		m.state.Logger.Warn("价格获取失败: "+result.Error, "monitor")
 		return ""
 	}
-	defer resp.Body.Close()
-	respBody, _ := io.ReadAll(resp.Body)
-	var result map[string]interface{}
-	if err := json.Unmarshal(respBody, &result); err != nil {
+	if result.Price == nil || result.Price.Prices == nil {
 		return ""
 	}
-	if ok, _ := result["success"].(bool); !ok {
-		errMsg, _ := result["error"].(string)
-		m.state.Logger.Warn("价格获取失败: "+errMsg, "monitor")
-		return ""
-	}
-	priceInfo, _ := result["price"].(map[string]interface{})
-	if priceInfo == nil {
-		return ""
-	}
-	prices, _ := priceInfo["prices"].(map[string]interface{})
-	if prices == nil {
-		return ""
-	}
+	prices := result.Price.Prices
 	withTaxRaw, ok := prices["withTax"]
 	if !ok || withTaxRaw == nil {
 		m.state.Logger.Warn("价格获取成功但withTax为None", "monitor")
 		return ""
 	}
-	accountID := accountIDFromConfig(configInfo)
 	subsidiary := m.subsidiaryOfPricingAccount(accountID)
 	currency, _ := prices["currencyCode"].(string)
 	switch {

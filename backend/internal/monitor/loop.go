@@ -1,10 +1,7 @@
 package monitor
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -12,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/ovh-webui/server/internal/notify"
+	"github.com/ovh-webui/server/internal/purchase"
 )
 
 // tgRecheckInterval loop 内 TG 健康检查节流间隔。5 分钟 verify 一次,
@@ -266,8 +264,8 @@ func (m *Monitor) batchOrder(planCode string, configInfo map[string]interface{},
 	}
 
 	// 把 N 个 DC × M 个数量打成一个任务列表后并发发出去。
-	// 调用的是本地 /api/queue/quick-order(只是入队,不真去 OVH),所以并发完全安全;
-	// 也不会冲击 OVH —— 真的下单在 ProcessQueueLoop 里按 concurrentBatchSize=10 节流跑。
+	// 直接在进程内调用 purchase.EnqueueQuickOrder，避免 HTTP 回环开销与端口依赖。
+	// 真正的下单在 ProcessQueueLoop 里按 concurrentBatchSize=10 节流跑。
 	type orderTask struct {
 		dc  string
 		idx int // 当前 DC 下的第 idx+1 个,日志用
@@ -280,55 +278,28 @@ func (m *Monitor) batchOrder(planCode string, configInfo map[string]interface{},
 	}
 
 	var successCount, failCount int64
-	httpClient := &http.Client{Timeout: 30 * time.Second}
 	postOne := func(t orderTask) {
-		payload := map[string]interface{}{
-			"account_id":         accountID,
-			"planCode":           planCode,
-			"datacenter":         t.dc,
-			"options":            options,
-			"fromMonitor":        true,
-			"skipDuplicateCheck": true,
-			// 订阅上显式开了才带过去;默认 false,不替用户扣钱
-			"autoPay": autoPay,
-		}
-		body, _ := json.Marshal(payload)
-		req, _ := http.NewRequest(http.MethodPost,
-			"http://127.0.0.1:"+m.state.Port+"/api/queue/quick-order",
-			bytes.NewReader(body))
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("X-API-Key", m.state.APIKey)
-
 		m.state.Logger.Info(fmt.Sprintf("[monitor->order] 尝试快速下单 (%d/%d): %s@%s, options=%v",
 			t.idx+1, quantity, planCode, t.dc, options), "monitor")
 
-		resp, err := httpClient.Do(req)
-		if err != nil {
-			atomic.AddInt64(&failCount, 1)
-			m.state.Logger.Warn(fmt.Sprintf("[monitor->order] 快速下单请求异常 (%d/%d): %s",
-				t.idx+1, quantity, err.Error()), "monitor")
-			return
-		}
-		respBody := make([]byte, 0, 1024)
-		buf := make([]byte, 1024)
-		for {
-			nr, rerr := resp.Body.Read(buf)
-			if nr > 0 {
-				respBody = append(respBody, buf[:nr]...)
-			}
-			if rerr != nil {
-				break
-			}
-		}
-		resp.Body.Close()
-		if resp.StatusCode == http.StatusOK {
+		res := purchase.EnqueueQuickOrder(m.state, purchase.QuickOrderParams{
+			AccountID:          accountID,
+			PlanCode:           planCode,
+			Datacenter:         t.dc,
+			Options:            options,
+			FromMonitor:        true,
+			SkipDuplicateCheck: true,
+			AutoPay:            autoPay,
+		})
+
+		if res.Success {
 			atomic.AddInt64(&successCount, 1)
 			m.state.Logger.Info(fmt.Sprintf("[monitor->order] 快速下单成功 (%d/%d): %s@%s",
 				t.idx+1, quantity, planCode, t.dc), "monitor")
 		} else {
 			atomic.AddInt64(&failCount, 1)
-			m.state.Logger.Warn(fmt.Sprintf("[monitor->order] 快速下单失败 (%d/%d, %d): %s",
-				t.idx+1, quantity, resp.StatusCode, string(respBody)), "monitor")
+			m.state.Logger.Warn(fmt.Sprintf("[monitor->order] 快速下单失败 (%d/%d): %s",
+				t.idx+1, quantity, res.Error), "monitor")
 		}
 	}
 
