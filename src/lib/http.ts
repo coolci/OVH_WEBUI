@@ -201,10 +201,16 @@ function createApiClient(): AxiosInstance {
 
   client.interceptors.response.use(
     (res) => res,
-    (error: AxiosError<{ error?: string; message?: string }>) => {
+    (error: AxiosError<{ error?: string; message?: string; code?: string; success?: boolean }>) => {
       const silent = (error.config as ExtraConfig | undefined)?.silent401;
       if (error.response?.status === 401 && !silent) {
-        notifyAuthFailure();
+        // 只有 auth 中间件的 401 才算会话失效 —— 它带专属 code。OVH 侧 401
+        // (某账户 ConsumerKey 被吊销,被 respondOVHError 透传)不该把用户整个登出
+        const code = error.response.data?.code;
+        const isAuthLevel =
+          code === "NO_API_KEY" || code === "INVALID_API_KEY" || code === "INVALID_DEVICE_TOKEN" ||
+          error.response.data?.success === undefined; // 非业务 JSON(反代/基础认证)也按会话失效
+        if (isAuthLevel) notifyAuthFailure();
       }
       return Promise.reject(error);
     }

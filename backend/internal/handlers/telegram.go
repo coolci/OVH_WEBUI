@@ -90,7 +90,7 @@ func handleTelegramCallback(state *app.State, mon *monitor.Monitor, cb map[strin
 	// 4) 发送者授权：只有配置的那个 chat 能下单
 	if !telegram.IsAuthorizedActor(state, chatID, fromUser["id"]) {
 		state.Logger.Warn(fmt.Sprintf("拒绝未授权的 Telegram 回调: chat_id=%v, user_id=%v", chatID, userID), "telegram")
-		telegram.AnswerCallback(state, fmt.Sprintf("%v", cb["id"]), "无权限", true)
+		telegram.AnswerCallback(state, idToString(cb["id"]), "无权限", true)
 		return
 	}
 
@@ -100,11 +100,11 @@ func handleTelegramCallback(state *app.State, mon *monitor.Monitor, cb map[strin
 		rateKey = telegram.ChatIDString(fromUser["id"])
 	}
 	if !telegram.AllowRate(rateKey) {
-		telegram.AnswerCallback(state, fmt.Sprintf("%v", cb["id"]), "操作过于频繁，请稍后再试", true)
+		telegram.AnswerCallback(state, idToString(cb["id"]), "操作过于频繁，请稍后再试", true)
 		return
 	}
 
-	cbID := fmt.Sprintf("%v", cb["id"])
+	cbID := idToString(cb["id"])
 	msgID := int64(messageID)
 	if handleInlineCallback(state, mon, cbID, chatID, msgID, cbData) {
 		return
@@ -148,12 +148,20 @@ func handleTelegramCallback(state *app.State, mon *monitor.Monitor, cb map[strin
 		options = toStringSlice(optsRaw)
 	}
 
+	// 没有按钮 id 就不许下单(同步上游 v0.2.2):一次性 nonce 是唯一的防重放,
+	// 不带 u 的 callback_data 直接拿 p/d/o 下单 = 同一组参数可无限重放。
+	if buttonID == "" {
+		state.Logger.Warn("拒绝没有按钮 id 的下单回调(无法防重放)", "telegram")
+		telegram.AnswerCallback(state, cbID, "按钮已失效,请等下一条通知", true)
+		return
+	}
+
 	claimed := false // 是否占用了 DB 里的一次性按钮（失败要回滚）
-	if buttonID != "" {
+	{
 		row, ok, err := state.DB.ClaimTelegramButton(buttonID)
 		if err != nil {
 			state.Logger.Error("认领一键下单按钮失败: "+err.Error(), "telegram")
-			telegram.AnswerCallback(state, fmt.Sprintf("%v", cb["id"]), "认领按钮失败", true)
+			telegram.AnswerCallback(state, idToString(cb["id"]), "认领按钮失败", true)
 			return
 		}
 		if ok {
@@ -161,7 +169,7 @@ func handleTelegramCallback(state *app.State, mon *monitor.Monitor, cb map[strin
 			if time.Since(time.Unix(int64(row.CreatedAt), 0)) > telegram.ButtonTTL {
 				_ = state.DB.UnclaimTelegramButton(buttonID)
 				state.Logger.Warn("一键下单按钮已过期: "+buttonID, "telegram")
-				telegram.AnswerCallback(state, fmt.Sprintf("%v", cb["id"]), "该按钮已过期，请等待新的上架通知", true)
+				telegram.AnswerCallback(state, idToString(cb["id"]), "该按钮已过期，请等待新的上架通知", true)
 				return
 			}
 			claimed = true
@@ -173,13 +181,23 @@ func handleTelegramCallback(state *app.State, mon *monitor.Monitor, cb map[strin
 				buttonID, planCode, dc, options, btnAccountID), "telegram")
 		} else {
 			// 认领失败：要么已经点过（重放），要么这条按钮根本不存在
-			if _, exists, _ := state.DB.GetTelegramButton(buttonID); exists {
+			// DB 瞬时错误(busy/locked)时 exists=false,以前会掉进不消费 nonce 的内存回退,
+			// 同一颗按钮能下 N 单 —— 单独判错误,宁可让用户再点一次
+			_, exists, gerr := state.DB.GetTelegramButton(buttonID)
+			if gerr != nil {
+				state.Logger.Error("查询按钮状态失败,拒绝本次下单(防绕过一次性 nonce): "+gerr.Error(), "telegram")
+				telegram.AnswerCallback(state, cbID, "系统繁忙,请稍后再点一次", true)
+				return
+			}
+			if exists {
 				state.Logger.Warn("一键下单按钮已被使用过，拒绝重复下单: "+buttonID, "telegram")
-				telegram.AnswerCallback(state, fmt.Sprintf("%v", cb["id"]), "该按钮已使用过", true)
+				telegram.AnswerCallback(state, idToString(cb["id"]), "该按钮已使用过", true)
 				return
 			}
 			// 库里没有 → 退回内存缓存（升级前发出、只存在内存里的老按钮）
 			if cached := mon.MessageUUIDCacheLookup(buttonID); cached != nil {
+				// 命中即消费:一次性语义不能靠只读不删的缓存维持
+				mon.MessageUUIDCacheDelete(buttonID)
 				planCode = cached.PlanCode
 				dc = cached.Datacenter
 				options = cached.Options
@@ -190,7 +208,7 @@ func handleTelegramCallback(state *app.State, mon *monitor.Monitor, cb map[strin
 				// 按钮行被 DeleteExpiredTelegramButtons 清掉、换库、换机器都会落进
 				// 这个分支,等于防重放形同虚设。
 				state.Logger.Warn("按钮 UUID 不存在,拒绝下单: "+buttonID, "telegram")
-				telegram.AnswerCallback(state, fmt.Sprintf("%v", cb["id"]), "按钮已失效,请等下一条通知", true)
+				telegram.AnswerCallback(state, idToString(cb["id"]), "按钮已失效,请等下一条通知", true)
 				return
 			}
 		}
@@ -200,7 +218,7 @@ func handleTelegramCallback(state *app.State, mon *monitor.Monitor, cb map[strin
 		if claimed {
 			_ = state.DB.UnclaimTelegramButton(buttonID)
 		}
-		telegram.AnswerCallback(state, fmt.Sprintf("%v", cb["id"]), "缺少型号或机房", true)
+		telegram.AnswerCallback(state, idToString(cb["id"]), "缺少型号或机房", true)
 		return
 	}
 	if len(options) == 0 {
@@ -229,7 +247,7 @@ func handleTelegramCallback(state *app.State, mon *monitor.Monitor, cb map[strin
 			_ = state.DB.UnclaimTelegramButton(buttonID)
 		}
 		state.Logger.Warn("Telegram 一键下单被拒绝：系统里没有任何 OVH 账户", "telegram")
-		telegram.AnswerCallback(state, fmt.Sprintf("%v", cb["id"]), "未配置 OVH 账户", true)
+		telegram.AnswerCallback(state, idToString(cb["id"]), "未配置 OVH 账户", true)
 		telegram.SendReply(state, chatID, "❌ 未配置任何 OVH 账户，无法下单。请先在控制台添加账户。", int64(messageID))
 		return
 	}
@@ -268,7 +286,7 @@ func handleTelegramCallback(state *app.State, mon *monitor.Monitor, cb map[strin
 			_ = state.DB.UnclaimTelegramButton(buttonID)
 		}
 		state.Logger.Error("一键下单落库失败,已撤回: "+err.Error(), "telegram")
-		telegram.AnswerCallback(state, fmt.Sprintf("%v", cb["id"]), "没能保存，请重试", true)
+		telegram.AnswerCallback(state, idToString(cb["id"]), "没能保存，请重试", true)
 		telegram.SendReply(state, chatID,
 			"❌ 任务没能写进数据库，已撤回（避免出现重启就消失的假任务）：\n"+err.Error()+"\n\n可以再按一次按钮重试。",
 			int64(messageID))
@@ -283,7 +301,7 @@ func handleTelegramCallback(state *app.State, mon *monitor.Monitor, cb map[strin
 		userID, planCode, dc, optsStr, accLabel), "telegram")
 	confirmMsg := fmt.Sprintf("✅ 已添加到抢购队列！\n\n型号: %s\n机房: %s\n配置: %s\n账户: %s\n\n系统将自动尝试下单。",
 		planCode, strings.ToUpper(dc), optsStr, accLabel)
-	telegram.AnswerCallback(state, fmt.Sprintf("%v", cb["id"]), "已添加到队列！", false)
+	telegram.AnswerCallback(state, idToString(cb["id"]), "已添加到队列！", false)
 	telegram.SendReply(state, chatID, confirmMsg, int64(messageID))
 }
 
@@ -357,6 +375,11 @@ func getNumOrFloat(v interface{}) (float64, bool) {
 		return float64(x), true
 	case int64:
 		return float64(x), true
+	case json.Number:
+		// poller 用 UseNumber 解码后数字是 json.Number;不认它 message_id 会变 0,
+		// 回复/标按钮全部失效(上游 v0.2.4 仍漏了这一处)
+		f, err := x.Float64()
+		return f, err == nil
 	}
 	return 0, false
 }
@@ -416,6 +439,11 @@ func actorUserID(data map[string]interface{}) interface{} {
 		return from["id"]
 	}
 	return nil
+}
+
+// StopPoller 进程退出时调用:停掉 TG 长轮询(最多等 5 秒)。
+func StopPoller() {
+	telegram.StopPoller(5 * time.Second)
 }
 
 // RestartPoller 重启长轮询

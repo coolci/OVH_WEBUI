@@ -41,6 +41,9 @@ type Outcome struct {
 	// 不是失败:不写 history、不计 FailureCount、不算 Attempted。
 	// 结账之前的任何一步都可能落到这里;结账一旦发出就不再接受取消(见 checkout 处注释)。
 	Cancelled bool
+	// PauseTask:结账结果不确定(超时+对账也失败),暂停任务等人工确认。
+	// 不计 FailureCount(不是确定性失败);不发 Fatal(用户确认无单后可恢复)
+	PauseTask bool
 }
 
 // cancelledOutcome 下单途中任务被删除时的返回。
@@ -56,7 +59,7 @@ func cancelledOutcome(state *app.State, item *types.QueueItem, stage string) Out
 // ctx 由队列处理器给,用户删任务时会被取消(app.State.MarkTaskDeleted)。
 // 结账之前的每一次 OVH 调用都挂在它上面,取消即中断;结账本身例外,见那里的注释。
 func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem) Outcome {
-	attemptStart := time.Now()  // checkout 对账用:transient 失败后按此时间查 /me/order
+	attemptStart := time.Now() // checkout 对账用:transient 失败后按此时间查 /me/order
 	client, err := state.OVH.ClientFor(item.AccountID)
 	if err != nil {
 		// 账户不存在 / 凭据缺失 / endpoint 非法 —— 都是重试一万次也不会变的错。
@@ -545,6 +548,17 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 				state.Logger.Warn(fmt.Sprintf("checkout 报 transient 失败但对账发现订单已建(#%s),按成功处理,不再重试", oid), "purchase")
 				return handleReconciledOrder(state, item, oid, url, tl, timingKey)
 			}
+			// 对账也失败(429/超时/panic 兜底返回空):OVH 侧订单状态未知。
+			// 直接重试 = 可能买两台(第一单已建但 history 没记,120s 闸门也不认识它)。
+			// 暂停任务 + 通知用户去 OVH 订单页人工确认 —— 比自动重试安全:
+			// 最多错过一台,不会多买一台
+			state.Logger.Warn("checkout transient 失败且对账未能确认,暂停任务等待人工确认(防重复下单)", "purchase")
+			notify.Broadcast(state, fmt.Sprintf(
+				"⚠️ 抢购 %s@%s 结账超时,无法确认订单是否已创建\n\n"+
+					"任务已暂停。请到 OVH 订单页查看是否已有一笔未付订单:\n"+
+					"- 有:等付款即可,任务不需要恢复\n"+
+					"- 没有:在队列页把任务恢复运行", item.PlanCode, item.Datacenter), nil)
+			return Outcome{Attempted: false, PauseTask: true}
 		}
 		// checkout 这一步最要紧:补货瞬间大家都在下单,429 是常态。
 		// 把它记成一次"真正的失败尝试"会让任务在唯一有货的那一分钟里自己判死。
@@ -850,8 +864,13 @@ func extract(v interface{}) *float64 {
 }
 
 func recordSuccess(state *app.State, item *types.QueueItem, orderID, orderURL, expirationTime string, priceInfo *types.PriceInfo) {
+	// 锁内只改内存,SaveHistory 在锁外 —— 它自己会拿 HistoryMu(快照),
+	// Go mutex 不可重入,持锁同步调它(c419176 引入)首次下单成功即死锁全队列
 	state.HistoryMu.Lock()
-	defer state.HistoryMu.Unlock()
+	defer func() {
+		state.HistoryMu.Unlock()
+		_ = state.SaveHistory()
+	}()
 	now := types.NowISO()
 
 	for i := range state.History {
@@ -871,7 +890,6 @@ func recordSuccess(state *app.State, item *types.QueueItem, orderID, orderURL, e
 				state.History[i].Price = priceInfo
 			}
 			state.Logger.Info("更新抢购历史(成功) 任务ID: "+item.ID, "purchase")
-			go state.SaveHistory()
 			return
 		}
 	}
@@ -897,12 +915,14 @@ func recordSuccess(state *app.State, item *types.QueueItem, orderID, orderURL, e
 	}
 	state.History = append(state.History, entry)
 	state.Logger.Info("创建抢购历史(成功) 任务ID: "+item.ID, "purchase")
-	go state.SaveHistory()
 }
 
 func recordFailure(state *app.State, item *types.QueueItem, errMsg string) {
 	state.HistoryMu.Lock()
-	defer state.HistoryMu.Unlock()
+	defer func() {
+		state.HistoryMu.Unlock()
+		_ = state.SaveHistory()
+	}()
 	now := types.NowISO()
 
 	for i := range state.History {
@@ -917,7 +937,6 @@ func recordFailure(state *app.State, item *types.QueueItem, errMsg string) {
 			state.History[i].AttemptCount = item.RetryCount
 			state.History[i].Options = item.Options
 			state.Logger.Info("更新抢购历史(失败) 任务ID: "+item.ID, "purchase")
-			go state.SaveHistory()
 			return
 		}
 	}
@@ -936,7 +955,6 @@ func recordFailure(state *app.State, item *types.QueueItem, errMsg string) {
 	}
 	state.History = append(state.History, entry)
 	state.Logger.Info("创建抢购历史(失败) 任务ID: "+item.ID, "purchase")
-	go state.SaveHistory()
 }
 
 // backfillOrderDetail 下单成功后异步补 history 行的 expirationTime + price。
@@ -1022,7 +1040,12 @@ func backfillOrderDetail(state *app.State, client *ovhsdk.Client, taskID, orderI
 	}
 
 	state.HistoryMu.Lock()
-	defer state.HistoryMu.Unlock()
+	// defer 先 Unlock 再 Save:SaveHistory 内部拿 HistoryMu(快照),
+	// 持锁调它 = 同 goroutine 不可重入死锁(跟 recordSuccess 同型 bug)
+	defer func() {
+		state.HistoryMu.Unlock()
+		_ = state.SaveHistory()
+	}()
 	for i := range state.History {
 		if state.History[i].TaskID != taskID {
 			continue
@@ -1048,7 +1071,6 @@ func backfillOrderDetail(state *app.State, client *ovhsdk.Client, taskID, orderI
 		if changed {
 			state.Logger.Info(fmt.Sprintf("补全订单 %s 详情: 过期时间=%q 价格=%v",
 				orderID, expirationTime, priceInfo != nil), "purchase")
-			go state.SaveHistory()
 		}
 		return
 	}
@@ -1110,7 +1132,7 @@ func reconcileOrder(state *app.State, client *ovhsdk.Client, planCode string, si
 	var orders []map[string]interface{}
 	q := "/me/order?dateFrom=" + url.QueryEscape(since.UTC().Format("2006-01-02")) + "&planCode=" + url.QueryEscape(planCode)
 	if err := client.Get(q, &orders); err != nil {
-		state.Logger.Warn("checkout 对账查询失败(按未建单处理): " + err.Error(), "purchase")
+		state.Logger.Warn("checkout 对账查询失败(按未建单处理): "+err.Error(), "purchase")
 		return "", ""
 	}
 	for _, o := range orders {
@@ -1129,7 +1151,7 @@ func handleReconciledOrder(state *app.State, item *types.QueueItem, orderID, ord
 	state.Logger.Info("[耗时] "+item.PlanCode+"@"+item.Datacenter+" 对账确认成功 "+tl.String(), "purchase")
 	if orderID != "" {
 		// client 由调用方闭包持有;这里从 state 重新取太绕,对账成功后只补记,详情由 backfill 的另一个触发点补
-	_ = orderID // backfill 在 handleReconciledOrder 外由调用方触发
+		_ = orderID // backfill 在 handleReconciledOrder 外由调用方触发
 	}
 	return Outcome{Success: true}
 }

@@ -27,6 +27,7 @@ var (
 	// 同一次补货下两次单。VPS 侧界面就一个 停止/启动 按钮,点两下即可复现,
 	// 而 VPS 循环退出延迟很大(每订阅一次 10 秒超时的 HTTP + 下单往返)。
 	generation int64
+	loopWg     *sync.WaitGroup
 
 	// TG 健康检查节流。loop 每 5 分钟 verify 一次,失败自停。
 	tgCheckMu   sync.Mutex
@@ -390,9 +391,14 @@ var statusMap = map[string]string{
 // 不写子公司的话,同时监控 IE 和 US 的用户收到的两条通知长得一模一样,分不清该去哪买。
 func SendSummaryNotification(state *app.State, planCode, ovhSubsidiary string, dcs []map[string]interface{}, changeType string) bool {
 	cfg := state.Config.Get()
-	if cfg.TgToken == "" || cfg.TgChatID == "" || len(dcs) == 0 {
+	if len(dcs) == 0 {
 		return false
 	}
+	// 通道判定交给 notify.Broadcast(TG + Webhook 至少一条):
+	// 以前 TG 未配就整体早退 —— webhook-only 用户服务器通知正常、
+	// VPS 补货/下架一条都收不到,而且循环照跑(AnyAvailable 只看"已配置"),
+	// 监控白跑无通知无报错
+	_ = cfg
 	planDisplay := vpsPlanDisplay(planCode)
 	var emoji, title string
 	switch changeType {
@@ -633,6 +639,11 @@ func monitorLoopGen(state *app.State, gen int64) {
 						toOrder := *sub
 						toOrder.OvhSubsidiary = ovhSub
 						autoOrderOnRestock(state, toOrder, newAvailable)
+						// 下单/通知已发生,立即把本轮 lastStatus 落库 —— 不等轮末统一 Save。
+						// 中间崩溃/自更新重启的话,磁盘上还是旧状态,重启后同一波有货被当成
+						// 新跳变:重复发通知 + 再下一单(订单侧 120s 闸门依赖 history 已落库,
+						// 两个窗口叠加时兜不住)
+						_ = SaveSubscriptions(state)
 					}
 					if len(newUnavailable) > 0 && sub.NotifyUnavailable {
 						state.Logger.Info(fmt.Sprintf("VPS %s 下架：%d个数据中心", sub.PlanCode, len(newUnavailable)), "vps_monitor")
@@ -694,12 +705,25 @@ func Start(state *app.State) bool {
 	// 每个循环记住自己出生时的代际号,不是当前代就退出。
 	generation++
 	gen := generation
+	// 等上一代循环退出:不等的话旧循环正在处理的那个订阅(含下单链)会跑完,
+	// 新循环同时处理同一订阅 → 一次补货两次下单(120s 闸门只挡"已成功",
+	// 首单成交前拦不住)
+	if loopWg != nil {
+		loopWg.Wait()
+	}
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	loopWg = wg
 	runningMu.Unlock()
 	// 重置 TG 检查时间戳,保证启动后第一轮一定 verify
 	tgCheckMu.Lock()
 	lastTGCheck = time.Time{}
 	tgCheckMu.Unlock()
-	go monitorLoopGen(state, gen)
+	go func() {
+		defer wg.Done() // 闭包捕获局部引用:Stop→Start 换新 WaitGroup 后,
+		// 旧 goroutine 仍 Done 自己出生时那份(读全局会打到新 wg 上,计数变负 panic)
+		monitorLoopGen(state, gen)
+	}()
 	state.Logger.Info(fmt.Sprintf("VPS监控已启动 (检查间隔: %d秒)", state.VPSCheckInterval), "vps_monitor")
 	return true
 }
@@ -713,7 +737,9 @@ func Stop(state *app.State) bool {
 	}
 	running = false
 	runningMu.Unlock()
-	state.Logger.Info("正在停止VPS监控...", "vps_monitor")
+	if state != nil {
+		state.Logger.Info("正在停止VPS监控...", "vps_monitor")
+	}
 	return true
 }
 
