@@ -379,11 +379,18 @@ export function useChangeVpsContact() {
  * 到期终止只能通过 PUT /services/{serviceId} 的 terminationPolicy 设置。
  */
 export function useUpdateVpsTerminationPolicy() {
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: async (vars: { serviceName: string; policy: string }) =>
       (await api.put(`/vps-control/${vars.serviceName}/termination-policy`, {
         policy: vars.policy,
       })).data,
+    // 终止策略横幅读 serviceInfo,不失效会一直显示旧政策。
+    // 用 qk 而不是手写 key:上游手写的 ["vps-control","serviceInfo",…] 与 qk 的
+    // "service-info" 对不上,失效永远打空
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: qk.vpsControl.serviceInfo(vars.serviceName) });
+    },
   });
 }
 
