@@ -113,13 +113,17 @@ func GetVpsMitigation(state *app.State) gin.HandlerFunc {
 					var d map[string]interface{}
 					if err := client.Get("/ip/"+encoded+"/mitigation/"+m, &d); err != nil {
 						state.Logger.Warn("[VPS Mitigation] 获取 "+m+" 缓解详情失败: "+err.Error(), "vps_control")
-						details = append(details, map[string]interface{}{
+						item := map[string]interface{}{
 							"ipOnMitigation": m,
 							"state":          "unknown",
 							"auto":           false,
 							"permanent":      false,
 							"_detailError":   err.Error(),
-						})
+						}
+						for key, value := range mitigationErrorFields(err) {
+							item[key] = value
+						}
+						details = append(details, item)
 						continue
 					}
 					details = append(details, d)
@@ -137,6 +141,9 @@ func GetVpsMitigation(state *app.State) gin.HandlerFunc {
 			}
 			row := gin.H{"ipBlock": block, "ipAddress": r.ip, "mitigations": r.mitigations}
 			if r.err != nil {
+				for key, value := range mitigationErrorFields(r.err) {
+					row[key] = value
+				}
 				row["error"] = r.err.Error()
 			}
 			if r.mitigations == nil {

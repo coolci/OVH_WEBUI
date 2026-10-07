@@ -681,3 +681,79 @@ func GetAccountBills(state *app.State) gin.HandlerFunc {
 		})
 	}
 }
+
+// GetAccountOrders GET /api/ovh/account/orders
+func GetAccountOrders(state *app.State) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		client, err := ovhClientFor(state, c)
+		if err != nil {
+			noOVHRespAccount(c)
+			return
+		}
+		acc, _ := ovhAccountFor(state, c)
+
+		limit := 30
+		if q := c.Query("limit"); q != "" {
+			if n, err := strconv.Atoi(q); err == nil && n > 0 {
+				limit = n
+			}
+		}
+		if limit > accountBillingMaxDetails {
+			limit = accountBillingMaxDetails
+		}
+
+		ids, warn, err := fetchRecentBillingIDs(client, "/me/order", limit)
+		if err != nil {
+			state.Logger.Error("获取订单列表失败: "+err.Error(), "account_management")
+			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "获取订单列表失败: " + ovh.Explain(err)})
+			return
+		}
+		if warn != "" {
+			state.Logger.Warn("订单列表"+warn, "account_management")
+		}
+
+		scan := len(ids)
+		truncated := false
+		if scan > limit {
+			scan = limit
+			truncated = true
+			state.Logger.Warn(fmt.Sprintf("订单共 %d 条,只取前 %d 条拉取详情", len(ids), scan), "account_management")
+		}
+
+		// 并发拉订单详情
+		details, failed, firstErr := parallelGetStringsCounted(client, ids[:scan], func(s string) string {
+			return "/me/order/" + s
+		}, 10)
+		list := collectDetails(state, c, details, failed, firstErr, "订单", "account_management")
+
+		// 填充 managerOrderURL，确保订单链接可直接点击跳转
+		for _, item := range list {
+			if u, _ := item["url"].(string); strings.TrimSpace(u) == "" {
+				var orderIDStr string
+				if oid, ok := item["orderId"]; ok {
+					orderIDStr = fmt.Sprintf("%v", oid)
+				}
+				if orderIDStr != "" && acc.Endpoint != "" {
+					item["url"] = ovh.ManagerOrderURL(acc.Endpoint, orderIDStr)
+				}
+			}
+		}
+
+		sortBillingByDateDesc(list)
+		if len(list) > limit {
+			list = list[:limit]
+		}
+
+		state.Logger.Info(fmt.Sprintf("成功获取 %d 条订单记录(共 %d 条,拉取失败 %d 条)", len(list), len(ids), failed), "account_management")
+		c.JSON(http.StatusOK, gin.H{
+			"status":    "success",
+			"data":      list,
+			"orders":    list,
+			"total":     len(ids),
+			"failed":    failed,
+			"truncated": truncated,
+			"warning":   warn,
+		})
+	}
+}
+

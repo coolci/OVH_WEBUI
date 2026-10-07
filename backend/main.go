@@ -562,6 +562,7 @@ func main() {
 		api.POST("/ovh/contact-change-requests/:task_id/resend-email", handlers.ResendContactChangeEmail(state))
 		api.GET("/ovh/account/sub-accounts", handlers.GetSubAccounts(state))
 		api.GET("/ovh/account/bills", handlers.GetAccountBills(state))
+		api.GET("/ovh/account/orders", handlers.GetAccountOrders(state))
 	}
 
 	// 前端静态文件（仅 `-tags ui` 构建时生效）

@@ -415,6 +415,9 @@ func PostRetraction(state *app.State) gin.HandlerFunc {
 			return
 		}
 		state.Logger.Warn(fmt.Sprintf("已为 %s 申请撤单 (订单 %d, 理由 %s)", svc, orderID, body.Reason), "server_control")
+		retractionLookupMu.Lock()
+		delete(retractionLookupCache, acc.ID+"|"+svc)
+		retractionLookupMu.Unlock()
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"orderId": orderID,
