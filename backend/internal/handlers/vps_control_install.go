@@ -276,11 +276,16 @@ func ReinstallVps(state *app.State) gin.HandlerFunc {
 		acc, _ := ovhAccountFor(state, c)
 
 		var body struct {
+			ImageID           interface{} `json:"imageId"`    // vps.rebuild.post 的正式字段名
 			TemplateID        interface{} `json:"templateId"` // 兼容旧字段名;语义是 imageId(string),数字会被转成字符串
 			SSHKey            []string    `json:"sshKey"`
 			DoNotSendPassword bool        `json:"doNotSendPassword"`
 		}
 		_ = c.ShouldBindJSON(&body)
+		// imageId 优先,没给再退回旧字段 templateId
+		if body.ImageID != nil {
+			body.TemplateID = body.ImageID
+		}
 		if body.TemplateID == nil {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少 templateId", "code": "EBC5B68EC"})
 			return

@@ -263,6 +263,7 @@ var usedEndpoints = []string{
 	// —— 服务(续费、终止、承诺期) ——
 	"GET /services/{serviceId}",
 	"PUT /services/{serviceId}",
+	"GET /services/{serviceId}/options", // 中奖:读主服务 + 选项拼出下单规格
 	"GET /services/{serviceId}/billing/engagement",
 	"GET /services/{serviceId}/billing/engagement/available",
 	"PUT /services/{serviceId}/billing/engagement/endRule",

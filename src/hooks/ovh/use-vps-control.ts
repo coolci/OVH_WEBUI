@@ -378,18 +378,20 @@ export function useChangeVpsContact() {
  * VPS 的到期终止策略。和独服同理：**不要**用 /terminate（那是立即终止）。
  * 到期终止只能通过 PUT /services/{serviceId} 的 terminationPolicy 设置。
  */
-export function useUpdateVpsTerminationPolicy() {
+// serviceName 在 hook 层绑定(与独服 useUpdateTerminationPolicy 同形):RenewalDialog 只传 { policy },
+// 以前从 vars 取 serviceName 会请求 /vps-control/undefined/termination-policy
+export function useUpdateVpsTerminationPolicy(serviceName: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (vars: { serviceName: string; policy: string }) =>
-      (await api.put(`/vps-control/${vars.serviceName}/termination-policy`, {
+    mutationFn: async (vars: { policy: string }) =>
+      (await api.put(`/vps-control/${serviceName}/termination-policy`, {
         policy: vars.policy,
       })).data,
     // 终止策略横幅读 serviceInfo,不失效会一直显示旧政策。
     // 用 qk 而不是手写 key:上游手写的 ["vps-control","serviceInfo",…] 与 qk 的
     // "service-info" 对不上,失效永远打空
-    onSuccess: (_d, vars) => {
-      qc.invalidateQueries({ queryKey: qk.vpsControl.serviceInfo(vars.serviceName) });
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.vpsControl.serviceInfo(serviceName) });
     },
   });
 }

@@ -90,6 +90,8 @@ export function useCreateQueueItem() {
       retryInterval?: number;
       quantity?: number;
       autoPay?: boolean;
+      /** 强制入队自定义 / 目录未收录型号(后端只放过「未收录」,跨区 / 非 Eco 照拦) */
+      force?: boolean;
     }) => {
       const dcs = payload.datacenters;
       // 上界以前完全没有:填 9999 × 5 个机房 = 近 5 万次串行 POST。
@@ -111,6 +113,7 @@ export function useCreateQueueItem() {
       // 第一条失败原因要留下来。以前是 catch 里 failed++ 就完了,
       // 用户看到「N 个任务创建失败」却不知道为什么(比如撞上了队列总量闸门)。
       let firstError = "";
+      let canForce = false;
       for (const dc of dcs) {
         for (let i = 0; i < qty; i++) {
           try {
@@ -121,16 +124,18 @@ export function useCreateQueueItem() {
               retryInterval: payload.retryInterval,
               options: payload.options || [],
               autoPay: payload.autoPay ?? false,
+              force: payload.force ?? false,
             });
             success++;
           } catch (e: any) {
             failed++;
             if (!firstError) firstError = errorMessage(e);
+            if (e?.response?.data?.can_force) canForce = true;
           }
         }
       }
       if (failed > 0 && firstError) toast.error(i18n.t("hooksMsg.queue.someFailed", { reason: firstError }));
-      return { success, failed, total: dcs.length * qty, firstError };
+      return { success, failed, total: dcs.length * qty, firstError, canForce };
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.queue.list() });

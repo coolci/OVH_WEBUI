@@ -32,7 +32,7 @@ import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { useTelegramPollerStatus } from "@/hooks/use-settings";
 import { toast } from "sonner";
-import { useServers } from "@/hooks/useApi";
+import { useServers } from "@/hooks/use-servers";
 import { Badge } from "@/components/ui/badge";
 import { DatacenterPicker } from "@/components/common/DatacenterPicker";
 import { PlanCodeCombobox } from "@/components/common/PlanCodeCombobox";

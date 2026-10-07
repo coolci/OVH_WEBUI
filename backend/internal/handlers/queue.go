@@ -14,6 +14,7 @@ import (
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/catalog"
 	"github.com/ovh-webui/server/internal/purchase"
+	"github.com/ovh-webui/server/internal/telegram"
 	"github.com/ovh-webui/server/internal/types"
 )
 
@@ -29,6 +30,8 @@ func AddQueueItem(state *app.State) gin.HandlerFunc {
 			RetryInterval int      `json:"retryInterval"`
 			// AutoPay 下单成功后用默认支付方式自动付款(显式开关,默认关)
 			AutoPay bool `json:"autoPay"`
+			// Force 强制添加自定义或未在当前目录收录的型号入队
+			Force bool `json:"force"`
 		}
 		_ = c.ShouldBindJSON(&body)
 		if body.AccountID == "" {
@@ -52,10 +55,17 @@ func AddQueueItem(state *app.State) gin.HandlerFunc {
 		// → 按 retryInterval 永远重试,日志里永远只有一句"当前无货",用户看不出错在哪。
 		// 所以在这里就说清楚,而不是让它在后台空转到天荒地老。
 		// 探测失败(catalog.PlanVerdictUnknown)不拦 —— 一次网络瞬断不该让用户下不了单。
+		// 用户明确指定 Force(新品 / 自定义型号)时,只放过"目录没收录"这一类,记日志后入队;
+		// 跨区 / 非 Eco 仍然拦,Force 不能拿来绕过确定性买不到的组合。
 		if verdict, hint := catalog.ClassifyPlan(state, body.AccountID, body.PlanCode, "queue"); hint != "" {
-			state.Logger.Warn(fmt.Sprintf("[queue] 拒绝任务(判定 %d): %s", verdict, hint), "queue")
-			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": hint})
-			return
+			if body.Force && verdict == catalog.PlanVerdictNoSuchPlan {
+				state.Logger.Warn(fmt.Sprintf("[queue] 用户强制添加未收录型号(判定 %d): %s 在 %s: %s", verdict, body.PlanCode, body.Datacenter, hint), "queue")
+			} else {
+				state.Logger.Warn(fmt.Sprintf("[queue] 拒绝任务(判定 %d): %s", verdict, hint), "queue")
+				canForce := verdict == catalog.PlanVerdictNoSuchPlan
+				c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": hint, "can_force": canForce})
+				return
+			}
 		}
 		// 没给 / 给 0 = 用全局默认(设置页可改);超出区间夹回来
 		body.RetryInterval = types.ClampRetryInterval(body.RetryInterval, state.Config.RetryInterval())
@@ -72,6 +82,7 @@ func AddQueueItem(state *app.State) gin.HandlerFunc {
 			RetryCount:    0,
 			LastCheckTime: 0,
 			AutoPay:       body.AutoPay,
+			Force:         body.Force,
 		}
 		// 入队 + 落库是一件事:EnqueueItems 失败会把这条从内存撤回,
 		// 不留"这次能跑但重启就丢"的半成功任务
@@ -124,6 +135,10 @@ func RemoveQueueItem(state *app.State) gin.HandlerFunc {
 		}
 		if removed != nil {
 			state.Logger.Info("Removed "+removed.PlanCode+" from queue (ID: "+id+")", "system")
+			// 云下单:把绑定的 Telegram 进度卡片改成"已终止"(未绑卡片时 NotifyTaskProgress 直接返回)
+			telegram.NotifyTaskProgress(state, removed, "cancelled", map[string]string{
+				"reason": "已在网页控制台删除此任务",
+			})
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "success"})
 	}
@@ -176,6 +191,7 @@ func ClearQueue(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		state.QueueMu.Lock()
 		count := len(state.Queue)
+		oldQueue := append([]types.QueueItem{}, state.Queue...)
 		for _, it := range state.Queue {
 			state.MarkTaskDeleted(it.ID) // 同时取消正在进行的下单
 		}
@@ -188,6 +204,12 @@ func ClearQueue(state *app.State) gin.HandlerFunc {
 				"error":  "已清空运行中的队列，但没能写进数据库，重启后这些任务会重新出现：" + err.Error(),
 			})
 			return
+		}
+		// 云下单:绑定了进度卡片的任务逐条回写"已终止"(队列已清空,不会再出现"剩余机房")
+		for i := range oldQueue {
+			telegram.NotifyTaskProgress(state, &oldQueue[i], "cancelled", map[string]string{
+				"reason": "已在网页控制台清空抢购队列",
+			})
 		}
 		state.Logger.Info("Cleared all queue items ("+strconv.Itoa(count)+" items removed)", "")
 		c.JSON(http.StatusOK, gin.H{"status": "success", "count": count})
@@ -206,10 +228,13 @@ func UpdateQueueStatus(state *app.State) gin.HandlerFunc {
 			body.Status = "pending"
 		}
 		state.QueueMu.Lock()
+		var target *types.QueueItem
 		for i := range state.Queue {
 			if state.Queue[i].ID == id {
 				state.Queue[i].Status = body.Status
 				state.Queue[i].UpdatedAt = types.NowISO()
+				cp := state.Queue[i]
+				target = &cp
 				state.Logger.Info("Updated "+state.Queue[i].PlanCode+" status to "+body.Status, "")
 				break
 			}
@@ -222,6 +247,15 @@ func UpdateQueueStatus(state *app.State) gin.HandlerFunc {
 				"error":  "状态已在本次运行中改掉，但没能写进数据库，重启后会回到原状态：" + err.Error(),
 			})
 			return
+		}
+		// 云下单:网页端暂停/恢复同步到 Telegram 进度卡片
+		if target != nil {
+			switch body.Status {
+			case "paused":
+				telegram.NotifyTaskProgress(state, target, "paused", nil)
+			case "running":
+				telegram.NotifyTaskProgress(state, target, "queued", nil)
+			}
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "success"})
 	}

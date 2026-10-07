@@ -19,12 +19,15 @@ export function PlanCodeCombobox({
   servers,
   placeholder,
   className,
+  disabled = false,
 }: {
   value: string;
   onChange: (planCode: string) => void;
   servers: ServerPlan[];
   placeholder?: string;
   className?: string;
+  /** 锁定型号(例如编辑已有订阅时 planCode 是主键,不允许改) */
+  disabled?: boolean;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -45,12 +48,13 @@ export function PlanCodeCombobox({
   }, [servers, query]);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open && !disabled} onOpenChange={(v) => setOpen(disabled ? false : v)}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
           role="combobox"
           aria-expanded={open}
+          disabled={disabled}
           className={cn(
             "w-full justify-between font-normal h-10 px-3.5 rounded-xl",
             !value && "text-muted-foreground",
@@ -68,7 +72,7 @@ export function PlanCodeCombobox({
             <span>{placeholder || t("commons.planCode.placeholder")}</span>
           )}
           <div className="flex items-center gap-1">
-            {value && (
+            {value && !disabled && (
               <button
                 type="button"
                 onClick={(e) => {

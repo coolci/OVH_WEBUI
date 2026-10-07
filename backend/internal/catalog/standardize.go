@@ -56,8 +56,9 @@ func FormatMemoryDisplay(memoryCode string) string {
 }
 
 func FormatStorageDisplay(storageCode string) string {
-	if m := regexp.MustCompile(`(?i)(\d+)x(\d+)(ssd|nvme|hdd)`).FindStringSubmatch(storageCode); m != nil {
-		return m[1] + "x " + m[2] + "GB " + strings.ToUpper(m[3])
+	// 复用 storage_parse 的介质匹配（含 sas/sa），文案统一走 FormatMediaLabel（NVMe/SATA/SAS）
+	if m := reStorageSegment.FindStringSubmatch(storageCode); m != nil {
+		return formatStorageSegment(m[1], m[2], m[3])
 	}
 	return storageCode
 }

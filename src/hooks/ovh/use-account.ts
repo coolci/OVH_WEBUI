@@ -75,8 +75,10 @@ export interface OrderRecord {
 
 /** OVH 订单列表 GET /me/order 详情 */
 export function useOrders(limit = 30) {
+  // 订单按账户区分:key 必须带 accountId,否则切换账户后沿用上一个账户的订单缓存
+  const [accountId] = useActiveAccount();
   return useQuery({
-    queryKey: [...qk.account.info(), "orders", limit] as const,
+    queryKey: [...qk.account.info(accountId), "orders", limit] as const,
     queryFn: async () => {
       const res = await api.get<OrderRecord[] | { orders?: OrderRecord[] }>(
         "/ovh/account/orders",
