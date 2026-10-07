@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -30,7 +31,10 @@ func noOVHRespAccount(c *gin.Context) {
 // util.go 是公共文件不在本次改动范围,所以这里放一份带计数的版本:
 // 拿不到的详情等于整条记录丢失,必须让日志和响应能看见。
 
-const ovhDetailRetryDelay = 300 * time.Millisecond
+const (
+	ovhDetailRetryDelay = 300 * time.Millisecond
+	ovhDetailTimeout    = 20 * time.Second
+)
 
 // ovhErrIsTransient 429(OVH 对 /me 有速率限制,这里按 10 并发拉详情很容易撞上)和 5xx
 // 属于重试有意义的瞬时错误;403/404 是权限或资源本身的问题,重试只是白白再烧一次配额。
@@ -44,13 +48,20 @@ func ovhErrIsTransient(err error) bool {
 }
 
 // ovhGetWithRetry 对瞬时错误退避重试一次。宁可多花 300ms 也不要让一条记录悄悄消失。
+//
+// 单条详情(含重试)总耗时封顶 ovhDetailTimeout:实测 /me/notification/email/history/{id}
+// 偶发 90s 才回 504,而 http client 超时是 60s、504 又算瞬时错误会再等一轮 ——
+// 一封邮件就能把整个「邮件历史」请求拖到两分钟以上,前端一直转圈。
+// 超时的那条按失败计入(走 X-Partial-Failures / failed 上报),不拖垮整张列表。
 func ovhGetWithRetry(client *ovhsdk.Client, path string, out interface{}) error {
-	err := client.Get(path, out)
-	if err == nil || !ovhErrIsTransient(err) {
+	ctx, cancel := context.WithTimeout(context.Background(), ovhDetailTimeout)
+	defer cancel()
+	err := client.GetWithContext(ctx, path, out)
+	if err == nil || !ovhErrIsTransient(err) || ctx.Err() != nil {
 		return err
 	}
 	time.Sleep(ovhDetailRetryDelay)
-	return client.Get(path, out)
+	return client.GetWithContext(ctx, path, out)
 }
 
 // parallelGetPaths 并发 GET 一批路径,结果按索引对齐(失败位 nil),
