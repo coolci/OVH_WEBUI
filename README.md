@@ -149,6 +149,16 @@ npm run dev             # 默认 :19997, /api/* 自动反代到 19998
 浏览器打开 `http://localhost:19997`。
 
 
+## 文本编码检查
+
+项目文本使用 UTF-8；带中文的 PowerShell 脚本使用 UTF-8 BOM，兼容 Windows PowerShell 5.1。初始化脚本显式按 UTF-8 读取 `.env.example`，避免中文注释乱码或配置行被吞进注释。
+
+```bash
+python scripts/check-encoding.py
+```
+
+检查包含本地 `.env`，只报告文件和行号，不输出配置值。依赖、构建产物、运行数据和二进制文件不参与扫描。
+
 ## 首次访问
 
 打开浏览器后会依次出现两层全屏遮罩,都过了才能进主界面:

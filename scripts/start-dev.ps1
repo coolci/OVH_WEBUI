@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 # 本地开发：稳定启动后端 + 前台 Vite
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
