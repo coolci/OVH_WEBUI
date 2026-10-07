@@ -206,8 +206,9 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
       toast.success(`已创建 ${result.success}/${result.total} 个抢购任务`);
       onOpenChange(false);
     }
-    if (result.failed > 0) {
-      toast.error(result.error || `${result.failed} 个任务创建失败`);
+    // 有具体原因时 hook 已经 toast 过,这里只兜底没拿到原因的情况
+    if (result.failed > 0 && !result.firstError) {
+      toast.error(`${result.failed} 个任务创建失败`);
     }
   };
 
