@@ -21,6 +21,11 @@ type accountRow struct {
 	CreatedAt   string `db:"created_at"`
 	ProxyURL    string `db:"proxy_url"`
 	Fingerprint string `db:"fingerprint"`
+	// 凭据校验状态(PRD D-01)。SELECT * + sqlx 严格映射:列与字段必须同一次上线,
+	// 否则 v0.1.x 老库(已有这三列)会让整个账户列表报 missing destination name。
+	CredState     string `db:"cred_state"`
+	CredCheckedAt string `db:"cred_checked_at"`
+	CredEvidence  string `db:"cred_evidence"`
 }
 
 // rowToAccount 出库时解密三个凭据字段。
@@ -48,9 +53,20 @@ func rowToAccount(r accountRow) types.OVHAccount {
 		IsDefault:   r.IsDefault == 1,
 		CreatedAt:   r.CreatedAt,
 		// 代理串带凭据,和三个 API 密钥一样是加密存的
-		ProxyURL:    dec(r.ProxyURL),
-		Fingerprint: r.Fingerprint,
+		ProxyURL:           dec(r.ProxyURL),
+		Fingerprint:        r.Fingerprint,
+		CredState:          credStateOrDefault(r.CredState),
+		CredCheckedAt:      r.CredCheckedAt,
+		CredEvidence:       r.CredEvidence,
+		VerificationReason: r.CredEvidence,
 	}
+}
+
+func credStateOrDefault(s string) string {
+	if s == "" {
+		return "unverified"
+	}
+	return s
 }
 
 // accountToRow 入库时加密三个凭据字段(加密不可用时原样明文,与升级前行为一致)
@@ -60,18 +76,21 @@ func accountToRow(a types.OVHAccount) accountRow {
 		bi = 1
 	}
 	return accountRow{
-		ID:          a.ID,
-		Name:        a.Name,
-		Endpoint:    a.Endpoint,
-		Zone:        a.Zone,
-		AppKey:      secret.Encrypt(a.AppKey),
-		AppSecret:   secret.Encrypt(a.AppSecret),
-		ConsumerKey: secret.Encrypt(a.ConsumerKey),
-		IAM:         a.IAM,
-		IsDefault:   bi,
-		CreatedAt:   a.CreatedAt,
-		ProxyURL:    secret.Encrypt(a.ProxyURL),
-		Fingerprint: a.Fingerprint,
+		ID:            a.ID,
+		Name:          a.Name,
+		Endpoint:      a.Endpoint,
+		Zone:          a.Zone,
+		AppKey:        secret.Encrypt(a.AppKey),
+		AppSecret:     secret.Encrypt(a.AppSecret),
+		ConsumerKey:   secret.Encrypt(a.ConsumerKey),
+		IAM:           a.IAM,
+		IsDefault:     bi,
+		CreatedAt:     a.CreatedAt,
+		ProxyURL:      secret.Encrypt(a.ProxyURL),
+		Fingerprint:   a.Fingerprint,
+		CredState:     credStateOrDefault(a.CredState),
+		CredCheckedAt: a.CredCheckedAt,
+		CredEvidence:  a.CredEvidence,
 	}
 }
 
@@ -139,9 +158,11 @@ func (db *DB) UpsertAccount(a types.OVHAccount) error {
 	r := accountToRow(a)
 	_, err = tx.NamedExec(`
 		INSERT INTO ovh_accounts
-		(id, name, endpoint, zone, app_key, app_secret, consumer_key, iam, is_default, created_at, proxy_url, fingerprint)
+		(id, name, endpoint, zone, app_key, app_secret, consumer_key, iam, is_default, created_at, proxy_url, fingerprint,
+		 cred_state, cred_checked_at, cred_evidence)
 		VALUES
-		(:id, :name, :endpoint, :zone, :app_key, :app_secret, :consumer_key, :iam, :is_default, :created_at, :proxy_url, :fingerprint)
+		(:id, :name, :endpoint, :zone, :app_key, :app_secret, :consumer_key, :iam, :is_default, :created_at, :proxy_url, :fingerprint,
+		 :cred_state, :cred_checked_at, :cred_evidence)
 		ON CONFLICT(id) DO UPDATE SET
 		  name         = excluded.name,
 		  endpoint     = excluded.endpoint,
@@ -152,7 +173,10 @@ func (db *DB) UpsertAccount(a types.OVHAccount) error {
 		  iam          = excluded.iam,
 		  is_default   = excluded.is_default,
 		  proxy_url    = excluded.proxy_url,
-		  fingerprint  = excluded.fingerprint
+		  fingerprint  = excluded.fingerprint,
+		  cred_state      = excluded.cred_state,
+		  cred_checked_at = excluded.cred_checked_at,
+		  cred_evidence   = excluded.cred_evidence
 	`, r)
 	if err != nil {
 		return fmt.Errorf("upsert account %s: %w", a.ID, err)
@@ -275,7 +299,7 @@ func (db *DB) GetAccountRaw(id string) (RawAccount, bool, error) {
 
 // UpdateAccountCredState 更新账户凭据校验状态 (PRD D-01)
 func (db *DB) UpdateAccountCredState(id, credState, checkedAt, evidence string) error {
-	_, err := db.Exec(`UPDATE ovh_accounts SET cred_state=?, cred_checked_at=?, cred_evidence=?, updated_at=datetime('now') WHERE id=?`,
+	_, err := db.Exec(`UPDATE ovh_accounts SET cred_state=?, cred_checked_at=?, cred_evidence=? WHERE id=?`,
 		credState, checkedAt, evidence, id)
 	return err
 }

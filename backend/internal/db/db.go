@@ -95,6 +95,18 @@ func (db *DB) migrate() error {
 	if err := db.addColumnIfMissing("queue", "failure_count", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
+	// 云下单进度卡片绑定(telegram_chat_id / telegram_message_id)+ 强制入队(force_order)。
+	// ListQueue 是 SELECT * + sqlx 严格映射:老库(v0.1.x)里已有这三列,结构体不映射会让
+	// 整个队列加载报 missing destination name;新库没这三列则进度卡片重启即失联。两边必须对齐。
+	for _, c := range [][2]string{
+		{"telegram_chat_id", "TEXT NOT NULL DEFAULT ''"},
+		{"telegram_message_id", "INTEGER NOT NULL DEFAULT 0"},
+		{"force_order", "INTEGER NOT NULL DEFAULT 0"},
+	} {
+		if err := db.addColumnIfMissing("queue", c[0], c[1]); err != nil {
+			return err
+		}
+	}
 	// order_status / order_status_at:OVH 侧订单支付状态(GET /me/order/{id}/status)。
 	// timing / total_ms:抢购各阶段耗时,以前只在内存,重启即丢。
 	// ListHistory 是 SELECT * + sqlx 严格映射,结构体字段和列必须同一次上线。
@@ -130,6 +142,10 @@ func (db *DB) migrate() error {
 	for _, c := range [][2]string{
 		{"proxy_url", "TEXT NOT NULL DEFAULT ''"},
 		{"fingerprint", "TEXT NOT NULL DEFAULT ''"},
+		// 凭据校验状态(PRD §2.2 / D-01)
+		{"cred_state", "TEXT NOT NULL DEFAULT 'unverified'"},
+		{"cred_checked_at", "TEXT NOT NULL DEFAULT ''"},
+		{"cred_evidence", "TEXT NOT NULL DEFAULT ''"},
 	} {
 		if err := db.addColumnIfMissing("ovh_accounts", c[0], c[1]); err != nil {
 			return err
@@ -141,6 +157,12 @@ func (db *DB) migrate() error {
 	if err := db.addColumnIfMissing("telegram_order_buttons", "account_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
+	// used_at:一键下单按钮的一次性 nonce。ClaimTelegramButton 显式引用该列,建表早于它的老库必须补上。
+	if err := db.addColumnIfMissing("telegram_order_buttons", "used_at", "REAL NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	// 清理 14 天前的旧短 ID 映射，避免表无限增长
+	_, _ = db.DeleteExpiredShortIDs(time.Now().Unix() - 14*86400)
 	return nil
 }
 
