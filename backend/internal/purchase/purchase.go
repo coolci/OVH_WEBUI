@@ -106,9 +106,14 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 	// classifyPlan 给出确定性结论时直接判 Fatal:这类任务重试到天荒地老也不会变。
 	if len(availabilities) == 0 {
 		if verdict, msg := catalog.ClassifyPlan(state, item.AccountID, item.PlanCode, "purchase"); msg != "" {
-			state.Logger.Error(fmt.Sprintf("%s（判定 %d）", msg, verdict), "purchase")
-			recordFailure(state, item, msg)
-			return Outcome{Fatal: true, Reason: msg}
+			// Force 只放过"目录没收录/可能拼错"这类未上市 SKU,不能拿来绕过跨区或非 Eco。
+			if item.Force && verdict == catalog.PlanVerdictNoSuchPlan {
+				state.Logger.Warn(fmt.Sprintf("Force 跳过未收录判定,继续按无货重试: %s", msg), "purchase")
+			} else {
+				state.Logger.Error(fmt.Sprintf("%s（判定 %d）", msg, verdict), "purchase")
+				recordFailure(state, item, msg)
+				return Outcome{Fatal: true, Reason: msg}
+			}
 		}
 	}
 
@@ -194,6 +199,9 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 	// 多账户:购物车 subsidiary 跟着账户走,不再读全局 cfg
 	acc, _ := state.FindAccount(item.AccountID)
 	subsidiary := orderSubsidiary(state, acc, "purchase")
+
+	// 云下单:进度卡片切到"正在提交"(未绑卡片时直接返回)
+	telegram.NotifyTaskProgress(state, item, "submitting", nil)
 
 	// 创建购物车
 	state.Logger.Info(fmt.Sprintf("为区域 %s 创建购物车 (账户 %s)", subsidiary, acc.Name), "purchase")
@@ -589,7 +597,13 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 	// 成功通知走统一通知层(Telegram + Webhook 至少一条可达就发)。
 	// 以前被 TG 配置判断包住:Webhook-only 用户收不到"抢到了但没付款",
 	// 订单逾期作废 —— 这是整条链路里最不能丢的一条消息(issue #2)。
-	if notify.Broadcast(state, BuildOrderSuccessMessage(item, orderID, ovh.ManagerOrderURL(acc.Endpoint, orderID)), nil) > 0 {
+	payURL := ovh.ManagerOrderURL(acc.Endpoint, orderID)
+	// 云下单:绑定了进度卡片的任务把卡片改成"锁单成功"+支付按钮;统一通知照发,不能丢
+	telegram.NotifyTaskProgress(state, item, "success", map[string]string{
+		"orderId":  orderID,
+		"orderUrl": payURL,
+	})
+	if notify.Broadcast(state, BuildOrderSuccessMessage(item, orderID, payURL), nil) > 0 {
 		state.Logger.Info("已为订单 "+orderID+" 发送订单成功通知。", "purchase")
 	} else {
 		state.Logger.Warn("订单 "+orderID+" 已创建,但成功通知未送达任何通道。", "purchase")

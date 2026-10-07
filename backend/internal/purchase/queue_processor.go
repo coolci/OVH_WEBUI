@@ -365,6 +365,8 @@ func ProcessQueueLoop(state *app.State) {
 				if stopReason == "" {
 					return
 				}
+				// 云下单:任务终止同步到 Telegram 进度卡片(未绑卡片时直接返回)
+				telegram.NotifyTaskProgress(state, &snapshot, "failed", map[string]string{"reason": stopReason})
 				if !outcome.Fatal {
 					// 确定性失败的原因 PurchaseServer 已经写进 history 了;
 					// 用尽 MaxRetries 这条没人写过,补一条,否则任务会莫名其妙停在 failed
