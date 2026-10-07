@@ -302,13 +302,13 @@ func GetAvailability(state *app.State) gin.HandlerFunc {
 				// 和"所有机房都没货"长得一模一样。这里明确告诉调用方是拿错区了。
 				state.Logger.Warn("查询 "+planCode+" 可用性: "+err.Error(), "availability")
 				c.JSON(http.StatusNotFound, gin.H{
-					"error":   "planCode 不属于该账户所在站点", "code": "E5F67A422",
+					"error": "planCode 不属于该账户所在站点", "code": "E5F67A422",
 					"message": err.Error(),
 				})
 			case errors.Is(err, catalog.ErrConfigNotMatched):
 				state.Logger.Warn("查询 "+planCode+" 可用性: "+err.Error(), "availability")
 				c.JSON(http.StatusNotFound, gin.H{
-					"error":   "该 plan 没有这套配置组合", "code": "E8B5F5226",
+					"error": "该 plan 没有这套配置组合", "code": "E8B5F5226",
 					"message": err.Error(),
 				})
 			default:
@@ -351,7 +351,9 @@ func MonitorPrice(state *app.State) gin.HandlerFunc {
 		if body.Datacenter == "" {
 			body.Datacenter = defaultDatacenterFor(state, body.AccountID, body.PlanCode)
 		}
-		result := price.GetInternal(state, body.AccountID, body.PlanCode, body.Datacenter, body.Options)
+		// 监控轮询是唯一调用方(本地白名单),短 TTL 缓存削掉每轮全量验价的
+		// 完整购物车周期 —— 不加的话持续有货的订阅自己就能把账户打进 429
+		result := price.GetInternalCached(state, body.AccountID, body.PlanCode, body.Datacenter, body.Options)
 		c.JSON(http.StatusOK, result)
 	}
 }

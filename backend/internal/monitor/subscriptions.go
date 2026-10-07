@@ -185,6 +185,14 @@ func (m *Monitor) KnownServers() []string {
 }
 
 // MessageUUIDCacheLookup 用于 webhook 回调时取回完整配置
+// MessageUUIDCacheDelete 消费一条内存缓存(一键下单按钮的内存回退路径:
+// 命中后必须删,不然回退路径绕过 DB 的一次性 nonce)
+func (m *Monitor) MessageUUIDCacheDelete(id string) {
+	m.cacheLock.Lock()
+	delete(m.messageUUIDCache, id)
+	m.cacheLock.Unlock()
+}
+
 func (m *Monitor) MessageUUIDCacheLookup(id string) *CachedMessage {
 	m.cacheLock.Lock()
 	defer m.cacheLock.Unlock()
@@ -351,6 +359,27 @@ func (m *Monitor) ClearAccountRefs(accountID string) int {
 			n++
 		}
 		s.mu.Unlock()
+	}
+	return n
+}
+
+// DisableAutoOrderForAccount 关掉指定账户全部订阅的自动下单(带锁,持久化)。
+// 给 proxyguard 用:以前它绕过内存态直接改库,监控循环轮末的整表落库
+// 会用内存里的 AutoOrder=true 覆盖回去 —— 代理挂了但自动下单照常触发
+func (m *Monitor) DisableAutoOrderForAccount(accountID string) int {
+	m.subsMu.Lock()
+	n := 0
+	for _, sub := range m.subscriptions {
+		if sub.AutoOrderAccountID == accountID && sub.AutoOrder {
+			sub.mu.Lock()
+			sub.AutoOrder = false
+			sub.mu.Unlock()
+			n++
+		}
+	}
+	m.subsMu.Unlock()
+	if n > 0 {
+		m.SaveToDB()
 	}
 	return n
 }

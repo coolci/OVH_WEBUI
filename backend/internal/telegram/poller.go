@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -31,6 +32,9 @@ var (
 	pollerStatus  PollerStatus
 	pollerKick    chan struct{}
 	pollerStarted bool
+	// pollerStop 关闭即通知循环退出;pollerDone 由循环退出时关闭(StopPoller 等它)
+	pollerStop chan struct{}
+	pollerDone chan struct{}
 )
 
 const kvPollOffset = "telegram_poll_offset"
@@ -75,17 +79,50 @@ func StartPoller(state *app.State, onUpdate func(map[string]interface{})) {
 	}
 	pollerStarted = true
 	pollerKick = make(chan struct{}, 1)
-	kick := pollerKick
+	pollerStop = make(chan struct{})
+	pollerDone = make(chan struct{})
+	kick, stop, done := pollerKick, pollerStop, pollerDone
 	pollerMu.Unlock()
-	go runPoller(state, onUpdate, kick)
+	go func() {
+		defer close(done)
+		runPoller(state, onUpdate, kick, stop)
+	}()
 }
 
-func runPoller(state *app.State, onUpdate func(map[string]interface{}), kick <-chan struct{}) {
+// StopPoller 进程退出时调用:打断进行中的 getUpdates 并等循环退出(最多 timeout)。
+// 正在处理的那条 update 会处理完、offset 落库后才退出,避免重启后重放
+// (同步上游 v0.2.3「关停先停后台循环」;本项目的轮询器是包级单例,故在此实现)。
+func StopPoller(timeout time.Duration) {
+	pollerMu.Lock()
+	stop, done := pollerStop, pollerDone
+	if !pollerStarted || stop == nil {
+		pollerMu.Unlock()
+		return
+	}
+	select {
+	case <-stop:
+	default:
+		close(stop)
+	}
+	pollerMu.Unlock()
+	select {
+	case <-done:
+	case <-time.After(timeout):
+	}
+	patchPoller(func(s *PollerStatus) { s.Running = false })
+}
+
+func runPoller(state *app.State, onUpdate func(map[string]interface{}), kick <-chan struct{}, stop <-chan struct{}) {
 	client := netfp.Shared(40 * time.Second)
 	var offset int64
 	var lastToken string
 
 	for {
+		select {
+		case <-stop:
+			return
+		default:
+		}
 		cfg := state.Config.Get()
 		token := strings.TrimSpace(cfg.TgToken)
 		patchPoller(func(s *PollerStatus) { s.Configured = token != "" })
@@ -99,6 +136,8 @@ func runPoller(state *app.State, onUpdate func(map[string]interface{}), kick <-c
 			lastToken = ""
 			select {
 			case <-kick:
+			case <-stop:
+				return
 			case <-time.After(3 * time.Second):
 			}
 			continue
@@ -144,6 +183,8 @@ func runPoller(state *app.State, onUpdate func(map[string]interface{}), kick <-c
 			select {
 			case <-kick:
 				cancel()
+			case <-stop:
+				cancel()
 			case <-done:
 			}
 		}()
@@ -167,6 +208,8 @@ func runPoller(state *app.State, onUpdate func(map[string]interface{}), kick <-c
 			}
 			select {
 			case <-kick:
+			case <-stop:
+				return
 			case <-time.After(3 * time.Second):
 			}
 			continue
@@ -246,8 +289,12 @@ func parseGetUpdatesBody(body []byte) (ok bool, desc string, updates []map[strin
 	}
 	out := make([]map[string]interface{}, 0, len(raw.Result))
 	for _, item := range raw.Result {
+		// UseNumber:TG 的 callback/message id 可达 ~5.8e18,解成 float64 会丢精度,
+		// answerCallbackQuery 拿到的 id 对不上,按钮 toast 反馈永远失败(同步上游 v0.2.2)
 		var u map[string]interface{}
-		if e := json.Unmarshal(item, &u); e != nil {
+		dec := json.NewDecoder(bytes.NewReader(item))
+		dec.UseNumber()
+		if e := dec.Decode(&u); e != nil {
 			continue
 		}
 		out = append(out, u)
