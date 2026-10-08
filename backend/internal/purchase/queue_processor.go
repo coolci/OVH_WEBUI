@@ -154,7 +154,7 @@ func ProcessQueueLoop(state *app.State) {
 		}
 		state.DeletedTaskIDsMu.Unlock()
 		if removed > 0 {
-			state.Logger.Debug("清理 N 个已从队列移除的删除标记", "queue")
+			state.Logger.Debug(fmt.Sprintf("清理 %d 个已从队列移除的删除标记", removed), "queue")
 		}
 
 		// 按优先级排序：quickOrder 优先，其次按创建时间倒序
@@ -221,7 +221,7 @@ func ProcessQueueLoop(state *app.State) {
 		}
 
 		if len(ready) > 0 {
-			state.Logger.Debug("准备并发处理 N 个订单", "queue")
+			state.Logger.Debug(fmt.Sprintf("准备并发处理 %d 个订单", len(ready)), "queue")
 			processedIDs := []string{}
 			var procMu sync.Mutex
 
@@ -424,7 +424,7 @@ func ProcessQueueLoop(state *app.State) {
 					procSet[id] = struct{}{}
 				}
 				state.QueueMu.Lock()
-				kept := state.Queue[:0]
+				kept := make([]types.QueueItem, 0, len(state.Queue))
 				for _, it := range state.Queue {
 					if _, ok := procSet[it.ID]; !ok {
 						kept = append(kept, it)
@@ -432,7 +432,7 @@ func ProcessQueueLoop(state *app.State) {
 				}
 				state.Queue = kept
 				state.QueueMu.Unlock()
-				state.Logger.Info("已从队列移除 N 个已完成的订单", "queue")
+				state.Logger.Info(fmt.Sprintf("已从队列移除 %d 个已完成的订单", len(processedIDs)), "queue")
 			}
 
 			_ = state.SaveQueue()

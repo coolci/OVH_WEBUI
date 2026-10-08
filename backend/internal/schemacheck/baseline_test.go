@@ -48,6 +48,7 @@ var namespaces = []string{
 	"me",
 	"services",
 	"ip",
+	"support",
 }
 
 // endpointSig 一个端点在某个区的签名。字段都是"变了就该有人看一眼"的那些。
@@ -282,6 +283,15 @@ var usedEndpoints = []string{
 	"POST /ip/{ip}/reverse",
 	"DELETE /ip/{ip}/reverse/{ipReverse}",
 	"GET /ip/{ip}/reverse/{ipReverse}",
+
+	// —— 支持工单 ——
+	"GET /support/tickets",
+	"POST /support/tickets/create",
+	"GET /support/tickets/{ticketId}",
+	"GET /support/tickets/{ticketId}/messages",
+	"POST /support/tickets/{ticketId}/reply",
+	"POST /support/tickets/{ticketId}/close",
+	"POST /support/tickets/{ticketId}/reopen",
 }
 
 func fetchSchema(region, ns string) (map[string]interface{}, error) {

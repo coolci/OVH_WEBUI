@@ -13,6 +13,7 @@ import (
 	"github.com/ovh-webui/server/internal/notify"
 	"github.com/ovh-webui/server/internal/numconv"
 	"github.com/ovh-webui/server/internal/ovh"
+	"github.com/ovh-webui/server/internal/purchase"
 	"github.com/ovh-webui/server/internal/types"
 )
 
@@ -173,12 +174,30 @@ func PurchaseVPS(state *app.State, sub types.VPSSubscription, dcCode string) Out
 	// 同独服:不发 waiveRetractationPeriod(放弃 14 天撤回权)。
 	// schema 里它是 required:false,不传即不主动弃权;真要弃权可以事后调
 	// POST /me/order/{id}/waiveRetraction,而结账时传 true 则不可逆。
+	attemptStart := time.Now()
 	if err := client.Post("/order/cart/"+cartID+"/checkout", map[string]interface{}{
 		// 订阅上显式打开"自动付款"才为 true;默认不替用户扣钱
 		"autoPayWithPreferredPaymentMethod": sub.AutoPay,
 	}, &checkoutResult); err != nil {
 		// 配置接口对取值几乎不校验,真正的"这个机房没货"往往到 checkout 才报出来
-		return Outcome{Reason: "结账失败: " + ovh.Explain(err)}
+		errMsg := ovh.Explain(err)
+		state.Logger.Error(fmt.Sprintf("[VPS下单] 结账失败: %s (%s)", errMsg, sub.PlanCode), "vps_purchase")
+
+		// checkout 超时/传输层失败 ≠ 下单失败:请求可能已经到达 OVH 且订单已建,
+		// 只是我方没等到响应。这时尝试下一个机房或下一轮重试会导致买多台(扣多次款)。
+		if purchase.IsTransient(err) {
+			oid, u, recErr := purchase.ReconcileRecentOrder(client, acc.Endpoint, sub.PlanCode, attemptStart)
+			if recErr != nil {
+				state.Logger.Warn("[VPS下单] 对账查询失败(按未建单处理): "+recErr.Error(), "vps_purchase")
+			} else if oid != "" {
+				state.Logger.Warn(fmt.Sprintf("[VPS下单] checkout 报瞬态错误但对账发现订单已建(#%s),按成功处理", oid), "vps_purchase")
+				return Outcome{Success: true, OrderID: oid, OrderURL: u}
+			}
+			// 对账未果:订单状态未知,标记 Fatal 终止本轮多机房继续抢购,避免同一补货事件买两台
+			return Outcome{Fatal: true, Reason: "结账响应超时,无法确认订单是否已创建(已暂停继续抢购以防重复下单): " + errMsg}
+		}
+
+		return Outcome{Reason: "结账失败: " + errMsg}
 	}
 
 	orderID := numconv.ToString(checkoutResult["orderId"])

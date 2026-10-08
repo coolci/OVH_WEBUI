@@ -15,6 +15,7 @@ import {
   Settings,
   Search,
   CloudLightning,
+  Ticket,
 } from "lucide-react";
 
 interface NavEntry {
@@ -33,6 +34,7 @@ const NAV_ENTRIES: NavEntry[] = [
   { to: "/monitor", label: "服务器监控", group: "监控", icon: Activity, shortcut: "G M" },
   { to: "/vps-monitor", label: "VPS 补货", group: "监控", icon: MonitorDot, shortcut: "G V" },
   { to: "/server-control", label: "服务器控制", group: "实例", icon: Cpu, shortcut: "G C" },
+  { to: "/tickets", label: "支持工单", group: "实例", icon: Ticket, shortcut: "G K" },
   { to: "/vps-control", label: "VPS 控制", group: "实例", icon: Cloud },
   { to: "/account", label: "账户管理", group: "实例", icon: User },
   { to: "/history", label: "抢购历史", group: "系统", icon: History, shortcut: "G H" },

@@ -539,6 +539,16 @@ func main() {
 			vc.DELETE("/:service_name/mitigation/:ip", handlers.DisableVpsMitigation(state))
 		}
 
+		// 支持工单：列表、详情、消息、创建、回复、关闭、重新打开。
+		// 官方创建路径是 /support/tickets/create，这里收成 POST /support/tickets。
+		api.GET("/support/tickets", handlers.ListSupportTickets(state))
+		api.POST("/support/tickets", handlers.CreateSupportTicket(state))
+		api.GET("/support/tickets/:ticket_id", handlers.GetSupportTicket(state))
+		api.GET("/support/tickets/:ticket_id/messages", handlers.ListSupportTicketMessages(state))
+		api.POST("/support/tickets/:ticket_id/reply", handlers.ReplySupportTicket(state))
+		api.POST("/support/tickets/:ticket_id/reopen", handlers.ReopenSupportTicket(state))
+		api.POST("/support/tickets/:ticket_id/close", handlers.CloseSupportTicket(state))
+
 		// VPS monitor
 		// 在售型号来自 OVH 实时目录 —— 写死过的那份已经整代停售了
 		api.GET("/vps-monitor/models", handlers.GetVPSModels(state))

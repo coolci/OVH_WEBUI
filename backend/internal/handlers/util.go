@@ -17,30 +17,20 @@ import (
 	"github.com/ovh-webui/server/internal/types"
 )
 
-// ovhClientFor 从请求 ?account=xxx 取账户 ID 拿对应 OVH client;
-// 空时(没传 ?account)走默认账户; 若传了但在库中未找到(如前端缓存了已失效的旧 ID)，
-// 且默认账户有效，则自动回退到默认账户，避免返回 412 NO_OVH_ACCOUNT 阻断业务。
+// ovhClientFor 从请求 ?account=xxx 取账户 ID 拿对应 OVH client。
+// 空时(没传 ?account)走默认账户。传了但库里没有时必须失败:
+// 静默改打默认账户会让重启、重装、撤单落到另一套 OVH 凭据上。
+// 过期的 localStorage 账户 ID 由前端在账户列表加载后改回默认账户。
 func ovhClientFor(state *app.State, c *gin.Context) (*ovhsdk.Client, error) {
 	accParam := strings.TrimSpace(c.Query("account"))
-	cli, err := state.OVH.ClientFor(accParam)
-	if err != nil && accParam != "" {
-		if defCli, defErr := state.OVH.ClientFor(""); defErr == nil {
-			state.Logger.Warn("请求指定账户 "+accParam+" 不存在，自动回退到默认账户", "api")
-			return defCli, nil
-		}
-	}
-	return cli, err
+	return state.OVH.ClientFor(accParam)
 }
 
 // ovhAccountFor 从请求 ?account=xxx 取账户实体(给需要原始凭据/endpoint 的 raw HTTP 调用用)。
-// 空 → 默认账户; 不存在但传了时 → 自动回退默认账户; 系统完全没账户 → ok=false。
+// 空 → 默认账户; 传了但不存在 → ok=false; 系统完全没账户 → ok=false。
 func ovhAccountFor(state *app.State, c *gin.Context) (types.OVHAccount, bool) {
 	accParam := strings.TrimSpace(c.Query("account"))
-	acc, ok := state.FindAccount(accParam)
-	if !ok && accParam != "" {
-		return state.FindAccount("")
-	}
-	return acc, ok
+	return state.FindAccount(accParam)
 }
 
 // knownEndpoints go-ovh 支持的 endpoint 名 → REST API base URL。

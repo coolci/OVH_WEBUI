@@ -22,6 +22,7 @@ const (
 // Logger 内存累积 + 批量刷盘 + 控制台输出
 type Logger struct {
 	mu           sync.Mutex
+	flushMu      sync.Mutex
 	entries      []types.LogEntry
 	writeCounter int
 	logsFile     string
@@ -78,7 +79,12 @@ func (l *Logger) Add(level, message, source string) {
 	}
 	l.writeCounter++
 	shouldWrite := l.writeCounter >= writeThreshold || level == "ERROR"
-	snapshot := l.entries // 直接引用，下面 Flush 会复制
+	var snapshot []types.LogEntry
+	if shouldWrite {
+		l.writeCounter = 0
+		snapshot = make([]types.LogEntry, len(l.entries))
+		copy(snapshot, l.entries)
+	}
 	l.mu.Unlock()
 
 	if shouldWrite {
@@ -116,15 +122,11 @@ func (l *Logger) Flush() {
 }
 
 func (l *Logger) flush(entries []types.LogEntry) {
-	// 复制后写盘，避免与 Add 竞争
-	cp := make([]types.LogEntry, len(entries))
-	copy(cp, entries)
-	if err := storage.WriteJSON(l.logsFile, cp); err != nil {
+	l.flushMu.Lock()
+	defer l.flushMu.Unlock()
+	if err := storage.WriteJSON(l.logsFile, entries); err != nil {
 		l.stdlog.Error("write logs file", "err", err)
 	}
-	l.mu.Lock()
-	l.writeCounter = 0
-	l.mu.Unlock()
 }
 
 // Snapshot 取当前内存中的日志副本

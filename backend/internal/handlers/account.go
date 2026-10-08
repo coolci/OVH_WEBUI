@@ -196,6 +196,17 @@ func fetchRecentBillingIDs(client *ovhsdk.Client, basePath string, want int) ([]
 	return ids, warn, nil
 }
 
+// newestBillingIDs 按 id 倒序后截断。
+// GET /me/order、/me/bill、/me/refund 都不保证返回顺序,而 id 随时间递增。
+// 截断发生在拉详情之前;不排序就会把窗口里最老的一批当成“最近 N 条”。
+func newestBillingIDs(ids []string, max int) ([]string, bool) {
+	sortBillingIDsDesc(ids)
+	if max > 0 && len(ids) > max {
+		return ids[:max], true
+	}
+	return ids, false
+}
+
 // sortBillingIDsDesc 账单/退款 id 倒序:能当整数比就按数值比(避免 "999" > "1000"),
 // 否则退回"长的在前、同长按字典序倒序",对 OVH 常见的定长前缀 id 同样成立。
 func sortBillingIDsDesc(ids []string) {
@@ -326,13 +337,12 @@ func GetAccountRefunds(state *app.State) gin.HandlerFunc {
 		if warn != "" {
 			state.Logger.Warn("退款列表"+warn, "account_management")
 		}
-		scan := len(ids)
-		if scan > accountBillingMaxDetails {
-			scan = accountBillingMaxDetails
-			state.Logger.Warn(fmt.Sprintf("退款记录共 %d 条,只取前 %d 条排序", len(ids), scan), "account_management")
+		scanIDs, truncated := newestBillingIDs(ids, accountBillingMaxDetails)
+		if truncated {
+			state.Logger.Warn(fmt.Sprintf("退款记录共 %d 条,只取最新 %d 条排序", len(ids), len(scanIDs)), "account_management")
 		}
 		// 并发拉详情：10 并发,原 20 * 200ms = 4 秒 -> 2 * 200ms = 0.4 秒
-		details, failed, firstErr := parallelGetStringsCounted(client, ids[:scan], func(s string) string {
+		details, failed, firstErr := parallelGetStringsCounted(client, scanIDs, func(s string) string {
 			return "/me/refund/" + s
 		}, 10)
 		list := collectDetails(state, c, details, failed, firstErr, "退款", "account_management")
@@ -340,7 +350,7 @@ func GetAccountRefunds(state *app.State) gin.HandlerFunc {
 		if len(list) > accountBillingListSize {
 			list = list[:accountBillingListSize]
 		}
-		state.Logger.Info(fmt.Sprintf("成功获取 %d 条退款记录(窗口内 %d 条,拉取失败 %d 条)", len(list), len(ids), failed), "account_management")
+		state.Logger.Info(fmt.Sprintf("成功获取 %d 条退款记录(窗口内 %d 条,拉取失败 %d 条)", len(list), len(scanIDs), failed), "account_management")
 		c.JSON(http.StatusOK, list)
 	}
 }
@@ -653,15 +663,12 @@ func GetAccountBills(state *app.State) gin.HandlerFunc {
 		if warn != "" {
 			state.Logger.Warn("账单列表"+warn, "account_management")
 		}
-		scan := len(ids)
-		truncated := false
-		if scan > accountBillingMaxDetails {
-			scan = accountBillingMaxDetails
-			truncated = true
-			state.Logger.Warn(fmt.Sprintf("账单共 %d 条,只取前 %d 条排序", len(ids), scan), "account_management")
+		scanIDs, truncated := newestBillingIDs(ids, accountBillingMaxDetails)
+		if truncated {
+			state.Logger.Warn(fmt.Sprintf("账单共 %d 条,只取最新 %d 条排序", len(ids), len(scanIDs)), "account_management")
 		}
 		// 并发拉账单详情
-		details, failed, firstErr := parallelGetStringsCounted(client, ids[:scan], func(s string) string {
+		details, failed, firstErr := parallelGetStringsCounted(client, scanIDs, func(s string) string {
 			return "/me/bill/" + s
 		}, 10)
 		list := collectDetails(state, c, details, failed, firstErr, "账单", "account_management")
@@ -669,7 +676,7 @@ func GetAccountBills(state *app.State) gin.HandlerFunc {
 		if len(list) > accountBillingListSize {
 			list = list[:accountBillingListSize]
 		}
-		state.Logger.Info(fmt.Sprintf("成功获取 %d 条账单记录(窗口内 %d 条,拉取失败 %d 条)", len(list), len(ids), failed), "account_management")
+		state.Logger.Info(fmt.Sprintf("成功获取 %d 条账单记录(窗口内 %d 条,拉取失败 %d 条)", len(list), len(scanIDs), failed), "account_management")
 		c.JSON(http.StatusOK, gin.H{
 			"status":    "success",
 			"data":      list,
@@ -712,28 +719,23 @@ func GetAccountOrders(state *app.State) gin.HandlerFunc {
 			state.Logger.Warn("订单列表"+warn, "account_management")
 		}
 
-		scan := len(ids)
-		truncated := false
-		if scan > limit {
-			scan = limit
-			truncated = true
-			state.Logger.Warn(fmt.Sprintf("订单共 %d 条,只取前 %d 条拉取详情", len(ids), scan), "account_management")
+		scanIDs, truncated := newestBillingIDs(ids, limit)
+		if truncated {
+			state.Logger.Warn(fmt.Sprintf("订单共 %d 条,只取最新 %d 条拉取详情", len(ids), len(scanIDs)), "account_management")
 		}
 
 		// 并发拉订单详情
-		details, failed, firstErr := parallelGetStringsCounted(client, ids[:scan], func(s string) string {
+		details, failed, firstErr := parallelGetStringsCounted(client, scanIDs, func(s string) string {
 			return "/me/order/" + s
 		}, 10)
 		list := collectDetails(state, c, details, failed, firstErr, "订单", "account_management")
 
-		// 填充 managerOrderURL，确保订单链接可直接点击跳转
+		// billing.Order.password 是订单口令,页面用不到,不透传。
+		// url 缺失时用控制台深链补齐。官方三区 schema 与上游 v0.2.5 同一口径。
 		for _, item := range list {
+			delete(item, "password")
 			if u, _ := item["url"].(string); strings.TrimSpace(u) == "" {
-				var orderIDStr string
-				if oid, ok := item["orderId"]; ok {
-					orderIDStr = fmt.Sprintf("%v", oid)
-				}
-				if orderIDStr != "" && acc.Endpoint != "" {
+				if orderIDStr := idToString(item["orderId"]); orderIDStr != "" && acc.Endpoint != "" {
 					item["url"] = ovh.ManagerOrderURL(acc.Endpoint, orderIDStr)
 				}
 			}
@@ -744,7 +746,7 @@ func GetAccountOrders(state *app.State) gin.HandlerFunc {
 			list = list[:limit]
 		}
 
-		state.Logger.Info(fmt.Sprintf("成功获取 %d 条订单记录(共 %d 条,拉取失败 %d 条)", len(list), len(ids), failed), "account_management")
+		state.Logger.Info(fmt.Sprintf("成功获取 %d 条订单记录(取样 %d 条,拉取失败 %d 条)", len(list), len(scanIDs), failed), "account_management")
 		c.JSON(http.StatusOK, gin.H{
 			"status":    "success",
 			"data":      list,
@@ -756,4 +758,3 @@ func GetAccountOrders(state *app.State) gin.HandlerFunc {
 		})
 	}
 }
-

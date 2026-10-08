@@ -23,6 +23,7 @@ import AccountPage from "./pages/AccountPage";
 import ServerControlPage from "./pages/ServerControlPage";
 import VpsControlPage from "./pages/VpsControlPage";
 import TelegramOrderPage from "./pages/TelegramOrderPage";
+import TicketsPage from "./pages/TicketsPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -63,6 +64,7 @@ const App = () => (
                     <Route path="/account" element={<AccountPage />} />
                     <Route path="/server-control" element={<ServerControlPage />} />
                     <Route path="/vps-control" element={<VpsControlPage />} />
+                    <Route path="/tickets" element={<TicketsPage />} />
                     <Route path="/telegram-order" element={<TelegramOrderPage />} />
                     <Route path="*" element={<NotFound />} />
                   </Routes>

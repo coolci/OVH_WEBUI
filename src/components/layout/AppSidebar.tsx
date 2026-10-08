@@ -16,6 +16,7 @@ import {
   Github,
   Flame,
   PartyPopper,
+  Ticket,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { QuickOrderDialog } from "@/components/orders/QuickOrderDialog";
@@ -52,6 +53,7 @@ const navGroups = [
   {
     title: "实例",
     items: [
+      { to: "/tickets", icon: Ticket, label: "支持工单" },
       { to: "/server-control", icon: Cpu, label: "服务器控制" },
       { to: "/vps-control", icon: Cloud, label: "VPS 控制" },
       { to: "/account", icon: User, label: "账户管理" },

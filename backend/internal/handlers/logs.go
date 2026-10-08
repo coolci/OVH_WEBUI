@@ -11,7 +11,6 @@ import (
 // GetLogs GET /api/logs
 func GetLogs(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		state.Logger.Flush()
 		c.JSON(http.StatusOK, state.Logger.Snapshot())
 	}
 }

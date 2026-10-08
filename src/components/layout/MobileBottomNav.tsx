@@ -15,6 +15,7 @@ import {
   CloudLightning,
   Github,
   Flame,
+  Ticket,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -35,6 +36,7 @@ const primaryNav = [
 const moreNav = [
   { to: "/monitor", icon: Activity, label: "服务器监控", group: "监控" },
   { to: "/vps-monitor", icon: MonitorDot, label: "VPS 补货", group: "监控" },
+  { to: "/tickets", icon: Ticket, label: "支持工单", group: "实例" },
   { to: "/vps-control", icon: Cloud, label: "VPS 控制", group: "实例" },
   { to: "/account", icon: User, label: "账户管理", group: "实例" },
   { to: "/telegram-order", icon: CloudLightning, label: "云下单", group: "抢购" },

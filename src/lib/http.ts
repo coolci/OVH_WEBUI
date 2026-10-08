@@ -4,7 +4,7 @@
  * - 开发：Vite 代理 `/api`、`/health` → `http://127.0.0.1:19998`
  * - 生产：同源；localStorage `backendUrl` 可覆盖到独立后端
  * - 鉴权：`X-API-Key` + `X-Request-Time`
- * - 多账户：`/server-control`、`/vps-control`、`/ovh/` 自动注入 `account`
+ * - 多账户：`/server-control`、`/vps-control`、`/ovh/`、`/support/tickets` 自动注入 `account`
  *
  * 用法：
  * - hooks / 页面：`import { api } from "@/lib/http"` → Axios，路径相对 `/api`
@@ -187,8 +187,10 @@ function createApiClient(): AxiosInstance {
       isVps ||
       url.includes("/server-control") ||
       url.includes("/ovh/") ||
+      url.includes("/support/tickets") ||
       url.startsWith("server-control") ||
-      url.startsWith("ovh/");
+      url.startsWith("ovh/") ||
+      url.startsWith("support/tickets");
 
     if (needAccount && !(config.params && (config.params as Record<string, unknown>).account)) {
       const acc = isVps
