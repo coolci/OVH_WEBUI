@@ -1,30 +1,54 @@
 import { useState } from "react";
-import { AlertCircle, CalendarRange, Cpu, Mail, Network } from "lucide-react";
+import { AlertCircle, CalendarRange, Cpu, Mail, Network, Undo2 } from "lucide-react";
 import type { OwnedServer } from "@/hooks/use-server-control";
-import { useServerInterventions } from "@/hooks/use-server-control";
+import { useServerInterventions, useRetraction } from "@/hooks/use-server-control";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/common/Skeleton";
 import { Chip } from "@/components/common/Chip";
 import { useActiveAccountEndpoint } from "@/components/common/active-endpoint";
 import { NetworkSpecsDialog } from "@/components/server-control/NetworkSpecsDialog";
 import { EngagementDialog } from "@/components/server-control/EngagementDialog";
+import { RetractionDialog } from "@/components/server-control/RetractionDialog";
 import { HardwareReplaceDialog } from "./HardwareReplaceDialog";
 import { ChangeContactDialog } from "./ChangeContactDialog";
 import { useTranslation } from "react-i18next";
 import { errorMessage } from "@/components/common/LoadFailed";
 import { fmtDateTime } from "@/i18n/format";
 
-/** 维护 Tab：维护记录列表 + 硬件更换工单 + 变更联系人 */
+/** 维护 Tab：维护记录列表 + 硬件更换工单 + 变更联系人 + 14 天撤单 */
 export function MaintenanceTab({ server }: { server: OwnedServer }) {
   const { t } = useTranslation();
   const [netSpecsOpen, setNetSpecsOpen] = useState(false);
   const [engagementOpen, setEngagementOpen] = useState(false);
+  const [retractOpen, setRetractOpen] = useState(false);
   const interventions = useServerInterventions(server.serviceName);
+  const retraction = useRetraction(server.serviceName);
   const [hwOpen, setHwOpen] = useState(false);
   const [contactOpen, setContactOpen] = useState(false);
   // 美区没有 NIC 联系人系统，后端会 400；入口直接禁用并写明原因，别让用户白跑一趟
   const { isUS, ready } = useActiveAccountEndpoint();
   const contactUnsupported = ready && isUS;
+
+  let retractDesc = "从下单起 14 天内可向 OVH 申请无理由撤单与全额退款，服务器随之注销。";
+  if (retraction.isPending) {
+    retractDesc = "正在查询该机器订单的 14 天撤单资格与截止期...";
+  } else if (retraction.data?.eligible) {
+    const hours = retraction.data.hoursLeft;
+    const timeLeft = typeof hours === "number"
+      ? (hours > 48 ? `${Math.ceil(hours / 24)} 天` : `${hours} 小时`)
+      : "在撤回期内";
+    retractDesc = `当前处于 14 天撤单期内（还剩 ${timeLeft}）。提交后退掉整张订单并全额退款，机器注销。`;
+  } else if (retraction.data) {
+    const reasonText =
+      retraction.data.reason === "expired"
+        ? "撤单期已过期"
+        : retraction.data.reason === "region_unsupported"
+          ? "美区 API 不支持线上撤单"
+          : retraction.data.reason === "no_retraction_right"
+            ? "该订单无撤单权（如企业账户或已放弃）"
+            : "下单已超 14 天或未匹配到撤回期订单";
+    retractDesc = `当前不可撤单（${reasonText}）。点击可查看详细规则与订单信息。`;
+  }
 
   return (
     <>
@@ -59,10 +83,16 @@ export function MaintenanceTab({ server }: { server: OwnedServer }) {
           )}
         </div>
 
-        {/* 四张同类卡片:都是"偶尔打开一次的对话框"。
-            网络规格和合同期原来在页面顶部当胶囊按钮 —— 它们没有值可显示,
-            只是个入口,却各占 100px 把标签行挤到换行。放这里才是它们的同类。 */}
+        {/* 操作卡片: 常规维护与撤单操作 */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <ActionCard
+            icon={Undo2}
+            title="14 天无理由撤单（退款）"
+            description={retractDesc}
+            onClick={() => setRetractOpen(true)}
+            btnText={retraction.data?.eligible ? "申请撤单 (可退款)" : "查看撤单说明"}
+            variant={retraction.data?.eligible ? "destructive" : "outline"}
+          />
           <ActionCard
             icon={Network}
             title={t("maint.maintenance.cards.netSpecsTitle")}
@@ -95,6 +125,13 @@ export function MaintenanceTab({ server }: { server: OwnedServer }) {
         </div>
       </div>
 
+      <RetractionDialog
+        serviceName={server.serviceName}
+        displayName={server.name || server.serviceName}
+        info={retraction.data}
+        open={retractOpen}
+        onOpenChange={setRetractOpen}
+      />
       <NetworkSpecsDialog
         serviceName={server.serviceName}
         open={netSpecsOpen}
@@ -141,12 +178,16 @@ function ActionCard({
   description,
   onClick,
   disabled,
+  btnText,
+  variant,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   title: string;
   description: string;
   onClick: () => void;
   disabled?: boolean;
+  btnText?: string;
+  variant?: "outline" | "default" | "destructive";
 }) {
   const { t } = useTranslation();
   return (
@@ -156,8 +197,8 @@ function ActionCard({
         <h3 className="text-sm font-semibold">{title}</h3>
       </div>
       <p className="text-[12px] text-muted-foreground flex-1">{description}</p>
-      <Button variant="outline" size="sm" className="self-start" onClick={onClick} disabled={disabled}>
-        {disabled ? t("maint.maintenance.unavailable") : t("maint.maintenance.openBtn")}
+      <Button variant={variant || "outline"} size="sm" className="self-start" onClick={onClick} disabled={disabled}>
+        {disabled ? t("maint.maintenance.unavailable") : (btnText || t("maint.maintenance.openBtn"))}
       </Button>
     </div>
   );

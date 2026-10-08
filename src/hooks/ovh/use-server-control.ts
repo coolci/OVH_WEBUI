@@ -1603,11 +1603,13 @@ export interface RetractionInfo {
  * 不自动重试:订单映射冷的时候后端会返回 order_lookup_failed 让用户去同步,
  * 反复重试只会对着同一个冷缓存打空枪。
  */
-export function useRetraction(serviceName: string | null) {
+export function useRetraction(serviceName: string | null, isVps = false) {
+  const prefix = isVps ? "/vps-control" : "/server-control";
+  const domain = isVps ? "vps-control" : "server-control";
   return useQuery<RetractionInfo>({
-    queryKey: ["server-control", "retraction", serviceName],
+    queryKey: [domain, "retraction", serviceName],
     queryFn: async () =>
-      (await api.get<RetractionInfo>(`/server-control/${encodeURIComponent(serviceName!)}/retraction`)).data,
+      (await api.get<RetractionInfo>(`${prefix}/${encodeURIComponent(serviceName!)}/retraction`)).data,
     enabled: !!serviceName,
     staleTime: 5 * 60_000,
     retry: false,
@@ -1616,19 +1618,21 @@ export function useRetraction(serviceName: string | null) {
 }
 
 /** 提交撤单申请。不可逆:订单退款 + 服务器注销 */
-export function useRequestRetraction(serviceName: string) {
+export function useRequestRetraction(serviceName: string, isVps = false) {
+  const prefix = isVps ? "/vps-control" : "/server-control";
+  const domain = isVps ? "vps-control" : "server-control";
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (p: { reason: string; comment: string }) =>
       (
-        await api.post(`/server-control/${encodeURIComponent(serviceName)}/retraction`, {
+        await api.post(`${prefix}/${encodeURIComponent(serviceName)}/retraction`, {
           ...p,
           confirm: true,
         })
       ).data,
     onSuccess: (d: any) => {
-      qc.invalidateQueries({ queryKey: ["server-control", "retraction"] });
-      qc.invalidateQueries({ queryKey: ["server-control", "list"] });
+      qc.invalidateQueries({ queryKey: [domain, "retraction"] });
+      qc.invalidateQueries({ queryKey: [domain, "list"] });
       toast.success(bodyMessage(d) || i18n.t("hooksMsg.server.retractionSubmitted"));
     },
     onError: (e: any) => toast.error(apiMessage(e) || i18n.t("hooksMsg.server.retractionFailed")),

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/gin-gonic/gin"
@@ -17,17 +18,29 @@ import (
 )
 
 // ovhClientFor 从请求 ?account=xxx 取账户 ID 拿对应 OVH client;
-// 空时(没传 ?account)走默认账户;凭据缺失返回 error,调用方按原 Client() 错误流程处理。
-// 大部分 handler 都是 `state.OVH.Client()` 模式,这个 helper 是 1:1 替换,
-// 把单账户改成多账户路由,语义最小化变化。
+// 空时(没传 ?account)走默认账户; 若传了但在库中未找到(如前端缓存了已失效的旧 ID)，
+// 且默认账户有效，则自动回退到默认账户，避免返回 412 NO_OVH_ACCOUNT 阻断业务。
 func ovhClientFor(state *app.State, c *gin.Context) (*ovhsdk.Client, error) {
-	return state.OVH.ClientFor(c.Query("account"))
+	accParam := strings.TrimSpace(c.Query("account"))
+	cli, err := state.OVH.ClientFor(accParam)
+	if err != nil && accParam != "" {
+		if defCli, defErr := state.OVH.ClientFor(""); defErr == nil {
+			state.Logger.Warn("请求指定账户 "+accParam+" 不存在，自动回退到默认账户", "api")
+			return defCli, nil
+		}
+	}
+	return cli, err
 }
 
 // ovhAccountFor 从请求 ?account=xxx 取账户实体(给需要原始凭据/endpoint 的 raw HTTP 调用用)。
-// 空 → 默认账户;不存在 → ok=false。
+// 空 → 默认账户; 不存在但传了时 → 自动回退默认账户; 系统完全没账户 → ok=false。
 func ovhAccountFor(state *app.State, c *gin.Context) (types.OVHAccount, bool) {
-	return state.FindAccount(c.Query("account"))
+	accParam := strings.TrimSpace(c.Query("account"))
+	acc, ok := state.FindAccount(accParam)
+	if !ok && accParam != "" {
+		return state.FindAccount("")
+	}
+	return acc, ok
 }
 
 // knownEndpoints go-ovh 支持的 endpoint 名 → REST API base URL。

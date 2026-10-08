@@ -1,6 +1,6 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Helmet } from "react-helmet-async";
-import { User, Mail, RefreshCw, FileText, Inbox, ShieldCheck, ShoppingCart, ExternalLink, CalendarClock, type LucideIcon } from "lucide-react";
+import { User, Mail, RefreshCw, FileText, Inbox, ShieldCheck, ShoppingCart, ExternalLink, CalendarClock, Undo2, type LucideIcon } from "lucide-react";
 import { formatDate, formatDateTime } from "@/lib/format-os";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -247,6 +247,12 @@ function OrdersTab() {
                         <Chip tone="default" className="font-mono text-[11px] gap-1">
                           <CalendarClock className="w-3 h-3 text-muted-foreground flex-shrink-0" />
                           <span>到期 {formatDate(o.expirationDate)}</span>
+                        </Chip>
+                      )}
+                      {Boolean(o.retractionDate) && (
+                        <Chip tone="warning" className="font-mono text-[11px] gap-1">
+                          <Undo2 className="w-3 h-3 text-warning flex-shrink-0" />
+                          <span>撤销截止 {formatDate(String(o.retractionDate))}</span>
                         </Chip>
                       )}
                     </div>

@@ -55,19 +55,21 @@ function ServerControlPage() {
   const { data: aliases } = useServerAliases();
   const servers = q.data || EMPTY_SERVERS;
 
-  // 首次没选过账户 → 自动选默认账户
+  // 首次没选过账户或所存账户已失效 → 自动同步选默认账户
   useEffect(() => {
-    if (!activeAccount && accounts && accounts.length > 0) {
+    if (!accounts || accounts.length === 0) return;
+    const exists = accounts.some((a) => a.id === activeAccount);
+    if (!exists) {
       const def = accounts.find((a) => a.isDefault) || accounts[0];
-      setActiveAccount(def.id);
+      if (def?.id) {
+        setActiveAccount(def.id);
+      }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accounts]);
+  }, [accounts, activeAccount, setActiveAccount]);
 
   // 切换账户时,选中的 service 也清空(不同账户的服务器不一样)
   useEffect(() => {
     setSelectedName(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeAccount]);
 
   // 自动选中第一台（首次加载或切换列表后）
@@ -385,7 +387,7 @@ function ServerTabs({ server }: { server: OwnedServer }) {
         onOpenChange={setReinstallOpen}
       />
 
-      {retraction.data?.eligible && (
+      {retraction.data && (
         <RetractionDialog
           serviceName={server.serviceName}
           displayName={srvLabel}

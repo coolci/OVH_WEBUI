@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import {
   Cloud, Power, PowerOff, RefreshCw, Monitor, HardDrive, Cpu, MemoryStick,
   MapPin, Globe, CalendarClock, CalendarPlus, Repeat, Eye, EyeOff,
-  AlertTriangle, ListTodo, Terminal, Settings, Zap,
+  AlertTriangle, ListTodo, Terminal, Settings, Zap, Undo2,
 } from "lucide-react";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
@@ -42,6 +42,8 @@ import { VpsMitigationPane } from "@/components/vps-control/VpsMitigationPane";
 import { VpsTasksDialog } from "@/components/vps-control/VpsTasksDialog";
 import { RenewalDialog } from "@/components/server-control/RenewalDialog";
 import { EngagementDialog, type EngagementHooks } from "@/components/server-control/EngagementDialog";
+import { RetractionDialog } from "@/components/server-control/RetractionDialog";
+import { useRetraction } from "@/hooks/use-server-control";
 import { DeviceMetaCapsules } from "@/components/common/DeviceMetaCapsules";
 import { DeviceSwitcherCard } from "@/components/common/DeviceSwitcherCard";
 import { InfoCard } from "@/components/common/InfoCard";
@@ -60,12 +62,15 @@ function VpsControlPage() {
   const vpsList = q.data || EMPTY_VPS_LIST;
 
   useEffect(() => {
-    if (!activeAccount && accounts && accounts.length > 0) {
+    if (!accounts || accounts.length === 0) return;
+    const exists = accounts.some((a) => a.id === activeAccount);
+    if (!exists) {
       const def = accounts.find((a) => a.isDefault) || accounts[0];
-      setActiveAccount(def.id || "");
+      if (def?.id) {
+        setActiveAccount(def.id);
+      }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accounts]);
+  }, [accounts, activeAccount, setActiveAccount]);
 
   useEffect(() => {
     setSelectedName(null);
@@ -248,6 +253,8 @@ function VpsDetail({
   const [contactOpen, setContactOpen] = useState(false);
   const [engagementOpen, setEngagementOpen] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false);
+  const [retractOpen, setRetractOpen] = useState(false);
+  const retraction = useRetraction(server.serviceName, true);
   const renewalMutation = useUpdateVpsRenewal(server.serviceName);
   const contactMutation = useChangeVpsContact();
 
@@ -381,8 +388,10 @@ function VpsDetail({
             </Chip>
           </div>
 
-          {/* 第二行: 属性胶囊 (系统/到期/开通/续费) */}
+          {/* 第二行: 属性胶囊 (系统/到期/开通/续费/可撤单) */}
           <DeviceMetaCapsules
+            retraction={retraction.data}
+            onRetractClick={() => setRetractOpen(true)}
             os={{
               rawName: currentOS.data?.name,
               distribution: currentOS.data?.distribution,
@@ -597,6 +606,40 @@ function VpsDetail({
             </div>
           )}
 
+          {/* 14 天无理由撤单（退款） */}
+          <div className={cn(
+            "border rounded-2xl p-4 space-y-2",
+            retraction.data?.eligible
+              ? "border-warning/50 bg-warning/5"
+              : "border-border"
+          )}>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-2">
+                <Undo2 className={cn("w-4 h-4", retraction.data?.eligible ? "text-warning" : "text-muted-foreground")} />
+                <h3 className="text-sm font-semibold">14 天无理由撤单（退款）</h3>
+              </div>
+              {retraction.data?.eligible && (
+                <Chip tone="warning">可退款</Chip>
+              )}
+            </div>
+            <p className="text-[12px] text-muted-foreground leading-relaxed">
+              {retraction.isPending
+                ? "正在查询该 VPS 订单的 14 天撤单资格与截止期..."
+                : retraction.data?.eligible
+                  ? `当前处于 14 天撤单期内（还剩 ${retraction.data.hoursLeft ? (retraction.data.hoursLeft > 48 ? `${Math.ceil(retraction.data.hoursLeft / 24)} 天` : `${retraction.data.hoursLeft} 小时`) : "在期内"}）。提交后退掉整张订单并全额退款，机器注销。`
+                  : `当前不可撤单（${retraction.data?.reason === "expired" ? "撤单期已过期" : retraction.data?.reason === "region_unsupported" ? "美区 API 不支持线上撤单" : retraction.data?.reason === "no_retraction_right" ? "该订单无撤单权（如企业账户或已放弃）" : "下单已超 14 天或未匹配到撤回期订单"}）。点击可查看详细规则与订单信息。`}
+            </p>
+            <div>
+              <Button
+                variant={retraction.data?.eligible ? "destructive" : "outline"}
+                size="sm"
+                onClick={() => setRetractOpen(true)}
+              >
+                {retraction.data?.eligible ? "申请撤单 (可全额退款)" : "查看撤单说明"}
+              </Button>
+            </div>
+          </div>
+
           <div className="border border-destructive/40 bg-destructive/5 rounded-2xl p-4 space-y-2">
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-destructive" />
@@ -634,6 +677,16 @@ function VpsDetail({
           termination={{ policy: vpsTermPolicy }}
         />
       )}
+
+      {/* 14 天无理由撤单弹窗 */}
+      <RetractionDialog
+        serviceName={server.serviceName}
+        displayName={srvLabel}
+        info={retraction.data}
+        open={retractOpen}
+        onOpenChange={setRetractOpen}
+        isVps={true}
+      />
 
       {/* 变更联系人弹窗 */}
       <Dialog open={contactOpen} onOpenChange={setContactOpen}>

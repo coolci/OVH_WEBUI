@@ -131,6 +131,9 @@ func retractableOrderFor(state *app.State, c *gin.Context, client *ovhsdk.Client
 	// 新的在前:撤回期内的订单必然是最近下的
 	sort.Slice(ids, func(i, j int) bool { return ids[i] > ids[j] })
 
+	var inWindowCandidate int64
+
+	// 第一轮：只看还在撤回窗口内的订单（通常 0~1 个），命中则直接返回
 	for _, id := range ids {
 		var order map[string]interface{}
 		if err := client.Get(fmt.Sprintf("/me/order/%d", id), &order); err != nil {
@@ -138,12 +141,12 @@ func retractableOrderFor(state *app.State, c *gin.Context, client *ovhsdk.Client
 		}
 		rd, _ := order["retractionDate"].(string)
 		if rd == "" {
-			continue // 没有撤回权,剪掉
+			continue // 没有撤回权,第一轮剪掉
 		}
 		if dl, ok := parseOVHTime(rd); !ok || time.Now().After(dl) {
-			continue // 已过期,剪掉
+			continue // 已过期,第一轮剪掉
 		}
-		// 这一单还在窗口内 —— 值得花请求去看它是不是这台机器
+		// 这一单还在窗口内 —— 查明细找 serviceName
 		var detailIDs []int64
 		if err := client.Get(fmt.Sprintf("/me/order/%d/details", id), &detailIDs); err != nil {
 			continue
@@ -158,11 +161,51 @@ func retractableOrderFor(state *app.State, c *gin.Context, client *ovhsdk.Client
 				continue
 			}
 			if dom, _ := d["domain"].(string); dom == serviceName {
-				remember(id, true)
-				return id, true, nil
+				inWindowCandidate = id
+				break
 			}
 		}
+		if inWindowCandidate != 0 {
+			break
+		}
 	}
+
+	if inWindowCandidate != 0 {
+		remember(inWindowCandidate, true)
+		return inWindowCandidate, true, nil
+	}
+
+	// 第二轮：若窗口内未找到有效撤单，检查最近订单（前 10 笔）是否有属于该机器的订单。
+	// 找到后返回，以便下游 GetRetraction 展示具体订单号、链接及确切原因（如企业账户/已放弃/已过期）。
+	maxFallback := 10
+	if len(ids) < maxFallback {
+		maxFallback = len(ids)
+	}
+	for _, id := range ids[:maxFallback] {
+		var detailIDs []int64
+		if err := client.Get(fmt.Sprintf("/me/order/%d/details", id), &detailIDs); err != nil {
+			continue
+		}
+		matched := false
+		for _, did := range detailIDs {
+			var d map[string]interface{}
+			if err := client.Get(fmt.Sprintf("/me/order/%d/details/%d", id, did), &d); err != nil {
+				continue
+			}
+			if cancelled, _ := d["cancelled"].(bool); cancelled {
+				continue
+			}
+			if dom, _ := d["domain"].(string); dom == serviceName {
+				matched = true
+				break
+			}
+		}
+		if matched {
+			remember(id, true)
+			return id, true, nil
+		}
+	}
+
 	remember(0, false)
 	return 0, false, nil
 }
@@ -284,8 +327,8 @@ func GetRetraction(state *app.State) gin.HandlerFunc {
 				"orderId":  orderID,
 				"orderUrl": orderURL,
 				"message": "OVH 没有给这张订单撤回期。常见原因：" +
-					"① v0.1.24 之前下的单在结账时就放弃了撤回权；" +
-					"② 企业/机构账户没有消费者撤回权；③ 该产品不在撤回范围内",
+					"① 企业/机构账户或非欧盟个人没有消费者撤回权；" +
+					"② 下单或付款时已放弃撤回权；③ 该产品不在撤回范围内",
 				"reasons": retractionReasons,
 			})
 			return
@@ -400,6 +443,27 @@ func PostRetraction(state *app.State) gin.HandlerFunc {
 			}
 			c.JSON(http.StatusNotFound, gin.H{"success": false, "error": msg})
 			return
+		}
+
+		var orderCheck map[string]interface{}
+		if err := client.Get(fmt.Sprintf("/me/order/%d", orderID), &orderCheck); err == nil {
+			rd, _ := orderCheck["retractionDate"].(string)
+			if rd == "" {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"success": false,
+					"error":   "该订单无撤单权（企业/非欧盟账户或已放弃），无法申请撤单",
+					"code":    "E_NO_RETRACTION_RIGHT",
+				})
+				return
+			}
+			if dl, ok := parseOVHTime(rd); ok && time.Now().After(dl) {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"success": false,
+					"error":   "该订单的 14 天撤单期已过期，无法申请撤单",
+					"code":    "E_RETRACTION_EXPIRED",
+				})
+				return
+			}
 		}
 
 		payload := map[string]interface{}{"reason": body.Reason}

@@ -95,7 +95,7 @@ export function useOwnedVps() {
   return useQuery({
     queryKey: qk.vpsControl.list(accountId),
     queryFn: async () => {
-      const res = await api.get("/vps-control/list");
+      const res = await api.get("/vps-control/list", { params: { account: accountId } });
       return (res.data?.vps || []) as OwnedVps[];
     },
     staleTime: 60_000,

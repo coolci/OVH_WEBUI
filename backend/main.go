@@ -521,6 +521,10 @@ func main() {
 			vc.DELETE("/:service_name/options/:option", handlers.DeleteVpsOption(state))
 			vc.GET("/:service_name/automated-backup", handlers.GetVpsAutomatedBackup(state))
 
+			// 14 天无理由撤单:GET 判断这台 VPS 还能不能退,POST 提交申请
+			vc.GET("/:service_name/retraction", handlers.GetRetraction(state))
+			vc.POST("/:service_name/retraction", handlers.PostRetraction(state))
+
 			// 合同期(engagement)
 			vc.GET("/:service_name/engagement", handlers.GetVpsEngagement(state))
 			vc.GET("/:service_name/engagement/available", handlers.GetVpsEngagementAvailable(state))
