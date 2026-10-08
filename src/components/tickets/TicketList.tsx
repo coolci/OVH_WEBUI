@@ -294,7 +294,7 @@ export function TicketList({
           <span
             className={cn(
               "h-1.5 w-1.5 rounded-full",
-              isError ? "bg-amber-500" : "bg-primary/60",
+              isError ? "bg-warning" : "bg-primary/70",
             )}
           />
           {isFetching ? "同步中" : "自动同步"}

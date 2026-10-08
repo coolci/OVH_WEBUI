@@ -1,10 +1,8 @@
-import { useState, useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
-  DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -27,14 +25,13 @@ import { useCreateTicket, type CreateTicketResponse } from "@/hooks/ovh/use-tick
 import { useAccountServices, type AccountServiceItem } from "@/hooks/ovh/use-account-services";
 import {
   Ticket,
-  Plus,
   RefreshCw,
   Server,
   Cloud,
   SendHorizontal,
-  ChevronDown,
   Check,
   Search,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -44,6 +41,23 @@ interface CreateTicketDialogProps {
   onOpenChange: (open: boolean) => void;
   activeAccount?: string;
   onCreated?: (res: CreateTicketResponse) => void;
+}
+
+const fieldClass =
+  "h-9 rounded-lg border-border/80 bg-background text-[13px] shadow-none";
+
+function Count({ value, max }: { value: number; max: number }) {
+  const nearLimit = value > max * 0.9;
+  return (
+    <span
+      className={cn(
+        "font-mono text-[11px] tabular-nums",
+        nearLimit ? "text-warning" : "text-muted-foreground",
+      )}
+    >
+      {value}/{max}
+    </span>
+  );
 }
 
 export function CreateTicketDialog({
@@ -58,22 +72,39 @@ export function CreateTicketDialog({
   const [serviceName, setServiceName] = useState("");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
+  const [serviceQuery, setServiceQuery] = useState("");
+  const [serviceType, setServiceType] = useState<"all" | "dedicated" | "vps">("all");
 
   const createMutation = useCreateTicket(activeAccount);
   const { services, isLoading: isServicesLoading, refetch: refetchServices } = useAccountServices(activeAccount);
+  const categoryMeta = TICKET_CATEGORIES.find((item) => item.value === category);
+  const hasDedicated = services.some((item) => item.type === "dedicated");
+  const hasVps = services.some((item) => item.type === "vps");
 
-  const handleSelectService = (s: AccountServiceItem) => {
-    setServiceName(s.serviceName);
-    // 联动自动匹配产品
-    if (s.type === "dedicated") {
-      setProduct("dedicated");
-    } else if (s.type === "vps") {
-      setProduct("vps");
+  const visibleServices = useMemo(() => {
+    const query = serviceQuery.trim().toLocaleLowerCase();
+    return services.filter((item) => {
+      if (serviceType !== "all" && item.type !== serviceType) return false;
+      if (!query) return true;
+      return [item.displayName, item.serviceName, item.ip, item.datacenter].some(
+        (part) => part?.toLocaleLowerCase().includes(query),
+      );
+    });
+  }, [services, serviceQuery, serviceType]);
+
+  const handleSelectService = (service: AccountServiceItem) => {
+    if (serviceName === service.serviceName) {
+      setServiceName("");
+      return;
+    }
+    setServiceName(service.serviceName);
+    if (service.type === "dedicated" || service.type === "vps") {
+      setProduct(service.type);
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
     if (createMutation.isPending) return;
 
     if (!subject.trim()) {
@@ -98,6 +129,7 @@ export function CreateTicketDialog({
       setSubject("");
       setBody("");
       setServiceName("");
+      setServiceQuery("");
       onOpenChange(false);
       onCreated?.(res);
     } catch {
@@ -107,213 +139,281 @@ export function CreateTicketDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[90dvh] flex flex-col overflow-hidden rounded-xl p-0 gap-0 border-border bg-card">
-        {/* ── 顶部 Header ── */}
-        <div className="flex-none p-5 sm:p-6 border-b border-border/60">
-          <div className="flex items-start gap-3.5">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <Ticket className="h-5 w-5" />
-            </div>
-            <div>
-              <DialogTitle className="text-base sm:text-lg font-semibold tracking-tight text-foreground">
-                新建支持工单
-              </DialogTitle>
-              <DialogDescription className="text-xs sm:text-sm text-muted-foreground mt-1">
-                描述问题并关联服务，OVHcloud 支持团队将通过此工单跟进。
-              </DialogDescription>
-            </div>
+      <DialogContent className="flex max-h-[min(90dvh,820px)] w-[calc(100vw-1.5rem)] max-w-lg flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl sm:p-0">
+        <div className="flex items-start gap-3 border-b border-border/70 px-5 py-4 pr-14">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary shadow-sm">
+            <Ticket className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <DialogTitle className="text-base font-semibold tracking-tight text-foreground">
+              新建支持工单
+            </DialogTitle>
+            <DialogDescription className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              写清问题和关联服务。提交后会打开这张工单，方便继续跟进。
+            </DialogDescription>
           </div>
         </div>
 
-        {/* ── 表单内容 ── */}
-        <form onSubmit={handleSubmit} className="min-h-0 flex-1 overflow-y-auto p-5 sm:p-6 space-y-4.5">
-          {/* 分类与子分类 */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-            <div className="space-y-1.5">
-              <Label className="text-xs sm:text-[13px] font-medium text-foreground">工单类型</Label>
-              <Select value={category} onValueChange={setCategory}>
-                <SelectTrigger className="h-10 text-xs sm:text-[13px] bg-background/60 border-border/70 rounded-xl">
-                  <SelectValue placeholder="选择工单分类" />
-                </SelectTrigger>
-                <SelectContent className="rounded-xl">
-                  {TICKET_CATEGORIES.map((cat) => (
-                    <SelectItem key={cat.value} value={cat.value} className="text-xs sm:text-[13px] py-2">
-                      <div className="font-medium">{cat.label}</div>
-                      {cat.description && (
-                        <div className="text-[11px] text-muted-foreground/80 mt-0.5">{cat.description}</div>
-                      )}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+        <form
+          id="create-ticket-form"
+          onSubmit={handleSubmit}
+          className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-4"
+        >
+          <section className="space-y-3">
+            <p className="section-label">问题分类</p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">工单类型</Label>
+                <Select value={category} onValueChange={setCategory}>
+                  <SelectTrigger className={fieldClass}>
+                    <SelectValue placeholder="选择工单类型" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-72">
+                    {TICKET_CATEGORIES.map((item) => (
+                      <SelectItem key={item.value} value={item.value} className="text-[13px]">
+                        {item.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {categoryMeta?.description && (
+                  <p className="text-[11px] leading-relaxed text-muted-foreground">
+                    {categoryMeta.description}
+                  </p>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">问题子项</Label>
+                <Select value={subcategory} onValueChange={setSubcategory}>
+                  <SelectTrigger className={fieldClass}>
+                    <SelectValue placeholder="选择问题子项" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-72">
+                    {TICKET_SUBCATEGORIES.map((item) => (
+                      <SelectItem key={item.value} value={item.value} className="text-[13px]">
+                        {item.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
+          </section>
 
-            <div className="space-y-1.5">
-              <Label className="text-xs sm:text-[13px] font-medium text-foreground">问题子项</Label>
-              <Select value={subcategory} onValueChange={setSubcategory}>
-                <SelectTrigger className="h-10 text-xs sm:text-[13px] bg-background/60 border-border/70 rounded-xl">
-                  <SelectValue placeholder="选择子分类" />
-                </SelectTrigger>
-                <SelectContent className="rounded-xl">
-                  {TICKET_SUBCATEGORIES.map((sub) => (
-                    <SelectItem key={sub.value} value={sub.value} className="text-xs sm:text-[13px]">
-                      {sub.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          <section className="space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="section-label">关联服务</p>
+              <button
+                type="button"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                aria-label="刷新名下服务"
+                title="刷新名下服务"
+                onClick={() => refetchServices()}
+              >
+                <RefreshCw className={cn("h-3.5 w-3.5", isServicesLoading && "animate-spin")} />
+              </button>
             </div>
-          </div>
-
-          {/* 产品与关联服务 */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-            <div className="space-y-1.5">
-              <Label className="text-xs sm:text-[13px] font-medium text-foreground">关联产品</Label>
-              <Select value={product} onValueChange={setProduct}>
-                <SelectTrigger className="h-10 text-xs sm:text-[13px] bg-background/60 border-border/70 rounded-xl">
-                  <SelectValue placeholder="选择产品类型" />
-                </SelectTrigger>
-                <SelectContent className="rounded-xl">
-                  {TICKET_PRODUCTS.map((prod) => (
-                    <SelectItem key={prod.value} value={prod.value} className="text-xs sm:text-[13px]">
-                      {prod.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs sm:text-[13px] font-medium text-foreground">关联服务 (可选)</Label>
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <span>已获取 {services.length} 项</span>
-                  <button
-                    type="button"
-                    onClick={() => refetchServices()}
-                    className="text-primary hover:underline p-0.5"
-                    title="刷新名下服务器与VPS"
-                  >
-                    <RefreshCw className={cn("h-3.5 w-3.5", isServicesLoading && "animate-spin")} />
-                  </button>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">产品类型</Label>
+                <Select value={product} onValueChange={setProduct}>
+                  <SelectTrigger className={fieldClass}>
+                    <SelectValue placeholder="选择产品类型" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-72">
+                    {TICKET_PRODUCTS.map((item) => (
+                      <SelectItem key={item.value} value={item.value} className="text-[13px]">
+                        {item.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <Label htmlFor="ticket-service-name" className="text-xs font-medium">
+                    服务名称
+                  </Label>
+                  <span className="text-[11px] text-muted-foreground">可选</span>
                 </div>
+                <Input
+                  id="ticket-service-name"
+                  value={serviceName}
+                  onChange={(event) => setServiceName(event.target.value)}
+                  placeholder="手动填写，或从下方选择"
+                  className={cn(fieldClass, "font-mono")}
+                />
+              </div>
+            </div>
+
+            {isServicesLoading && services.length === 0 ? (
+              <p className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                正在读取名下服务
+              </p>
+            ) : services.length === 0 ? (
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                没有读到名下独服或 VPS。服务名可以留空，也可以手动填写。
+              </p>
+            ) : (
+              <div className="space-y-2.5 rounded-xl border border-border/70 bg-muted/30 p-3">
+                <div className="flex flex-col overflow-hidden rounded-lg border border-border/80 bg-background transition-colors focus-within:border-primary/60 focus-within:ring-1 focus-within:ring-primary/40 sm:h-9 sm:flex-row sm:items-center">
+                  <div className="flex h-9 min-w-0 flex-1 items-center">
+                    <Search className="ml-3 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <input
+                      value={serviceQuery}
+                      onChange={(event) => setServiceQuery(event.target.value)}
+                      placeholder="搜索名称、服务名或 IP"
+                      aria-label="搜索名下服务"
+                      className="h-full min-w-0 flex-1 bg-transparent px-2 text-[13px] text-foreground outline-none placeholder:text-muted-foreground"
+                    />
+                    {serviceQuery && (
+                      <button
+                        type="button"
+                        className="mr-1.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                        aria-label="清空搜索"
+                        onClick={() => setServiceQuery("")}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                  {hasDedicated && hasVps && (
+                    <div
+                      className="flex h-9 shrink-0 items-center gap-0.5 border-t border-border/70 px-1 sm:border-l sm:border-t-0"
+                      role="group"
+                      aria-label="按服务类型筛选"
+                    >
+                      {(
+                        [
+                          ["all", "全部"],
+                          ["dedicated", "独服"],
+                          ["vps", "VPS"],
+                        ] as const
+                      ).map(([value, label]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          aria-pressed={serviceType === value}
+                          onClick={() => setServiceType(value)}
+                          className={cn(
+                            "h-7 rounded-md px-2 text-xs font-medium outline-none transition-colors focus-visible:bg-accent",
+                            serviceType === value
+                              ? "bg-primary/10 text-primary"
+                              : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                          )}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {visibleServices.length === 0 ? (
+                  <p className="py-3 text-center text-[11px] text-muted-foreground">
+                    没有匹配的服务
+                  </p>
+                ) : (
+                  <div className="flex max-h-36 flex-wrap gap-1.5 overflow-y-auto">
+                    {visibleServices.map((service) => {
+                      const isSelected = serviceName === service.serviceName;
+                      const isVps = service.type === "vps";
+                      return (
+                        <button
+                          key={service.serviceName}
+                          type="button"
+                          title={service.serviceName}
+                          aria-pressed={isSelected}
+                          onClick={() => handleSelectService(service)}
+                          className={cn(
+                            "inline-flex max-w-full items-center gap-1.5 rounded-lg border px-2 py-1 text-left text-[11px] transition-colors",
+                            isSelected
+                              ? "border-primary/40 bg-primary/10 text-primary"
+                              : "border-border/70 bg-card text-foreground hover:border-border hover:bg-accent",
+                          )}
+                        >
+                          {isVps ? (
+                            <Cloud className={cn("h-3.5 w-3.5 shrink-0", isSelected ? "text-primary" : "text-info")} />
+                          ) : (
+                            <Server className="h-3.5 w-3.5 shrink-0 text-primary" />
+                          )}
+                          <span className="truncate font-mono">{service.displayName}</span>
+                          {isSelected && <Check className="h-3.5 w-3.5 shrink-0" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+
+          <section className="space-y-3">
+            <p className="section-label">工单内容</p>
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <Label htmlFor="ticket-subject" className="text-xs font-medium">
+                  主题
+                </Label>
+                <Count value={subject.length} max={255} />
               </div>
               <Input
-                value={serviceName}
-                onChange={(e) => setServiceName(e.target.value)}
-                placeholder="例如 ns3104399.ip-54-36-168.eu 或 vps-xxxx"
-                className="h-10 text-xs sm:text-[13px] font-mono bg-background/60 border-border/70 rounded-xl"
+                id="ticket-subject"
+                value={subject}
+                onChange={(event) => setSubject(event.target.value.slice(0, 255))}
+                placeholder="用一句话概括需要处理的问题"
+                className={fieldClass}
+                required
               />
             </div>
-          </div>
-
-          {/* 完整名下服务快捷选择区（包含全部独服与全部 VPS） */}
-          {services.length > 0 && (
-            <div className="p-3.5 rounded-xl bg-muted/40 border border-border/50 space-y-2">
-              <div className="flex items-center justify-between text-xs text-muted-foreground font-medium">
-                <div className="flex items-center gap-1.5">
-                  <Server className="h-3.5 w-3.5 text-primary" />
-                  <span>名下服务一键关联 (已全部拉取，点击自动匹配)：</span>
-                </div>
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <Label htmlFor="ticket-body" className="text-xs font-medium">
+                  详细描述
+                </Label>
+                <Count value={body.length} max={10000} />
               </div>
-
-              <div className="max-h-28 overflow-y-auto pr-1 flex items-center gap-1.5 flex-wrap">
-                {services.map((s) => {
-                  const isSelected = serviceName === s.serviceName;
-                  const isVps = s.type === "vps";
-
-                  return (
-                    <button
-                      key={s.serviceName}
-                      type="button"
-                      onClick={() => handleSelectService(s)}
-                      className={cn(
-                        "text-xs font-mono px-2.5 py-1.5 rounded-lg border transition-all duration-150 flex items-center gap-1.5",
-                        isSelected
-                          ? "bg-primary text-primary-foreground border-primary font-semibold shadow-xs"
-                          : "bg-background/80 hover:bg-background text-foreground/85 hover:text-foreground border-border/60 hover:border-border"
-                      )}
-                    >
-                      {isVps ? (
-                        <Cloud className={cn("h-3.5 w-3.5", isSelected ? "text-primary-foreground" : "text-sky-400")} />
-                      ) : (
-                        <Server className={cn("h-3.5 w-3.5", isSelected ? "text-primary-foreground" : "text-emerald-500")} />
-                      )}
-                      <span>{s.displayName}</span>
-                      {isSelected && <Check className="h-3.5 w-3.5 ml-0.5" />}
-                    </button>
-                  );
-                })}
-              </div>
+              <Textarea
+                id="ticket-body"
+                value={body}
+                onChange={(event) => setBody(event.target.value.slice(0, 10000))}
+                placeholder="写上发生时间、现象、报错，以及已经做过的排查。"
+                rows={6}
+                className="min-h-[140px] resize-y rounded-lg border-border/80 bg-background p-3 text-[13px] leading-relaxed focus-visible:ring-1 focus-visible:ring-primary/40 focus-visible:ring-offset-0"
+                required
+              />
             </div>
-          )}
+          </section>
+        </form>
 
-          {/* 主题 */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <Label className="text-xs sm:text-[13px] font-medium text-foreground">工单主题 (Subject)</Label>
-              <span className="font-mono text-xs text-muted-foreground">
-                {subject.length} / 255
-              </span>
-            </div>
-            <Input
-              value={subject}
-              onChange={(e) => setSubject(e.target.value.slice(0, 255))}
-              placeholder="概括您需要咨询或处理的核心诉求..."
-              className="h-10 text-xs sm:text-[13px] bg-background/60 border-border/70 rounded-xl"
-              required
-            />
-          </div>
-
-          {/* 内容 */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <Label className="text-xs sm:text-[13px] font-medium text-foreground">详细描述 (Body)</Label>
-              <span className="font-mono text-xs text-muted-foreground">
-                {body.length} / 10000
-              </span>
-            </div>
-            <Textarea
-              value={body}
-              onChange={(e) => setBody(e.target.value.slice(0, 10000))}
-              placeholder="请详细描述问题背景、出现时间、具体报错以及需要技术客服协助的内容..."
-              rows={5}
-              className="min-h-[120px] resize-none text-xs sm:text-[13px] leading-relaxed bg-background/60 border-border/70 rounded-xl p-3"
-              required
-            />
-          </div>
-
-          <div className="pt-2 flex items-center justify-end gap-2.5">
+        <div className="flex flex-col-reverse gap-2 border-t border-border/70 bg-card px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-[11px] text-muted-foreground">主题和描述为必填。</p>
+          <div className="flex gap-2">
             <Button
               type="button"
               variant="outline"
+              className="h-9 flex-1 px-4 text-xs sm:flex-none sm:text-sm"
               onClick={() => onOpenChange(false)}
               disabled={createMutation.isPending}
-              className="rounded-xl h-10 px-4 text-xs sm:text-sm font-medium hover:bg-muted/80 transition-colors"
             >
               取消
             </Button>
             <Button
               type="submit"
+              form="create-ticket-form"
+              className="h-9 flex-1 px-4 text-xs sm:flex-none sm:text-sm"
               disabled={!subject.trim() || !body.trim() || createMutation.isPending}
-              className="rounded-xl h-10 px-5 text-xs sm:text-sm font-medium bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-xs hover:shadow-sm transition-all"
             >
               {createMutation.isPending ? (
-                <>
-                  <RefreshCw className="h-4 w-4 mr-1.5 animate-spin" />
-                  正在提交至 OVH...
-                </>
+                <RefreshCw className="animate-spin" />
               ) : (
-                <>
-                  <SendHorizontal className="h-4 w-4 mr-1.5" />
-                  提交工单
-                </>
+                <SendHorizontal />
               )}
+              {createMutation.isPending ? "正在提交" : "提交工单"}
             </Button>
           </div>
-        </form>
+        </div>
       </DialogContent>
     </Dialog>
   );
 }
-

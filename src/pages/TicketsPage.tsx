@@ -9,6 +9,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { PageHeader } from "@/components/common/PageHeader";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -47,7 +48,6 @@ function TicketsPage() {
   );
   const selectedTicketId =
     selection?.account === activeAccount ? selection.ticketId : null;
-  const draftKey = `${activeAccount}:${selectedTicketId}`;
 
   useEffect(() => {
     const media = window.matchMedia("(max-width: 1023px)");
@@ -82,11 +82,18 @@ function TicketsPage() {
     pageSize: 50,
   });
   const tickets = ticketData?.tickets;
-  const detail = useSupportTicket(selectedTicketId, activeAccount);
+  // 桌面端还没点选时直接用列表第一张，避免欢迎屏闪一下
+  const activeTicketId =
+    selectedTicketId ??
+    (!isCompact && tickets && tickets.length > 0 ? tickets[0].ticketId : null);
+  const draftKey = `${activeAccount}:${activeTicketId}`;
+  const detail = useSupportTicket(activeTicketId, activeAccount);
   const selectedTicket =
     detail.data ||
-    tickets?.find((ticket) => ticket.ticketId === selectedTicketId);
+    tickets?.find((ticket) => ticket.ticketId === activeTicketId);
   const activeAcc = accounts?.find((account) => account.id === activeAccount);
+  const isResolvingTickets = isLoading || (isFetching && !tickets);
+  const hasTickets = Boolean(tickets && tickets.length > 0);
 
   useEffect(() => {
     if (!isCompact && !selectedTicketId && tickets?.length) {
@@ -111,66 +118,64 @@ function TicketsPage() {
     <div
       className={cn(
         "support-workspace",
-        selectedTicketId && "has-conversation",
+        activeTicketId && "has-conversation",
       )}
     >
-      <header className="support-page-header">
-        <div className="support-page-heading">
-          <span className="support-page-icon">
-            <Headphones size={21} strokeWidth={1.7} />
-          </span>
-          <div>
-            <h1>支持工单</h1>
-            <p>集中管理问题，让每一次沟通都有进展。</p>
+      <PageHeader
+        className="support-page-header"
+        icon={Headphones}
+        title="支持工单"
+        description="集中管理问题，让每一次沟通都有进展。"
+        action={
+          <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end">
+            {accounts && accounts.length > 1 ? (
+              <Select value={activeAccount} onValueChange={setActiveAccount}>
+                <SelectTrigger
+                  className="support-account-select"
+                  aria-label="切换工单账户"
+                >
+                  <Globe2 className="mr-2 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <SelectValue placeholder="选择账户" />
+                </SelectTrigger>
+                <SelectContent>
+                  {accounts.map((account) => (
+                    <SelectItem
+                      key={account.id}
+                      value={account.id}
+                      className="text-xs"
+                    >
+                      {account.name} · {account.zone}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : activeAcc ? (
+              <div className="support-account-label">
+                <Globe2 size={14} />
+                <span>{activeAcc.name}</span>
+                <span className="text-muted-foreground">{activeAcc.zone}</span>
+              </div>
+            ) : null}
+            <Button
+              size="sm"
+              className="h-8 gap-1.5 rounded-lg px-3 text-xs font-medium shadow-sm"
+              onClick={() => setCreateDialogOpen(true)}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              新建工单
+            </Button>
           </div>
-        </div>
-        <div className="support-page-actions">
-          {accounts && accounts.length > 1 ? (
-            <Select value={activeAccount} onValueChange={setActiveAccount}>
-              <SelectTrigger
-                className="support-account-select"
-                aria-label="切换工单账户"
-              >
-                <Globe2 className="mr-2 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <SelectValue placeholder="选择账户" />
-              </SelectTrigger>
-              <SelectContent>
-                {accounts.map((account) => (
-                  <SelectItem
-                    key={account.id}
-                    value={account.id}
-                    className="text-xs"
-                  >
-                    {account.name} · {account.zone}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : activeAcc ? (
-            <div className="support-account-label">
-              <Globe2 size={14} />
-              <span>{activeAcc.name}</span>
-              <span className="text-muted-foreground">{activeAcc.zone}</span>
-            </div>
-          ) : null}
-          <Button
-            className="support-new-ticket"
-            onClick={() => setCreateDialogOpen(true)}
-          >
-            <Plus size={15} />
-            新建工单
-          </Button>
-        </div>
-      </header>
+        }
+      />
 
       <div className="support-inbox">
         <aside
-          className={cn("support-queue", selectedTicketId && "hide-on-compact")}
+          className={cn("support-queue", activeTicketId && "hide-on-compact")}
           aria-label="工单队列"
         >
           <TicketList
             tickets={tickets || []}
-            selectedTicketId={selectedTicketId}
+            selectedTicketId={activeTicketId}
             onSelectTicket={(ticket) =>
               setSelection({
                 account: activeAccount,
@@ -201,7 +206,7 @@ function TicketsPage() {
         <section
           className={cn(
             "support-conversation-panel",
-            !selectedTicketId && "hide-on-compact",
+            !activeTicketId && "hide-on-compact",
           )}
           aria-label="工单沟通区"
         >
@@ -227,7 +232,7 @@ function TicketsPage() {
                 void detail.refetch();
               }}
             />
-          ) : selectedTicketId ? (
+          ) : isResolvingTickets || (!isCompact && hasTickets && !selectedTicket) || activeTicketId ? (
             <div className="support-detail-loading">
               <button
                 className="support-icon-button self-start lg:hidden"
@@ -239,9 +244,9 @@ function TicketsPage() {
               <div className="support-empty-state">
                 <RefreshCw
                   size={24}
-                  className={cn(!detail.isError && "animate-spin")}
+                  className={cn(!detail.isError && "animate-spin text-primary")}
                 />
-                <h2>{detail.isError ? "暂时无法加载工单" : "正在加载工单"}</h2>
+                <h2>{detail.isError ? "暂时无法加载工单" : "正在加载工单…"}</h2>
                 {detail.isError && (
                   <Button
                     variant="outline"
@@ -256,7 +261,7 @@ function TicketsPage() {
           ) : (
             <div className="support-empty-state support-welcome">
               <span className="support-welcome-icon">
-                <MessageSquareText size={31} strokeWidth={1.4} />
+                <MessageSquareText size={22} strokeWidth={1.75} />
               </span>
               <span className="support-eyebrow">OVHCLOUD SUPPORT</span>
               <h2>从这里，开始解决问题</h2>
@@ -268,6 +273,7 @@ function TicketsPage() {
               <Button
                 variant="outline"
                 size="sm"
+                className="border-border/80 hover:bg-accent text-foreground"
                 onClick={() => setCreateDialogOpen(true)}
               >
                 <Plus className="mr-1.5 h-3.5 w-3.5" />

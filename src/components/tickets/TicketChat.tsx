@@ -594,7 +594,7 @@ export function TicketChat({
               <Button
                 variant="outline"
                 size="sm"
-                className="h-8.5 px-3 text-xs font-medium"
+                className="h-8 px-3 text-xs font-medium"
                 onClick={() => setReopenDialogOpen(true)}
               >
                 <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
@@ -698,7 +698,7 @@ export function TicketChat({
               取消
             </Button>
             <Button
-              className="h-9 sm:h-10 px-4 text-xs sm:text-sm font-medium bg-emerald-600 hover:bg-emerald-500 text-white"
+              className="h-9 sm:h-10 px-4 text-xs sm:text-sm font-medium"
               onClick={() => void confirmReopen()}
               disabled={!reopenReason.trim() || reopenMutation.isPending}
             >

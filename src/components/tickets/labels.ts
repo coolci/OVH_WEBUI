@@ -24,10 +24,9 @@ export const TICKET_STATES: Record<
   open: {
     label: "处理中",
     variant: "open",
-    badgeClass:
-      "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/25 shadow-[0_0_12px_rgba(16,185,129,0.12)]",
-    dotClass: "bg-emerald-500 animate-pulse",
-    glowClass: "from-emerald-500/20 to-teal-500/10",
+    badgeClass: "bg-primary/10 text-primary border-primary/20",
+    dotClass: "bg-primary",
+    glowClass: "from-primary/15 to-transparent",
   },
   closed: {
     label: "已关闭",
@@ -40,10 +39,9 @@ export const TICKET_STATES: Record<
   unknown: {
     label: "未知状态",
     variant: "unknown",
-    badgeClass:
-      "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/25",
-    dotClass: "bg-amber-500",
-    glowClass: "from-amber-500/20 to-transparent",
+    badgeClass: "bg-warning/10 text-warning border-warning/20",
+    dotClass: "bg-warning",
+    glowClass: "from-warning/15 to-transparent",
   },
 };
 
