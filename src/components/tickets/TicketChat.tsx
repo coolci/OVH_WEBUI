@@ -505,7 +505,7 @@ export function TicketChat({
                     {QUICK_REPLIES.map((reply) => (
                       <DropdownMenuItem
                         key={reply}
-                        className="text-xs"
+                        className="text-xs sm:text-[13px] py-1.5 cursor-pointer"
                         onSelect={() => insertText(reply)}
                       >
                         {reply}
@@ -594,6 +594,7 @@ export function TicketChat({
               <Button
                 variant="outline"
                 size="sm"
+                className="h-8.5 px-3 text-xs font-medium"
                 onClick={() => setReopenDialogOpen(true)}
               >
                 <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
@@ -641,22 +642,25 @@ export function TicketChat({
       <Dialog open={closeDialogOpen} onOpenChange={setCloseDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>
+            <DialogTitle className="text-base font-semibold">
               关闭工单 #{ticket.ticketNumber || ticket.ticketId}？
             </DialogTitle>
-            <DialogDescription>
-              支持团队会将此问题视为已解决。若仍需协助，之后可以重新打开此工单。
+            <DialogDescription className="text-xs sm:text-sm text-muted-foreground mt-1.5 leading-relaxed">
+              支持团队会将此问题视为已解决。若仍需协助，之后可以随时重新打开此工单。
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="gap-2">
+          <DialogFooter className="gap-2 sm:gap-2.5 pt-2">
             <Button
               variant="outline"
+              className="h-9 sm:h-10 px-4 text-xs sm:text-sm font-medium"
               onClick={() => setCloseDialogOpen(false)}
               disabled={closeMutation.isPending}
             >
               继续沟通
             </Button>
             <Button
+              variant="destructive"
+              className="h-9 sm:h-10 px-4 text-xs sm:text-sm font-medium"
               onClick={() => void confirmClose()}
               disabled={closeMutation.isPending}
             >
@@ -668,10 +672,10 @@ export function TicketChat({
       <Dialog open={reopenDialogOpen} onOpenChange={setReopenDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>
+            <DialogTitle className="text-base font-semibold">
               重新打开工单 #{ticket.ticketNumber || ticket.ticketId}
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="text-xs sm:text-sm text-muted-foreground mt-1.5 leading-relaxed">
               补充仍然存在的问题或重新打开的原因，支持团队将继续跟进。
             </DialogDescription>
           </DialogHeader>
@@ -681,17 +685,20 @@ export function TicketChat({
             onChange={(event) => setReopenReason(event.target.value)}
             placeholder="描述仍然存在的问题或补充情况…"
             rows={4}
+            className="resize-none text-xs sm:text-[13px] leading-relaxed rounded-xl p-3"
             disabled={reopenMutation.isPending}
           />
-          <DialogFooter className="gap-2">
+          <DialogFooter className="gap-2 sm:gap-2.5 pt-2">
             <Button
               variant="outline"
+              className="h-9 sm:h-10 px-4 text-xs sm:text-sm font-medium"
               onClick={() => setReopenDialogOpen(false)}
               disabled={reopenMutation.isPending}
             >
               取消
             </Button>
             <Button
+              className="h-9 sm:h-10 px-4 text-xs sm:text-sm font-medium bg-emerald-600 hover:bg-emerald-500 text-white"
               onClick={() => void confirmReopen()}
               disabled={!reopenReason.trim() || reopenMutation.isPending}
             >

@@ -22,7 +22,7 @@ function DetailField({
 }) {
   return (
     <div className="min-w-0 space-y-1.5">
-      <dt className="text-[10px] leading-4 text-muted-foreground">{label}</dt>
+      <dt className="text-[11px] font-medium leading-4 text-muted-foreground">{label}</dt>
       <dd className="min-w-0 break-words text-xs leading-5 text-foreground [overflow-wrap:anywhere]">
         {children}
       </dd>
@@ -57,7 +57,7 @@ export function TicketDetails({
   return (
     <div className="min-w-0 space-y-6 px-5 py-5">
       <section aria-label="工单信息" className="space-y-4">
-        <h3 className="text-[11px] font-semibold tracking-wide text-foreground">
+        <h3 className="text-xs font-semibold tracking-wide text-foreground">
           工单信息
         </h3>
         <dl className="space-y-4">
@@ -69,7 +69,7 @@ export function TicketDetails({
           <DetailField label="当前状态">
             <span
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11px] font-medium",
+                "inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-medium",
                 stateMeta.badgeClass,
                 "shadow-none",
               )}
@@ -97,7 +97,7 @@ export function TicketDetails({
         aria-label="关联服务"
         className="space-y-4 border-t border-border/70 pt-5"
       >
-        <h3 className="text-[11px] font-semibold tracking-wide text-foreground">
+        <h3 className="text-xs font-semibold tracking-wide text-foreground">
           关联服务
         </h3>
         <dl className="space-y-4">
@@ -107,7 +107,7 @@ export function TicketDetails({
           <DetailField label="服务名称">
             {ticket.serviceName ? (
               <div className="flex min-w-0 items-start gap-2 rounded-md bg-muted/40 py-1 pl-2 pr-1">
-                <span className="min-w-0 flex-1 py-1 font-mono text-[11px] leading-5 [overflow-wrap:anywhere]">
+                <span className="min-w-0 flex-1 py-1 font-mono text-xs leading-5 [overflow-wrap:anywhere]">
                   {ticket.serviceName}
                 </span>
                 <Button
@@ -137,7 +137,7 @@ export function TicketDetails({
         aria-label="时间记录"
         className="space-y-4 border-t border-border/70 pt-5"
       >
-        <h3 className="text-[11px] font-semibold tracking-wide text-foreground">
+        <h3 className="text-xs font-semibold tracking-wide text-foreground">
           时间记录
         </h3>
         <dl className="space-y-4">
