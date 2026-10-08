@@ -42,7 +42,7 @@ interface CreateTicketDialogProps {
 }
 
 const fieldClass =
-  "h-11 rounded-lg border-border/80 bg-background text-base shadow-none sm:h-9 sm:text-[13px]";
+  "h-9 rounded-lg border-border/80 bg-background text-[13px] shadow-none";
 
 function Count({ value, max }: { value: number; max: number }) {
   const nearLimit = value > max * 0.9;
@@ -129,17 +129,17 @@ export function CreateTicketDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[min(88dvh,860px)] w-[calc(100vw-1.5rem)] max-w-lg flex-col gap-0 overflow-hidden rounded-xl p-0 sm:max-w-2xl sm:p-0 lg:max-w-3xl">
-        <div className="flex items-start gap-3 border-b border-border/70 px-4 py-3 pr-14 sm:px-5 sm:py-4">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary shadow-sm sm:h-10 sm:w-10">
-            <Ticket className="h-4 w-4 sm:h-5 sm:w-5" />
+      <DialogContent className="flex max-h-[min(78dvh,680px)] w-[calc(100vw-2rem)] max-w-md flex-col gap-0 overflow-hidden rounded-xl p-0 sm:max-h-[min(88dvh,860px)] sm:w-[calc(100vw-1.5rem)] sm:max-w-2xl sm:p-0 lg:max-w-3xl">
+        <div className="flex items-center gap-2.5 border-b border-border/70 px-3.5 py-2.5 pr-12 sm:items-start sm:gap-3 sm:px-5 sm:py-4 sm:pr-14">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 text-primary shadow-sm sm:h-10 sm:w-10 sm:rounded-xl">
+            <Ticket className="h-3.5 w-3.5 sm:h-5 sm:w-5" />
           </div>
           <div className="min-w-0">
-            <DialogTitle className="text-base font-semibold tracking-tight text-foreground">
+            <DialogTitle className="text-sm font-semibold tracking-tight text-foreground sm:text-base">
               新建支持工单
             </DialogTitle>
-            <DialogDescription className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
-              写清问题和关联服务。提交后会打开这张工单，方便继续跟进。
+            <DialogDescription className="mt-0.5 line-clamp-1 text-[11px] leading-snug text-muted-foreground sm:mt-1 sm:line-clamp-2 sm:text-xs sm:leading-relaxed">
+              写清问题和关联服务。提交后会打开这张工单。
             </DialogDescription>
           </div>
         </div>
@@ -147,7 +147,7 @@ export function CreateTicketDialog({
         <form
           id="create-ticket-form"
           onSubmit={handleSubmit}
-          className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-3 sm:space-y-6 sm:px-5 sm:py-4"
+          className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3.5 py-3 sm:space-y-6 sm:px-5 sm:py-4"
         >
           <section className="space-y-3">
             <div className="space-y-1">
@@ -158,7 +158,7 @@ export function CreateTicketDialog({
                 </p>
               )}
             </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 sm:gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs font-medium">工单类型</Label>
                 <Select value={category} onValueChange={setCategory}>
@@ -197,7 +197,7 @@ export function CreateTicketDialog({
               <p className="section-label">关联服务</p>
               <button
                 type="button"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground sm:h-7 sm:w-7"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                 aria-label="刷新名下服务"
                 title="刷新名下服务"
                 onClick={() => refetchServices()}
@@ -205,7 +205,7 @@ export function CreateTicketDialog({
                 <RefreshCw className={cn("h-3.5 w-3.5", isServicesLoading && "animate-spin")} />
               </button>
             </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 sm:gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs font-medium">产品类型</Label>
                 <Select value={product} onValueChange={setProduct}>
@@ -264,7 +264,7 @@ export function CreateTicketDialog({
                         aria-pressed={serviceType === value}
                         onClick={() => setServiceType(value)}
                         className={cn(
-                          "h-9 flex-1 rounded-lg text-[13px] font-medium outline-none transition-colors sm:h-8 sm:flex-none sm:px-3 sm:text-xs",
+                          "h-8 flex-1 rounded-lg text-xs font-medium outline-none transition-colors sm:flex-none sm:px-3",
                           serviceType === value
                             ? "bg-primary/10 text-primary"
                             : "text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -280,7 +280,7 @@ export function CreateTicketDialog({
                     没有匹配的服务
                   </p>
                 ) : (
-                  <div className="grid max-h-52 grid-cols-1 gap-1.5 overflow-y-auto sm:max-h-60 sm:grid-cols-2">
+                  <div className="grid max-h-36 grid-cols-1 gap-1 overflow-y-auto sm:max-h-60 sm:grid-cols-2 sm:gap-1.5">
                     {visibleServices.map((service) => {
                       const isSelected = serviceName === service.serviceName;
                       const isVps = service.type === "vps";
@@ -293,7 +293,7 @@ export function CreateTicketDialog({
                           aria-pressed={isSelected}
                           onClick={() => handleSelectService(service)}
                           className={cn(
-                            "flex min-h-11 w-full items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-colors",
+                            "flex w-full items-center gap-2 rounded-lg border px-2 py-1.5 text-left transition-colors sm:gap-2.5 sm:px-2.5 sm:py-2",
                             isSelected
                               ? "border-primary/40 bg-primary/10 text-primary"
                               : "border-border/70 bg-card text-foreground hover:border-border hover:bg-accent",
@@ -301,7 +301,7 @@ export function CreateTicketDialog({
                         >
                           <span
                             className={cn(
-                              "flex h-7 w-7 shrink-0 items-center justify-center rounded-md border",
+                              "flex h-6 w-6 shrink-0 items-center justify-center rounded-md border sm:h-7 sm:w-7",
                               isSelected
                                 ? "border-primary/30 bg-primary/10 text-primary"
                                 : isVps
@@ -312,7 +312,7 @@ export function CreateTicketDialog({
                             {isVps ? <Cloud className="h-3.5 w-3.5" /> : <Server className="h-3.5 w-3.5" />}
                           </span>
                           <span className="min-w-0 flex-1">
-                            <span className="block truncate text-[13px] font-medium leading-5">
+                            <span className="block truncate text-xs font-medium leading-4 sm:text-[13px] sm:leading-5">
                               {service.displayName}
                             </span>
                             <span
@@ -365,20 +365,20 @@ export function CreateTicketDialog({
                 onChange={(event) => setBody(event.target.value.slice(0, 10000))}
                 placeholder="写上发生时间、现象、报错，以及已经做过的排查。"
                 rows={6}
-                className="min-h-[104px] resize-y rounded-lg border-border/80 bg-background p-3 text-base leading-relaxed focus-visible:ring-1 focus-visible:ring-primary/40 focus-visible:ring-offset-0 sm:min-h-[148px] sm:text-[13px]"
+                className="min-h-[84px] resize-y rounded-lg border-border/80 bg-background p-2.5 text-[13px] leading-relaxed focus-visible:ring-1 focus-visible:ring-primary/40 focus-visible:ring-offset-0 sm:min-h-[148px] sm:p-3"
                 required
               />
             </div>
           </section>
         </form>
 
-        <div className="flex flex-col-reverse gap-2 border-t border-border/70 bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+        <div className="flex gap-2 border-t border-border/70 bg-card px-3.5 py-2.5 sm:items-center sm:justify-between sm:px-5 sm:py-3">
           <p className="hidden text-[11px] text-muted-foreground sm:block">主题和描述为必填。</p>
-          <div className="flex gap-2">
+          <div className="flex w-full gap-2 sm:w-auto">
             <Button
               type="button"
               variant="outline"
-              className="h-11 flex-1 px-4 text-sm sm:h-9 sm:flex-none"
+              className="h-8 flex-1 px-3 text-xs sm:h-9 sm:flex-none sm:px-4 sm:text-sm"
               onClick={() => onOpenChange(false)}
               disabled={createMutation.isPending}
             >
@@ -387,7 +387,7 @@ export function CreateTicketDialog({
             <Button
               type="submit"
               form="create-ticket-form"
-              className="h-11 flex-1 px-4 text-sm sm:h-9 sm:flex-none"
+              className="h-8 flex-1 px-3 text-xs sm:h-9 sm:flex-none sm:px-4 sm:text-sm"
               disabled={!subject.trim() || !body.trim() || createMutation.isPending}
             >
               {createMutation.isPending ? (
