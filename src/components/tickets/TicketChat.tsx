@@ -1,4 +1,22 @@
-import { useState, useRef, useEffect } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  ArrowDown,
+  ArrowLeft,
+  CheckCircle2,
+  CircleAlert,
+  CircleDot,
+  Headphones,
+  Info,
+  MessageSquareText,
+  MoreHorizontal,
+  RefreshCw,
+  RotateCcw,
+  Search,
+  Send,
+  Smile,
+  UserRound,
+  X,
+} from "lucide-react";
 import {
   type SupportTicket,
   useSupportMessages,
@@ -7,25 +25,10 @@ import {
   useReopenTicket,
 } from "@/hooks/ovh/use-tickets";
 import { formatDateTime } from "@/lib/format-os";
-import { getStateMeta, getProductLabel, getCategoryLabel } from "./labels";
+import { getStateMeta } from "./labels";
+import { TicketDetails } from "./TicketDetails";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import {
-  ArrowLeft,
-  Send,
-  RefreshCw,
-  XCircle,
-  RotateCcw,
-  Headphones,
-  User,
-  AlertCircle,
-  Clock,
-  ShieldCheck,
-  Server,
-  Layers,
-  Sparkles,
-} from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -34,461 +37,653 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { Skeleton } from "@/components/common/Skeleton";
-import { EmptyState } from "@/components/common/EmptyState";
 import { cn } from "@/lib/utils";
 
 interface TicketChatProps {
   ticket: SupportTicket;
   activeAccount?: string;
+  accountName?: string;
+  accountZone?: string;
+  draft: string;
+  onDraftChange: (text: string) => void;
+  onReplySent: (sentDraft: string) => void;
   onBack?: () => void;
   onRefresh?: () => void;
 }
 
-export function TicketChat({ ticket, activeAccount, onBack, onRefresh }: TicketChatProps) {
-  const [replyText, setReplyText] = useState("");
+const EMOJIS = ["😊", "👍", "🙏", "👌", "🤝", "🎉", "✅", "💻"];
+const QUICK_REPLIES = [
+  "感谢您的帮助！",
+  "好的，我会按照您提供的步骤操作。",
+  "问题仍然存在，请协助进一步排查。",
+  "问题已经解决，感谢支持！",
+];
+
+function dayLabel(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("zh-CN", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+export function TicketChat({
+  ticket,
+  activeAccount,
+  accountName,
+  accountZone,
+  draft,
+  onDraftChange,
+  onReplySent,
+  onBack,
+  onRefresh,
+}: TicketChatProps) {
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [reopenDialogOpen, setReopenDialogOpen] = useState(false);
   const [reopenReason, setReopenReason] = useState("");
-
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [isWide, setIsWide] = useState(
+    () => window.matchMedia("(min-width: 1440px)").matches,
+  );
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [messageSearch, setMessageSearch] = useState("");
+  const [showJump, setShowJump] = useState(false);
+  const [hasNewMessages, setHasNewMessages] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
-
-  const {
-    data: messages = [],
-    isLoading: isMessagesLoading,
-    isFetching: isMessagesFetching,
-    refetch: refetchMessages,
-  } = useSupportMessages(ticket.ticketId, activeAccount);
-
+  const lastCountRef = useRef(0);
+  const { data, isLoading, isFetching, isError, refetch } = useSupportMessages(
+    ticket.ticketId,
+    activeAccount,
+  );
+  const messages = useMemo(
+    () =>
+      [...(data || [])].sort(
+        (a, b) => Date.parse(a.creationDate) - Date.parse(b.creationDate),
+      ),
+    [data],
+  );
   const replyMutation = useReplyTicket(ticket.ticketId, activeAccount);
   const closeMutation = useCloseTicket(ticket.ticketId, activeAccount);
   const reopenMutation = useReopenTicket(ticket.ticketId, activeAccount);
-
-  // 监听用户滚动位置：留有 150px 余量
-  const handleScroll = () => {
-    const el = scrollContainerRef.current;
-    if (!el) return;
-    const offsetFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    stickToBottomRef.current = offsetFromBottom < 150;
-  };
-
-  useEffect(() => {
-    stickToBottomRef.current = true;
-    scrollToBottom(false);
-  }, [ticket.ticketId]);
+  const isOpen = ticket.state === "open";
+  const isClosed = ticket.state === "closed";
+  const state = getStateMeta(ticket.state);
+  const filteredMessages = messageSearch.trim()
+    ? messages.filter((message) =>
+        message.body
+          .toLocaleLowerCase()
+          .includes(messageSearch.trim().toLocaleLowerCase()),
+      )
+    : messages;
 
   useEffect(() => {
-    if (stickToBottomRef.current) {
-      scrollToBottom(true);
-    }
-  }, [messages.length]);
+    const media = window.matchMedia("(min-width: 1440px)");
+    const update = () => setIsWide(media.matches);
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
 
-  const scrollToBottom = (smooth = true) => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({
-        behavior: smooth ? "smooth" : "auto",
-        block: "end",
-      });
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (container && !messageSearch) {
+      if (stickToBottomRef.current)
+        container.scrollTo({ top: container.scrollHeight, behavior: "auto" });
+      else if (messages.length > lastCountRef.current) setHasNewMessages(true);
     }
+    lastCountRef.current = messages.length;
+  }, [messages.length, messageSearch]);
+
+  const insertText = (text: string) => {
+    const input = textareaRef.current;
+    const start = input?.selectionStart ?? draft.length;
+    const end = input?.selectionEnd ?? draft.length;
+    onDraftChange(draft.slice(0, start) + text + draft.slice(end));
+    requestAnimationFrame(() => {
+      input?.focus();
+      input?.setSelectionRange(start + text.length, start + text.length);
+    });
   };
-
-  const handleSendReply = async () => {
-    const text = replyText.trim();
-    if (!text || replyMutation.isPending) return;
-
+  const sendReply = async () => {
+    const sentDraft = draft;
+    if (!sentDraft.trim() || !isOpen || replyMutation.isPending) return;
     try {
-      await replyMutation.mutateAsync(text);
-      setReplyText("");
+      await replyMutation.mutateAsync(sentDraft.trim());
+      onReplySent(sentDraft);
       stickToBottomRef.current = true;
-      setTimeout(() => scrollToBottom(true), 120);
+      textareaRef.current?.focus();
+      scrollRef.current?.scrollTo({
+        top: scrollRef.current.scrollHeight,
+        behavior: "auto",
+      });
     } catch {
-      // hook 统一提示
+      /* The mutation displays the error; keep the draft. */
     }
   };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSendReply();
-    }
-  };
-
-  const handleConfirmClose = async () => {
+  const confirmClose = async () => {
+    if (!isOpen || !ticket.canBeClosed || closeMutation.isPending) return;
     try {
       await closeMutation.mutateAsync();
       setCloseDialogOpen(false);
       onRefresh?.();
     } catch {
-      // handled
+      /* Handled by the mutation. */
     }
   };
-
-  const handleConfirmReopen = async () => {
-    const reason = reopenReason.trim();
-    if (!reason || reopenMutation.isPending) return;
+  const confirmReopen = async () => {
+    if (!isClosed || !reopenReason.trim() || reopenMutation.isPending) return;
     try {
-      await reopenMutation.mutateAsync(reason);
+      await reopenMutation.mutateAsync(reopenReason.trim());
       setReopenDialogOpen(false);
       setReopenReason("");
       onRefresh?.();
     } catch {
-      // handled
+      /* Handled by the mutation. */
     }
   };
-
-  const stateMeta = getStateMeta(ticket.state);
-  const isOpen = ticket.state === "open";
+  const refresh = () => {
+    void refetch();
+    onRefresh?.();
+  };
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-card/40 border border-border/70 rounded-2xl shadow-[0_4px_24px_-4px_rgba(0,0,0,0.12)] overflow-hidden backdrop-blur-xl">
-      {/* ── 顶部 Header ── */}
-      <div className="flex-none px-4 py-3 sm:px-6 sm:py-3.5 border-b border-border/60 bg-card/75 backdrop-blur-xl flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3 min-w-0">
-          {onBack && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onBack}
-              className="lg:hidden h-8 w-8 -ml-1 text-muted-foreground hover:text-foreground shrink-0 rounded-lg"
-              title="返回工单列表"
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-          )}
-
-          <div className="min-w-0 space-y-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded-md bg-secondary text-secondary-foreground border border-border/60 shadow-xs">
-                #{ticket.ticketNumber || ticket.ticketId}
-              </span>
-
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1.5 text-xs px-2.5 py-0.5 rounded-md border font-medium",
-                  stateMeta.badgeClass
-                )}
+    <div className="ticket-conversation-workspace">
+      <div className="ticket-conversation">
+        <header className="ticket-conversation-header">
+          <div className="ticket-conversation-topline">
+            {onBack && (
+              <button
+                className="support-icon-button lg:hidden"
+                aria-label="返回工单列表"
+                onClick={onBack}
               >
-                <span className={cn("h-1.5 w-1.5 rounded-full", stateMeta.dotClass)} />
-                {stateMeta.label}
-              </span>
-
-              {ticket.product && (
-                <span className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-muted/60 text-muted-foreground border border-border/40 hidden sm:inline-flex items-center gap-1">
-                  <Layers className="h-3 w-3 opacity-60" />
-                  {getProductLabel(ticket.product)}
-                </span>
-              )}
-
-              {ticket.serviceName && (
-                <span className="text-[11px] font-mono bg-muted/80 text-foreground/80 px-2 py-0.5 rounded-md border border-border/50 hidden md:inline-flex items-center gap-1 truncate max-w-[220px]">
-                  <Server className="h-3 w-3 opacity-60 shrink-0" />
-                  {ticket.serviceName}
-                </span>
-              )}
-            </div>
-
-            <h2 className="text-sm sm:text-base font-semibold text-foreground tracking-tight truncate">
-              {ticket.subject}
-            </h2>
-          </div>
-        </div>
-
-        {/* 右侧动作按钮 */}
-        <div className="flex items-center gap-2 shrink-0">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => {
-              refetchMessages();
-              onRefresh?.();
-            }}
-            disabled={isMessagesFetching}
-            className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-all"
-            title="刷新对话记录"
-          >
-            <RefreshCw
-              className={cn("h-4 w-4", isMessagesFetching && "animate-spin text-primary")}
-            />
-          </Button>
-
-          {isOpen && ticket.canBeClosed && (
-            <Button
-              variant="soft-destructive"
-              size="sm"
-              onClick={() => setCloseDialogOpen(true)}
-              className="h-8 px-3 text-xs"
-            >
-              <XCircle className="h-3.5 w-3.5 mr-1" />
-              <span className="hidden sm:inline">关闭工单</span>
-              <span className="sm:hidden">关闭</span>
-            </Button>
-          )}
-
-          {!isOpen && (
-            <Button
-              variant="soft"
-              size="sm"
-              onClick={() => setReopenDialogOpen(true)}
-              className="h-8 px-3 text-xs"
-            >
-              <RotateCcw className="h-3.5 w-3.5 mr-1" />
-              <span className="hidden sm:inline">重新激活</span>
-              <span className="sm:hidden">重开</span>
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {/* ── 工单元信息横幅 ── */}
-      <div className="flex-none px-4 py-2 sm:px-6 bg-muted/25 border-b border-border/40 text-[11px] text-muted-foreground flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-3 flex-wrap">
-          <span>问题分类：<strong className="text-foreground/80 font-medium">{getCategoryLabel(ticket.category)}</strong></span>
-          {ticket.serviceName && (
-            <span className="md:hidden font-mono">服务：{ticket.serviceName}</span>
-          )}
-          <span>创建时间：{formatDateTime(ticket.creationDate)}</span>
-        </div>
-        <div className="flex items-center gap-1.5 font-mono">
-          <Clock className="h-3 w-3 opacity-70" />
-          <span>最新交互：{formatDateTime(ticket.updateDate)}</span>
-        </div>
-      </div>
-
-      {/* ── 消息流视窗 (彻底告别贴边：宽敞留白 + 微信正规气泡比例 + 专属头像) ── */}
-      <div
-        ref={scrollContainerRef}
-        onScroll={handleScroll}
-        className="flex-1 overflow-y-auto px-5 py-6 sm:px-8 md:px-12 lg:px-14 space-y-7 bg-background/30"
-      >
-        {isMessagesLoading ? (
-          <div className="space-y-5 max-w-xl mx-auto py-8">
-            <Skeleton className="h-16 w-3/4 rounded-2xl" />
-            <Skeleton className="h-16 w-2/3 ml-auto rounded-2xl" />
-            <Skeleton className="h-20 w-4/5 rounded-2xl" />
-          </div>
-        ) : messages.length === 0 ? (
-          <div className="py-16">
-            <EmptyState
-              icon={Headphones}
-              title="暂无沟通记录"
-              description="该工单尚未生成任何交互消息，官方技术团队受理后将在此回复。"
-            />
-          </div>
-        ) : (
-          messages.map((msg, idx) => {
-            const isMe = msg.from === "customer";
-            const prevMsg = idx > 0 ? messages[idx - 1] : null;
-            // 微信风格：当与上一条消息相差超30分钟时，展示居中时间胶囊
-            const showTimeDivider =
-              !prevMsg ||
-              Math.abs(new Date(msg.creationDate).getTime() - new Date(prevMsg.creationDate).getTime()) >
-                30 * 60 * 1000;
-
-            return (
-              <div key={msg.messageId} className="space-y-3 matrix-fade-in">
-                {/* 微信式居中时间胶囊 */}
-                {showTimeDivider && (
-                  <div className="flex items-center justify-center py-1">
-                    <span className="font-mono text-[11px] text-muted-foreground/80 bg-muted/50 border border-border/40 px-3 py-0.5 rounded-full shadow-2xs">
-                      {formatDateTime(msg.creationDate)}
-                    </span>
-                  </div>
+                <ArrowLeft size={18} />
+              </button>
+            )}
+            <span className="ticket-reference">
+              工单 #{ticket.ticketNumber || ticket.ticketId}
+            </span>
+            <span className={cn("support-status", `is-${state.variant}`)}>
+              {isClosed ? <CheckCircle2 size={12} /> : <CircleDot size={12} />}
+              {state.label}
+            </span>
+            <div className="ml-auto flex items-center gap-1">
+              <button
+                className={cn(
+                  "support-icon-button",
+                  detailsOpen && "is-active",
                 )}
-
-                <div
-                  className={cn(
-                    "flex items-start gap-3.5 sm:gap-4 w-full group",
-                    isMe ? "flex-row-reverse" : "flex-row"
-                  )}
-                >
-                  {/* ── 专属定制高清头像 ── */}
-                  <Avatar className="h-10 w-10 sm:h-11 sm:w-11 shrink-0 rounded-2xl ring-1 shadow-md transition-all duration-200 overflow-hidden ring-border/80">
-                    {isMe ? (
-                      <>
-                        <AvatarImage src="/avatars/customer.jpg" alt="客户" className="object-cover" />
-                        <AvatarFallback className="bg-emerald-500/20 text-emerald-500 font-semibold text-xs">
-                          <User className="h-5 w-5" />
-                        </AvatarFallback>
-                      </>
-                    ) : (
-                      <>
-                        <AvatarImage src="/avatars/ovh-support.jpg" alt="OVH客服" className="object-cover" />
-                        <AvatarFallback className="bg-blue-500/20 text-blue-500 font-semibold text-xs">
-                          <Headphones className="h-5 w-5" />
-                        </AvatarFallback>
-                      </>
-                    )}
-                  </Avatar>
-
-                  {/* ── 消息主体 (微信比例：限制最大宽度 65%~75%，留出大片舒适空间) ── */}
-                  <div
-                    className={cn(
-                      "flex flex-col max-w-[82%] sm:max-w-[70%] md:max-w-[65%]",
-                      isMe ? "items-end" : "items-start"
-                    )}
+                aria-label="工单详情"
+                title="工单详情"
+                aria-expanded={detailsOpen}
+                onClick={() => setDetailsOpen(!detailsOpen)}
+              >
+                <Info size={17} />
+              </button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className="support-icon-button"
+                    aria-label="更多工单操作"
+                    title="更多操作"
                   >
-                    {/* 昵称标签 */}
-                    <div
-                      className={cn(
-                        "flex items-center gap-1.5 mb-1.5 px-1 text-[11px] text-muted-foreground font-medium",
-                        isMe ? "flex-row-reverse" : "flex-row"
-                      )}
+                    <MoreHorizontal size={19} />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-44">
+                  <DropdownMenuItem onSelect={() => setDetailsOpen(true)}>
+                    <Info className="mr-2 h-4 w-4" />
+                    查看工单详情
+                  </DropdownMenuItem>
+                  <DropdownMenuItem disabled={isFetching} onSelect={refresh}>
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    刷新沟通记录
+                  </DropdownMenuItem>
+                  {(isClosed || (isOpen && ticket.canBeClosed)) && (
+                    <DropdownMenuSeparator />
+                  )}
+                  {isOpen && ticket.canBeClosed && (
+                    <DropdownMenuItem onSelect={() => setCloseDialogOpen(true)}>
+                      <CheckCircle2 className="mr-2 h-4 w-4" />
+                      关闭工单
+                    </DropdownMenuItem>
+                  )}
+                  {isClosed && (
+                    <DropdownMenuItem
+                      onSelect={() => setReopenDialogOpen(true)}
                     >
-                      {isMe ? (
-                        <span>我 (客户)</span>
-                      ) : (
-                        <span className="flex items-center gap-1 text-foreground/80 font-semibold">
-                          <span>OVH 官方技术支持</span>
-                          <ShieldCheck className="h-3.5 w-3.5 text-blue-500" />
-                        </span>
-                      )}
-                    </div>
-
-                    {/* 微信式气泡卡片 (包含自然内边距与舒适的圆角小微尖) */}
-                    <div
-                      className={cn(
-                        "relative px-4.5 py-3 sm:px-5 sm:py-3.5 rounded-2xl text-[13.5px] sm:text-[14px] leading-relaxed whitespace-pre-wrap break-words transition-all duration-200",
-                        isMe
-                          ? "bg-[#07c160] dark:bg-[#07c160] text-white rounded-tr-xs shadow-[0_4px_18px_rgba(7,193,96,0.22)] border border-[#06b057]/40 selection:bg-emerald-900"
-                          : "bg-card/95 dark:bg-[#1f2023] border border-border/80 text-foreground rounded-tl-xs shadow-[0_4px_16px_rgba(0,0,0,0.06)] dark:shadow-none"
-                      )}
-                    >
-                      {msg.body}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })
-        )}
-        <div ref={messagesEndRef} className="h-1" />
-      </div>
-
-      {/* ── 底部回复输入区 (带有充足外边距与优雅内缩进) ── */}
-      <div className="flex-none p-4 sm:p-5 md:p-6 bg-card/85 border-t border-border/60 backdrop-blur-xl safe-area-bottom">
-        {!isOpen ? (
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 rounded-xl bg-muted/40 border border-border/60 text-xs">
-            <div className="flex items-center gap-2.5 text-muted-foreground text-center sm:text-left">
-              <AlertCircle className="h-4.5 w-4.5 text-amber-500 shrink-0" />
-              <span>
-                当前工单已处理完成并处于关闭状态。如需继续与官方工程师沟通，请点击重新激活。
-              </span>
+                      <RotateCcw className="mr-2 h-4 w-4" />
+                      重新打开工单
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
-            <Button
-              size="sm"
-              variant="soft"
-              onClick={() => setReopenDialogOpen(true)}
-              className="shrink-0 h-8.5 px-3.5 text-xs shadow-xs"
-            >
-              <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
-              重新激活此工单
-            </Button>
           </div>
-        ) : (
-          <div className="space-y-2.5">
-            <div className="relative rounded-2xl border border-border/70 bg-background/70 hover:border-border focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/20 backdrop-blur-lg shadow-sm transition-all duration-200">
-              <Textarea
-                value={replyText}
-                onChange={(e) => setReplyText(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="在此输入给 OVH 官方技术支持的回复... (桌面端按 Enter 直接发送，Shift + Enter 换行)"
-                rows={3}
-                autoComplete="off"
-                className="resize-none border-0 bg-transparent px-4 py-3 sm:px-4.5 sm:py-3.5 pr-24 text-xs sm:text-sm leading-relaxed focus-visible:ring-0 shadow-none placeholder:text-muted-foreground/60"
-              />
+          <h2 title={ticket.subject}>{ticket.subject}</h2>
+          <div className="ticket-conversation-recipient">
+            <span className="ticket-provider-mark">
+              <Headphones size={11} />
+            </span>
+            OVHcloud 支持团队
+            <span className="ticket-recipient-separator">/</span>
+            <span>{accountName || "当前账户"}</span>
+          </div>
+        </header>
 
-              <div className="absolute right-3 bottom-3">
+        <div className="ticket-thread-toolbar">
+          <span>
+            沟通记录{" "}
+            <span className="ticket-message-count">{messages.length}</span>
+          </span>
+          <button
+            className={cn("support-icon-button", searchOpen && "is-active")}
+            aria-label="搜索聊天记录"
+            title="搜索聊天记录"
+            aria-expanded={searchOpen}
+            onClick={() => {
+              setSearchOpen(!searchOpen);
+              if (searchOpen) setMessageSearch("");
+            }}
+          >
+            <Search size={15} />
+          </button>
+        </div>
+        {searchOpen && (
+          <div className="ticket-message-search">
+            <Search size={14} />
+            <input
+              autoFocus
+              aria-label="搜索聊天记录"
+              placeholder="搜索当前工单的沟通内容…"
+              value={messageSearch}
+              onChange={(event) => setMessageSearch(event.target.value)}
+            />
+            <span>
+              {messageSearch.trim() ? `${filteredMessages.length} 条` : ""}
+            </span>
+            <button
+              className="support-icon-button"
+              aria-label="关闭聊天搜索"
+              onClick={() => {
+                setSearchOpen(false);
+                setMessageSearch("");
+              }}
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
+        {isError && messages.length > 0 && (
+          <div className="support-inline-warning">
+            <CircleAlert size={14} />
+            <span>暂时无法同步新消息，当前显示已加载的记录。</span>
+            <button onClick={refresh}>重试</button>
+          </div>
+        )}
+
+        <div className="ticket-thread-container">
+          <div
+            ref={scrollRef}
+            className="ticket-thread support-scrollbar"
+            aria-label="聊天记录"
+            aria-busy={isLoading}
+            onScroll={() => {
+              const container = scrollRef.current;
+              if (!container) return;
+              const nearBottom =
+                container.scrollHeight -
+                  container.scrollTop -
+                  container.clientHeight <
+                100;
+              stickToBottomRef.current = nearBottom;
+              setShowJump(!nearBottom);
+              if (nearBottom) setHasNewMessages(false);
+            }}
+          >
+            {isLoading ? (
+              <div className="space-y-6 p-2">
+                <Skeleton className="h-28 w-5/6 rounded-xl" />
+                <Skeleton className="ml-auto h-20 w-4/5 rounded-xl" />
+                <Skeleton className="h-36 w-5/6 rounded-xl" />
+              </div>
+            ) : isError && messages.length === 0 ? (
+              <div className="support-empty-state">
+                <CircleAlert size={27} />
+                <h3>沟通记录加载失败</h3>
+                <p>请稍后重试，已输入的内容会保留。</p>
+                <button className="support-text-button" onClick={refresh}>
+                  重新加载消息
+                </button>
+              </div>
+            ) : filteredMessages.length === 0 ? (
+              <div className="support-empty-state">
+                <MessageSquareText size={28} strokeWidth={1.5} />
+                <h3>
+                  {messageSearch.trim() ? "没有找到相关记录" : "暂无沟通记录"}
+                </h3>
+                <p>
+                  {messageSearch.trim()
+                    ? "尝试其他关键词。"
+                    : "支持团队的回复会显示在这里。"}
+                </p>
+              </div>
+            ) : (
+              filteredMessages.map((message, index) => {
+                const isMe = message.from === "customer";
+                const previous = filteredMessages[index - 1];
+                const showDate =
+                  !previous ||
+                  new Date(previous.creationDate).toDateString() !==
+                    new Date(message.creationDate).toDateString();
+                return (
+                  <div key={message.messageId}>
+                    {showDate && (
+                      <div className="ticket-date-divider">
+                        <span>{dayLabel(message.creationDate)}</span>
+                      </div>
+                    )}
+                    <article
+                      className={cn("ticket-message", isMe && "is-customer")}
+                    >
+                      <div className="ticket-message-heading">
+                        <span
+                          className={cn(
+                            "ticket-sender-avatar",
+                            isMe && "is-customer",
+                          )}
+                        >
+                          {isMe ? (
+                            <UserRound size={13} />
+                          ) : (
+                            <Headphones size={13} />
+                          )}
+                        </span>
+                        <span className="ticket-sender-name">
+                          {isMe ? "我" : "OVHcloud 支持团队"}
+                        </span>
+                        <time dateTime={message.creationDate}>
+                          {formatDateTime(message.creationDate)}
+                        </time>
+                      </div>
+                      <div className="ticket-message-card">{message.body}</div>
+                    </article>
+                  </div>
+                );
+              })
+            )}
+          </div>
+          {showJump && !messageSearch && (
+            <button
+              className="ticket-jump-button"
+              onClick={() => {
+                stickToBottomRef.current = true;
+                scrollRef.current?.scrollTo({
+                  top: scrollRef.current.scrollHeight,
+                  behavior: "auto",
+                });
+              }}
+            >
+              <ArrowDown size={13} />
+              {hasNewMessages ? "查看新消息" : "回到最新"}
+            </button>
+          )}
+        </div>
+
+        {isOpen ? (
+          <div className="ticket-composer-area">
+            <div className="ticket-composer">
+              <div className="ticket-composer-label">
+                <MessageSquareText size={14} />
+                <span>回复</span>
+                <span className="ticket-composer-to">
+                  发送至 OVHcloud 支持团队
+                </span>
+              </div>
+              <textarea
+                ref={textareaRef}
+                className="ticket-reply support-scrollbar"
+                aria-label="回复工单"
+                placeholder="补充问题细节、排查结果，或回复支持团队…"
+                value={draft}
+                disabled={replyMutation.isPending}
+                onChange={(event) => onDraftChange(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.nativeEvent.isComposing || event.keyCode === 229)
+                    return;
+                  if (
+                    event.key === "Enter" &&
+                    (event.ctrlKey || event.metaKey)
+                  ) {
+                    event.preventDefault();
+                    void sendReply();
+                  }
+                }}
+              />
+              <div className="ticket-composer-actions">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      className="ticket-template-button"
+                      aria-label="常用回复"
+                      disabled={replyMutation.isPending}
+                    >
+                      <MessageSquareText size={14} />
+                      <span>常用回复</span>
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    side="top"
+                    align="start"
+                    className="max-w-[calc(100vw-2rem)]"
+                    onCloseAutoFocus={(event) => event.preventDefault()}
+                  >
+                    {QUICK_REPLIES.map((reply) => (
+                      <DropdownMenuItem
+                        key={reply}
+                        className="text-xs"
+                        onSelect={() => insertText(reply)}
+                      >
+                        {reply}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <Popover open={emojiOpen} onOpenChange={setEmojiOpen}>
+                  <PopoverTrigger asChild>
+                    <button
+                      className="support-icon-button"
+                      aria-label="表情"
+                      title="表情"
+                      disabled={replyMutation.isPending}
+                    >
+                      <Smile size={17} />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    side="top"
+                    align="start"
+                    className="w-64 p-3"
+                    onCloseAutoFocus={(event) => event.preventDefault()}
+                  >
+                    <div className="grid grid-cols-8 gap-1">
+                      {EMOJIS.map((emoji) => (
+                        <button
+                          key={emoji}
+                          className="rounded p-1 text-xl hover:bg-muted"
+                          aria-label={`插入表情 ${emoji}`}
+                          onClick={() => {
+                            insertText(emoji);
+                            setEmojiOpen(false);
+                          }}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  </PopoverContent>
+                </Popover>
                 <Button
-                  size="sm"
-                  onClick={handleSendReply}
-                  disabled={!replyText.trim() || replyMutation.isPending}
-                  className="h-8.5 px-4 rounded-xl bg-[#07c160] hover:bg-[#06ad56] text-white shadow-sm hover:shadow transition-all font-medium text-xs disabled:opacity-50"
+                  className="ticket-send-button ml-auto"
+                  aria-label="发送回复"
+                  disabled={!draft.trim() || replyMutation.isPending}
+                  onClick={() => void sendReply()}
                 >
                   {replyMutation.isPending ? (
-                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    <RefreshCw size={14} className="animate-spin" />
                   ) : (
-                    <>
-                      <Send className="h-3.5 w-3.5 mr-1.5" />
-                      <span>发送回复</span>
-                    </>
+                    <Send size={14} />
                   )}
+                  {replyMutation.isPending ? "发送中" : "发送回复"}
                 </Button>
               </div>
             </div>
-
-            <div className="flex items-center justify-between text-[11px] text-muted-foreground px-2">
-              <span className="flex items-center gap-1.5">
-                <kbd className="px-1.5 py-0.5 rounded border border-border/50 bg-muted/60 font-mono text-[10px]">
-                  Enter
-                </kbd>
-                <span>发送</span>
-                <span className="opacity-40">·</span>
-                <kbd className="px-1.5 py-0.5 rounded border border-border/50 bg-muted/60 font-mono text-[10px]">
-                  Shift + Enter
-                </kbd>
-                <span>换行</span>
+            <div className="ticket-composer-help">
+              <span>
+                {draft ? "草稿已在当前页面保留" : "Enter 换行，支持多行内容"}
               </span>
-              <span className="font-mono">{replyText.length} 字符</span>
+              <span className="ticket-shortcut-hint">
+                Ctrl / ⌘ + Enter 发送
+              </span>
             </div>
+          </div>
+        ) : (
+          <div className="ticket-closed-banner">
+            <span className="ticket-closed-icon">
+              {isClosed ? (
+                <CheckCircle2 size={20} />
+              ) : (
+                <CircleAlert size={20} />
+              )}
+            </span>
+            <div>
+              <strong>
+                {isClosed ? "此工单已关闭" : "当前工单暂不可回复"}
+              </strong>
+              <p>
+                {isClosed
+                  ? "仍有问题？重新打开工单，继续与支持团队沟通。"
+                  : "刷新工单状态后再试。"}
+              </p>
+            </div>
+            {isClosed && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setReopenDialogOpen(true)}
+              >
+                <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+                重新打开
+              </Button>
+            )}
           </div>
         )}
       </div>
 
-      {/* ── 关闭工单确认弹窗 ── */}
+      {isWide && detailsOpen && (
+        <aside className="ticket-details-panel" aria-label="工单详情面板">
+          <div className="ticket-details-heading">
+            <h3>工单详情</h3>
+            <button
+              className="support-icon-button"
+              aria-label="关闭工单详情"
+              onClick={() => setDetailsOpen(false)}
+            >
+              <X size={16} />
+            </button>
+          </div>
+          <div className="support-scrollbar min-h-0 flex-1 overflow-y-auto">
+            <TicketDetails
+              ticket={ticket}
+              accountName={accountName}
+              accountZone={accountZone}
+            />
+          </div>
+        </aside>
+      )}
+      <Sheet open={!isWide && detailsOpen} onOpenChange={setDetailsOpen}>
+        <SheetContent className="w-[min(90vw,340px)] overflow-y-auto px-0">
+          <SheetHeader className="px-5">
+            <SheetTitle>工单详情</SheetTitle>
+            <SheetDescription>状态、关联服务和时间记录</SheetDescription>
+          </SheetHeader>
+          <TicketDetails
+            ticket={ticket}
+            accountName={accountName}
+            accountZone={accountZone}
+          />
+        </SheetContent>
+      </Sheet>
       <Dialog open={closeDialogOpen} onOpenChange={setCloseDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-destructive">
-              <XCircle className="h-5 w-5" />
-              确认关闭工单 #{ticket.ticketNumber || ticket.ticketId}
+            <DialogTitle>
+              关闭工单 #{ticket.ticketNumber || ticket.ticketId}？
             </DialogTitle>
-            <DialogDescription className="leading-relaxed pt-1">
-              关闭后，OVH 官方技术支持将认为此问题已顺利解决并结单。若后续仍有问题可再次重新激活。确认关闭吗？
+            <DialogDescription>
+              支持团队会将此问题视为已解决。若仍需协助，之后可以重新打开此工单。
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-0 pt-2">
+          <DialogFooter className="gap-2">
             <Button
               variant="outline"
               onClick={() => setCloseDialogOpen(false)}
               disabled={closeMutation.isPending}
             >
-              取消
+              继续沟通
             </Button>
             <Button
-              variant="destructive"
-              onClick={handleConfirmClose}
+              onClick={() => void confirmClose()}
               disabled={closeMutation.isPending}
             >
-              {closeMutation.isPending ? "关闭中..." : "确认关闭工单"}
+              {closeMutation.isPending ? "关闭中…" : "确认关闭工单"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* ── 重新打开工单弹窗 ── */}
       <Dialog open={reopenDialogOpen} onOpenChange={setReopenDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-primary">
-              <RotateCcw className="h-5 w-5" />
-              重新激活工单 #{ticket.ticketNumber || ticket.ticketId}
+            <DialogTitle>
+              重新打开工单 #{ticket.ticketNumber || ticket.ticketId}
             </DialogTitle>
-            <DialogDescription className="pt-1">
-              OVH 平台要求重新打开已关闭工单时必须提供详细原因说明，工程师将重新介入跟进。
+            <DialogDescription>
+              补充仍然存在的问题或重新打开的原因，支持团队将继续跟进。
             </DialogDescription>
           </DialogHeader>
-          <div className="py-2">
-            <Textarea
-              value={reopenReason}
-              onChange={(e) => setReopenReason(e.target.value)}
-              placeholder="请陈述需要重新开启工单的理由与补充情况 (必填)..."
-              rows={4}
-              className="resize-none text-xs sm:text-sm bg-background/80"
-            />
-          </div>
-          <DialogFooter className="gap-2 sm:gap-0 pt-2">
+          <Textarea
+            aria-label="重新打开工单的原因"
+            value={reopenReason}
+            onChange={(event) => setReopenReason(event.target.value)}
+            placeholder="描述仍然存在的问题或补充情况…"
+            rows={4}
+            disabled={reopenMutation.isPending}
+          />
+          <DialogFooter className="gap-2">
             <Button
               variant="outline"
               onClick={() => setReopenDialogOpen(false)}
@@ -497,11 +692,10 @@ export function TicketChat({ ticket, activeAccount, onBack, onRefresh }: TicketC
               取消
             </Button>
             <Button
-              onClick={handleConfirmReopen}
+              onClick={() => void confirmReopen()}
               disabled={!reopenReason.trim() || reopenMutation.isPending}
-              className="bg-primary hover:bg-primary/90 text-primary-foreground"
             >
-              {reopenMutation.isPending ? "提交中..." : "提交并重新打开"}
+              {reopenMutation.isPending ? "提交中…" : "重新打开"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -34,6 +34,7 @@ const pathNames: Record<string, string> = {
   "/server-control": "服务器控制",
   "/vps-control": "VPS 控制",
   "/account": "账户管理",
+  "/tickets": "支持工单",
   "/contact-change": "联系人变更",
   "/performance": "性能监控",
   "/telegram-order": "云下单",

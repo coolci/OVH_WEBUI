@@ -1,23 +1,20 @@
-import { useState } from "react";
-import { type SupportTicket } from "@/hooks/ovh/use-tickets";
-import { formatDateTime } from "@/lib/format-os";
-import { getStateMeta, getProductLabel } from "./labels";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/common/Skeleton";
-import { EmptyState } from "@/components/common/EmptyState";
+import { useEffect, useMemo, useState } from "react";
 import {
+  AlertCircle,
+  Archive,
+  ArrowDownWideNarrow,
+  CheckCircle2,
+  CircleDot,
+  Inbox,
+  Plus,
+  RefreshCw,
   Search,
   X,
-  RefreshCw,
-  AlertTriangle,
-  Ticket,
-  ChevronRight,
-  Server,
-  Archive,
-  Layers,
-  Inbox,
 } from "lucide-react";
+import { type SupportTicket } from "@/hooks/ovh/use-tickets";
+import { Skeleton } from "@/components/common/Skeleton";
+import { getProductLabel, getStateMeta } from "./labels";
+import { formatDateTime } from "@/lib/format-os";
 import { cn } from "@/lib/utils";
 
 interface TicketListProps {
@@ -29,12 +26,34 @@ interface TicketListProps {
   archivedFilter: boolean;
   onArchivedFilterChange: (archived: boolean) => void;
   searchQuery: string;
-  onSearchQueryChange: (q: string) => void;
+  onSearchQueryChange: (query: string) => void;
   isLoading: boolean;
   isFetching: boolean;
+  isError?: boolean;
   onRefresh: () => void;
+  onCreate: () => void;
   warning?: string;
   incomplete?: boolean;
+}
+
+function shortDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const now = new Date();
+  if (date.toDateString() === now.toDateString())
+    return date.toLocaleTimeString("zh-CN", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString()) return "昨天";
+  return date.toLocaleDateString("zh-CN", {
+    month: "numeric",
+    day: "numeric",
+    ...(date.getFullYear() !== now.getFullYear() ? { year: "numeric" } : {}),
+  });
 }
 
 export function TicketList({
@@ -49,249 +68,238 @@ export function TicketList({
   onSearchQueryChange,
   isLoading,
   isFetching,
+  isError,
   onRefresh,
+  onCreate,
   warning,
   incomplete,
 }: TicketListProps) {
   const [localSearch, setLocalSearch] = useState(searchQuery);
+  const sortedTickets = useMemo(
+    () =>
+      [...tickets].sort(
+        (a, b) =>
+          Date.parse(b.updateDate || b.creationDate) -
+          Date.parse(a.updateDate || a.creationDate),
+      ),
+    [tickets],
+  );
 
-  // 统计各类数量
-  const counts = {
-    all: tickets.length,
-    open: tickets.filter((t) => t.state === "open").length,
-    closed: tickets.filter((t) => t.state === "closed").length,
-  };
-
-  const statusTabs = [
-    { value: "all", label: "全部", count: counts.all },
-    { value: "open", label: "处理中", count: counts.open },
-    { value: "closed", label: "已关闭", count: counts.closed },
-  ];
-
-  const handleSearchSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSearchQueryChange(localSearch);
-  };
-
-  const handleClearSearch = () => {
-    setLocalSearch("");
-    onSearchQueryChange("");
-  };
+  useEffect(() => {
+    setLocalSearch(searchQuery);
+  }, [searchQuery]);
+  useEffect(() => {
+    if (localSearch === searchQuery) return;
+    const timer = window.setTimeout(
+      () => onSearchQueryChange(localSearch),
+      350,
+    );
+    return () => window.clearTimeout(timer);
+  }, [localSearch, searchQuery, onSearchQueryChange]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-card/40 border border-border/70 rounded-2xl shadow-[0_4px_24px_-4px_rgba(0,0,0,0.12)] overflow-hidden backdrop-blur-xl">
-      {/* ── 顶栏标题与统计 ── */}
-      <div className="flex-none p-3.5 sm:p-4 border-b border-border/60 bg-card/60 backdrop-blur-lg space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10 border border-primary/20 text-primary shadow-xs">
-              <Ticket className="h-4 w-4" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-semibold text-sm tracking-tight text-foreground">
-                  工单索引
-                </span>
-                <span className="font-mono text-[11px] px-2 py-0.5 rounded-full bg-secondary/80 text-secondary-foreground border border-border/50 font-medium">
-                  {tickets.length} 条
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onRefresh}
-            disabled={isFetching}
-            className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-all"
-            title="刷新工单列表"
-          >
-            <RefreshCw
-              className={cn("h-3.5 w-3.5 transition-all", isFetching && "animate-spin text-primary")}
-            />
-          </Button>
-        </div>
-
-        {/* ── 仿 Linear 风格搜索条 ── */}
-        <form onSubmit={handleSearchSubmit} className="relative group">
-          <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-muted-foreground/70 group-focus-within:text-primary transition-colors" />
-          <Input
-            value={localSearch}
-            onChange={(e) => setLocalSearch(e.target.value)}
-            onBlur={() => onSearchQueryChange(localSearch)}
-            placeholder="按编号、标题或服务搜索..."
-            className="h-8.5 pl-8.5 pr-8 text-xs bg-background/60 hover:bg-background/90 focus:bg-background border-border/70 focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/20 rounded-xl transition-all shadow-xs"
-          />
-          {localSearch ? (
-            <button
-              type="button"
-              onClick={handleClearSearch}
-              className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground p-0.5 rounded transition-colors"
-            >
-              <X className="h-3 w-3" />
-            </button>
-          ) : (
-            <kbd className="hidden sm:inline-flex absolute right-2.5 top-2 h-4.5 select-none items-center gap-1 rounded border border-border/60 bg-muted/60 px-1.5 font-mono text-[10px] text-muted-foreground">
-              ↵
-            </kbd>
-          )}
-        </form>
-
-        {/* ── macOS 风格滑动分段按钮与归档开关 ── */}
-        <div className="flex items-center justify-between gap-2 pt-0.5">
-          <div className="flex items-center bg-muted/50 p-1 rounded-xl border border-border/40 text-xs w-full sm:w-auto">
-            {statusTabs.map((tab) => {
-              const active = statusFilter === tab.value;
-              return (
-                <button
-                  key={tab.value}
-                  type="button"
-                  onClick={() => onStatusFilterChange(tab.value)}
-                  className={cn(
-                    "flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-all duration-150",
-                    active
-                      ? "bg-card text-foreground font-semibold shadow-[0_1px_4px_rgba(0,0,0,0.12)] border border-border/40"
-                      : "text-muted-foreground hover:text-foreground hover:bg-card/40"
-                  )}
-                >
-                  <span>{tab.label}</span>
-                </button>
-              );
-            })}
-          </div>
-
+    <div className="ticket-queue-content">
+      <div className="ticket-queue-header">
+        <div className="ticket-queue-title">
+          <h2>
+            <Inbox size={16} />
+            工单队列
+          </h2>
           <button
-            type="button"
-            onClick={() => onArchivedFilterChange(!archivedFilter)}
-            className={cn(
-              "flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] transition-all shrink-0",
-              archivedFilter
-                ? "bg-secondary text-foreground border-border/80 font-medium"
-                : "text-muted-foreground border-transparent hover:border-border/50 hover:bg-muted/40"
-            )}
-            title="切换是否显示历史归档工单"
+            className="support-icon-button"
+            aria-label="刷新工单列表"
+            title="刷新工单列表"
+            disabled={isFetching}
+            onClick={onRefresh}
           >
-            <Archive className="h-3 w-3" />
-            <span className="hidden sm:inline">包含归档</span>
+            <RefreshCw size={14} className={cn(isFetching && "animate-spin")} />
           </button>
         </div>
+        <form
+          className="support-search"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSearchQueryChange(localSearch);
+          }}
+        >
+          <Search size={15} />
+          <input
+            aria-label="搜索工单"
+            value={localSearch}
+            onChange={(event) => setLocalSearch(event.target.value)}
+            placeholder="搜索主题、编号或服务…"
+          />
+          {localSearch && (
+            <button
+              type="button"
+              aria-label="清空搜索"
+              onClick={() => {
+                setLocalSearch("");
+                onSearchQueryChange("");
+              }}
+            >
+              <X size={14} />
+            </button>
+          )}
+        </form>
+        <div
+          className="ticket-queue-filters"
+          role="group"
+          aria-label="工单状态筛选"
+        >
+          {[
+            { value: "all", label: "全部工单" },
+            { value: "open", label: "处理中" },
+            { value: "closed", label: "已关闭" },
+          ].map((tab) => (
+            <button
+              key={tab.value}
+              className={cn(statusFilter === tab.value && "is-active")}
+              aria-pressed={statusFilter === tab.value}
+              onClick={() => onStatusFilterChange(tab.value)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
-
-      {/* ── 异常告警横幅 ── */}
-      {incomplete && (
-        <div className="flex-none px-3.5 py-2 bg-amber-500/10 border-b border-amber-500/20 text-xs text-amber-600 dark:text-amber-400 flex items-center gap-2">
-          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-          <span className="truncate">{warning || "部分工单详情未能完全拉取，已展示基础列表"}</span>
+      <div className="ticket-queue-sort">
+        <span>
+          <ArrowDownWideNarrow size={12} />
+          最近更新
+        </span>
+        <button
+          className={cn("ticket-archive-toggle", archivedFilter && "is-active")}
+          aria-label="包含归档"
+          aria-pressed={archivedFilter}
+          onClick={() => onArchivedFilterChange(!archivedFilter)}
+        >
+          <Archive size={12} />
+          包含归档
+        </button>
+      </div>
+      {(incomplete || warning || (isError && tickets.length > 0)) && (
+        <div className="support-inline-warning" role="status">
+          <AlertCircle size={14} />
+          <span>
+            {warning ||
+              (isError
+                ? "同步失败，当前显示上次加载的工单。"
+                : "部分工单暂未加载完整，请稍后刷新。")}
+          </span>
         </div>
       )}
-
-      {/* ── 工单列表容器 ── */}
-      <div className="flex-1 overflow-y-auto p-2 sm:p-2.5 space-y-2">
+      <div
+        className="ticket-queue-list support-scrollbar"
+        aria-busy={isLoading}
+      >
         {isLoading ? (
-          <div className="space-y-2.5 p-1">
-            <Skeleton className="h-20 w-full rounded-xl" />
-            <Skeleton className="h-20 w-full rounded-xl" />
-            <Skeleton className="h-20 w-full rounded-xl" />
-            <Skeleton className="h-20 w-full rounded-xl" />
+          <div className="space-y-5 p-5">
+            {[1, 2, 3, 4].map((item) => (
+              <div
+                key={item}
+                className="space-y-3 border-b border-border/50 pb-5"
+              >
+                <Skeleton className="h-3 w-1/3 rounded" />
+                <Skeleton className="h-4 w-5/6 rounded" />
+                <Skeleton className="h-3 w-2/3 rounded" />
+              </div>
+            ))}
+          </div>
+        ) : isError && tickets.length === 0 ? (
+          <div className="support-empty-state">
+            <AlertCircle size={26} />
+            <h3>工单加载失败</h3>
+            <p>请检查连接后重新加载。</p>
+            <button className="support-text-button" onClick={onRefresh}>
+              重新加载工单
+            </button>
           </div>
         ) : tickets.length === 0 ? (
-          <div className="py-14 px-4 text-center">
-            <EmptyState
-              icon={Inbox}
-              title="当前筛选下无工单"
-              description={
-                searchQuery
-                  ? "没有匹配该搜索关键字的工单记录"
-                  : "当前状态下未查询到工单，可点击上方「创建工单」发起咨询"
-              }
-            />
+          <div className="support-empty-state">
+            <Inbox size={29} strokeWidth={1.4} />
+            <h3>{searchQuery ? "没有找到相关工单" : "当前没有工单"}</h3>
+            <p>
+              {searchQuery
+                ? "尝试其他关键词或调整筛选条件。"
+                : "发起咨询，让支持团队协助处理。"}
+            </p>
+            {!searchQuery && (
+              <button className="support-text-button" onClick={onCreate}>
+                <Plus size={14} />
+                新建工单
+              </button>
+            )}
           </div>
         ) : (
-          tickets.map((t) => {
-            const isSelected = selectedTicketId === t.ticketId;
-            const stateMeta = getStateMeta(t.state);
-
+          sortedTickets.map((ticket) => {
+            const state = getStateMeta(ticket.state);
             return (
-              <div
-                key={t.ticketId}
-                onClick={() => onSelectTicket(t)}
+              <button
+                key={ticket.ticketId}
                 className={cn(
-                  "group relative flex flex-col p-3.5 rounded-xl cursor-pointer transition-all duration-200 border text-left",
-                  isSelected
-                    ? "border-primary/50 bg-gradient-to-r from-primary/12 via-primary/5 to-card/60 shadow-[0_4px_16px_-4px_rgba(16,185,129,0.18)]"
-                    : "border-border/50 bg-card/40 hover:bg-card/80 hover:border-border/80 hover:shadow-xs"
+                  "ticket-queue-item",
+                  selectedTicketId === ticket.ticketId && "is-selected",
                 )}
+                aria-current={
+                  selectedTicketId === ticket.ticketId ? "true" : undefined
+                }
+                onClick={() => onSelectTicket(ticket)}
               >
-                {/* 选中高亮左边指示条 */}
-                {isSelected && (
-                  <div className="absolute left-0 top-2.5 bottom-2.5 w-1 rounded-r bg-primary shadow-[0_0_8px_hsl(var(--primary))]" />
-                )}
-
-                {/* 顶栏：工单号 + 状态指示灯与 Badge + 时间戳 */}
-                <div className="flex items-center justify-between gap-2 mb-1.5 pl-0.5">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="font-mono text-xs font-semibold px-1.5 py-0.5 rounded-md bg-secondary text-secondary-foreground border border-border/60">
-                      #{t.ticketNumber || t.ticketId}
-                    </span>
-                    <span
-                      className={cn(
-                        "inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-md border font-medium",
-                        stateMeta.badgeClass
-                      )}
-                    >
-                      <span className={cn("h-1.5 w-1.5 rounded-full", stateMeta.dotClass)} />
-                      {stateMeta.label}
-                    </span>
-                  </div>
-
-                  <span className="text-[11px] font-mono text-muted-foreground whitespace-nowrap">
-                    {formatDateTime(t.updateDate || t.creationDate).slice(5)}
+                <span className="ticket-item-meta">
+                  <span>#{ticket.ticketNumber || ticket.ticketId}</span>
+                  <time
+                    title={formatDateTime(
+                      ticket.updateDate || ticket.creationDate,
+                    )}
+                    dateTime={ticket.updateDate || ticket.creationDate}
+                  >
+                    {shortDate(ticket.updateDate || ticket.creationDate)}
+                  </time>
+                </span>
+                <span className="ticket-item-subject">
+                  {ticket.subject || "未命名工单"}
+                </span>
+                <span className="ticket-item-service">
+                  {ticket.serviceName || getProductLabel(ticket.product)}
+                </span>
+                <span className="ticket-item-footer">
+                  <span className={cn("support-status", `is-${state.variant}`)}>
+                    {ticket.state === "closed" ? (
+                      <CheckCircle2 size={11} />
+                    ) : (
+                      <CircleDot size={11} />
+                    )}
+                    {state.label}
                   </span>
-                </div>
-
-                {/* 主题：2 行智能截断 */}
-                <h3
-                  className={cn(
-                    "text-xs sm:text-[13px] font-medium line-clamp-2 leading-relaxed mb-2.5 tracking-tight transition-colors pl-0.5",
-                    isSelected
-                      ? "text-foreground font-semibold"
-                      : "text-foreground/90 group-hover:text-primary"
-                  )}
-                >
-                  {t.subject}
-                </h3>
-
-                {/* 底栏元数据：产品/服务标识 + 箭头指示 */}
-                <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground pl-0.5">
-                  <div className="flex items-center gap-1.5 truncate">
-                    {t.product && (
-                      <span className="px-1.5 py-0.5 rounded bg-muted/60 text-muted-foreground border border-border/40 font-medium">
-                        {getProductLabel(t.product)}
-                      </span>
-                    )}
-                    {t.serviceName && (
-                      <span className="font-mono text-[10px] bg-muted/80 text-foreground/80 px-1.5 py-0.5 rounded border border-border/50 truncate max-w-[150px] flex items-center gap-1">
-                        <Server className="h-2.5 w-2.5 opacity-60 shrink-0" />
-                        {t.serviceName}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-1 shrink-0">
-                    <ChevronRight
-                      className={cn(
-                        "h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-0.5",
-                        isSelected ? "text-primary" : "text-muted-foreground/30"
-                      )}
-                    />
-                  </div>
-                </div>
-              </div>
+                  <span>
+                    {ticket.lastMessageFrom === "customer"
+                      ? "最近回复：我"
+                      : ticket.lastMessageFrom
+                        ? "最近回复：支持团队"
+                        : "尚无回复"}
+                  </span>
+                </span>
+              </button>
             );
           })
         )}
       </div>
+      <footer className="ticket-queue-footer">
+        <span>
+          当前显示 {tickets.length} 条
+          {tickets.length === 50 ? " · 可搜索更多" : ""}
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span
+            className={cn(
+              "h-1.5 w-1.5 rounded-full",
+              isError ? "bg-amber-500" : "bg-primary/60",
+            )}
+          />
+          {isFetching ? "同步中" : "自动同步"}
+        </span>
+      </footer>
     </div>
   );
 }

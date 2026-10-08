@@ -11,9 +11,10 @@ import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 
 interface AppLayoutProps {
   children: ReactNode;
+  workspace?: boolean;
 }
 
-export const AppLayout = forwardRef<HTMLDivElement, AppLayoutProps>(({ children }, ref) => {
+export const AppLayout = forwardRef<HTMLDivElement, AppLayoutProps>(({ children, workspace = false }, ref) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
@@ -50,15 +51,15 @@ export const AppLayout = forwardRef<HTMLDivElement, AppLayoutProps>(({ children 
             <TopBar />
           </header>
 
-          <main className="flex-1 overflow-y-auto overflow-x-hidden p-3.5 sm:p-5 md:p-6 lg:p-8 pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] lg:pb-8 overscroll-y-contain">
-            <div className="matrix-fade-in max-w-[1520px] mx-auto w-full space-y-1">
+          <main className={`flex-1 min-h-0 p-3.5 sm:p-5 md:p-6 lg:p-8 pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] lg:pb-8 overscroll-y-contain ${workspace ? "overflow-hidden" : "overflow-y-auto overflow-x-hidden"}`}>
+            <div className={`max-w-[1520px] mx-auto w-full ${workspace ? "h-full min-h-0" : "matrix-fade-in space-y-1"}`}>
               <ErrorBoundary>
                 {children}
               </ErrorBoundary>
             </div>
           </main>
 
-          <footer className="hidden lg:block h-9 border-t border-border/80 bg-card/40">
+          <footer className="hidden lg:block h-9 shrink-0 border-t border-border/80 bg-card/40">
             <StatusBar />
           </footer>
         </div>

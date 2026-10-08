@@ -74,6 +74,7 @@ export function CreateTicketDialog({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (createMutation.isPending) return;
 
     if (!subject.trim()) {
       toast.error("请输入工单主题");
@@ -106,32 +107,32 @@ export function CreateTicketDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[92vh] flex flex-col overflow-hidden p-0 gap-0 border-border/80 bg-card/95 backdrop-blur-2xl shadow-2xl">
+      <DialogContent className="sm:max-w-2xl max-h-[90dvh] flex flex-col overflow-hidden rounded-xl p-0 gap-0 border-border bg-card">
         {/* ── 顶部 Header ── */}
-        <div className="flex-none p-5 sm:p-6 border-b border-border/60 bg-gradient-to-b from-card to-card/60">
+        <div className="flex-none p-5 sm:p-6 border-b border-border/60">
           <div className="flex items-start gap-3.5">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/10 border border-emerald-500/30 text-emerald-500 shadow-xs">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
               <Ticket className="h-5 w-5" />
             </div>
             <div>
               <DialogTitle className="text-base sm:text-lg font-semibold tracking-tight text-foreground">
-                创建 OVH 官方技术支持工单
+                新建支持工单
               </DialogTitle>
               <DialogDescription className="text-xs sm:text-sm text-muted-foreground mt-1">
-                提交后将直达 OVHcloud 官方客服与工单工单系统，并实时同步跟进处理。
+                描述问题并关联服务，OVHcloud 支持团队将通过此工单跟进。
               </DialogDescription>
             </div>
           </div>
         </div>
 
         {/* ── 表单内容 ── */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4.5">
+        <form onSubmit={handleSubmit} className="min-h-0 flex-1 overflow-y-auto p-5 sm:p-6 space-y-5">
           {/* 分类与子分类 */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-foreground/90">工单类型</Label>
               <Select value={category} onValueChange={setCategory}>
-                <SelectTrigger className="h-9.5 text-xs bg-background/60 border-border/70 rounded-xl">
+                <SelectTrigger className="h-10 text-xs bg-background/60 border-border/70 rounded-xl">
                   <SelectValue placeholder="选择工单分类" />
                 </SelectTrigger>
                 <SelectContent className="rounded-xl">
@@ -150,7 +151,7 @@ export function CreateTicketDialog({
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-foreground/90">问题子项</Label>
               <Select value={subcategory} onValueChange={setSubcategory}>
-                <SelectTrigger className="h-9.5 text-xs bg-background/60 border-border/70 rounded-xl">
+                <SelectTrigger className="h-10 text-xs bg-background/60 border-border/70 rounded-xl">
                   <SelectValue placeholder="选择子分类" />
                 </SelectTrigger>
                 <SelectContent className="rounded-xl">
@@ -169,7 +170,7 @@ export function CreateTicketDialog({
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-foreground/90">关联产品</Label>
               <Select value={product} onValueChange={setProduct}>
-                <SelectTrigger className="h-9.5 text-xs bg-background/60 border-border/70 rounded-xl">
+                <SelectTrigger className="h-10 text-xs bg-background/60 border-border/70 rounded-xl">
                   <SelectValue placeholder="选择产品类型" />
                 </SelectTrigger>
                 <SelectContent className="rounded-xl">
@@ -201,7 +202,7 @@ export function CreateTicketDialog({
                 value={serviceName}
                 onChange={(e) => setServiceName(e.target.value)}
                 placeholder="例如 ns3104399.ip-54-36-168.eu 或 vps-xxxx"
-                className="h-9.5 text-xs font-mono bg-background/60 border-border/70 rounded-xl"
+                className="h-10 text-xs font-mono bg-background/60 border-border/70 rounded-xl"
               />
             </div>
           </div>
@@ -259,7 +260,7 @@ export function CreateTicketDialog({
               value={subject}
               onChange={(e) => setSubject(e.target.value.slice(0, 255))}
               placeholder="概括您需要咨询或处理的核心诉求..."
-              className="h-9.5 text-xs bg-background/60 border-border/70 rounded-xl"
+              className="h-10 text-xs bg-background/60 border-border/70 rounded-xl"
               required
             />
           </div>
@@ -288,14 +289,14 @@ export function CreateTicketDialog({
               variant="outline"
               onClick={() => onOpenChange(false)}
               disabled={createMutation.isPending}
-              className="rounded-xl h-9.5 px-4 text-xs font-medium"
+              className="rounded-xl h-10 px-4 text-xs font-medium"
             >
               取消
             </Button>
             <Button
               type="submit"
               disabled={!subject.trim() || !body.trim() || createMutation.isPending}
-              className="rounded-xl h-9.5 px-5 text-xs font-medium bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-sm hover:shadow transition-all"
+              className="rounded-xl h-10 px-5 text-xs font-medium bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-sm hover:shadow transition-all"
             >
               {createMutation.isPending ? (
                 <>
@@ -315,3 +316,4 @@ export function CreateTicketDialog({
     </Dialog>
   );
 }
+
