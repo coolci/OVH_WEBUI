@@ -3,6 +3,7 @@ package monitor
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -343,16 +344,33 @@ func (m *Monitor) buildAvailabilityAlert(planCode string, availableDCs []map[str
 	msg.WriteString(telegram.CardDivider + "\n")
 	priceText, _ := configInfo["cached_price"].(string)
 	installText, _ := configInfo["install_price"].(string)
+	firstMonthText, _ := configInfo["first_month_price"].(string)
+	if firstMonthText == "" && installText != "" && priceText != "" {
+		firstMonthText = computeFirstMonthTotal(priceText, installText)
+	}
+
 	switch {
 	case priceText != "":
-		msg.WriteString("💰 价格: " + priceText + "\n")
+		if installText != "" {
+			msg.WriteString("💰 月付价格: " + priceText + "\n")
+			if firstMonthText != "" {
+				msg.WriteString("💵 安装费用: " + installText + "（一次性，首月合计 " + firstMonthText + "）\n")
+			} else {
+				msg.WriteString("💵 安装费用: " + installText + "（一次性）\n")
+			}
+		} else {
+			msg.WriteString("💰 价格: " + priceText + "\n")
+		}
 	case priceErrorMessage != "":
 		msg.WriteString("💰 价格: 未获取到（" + priceErrorMessage + "）\n")
+		if installText != "" {
+			msg.WriteString("💵 安装费用: " + installText + "（一次性）\n")
+		}
 	default:
 		msg.WriteString("💰 价格: 未获取到\n")
-	}
-	if installText != "" {
-		msg.WriteString("💵 安装费: " + installText + "（一次性）\n")
+		if installText != "" {
+			msg.WriteString("💵 安装费用: " + installText + "（一次性）\n")
+		}
 	}
 
 	if n := m.activeQueueCount(planCode); n > 0 {
@@ -579,8 +597,31 @@ func (m *Monitor) SendAvailabilityAlert(planCode, datacenter, status, changeType
 			// 否则在 OVH 价格 API 卡死时整个通知会阻塞
 			priceText, _ = m.getPriceWithTimeout(planCode, datacenter, configInfo, 30*time.Second)
 		}
+		installText, _ := configInfo["install_price"].(string)
+		firstMonthText, _ := configInfo["first_month_price"].(string)
+		if installText == "" {
+			options := optionsFromConfig(configInfo)
+			accountID := accountIDFromConfig(configInfo)
+			info := m.resolvePlanPriceInfo(planCode, accountID, options)
+			installText = info.InstallText
+			if firstMonthText == "" {
+				firstMonthText = info.FirstMonthText
+			}
+		}
+		if firstMonthText == "" && installText != "" && priceText != "" {
+			firstMonthText = computeFirstMonthTotal(priceText, installText)
+		}
 		if priceText != "" {
-			msg.WriteString("💰 实时价格: " + priceText + "\n")
+			if installText != "" {
+				msg.WriteString("💰 月付价格: " + priceText + "\n")
+				if firstMonthText != "" {
+					msg.WriteString("💵 安装费用: " + installText + "（一次性，首月合计 " + firstMonthText + "）\n")
+				} else {
+					msg.WriteString("💵 安装费用: " + installText + "（一次性）\n")
+				}
+			} else {
+				msg.WriteString("💰 实时价格: " + priceText + "\n")
+			}
 		}
 		msg.WriteString("📊 可用状态: " + status + "\n")
 		if durationText != "" {
@@ -808,3 +849,26 @@ func availWording(dcInfo map[string]interface{}) string {
 	}
 	return "有货"
 }
+
+// computeFirstMonthTotal 当缺少显式首月总额时，尝试从月费与安装费文本中安全解析并求和
+func computeFirstMonthTotal(monthlyText, installText string) string {
+	mClean := strings.TrimSpace(strings.TrimSuffix(monthlyText, "/月"))
+	iClean := strings.TrimSpace(installText)
+	if idx := strings.Index(iClean, "（"); idx != -1 {
+		iClean = strings.TrimSpace(iClean[:idx])
+	}
+	for _, cur := range []string{"€", "£", "₹", "US$", "CA$", "A$", "S$"} {
+		if strings.HasPrefix(mClean, cur) && strings.HasPrefix(iClean, cur) {
+			mStr := strings.TrimPrefix(mClean, cur)
+			iStr := strings.TrimPrefix(iClean, cur)
+			mVal, err1 := strconv.ParseFloat(mStr, 64)
+			iVal, err2 := strconv.ParseFloat(iStr, 64)
+			if err1 == nil && err2 == nil && mVal > 0 && iVal > 0 {
+				return fmt.Sprintf("%s%.2f", cur, mVal+iVal)
+			}
+			break
+		}
+	}
+	return ""
+}
+

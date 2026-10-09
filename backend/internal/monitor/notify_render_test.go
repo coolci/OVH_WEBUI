@@ -262,3 +262,36 @@ func TestRenderUnavailableAlertGrouped(t *testing.T) {
 	}
 }
 
+// 验证安装费与纯月费的展示逻辑：有安装费时拆开展示纯月费与首月合计，无安装费时只显示单月价格
+func TestRenderPriceDisplayVariants(t *testing.T) {
+	m := renderTestMonitor(t)
+	dcs := []map[string]interface{}{{"dc": "fra", "raw_status": "1H-low"}}
+
+	// Case 1: 带安装费
+	cfgWithInstall := map[string]interface{}{
+		"cached_price":      "€23.99/月",
+		"install_price":     "€35.99",
+		"first_month_price": "€59.98",
+	}
+	msg1, _ := m.buildAvailabilityAlert("24sys01-v1", dcs, cfgWithInstall, "SYS-1", "", "", "")
+	if !contains(msg1, "💰 月付价格: €23.99/月") {
+		t.Errorf("应显示清晰的纯月付价格标签，实际：\n%s", msg1)
+	}
+	if !contains(msg1, "💵 安装费用: €35.99（一次性，首月合计 €59.98）") {
+		t.Errorf("应包含安装费与首月总计，实际：\n%s", msg1)
+	}
+
+	// Case 2: 无安装费
+	cfgNoInstall := map[string]interface{}{
+		"cached_price": "€23.99/月",
+	}
+	msg2, _ := m.buildAvailabilityAlert("24sys01-v1", dcs, cfgNoInstall, "SYS-1", "", "", "")
+	if !contains(msg2, "💰 价格: €23.99/月") {
+		t.Errorf("无安装费时应显示通用价格标签，实际：\n%s", msg2)
+	}
+	if contains(msg2, "安装费用") {
+		t.Errorf("无安装费时不应出现安装费行，实际：\n%s", msg2)
+	}
+}
+
+

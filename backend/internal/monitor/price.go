@@ -187,11 +187,53 @@ func (m *Monitor) verifyPriceAvailable(planCode, datacenter string, configInfo m
 	return true, ""
 }
 
+// PlanPriceInfo 结构化价格信息
+type PlanPriceInfo struct {
+	MonthlyText    string
+	InstallText    string
+	FirstMonthText string
+	Partial        bool
+}
+
+// resolvePlanPriceInfo 优先从公开目录获取纯月费、安装费与首月总计（带2小时缓存，毫秒级返回，不占账户配额）
+func (m *Monitor) resolvePlanPriceInfo(planCode, accountID string, options []string) PlanPriceInfo {
+	p, err := catalog.PriceForOptions(m.state, accountID, planCode, options)
+	if err != nil {
+		return PlanPriceInfo{}
+	}
+	info := PlanPriceInfo{Partial: p.Partial}
+	if p.Monthly > 0 {
+		info.MonthlyText = formatMoney(p.Currency, p.Monthly)
+	}
+	if p.Install > 0 {
+		text := formatAmount(p.Currency, p.Install)
+		if p.Partial {
+			text += "（部分 addon 未计入，实际可能更高）"
+		}
+		info.InstallText = text
+		if p.Monthly > 0 {
+			info.FirstMonthText = formatAmount(p.Currency, p.Monthly+p.Install)
+		}
+	}
+	return info
+}
+
 func (m *Monitor) GetPriceInfoText(planCode, datacenter string, configInfo map[string]interface{}) string {
 	options := optionsFromConfig(configInfo)
 	accountID := accountIDFromConfig(configInfo)
 
-	m.state.Logger.Debug(fmt.Sprintf("开始获取价格: plan_code=%s, datacenter=%s, options=%v",
+	// 1. 优先查公开目录中的纯月费:
+	// 补货通知要展示的是真实的「月付续费」价格。OVH 购物车接口 (/order/cart/summary)
+	// 回的是整张首月订单的含税总额，在有安装费时会把一次性安装费打包进 withTax，
+	// 若直接当月费展示会把首月总计误标为“/月”，且造成重复计费误解。
+	// 公开目录已带 2 小时缓存，按 capacity 严格分离了 monthly 和 installation，毫秒级响应且不耗配额。
+	if p, err := catalog.PriceForOptions(m.state, accountID, planCode, options); err == nil && p.Monthly > 0 {
+		text := formatMoney(p.Currency, p.Monthly)
+		m.state.Logger.Debug("目录纯月费获取成功: "+text, "monitor")
+		return text
+	}
+
+	m.state.Logger.Debug(fmt.Sprintf("开始获取价格(回退购物车询价): plan_code=%s, datacenter=%s, options=%v",
 		planCode, datacenter, options), "monitor")
 
 	result := price.GetInternalCached(m.state, accountID, planCode, datacenter, options)
@@ -228,6 +270,10 @@ func (m *Monitor) GetPriceInfoText(planCode, datacenter string, configInfo map[s
 		}
 	}
 	if v, ok := numconv.ToFloat64(withTaxRaw); ok {
+		// 若能拿到目录中的安装费，且购物车总额包含了安装费，则月费应扣除安装费（避免安装费重复计算）
+		if p, err := catalog.PriceForOptions(m.state, accountID, planCode, options); err == nil && p.Install > 0 && v > p.Install {
+			v -= p.Install
+		}
 		text := formatMoney(currency, v)
 		m.state.Logger.Debug("价格获取成功: "+text, "monitor")
 		return text
@@ -267,18 +313,6 @@ func (m *Monitor) getPriceWithTimeout(planCode, datacenter string, configInfo ma
 // 用目录算而不是询价:询价要建购物车 → 加商品 → 拿 summary → 删车,一次好几秒,
 // 而补货通知的全部价值就是"有货那一刻立刻发出去"。目录有 2 小时缓存,也不占账户配额。
 func (m *Monitor) installPriceText(planCode, accountID string, options []string) string {
-	p, err := catalog.PriceForOptions(m.state, accountID, planCode, options)
-	if err != nil {
-		m.state.Logger.Debug("安装费取不到("+planCode+"): "+err.Error(), "monitor")
-		return ""
-	}
-	if p.Install <= 0 {
-		return ""
-	}
-	text := formatAmount(p.Currency, p.Install)
-	if p.Partial {
-		// 有 addon 不在目录里 —— 这个数字偏低。说出来,别让用户按一个错的预期下单。
-		text += "（部分 addon 未计入，实际可能更高）"
-	}
-	return text
+	info := m.resolvePlanPriceInfo(planCode, accountID, options)
+	return info.InstallText
 }

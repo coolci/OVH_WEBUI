@@ -719,14 +719,20 @@ func (m *Monitor) CheckAvailabilityChange(sub *Subscription, traceID string) {
 			m.state.Logger.Info(fmt.Sprintf("准备发送汇总提醒: %s [%s] - %d个机房有货",
 				planCode, configDisplay, len(availables)), "monitor")
 			configInfoWithPrice := copyMap(priceCfg)
+			priceInfo := m.resolvePlanPriceInfo(planCode, choice.accountID, configData.Options)
 			if priceText != "" {
 				configInfoWithPrice["cached_price"] = priceText
+			} else if priceInfo.MonthlyText != "" {
+				configInfoWithPrice["cached_price"] = priceInfo.MonthlyText
 			}
-			// 安装费从公开目录算(已缓存 2 小时,不占账户配额)。
+			// 安装费与首月总计从公开目录算(已缓存 2 小时,不占账户配额)。
 			// 不走询价接口:那个要真的建购物车再删,一次好几秒 ——
 			// 而补货通知的全部价值就在于"有货那一刻立刻发出去"。
-			if ip := m.installPriceText(planCode, choice.accountID, configData.Options); ip != "" {
-				configInfoWithPrice["install_price"] = ip
+			if priceInfo.InstallText != "" {
+				configInfoWithPrice["install_price"] = priceInfo.InstallText
+			}
+			if priceInfo.FirstMonthText != "" {
+				configInfoWithPrice["first_month_price"] = priceInfo.FirstMonthText
 			}
 			availDCs := make([]map[string]interface{}, 0, len(availables))
 			for _, n := range availables {

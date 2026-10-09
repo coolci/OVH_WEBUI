@@ -357,14 +357,22 @@ func cmdPrice(state *app.State, args []string) string {
 	b.WriteString(telegram.CardDivider + "\n")
 	b.WriteString("📍 结算节点: " + telegram.DisplayDCFull(dc) + "\n")
 	b.WriteString("⚙️ 计费规格: " + optsText + "\n")
-	b.WriteString(telegram.CardDivider + "\n")
-	if withTax != nil {
-		b.WriteString(fmt.Sprintf("💵 官方含税价: %v %s / 月\n", withTax, currency))
+	p, pErr := catalog.PriceForOptions(state, accountID, planCode, options)
+	if pErr == nil && p.Monthly > 0 {
+		b.WriteString(fmt.Sprintf("💵 官方月付续费: %.2f %s / 月\n", p.Monthly, p.Currency))
+		if p.Install > 0 {
+			b.WriteString(fmt.Sprintf("📦 一次性安装费: %.2f %s\n", p.Install, p.Currency))
+			b.WriteString(fmt.Sprintf("🧾 首月订单总计: %.2f %s（含安装费）\n", p.Monthly+p.Install, p.Currency))
+		}
+	} else {
+		if withTax != nil {
+			b.WriteString(fmt.Sprintf("💵 官方含税价: %v %s / 月\n", withTax, currency))
+		}
+		if withoutTax != nil {
+			b.WriteString(fmt.Sprintf("💴 官方未税价: %v %s / 月\n", withoutTax, currency))
+		}
 	}
-	if withoutTax != nil {
-		b.WriteString(fmt.Sprintf("💴 官方未税价: %v %s / 月\n", withoutTax, currency))
-	}
-	if withTax == nil && withoutTax == nil {
+	if pErr != nil && withTax == nil && withoutTax == nil {
 		b.WriteString("ℹ️（官方实时账单接口未返回具体金额，请在 WebUI 查看）\n")
 	}
 	b.WriteString(telegram.CardDivider + "\n")
