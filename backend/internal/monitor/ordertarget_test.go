@@ -77,3 +77,28 @@ func TestOrderTargets_首次检查有货(t *testing.T) {
 		t.Errorf("首次检查发现有货应该下单,实际 %d 个", len(got))
 	}
 }
+
+func TestNeedsPriceCheck_仅上架时验价下架不验价(t *testing.T) {
+	cases := []struct {
+		name      string
+		orderable bool
+		hasOld    bool
+		oldStatus string
+		want      bool
+	}{
+		{"首次检查且有货(上架)", true, false, "", true},
+		{"从无货变有货(上架)", true, true, "unavailable", true},
+		{"此前验价失败且仍有货(重试)", true, true, "price_check_failed", true},
+		{"持续在售(已验过价，不重复验)", true, true, "available", false},
+		{"下架变无货(不验价)", false, true, "available", false},
+		{"持续无货(不验价)", false, true, "unavailable", false},
+		{"首检无货(不验价)", false, false, "", false},
+	}
+	for _, c := range cases {
+		got := NeedsPriceCheck(c.orderable, c.hasOld, c.oldStatus)
+		if got != c.want {
+			t.Errorf("%s: 期望 %v, 实际得到 %v", c.name, c.want, got)
+		}
+	}
+}
+

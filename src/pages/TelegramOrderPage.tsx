@@ -5,9 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Helmet } from "react-helmet-async";
 import { Label } from "@/components/ui/label";
-import { 
-  MessageSquare, 
-  Send, 
+import {
+  MessageSquare,
+  Send,
   Loader2,
   Search,
   ShoppingCart,
@@ -124,7 +124,7 @@ const TelegramOrderPage = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [lastResult, setLastResult] = useState<any>(null);
   const [copied, setCopied] = useState(false);
-  
+
   const poller = useTelegramPollerStatus();
 
   // Command history
@@ -185,7 +185,7 @@ const TelegramOrderPage = () => {
       timestamp: Date.now(),
       success
     };
-    
+
     const newHistory = [newItem, ...commandHistory].slice(0, MAX_HISTORY_ITEMS);
     saveHistory(newHistory);
   };
@@ -222,10 +222,10 @@ const TelegramOrderPage = () => {
         datacenter: datacenter || undefined,
         quantity: selectedMode === 'buy' || selectedMode === 'watch' ? quantity : undefined,
       });
-      
+
       setLastResult(result);
       addToHistory(command, selectedMode, planCode, datacenter || undefined, result.success);
-      
+
       if (result.success) {
         toast.success(result.message || "操作成功");
       } else {
@@ -278,7 +278,7 @@ const TelegramOrderPage = () => {
         <title>云下单 | OVH Sniper</title>
         <meta name="description" content="云端快捷指令下单" />
       </Helmet>
-      
+
       <AppLayout>
         <div className="space-y-4 sm:space-y-6">
           {/* Header */}
@@ -346,8 +346,8 @@ const TelegramOrderPage = () => {
                 onClick={() => setSelectedMode(mode.mode)}
                 className={cn(
                   "surface-card rounded-xl p-3 sm:p-4 text-left transition-all duration-200 border border-border/80 hover:border-border",
-                  selectedMode === mode.mode 
-                    ? "border-primary bg-primary/10 text-foreground" 
+                  selectedMode === mode.mode
+                    ? "border-primary bg-primary/10 text-foreground"
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -446,7 +446,7 @@ const TelegramOrderPage = () => {
                 {selectedMode === 'buy' && (
                   <div className="space-y-1.5">
                     <Label className="text-xs font-medium">购买数量</Label>
-                    <Input 
+                    <Input
                       type="number"
                       min={1}
                       max={10}
@@ -464,7 +464,7 @@ const TelegramOrderPage = () => {
                       <Label className="text-xs font-medium">自动抢购数量（可选）</Label>
                       <span className="text-[11px] text-muted-foreground">0 为仅通知，≥1 补货自动下单</span>
                     </div>
-                    <Input 
+                    <Input
                       type="number"
                       min={0}
                       max={10}
@@ -502,9 +502,9 @@ const TelegramOrderPage = () => {
                 )}
 
                 {/* Submit Button */}
-                <Button 
-                  className="w-full h-9 rounded-lg font-medium text-xs gap-1.5 mt-2" 
-                  onClick={handleSubmit} 
+                <Button
+                  className="w-full h-9 rounded-lg font-medium text-xs gap-1.5 mt-2"
+                  onClick={handleSubmit}
                   disabled={isSubmitting || !planCode}
                 >
                   {isSubmitting ? (
@@ -543,8 +543,8 @@ const TelegramOrderPage = () => {
 
                     <div className={cn(
                       "p-3.5 rounded-xl border font-mono text-xs",
-                      lastResult.success 
-                        ? "bg-primary/5 border-primary/25 text-foreground" 
+                      lastResult.success
+                        ? "bg-primary/5 border-primary/25 text-foreground"
                         : "bg-destructive/10 border-destructive/25 text-destructive"
                     )}>
                       <div className="flex items-center gap-2 mb-2 font-sans font-semibold">
@@ -617,7 +617,7 @@ const TelegramOrderPage = () => {
                 ) : (
                   <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
                     {commandHistory.map((item) => (
-                      <div 
+                      <div
                         key={item.id}
                         className={cn(
                           "p-2.5 rounded-lg border transition-all hover:border-primary/40 cursor-pointer group bg-secondary/20",
@@ -629,9 +629,9 @@ const TelegramOrderPage = () => {
                           <code className="font-mono text-xs text-primary truncate">
                             {item.command}
                           </code>
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
+                          <Button
+                            variant="ghost"
+                            size="sm"
                             className="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 p-0 rounded-md"
                           >
                             <Play className="h-3 w-3" />
@@ -728,7 +728,7 @@ const TelegramOrderPage = () => {
                         badgeClass: "border-border text-foreground bg-secondary/50",
                       },
                     ].map((cmd) => (
-                      <tr 
+                      <tr
                         key={cmd.command}
                         className="border-b border-border/40 hover:bg-secondary/30 transition-colors"
                       >

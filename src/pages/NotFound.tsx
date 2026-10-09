@@ -17,7 +17,7 @@ const NotFound = () => {
         {/* ASCII art style 404 */}
         <div className="font-mono text-primary mb-8 text-xs sm:text-sm leading-tight">
           <pre className="opacity-80">
-{`
+            {`
  ██╗  ██╗ ██████╗ ██╗  ██╗
  ██║  ██║██╔═══██╗██║  ██║
  ███████║██║   ██║███████║
@@ -33,7 +33,7 @@ const NotFound = () => {
             <Terminal className="h-5 w-5" />
             <span className="font-mono text-sm">error_log</span>
           </div>
-          
+
           <div className="font-mono text-sm space-y-2 text-left mb-6">
             <p className="text-muted-foreground">
               <span className="text-primary">$</span> navigate "{location.pathname}"

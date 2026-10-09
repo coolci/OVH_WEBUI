@@ -469,7 +469,7 @@ func (m *Monitor) CheckAvailabilityChange(sub *Subscription, traceID string) {
 			// 反复验价、反复发"有货但价格校验失败"的骚扰通知。
 			orderable := catalog.IsAvailableForOrder(status)
 			dcStatusMap[dc] = dcStatus{status: status, statusKey: statusKey, oldStatus: old, hasOld: hasOld, orderable: orderable}
-			if orderable {
+			if NeedsPriceCheck(orderable, hasOld, old) {
 				priceCheckTasks = append(priceCheckTasks, dc)
 			}
 		}
@@ -517,7 +517,11 @@ func (m *Monitor) CheckAvailabilityChange(sub *Subscription, traceID string) {
 			priceCheckError := ""
 
 			if ds.orderable {
-				if v, ok := priceCheckResults[dc]; ok {
+				if ds.hasOld && ds.oldStatus == "available" {
+					// 持续在售：此前已在上架时完成验价放行，持续有货期间直接维持 available，
+					// 不每轮重复调用购物车验价，防止在库存被买走下架瞬间因加车失败报 500 误告警
+					actualStatus = "available"
+				} else if v, ok := priceCheckResults[dc]; ok {
 					okBool, _ := v[0].(bool)
 					errStr, _ := v[1].(string)
 					if !okBool {
@@ -576,8 +580,9 @@ func (m *Monitor) CheckAvailabilityChange(sub *Subscription, traceID string) {
 				m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 从价格校验失败变有货（价格校验通过）",
 					planCode, dc, configDisplay), "monitor")
 			case ds.oldStatus == "price_check_failed" && actualStatus == "unavailable":
-				statusChanged, changeType = true, "unavailable"
-				m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 从价格校验失败变无货",
+				// 从验价失败恢复为无货：说明此前只是瞬时幽灵库存闪现，从未真正成功上架过，
+				// 静默重置状态为 unavailable，不发送下架通知（避免“从未上架却收到下架通知”的骚扰）
+				m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 幽灵库存闪现结束，从价格校验失败恢复为无货（静默）",
 					planCode, dc, configDisplay), "monitor")
 			case ds.oldStatus == "available" && actualStatus == "unavailable":
 				statusChanged, changeType = true, "unavailable"
@@ -1052,4 +1057,12 @@ func (m *Monitor) AccountsForPlan(planCode string) []types.OVHAccount {
 		}
 	}
 	return out
+}
+
+// NeedsPriceCheck 判定当前机房是否需要执行购物车价格校验：
+// 仅在上架时（首检有货、此前无货、或此前验价失败重试）执行验价；
+// 持续在售（oldStatus=="available"）与下架（orderable=false）时不重复验价，
+// 避免对 OVH 购物车接口过度请求限流，以及避免在下架被抢空瞬间报 500 误告警。
+func NeedsPriceCheck(orderable bool, hasOld bool, oldStatus string) bool {
+	return orderable && (!hasOld || oldStatus != "available")
 }

@@ -402,9 +402,8 @@ function HistoryRow({ item, now }: { item: PurchaseHistory; now: number }) {
               target="_blank"
               rel="noopener noreferrer"
               aria-disabled={isExpired}
-              className={`inline-flex items-center gap-1 text-foreground hover:underline text-[12px] ${
-                isExpired ? "pointer-events-none opacity-50" : ""
-              }`}
+              className={`inline-flex items-center gap-1 text-foreground hover:underline text-[12px] ${isExpired ? "pointer-events-none opacity-50" : ""
+                }`}
             >
               <ExternalLink className="w-3 h-3" />
               订单
@@ -492,9 +491,8 @@ function HistoryCard({ item, now }: { item: PurchaseHistory; now: number }) {
                 href={item.orderUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className={`inline-flex items-center gap-1 text-foreground hover:underline text-[12px] ${
-                  isExpired ? "pointer-events-none opacity-50" : ""
-                }`}
+                className={`inline-flex items-center gap-1 text-foreground hover:underline text-[12px] ${isExpired ? "pointer-events-none opacity-50" : ""
+                  }`}
               >
                 <ExternalLink className="w-3 h-3" />
                 订单

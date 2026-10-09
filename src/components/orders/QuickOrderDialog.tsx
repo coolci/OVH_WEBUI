@@ -227,189 +227,188 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
 
   return (
     <>
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent
-        className={cn(
-          "!flex h-[min(92dvh,860px)] max-h-[min(92dvh,860px)] !flex-col gap-0 !overflow-hidden p-0",
-          "w-[calc(100vw-1.25rem)] max-w-3xl"
-        )}
-      >
-        <DialogHeader className="shrink-0 space-y-1.5 border-b border-border/60 px-4 pb-3 pt-4 pr-12 sm:px-6 sm:pt-5">
-          <DialogTitle className="flex min-w-0 items-center gap-2">
-            <Zap className="h-5 w-5 shrink-0 text-primary" />
-            <span className="truncate">快速下单</span>
-          </DialogTitle>
-          <DialogDescription className="text-left text-sm leading-snug">
-            与服务器列表相同：选型号、机房（缺货也可抢）、选配后加入抢购队列，或订阅监控。
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6">
-          <div className="space-y-1.5">
-            <label className="block text-[13px] font-medium">OVH 账户 *</label>
-            <AccountSelect value={accountId} onChange={setAccountId} placeholder="选择 OVH 账户" />
-            <p className="text-[11px] text-muted-foreground">
-              下单走该账户凭据，价格地区跟随账户 {subsidiary}
-            </p>
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="block text-[13px] font-medium">服务器型号 *</label>
-            <PlanCodeCombobox
-              value={planCode}
-              onChange={setPlanCode}
-              servers={servers}
-              placeholder={serversQ.isPending ? "型号加载中…" : "输入或搜索型号，例如 24ska01"}
-            />
-            {server && (
-              <p className="truncate text-[11px] text-muted-foreground">
-                {[server.cpu, server.memory, server.storage, server.bandwidth].filter(Boolean).join(" · ")}
-              </p>
-            )}
-            {isCustomPlan && (
-              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-200/90 flex items-start gap-2">
-                <span className="text-amber-400 font-bold shrink-0">自定义型号:</span>
-                <span className="text-muted-foreground text-[11px] leading-relaxed">
-                  当前型号未在已知官方目录中收录，已启用强制创建模式。若为您自拟的新款或未公开型号，有货后会自动提交；若为拼写错误（如想买 24sk20），建议更正型号。
-                </span>
-              </div>
-            )}
-          </div>
-
-          {server && (
-            <div className="flex flex-wrap items-end justify-between gap-3 rounded-2xl border border-border bg-secondary/30 p-4">
-              <div>
-                <div className="text-[11px] text-muted-foreground">
-                  月费 · {subsidiary}
-                  {selectedValues.length > 0 ? "（随当前选配）" : "（默认配置）"}
-                </div>
-                <div className="mt-0.5 text-2xl font-bold tabular-nums">
-                  {price ? (
-                    formatPrice(price)
-                  ) : (
-                    <span className="text-base font-normal text-muted-foreground">
-                      {catalogQ.isPending ? "价格加载中" : "—"}
-                    </span>
-                  )}
-                </div>
-              </div>
-              {okCount > 0 ? (
-                <Chip tone="success">
-                  <StatusDot tone="success" pulse size="xs" />
-                  {okCount}/{OVH_DATACENTERS.length} 可用
-                </Chip>
-              ) : (
-                <Chip tone="danger">
-                  <StatusDot tone="danger" size="xs" />
-                  暂时缺货 · 仍可抢购
-                </Chip>
-              )}
-            </div>
+      <Dialog open={open} onOpenChange={handleClose}>
+        <DialogContent
+          className={cn(
+            "!flex h-[min(92dvh,860px)] max-h-[min(92dvh,860px)] !flex-col gap-0 !overflow-hidden p-0",
+            "w-[calc(100vw-1.25rem)] max-w-3xl"
           )}
+        >
+          <DialogHeader className="shrink-0 space-y-1.5 border-b border-border/60 px-4 pb-3 pt-4 pr-12 sm:px-6 sm:pt-5">
+            <DialogTitle className="flex min-w-0 items-center gap-2">
+              <Zap className="h-5 w-5 shrink-0 text-primary" />
+              <span className="truncate">快速下单</span>
+            </DialogTitle>
+            <DialogDescription className="text-left text-sm leading-snug">
+              与服务器列表相同：选型号、机房（缺货也可抢）、选配后加入抢购队列，或订阅监控。
+            </DialogDescription>
+          </DialogHeader>
 
-          <DatacenterPicker
-            value={selectedDCs}
-            onChange={setSelectedDCs}
-            availability={dcMap}
-            disabled={!planCode.trim()}
-          />
-
-          {grouped &&
-            OPTION_GROUP_ORDER.filter((g) => grouped[g].length > 0).map((g) => (
-              <OptionGroupSection
-                key={g}
-                groupKey={g}
-                options={grouped[g]}
-                picked={picked[g] || ""}
-                defaultValueSet={defaultValueSet}
-                hasStock={variants && variants.length > 0 ? (value) => optionHasStock(g, value) : undefined}
-                onPick={(value) => setPicked((p) => ({ ...p, [g]: value }))}
-              />
-            ))}
-
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-[11px] text-muted-foreground">每个数据中心数量</label>
-              <Input
-                type="number"
-                min={1}
-                value={quantity}
-                onChange={(e) => setQuantity(e.target.value)}
-              />
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6">
+            <div className="space-y-1.5">
+              <label className="block text-[13px] font-medium">OVH 账户 *</label>
+              <AccountSelect value={accountId} onChange={setAccountId} placeholder="选择 OVH 账户" />
+              <p className="text-[11px] text-muted-foreground">
+                下单走该账户凭据，价格地区跟随账户 {subsidiary}
+              </p>
             </div>
-            <div>
-              <label className="mb-1 block text-[11px] text-muted-foreground">重试间隔（秒）</label>
-              <Input
-                type="number"
-                min={RETRY_INTERVAL.min}
-                max={RETRY_INTERVAL.max}
-                value={retryInterval}
-                onChange={(e) => {
-                  intervalTouchedRef.current = true;
-                  setRetryInterval(e.target.value);
-                }}
-                placeholder={`默认 ${cfgDefault}`}
+
+            <div className="space-y-1.5">
+              <label className="block text-[13px] font-medium">服务器型号 *</label>
+              <PlanCodeCombobox
+                value={planCode}
+                onChange={setPlanCode}
+                servers={servers}
+                placeholder={serversQ.isPending ? "型号加载中…" : "输入或搜索型号，例如 24ska01"}
               />
-            </div>
-          </div>
-
-          <label className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-border px-3.5 py-2.5 transition-colors hover:bg-muted/40">
-            <Checkbox checked={autoPay} onCheckedChange={(v) => setAutoPay(!!v)} />
-            <div>
-              <div className="text-sm">抢到后自动付款</div>
-              <p className="text-[11px] text-muted-foreground">默认关闭。开启后用 OVH 账户默认支付方式扣款。</p>
-            </div>
-          </label>
-        </div>
-
-        <div className="relative z-10 shrink-0 space-y-2 border-t border-border/60 bg-card px-4 py-3 sm:px-6">
-          <div className="text-[12px] text-muted-foreground">
-            {selectedDCs.length > 0
-              ? `将创建 ${totalTasks} 个任务（${selectedDCs.length} DC × ${qty}）${
-                  selectedValues.length > 0 ? ` · ${selectedValues.length} 项选配` : ""
-                }`
-              : "请选数据中心后再创建抢购任务"}
-          </div>
-          <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <Button type="button" variant="outline" onClick={() => handleClose(false)} disabled={busy}>
-              取消
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={!planCode || busy}
-              onClick={handleMonitor}
-            >
-              <Bell className="h-4 w-4" />
-              {existingMonitor ? "监控设置" : "加入监控"}
-            </Button>
-            <Button type="button" disabled={!canSubmit} onClick={() => void handleCreate()}>
-              {create.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <ShoppingCart className="h-4 w-4" />
+              {server && (
+                <p className="truncate text-[11px] text-muted-foreground">
+                  {[server.cpu, server.memory, server.storage, server.bandwidth].filter(Boolean).join(" · ")}
+                </p>
               )}
-              {selectedDCs.length > 0 ? `创建 ${totalTasks} 个任务` : "创建抢购任务"}
-            </Button>
-          </DialogFooter>
-        </div>
-      </DialogContent>
-    </Dialog>
-    <MonitorSubscribeDialog
-      open={monitorOpen}
-      onOpenChange={setMonitorOpen}
-      mode={existingMonitor ? "edit" : "create"}
-      lockPlanCode
-      planCode={planCode.trim()}
-      serverName={server?.name}
-      initial={
-        existingMonitor ?? {
-          planCode: planCode.trim(),
-          datacenters:
-            selectedDCs.length > 0 ? selectedDCs : OVH_DATACENTERS.map((dc) => dc.code),
+              {isCustomPlan && (
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-200/90 flex items-start gap-2">
+                  <span className="text-amber-400 font-bold shrink-0">自定义型号:</span>
+                  <span className="text-muted-foreground text-[11px] leading-relaxed">
+                    当前型号未在已知官方目录中收录，已启用强制创建模式。若为您自拟的新款或未公开型号，有货后会自动提交；若为拼写错误（如想买 24sk20），建议更正型号。
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {server && (
+              <div className="flex flex-wrap items-end justify-between gap-3 rounded-2xl border border-border bg-secondary/30 p-4">
+                <div>
+                  <div className="text-[11px] text-muted-foreground">
+                    月费 · {subsidiary}
+                    {selectedValues.length > 0 ? "（随当前选配）" : "（默认配置）"}
+                  </div>
+                  <div className="mt-0.5 text-2xl font-bold tabular-nums">
+                    {price ? (
+                      formatPrice(price)
+                    ) : (
+                      <span className="text-base font-normal text-muted-foreground">
+                        {catalogQ.isPending ? "价格加载中" : "—"}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {okCount > 0 ? (
+                  <Chip tone="success">
+                    <StatusDot tone="success" pulse size="xs" />
+                    {okCount}/{OVH_DATACENTERS.length} 可用
+                  </Chip>
+                ) : (
+                  <Chip tone="danger">
+                    <StatusDot tone="danger" size="xs" />
+                    暂时缺货 · 仍可抢购
+                  </Chip>
+                )}
+              </div>
+            )}
+
+            <DatacenterPicker
+              value={selectedDCs}
+              onChange={setSelectedDCs}
+              availability={dcMap}
+              disabled={!planCode.trim()}
+            />
+
+            {grouped &&
+              OPTION_GROUP_ORDER.filter((g) => grouped[g].length > 0).map((g) => (
+                <OptionGroupSection
+                  key={g}
+                  groupKey={g}
+                  options={grouped[g]}
+                  picked={picked[g] || ""}
+                  defaultValueSet={defaultValueSet}
+                  hasStock={variants && variants.length > 0 ? (value) => optionHasStock(g, value) : undefined}
+                  onPick={(value) => setPicked((p) => ({ ...p, [g]: value }))}
+                />
+              ))}
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-[11px] text-muted-foreground">每个数据中心数量</label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={quantity}
+                  onChange={(e) => setQuantity(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] text-muted-foreground">重试间隔（秒）</label>
+                <Input
+                  type="number"
+                  min={RETRY_INTERVAL.min}
+                  max={RETRY_INTERVAL.max}
+                  value={retryInterval}
+                  onChange={(e) => {
+                    intervalTouchedRef.current = true;
+                    setRetryInterval(e.target.value);
+                  }}
+                  placeholder={`默认 ${cfgDefault}`}
+                />
+              </div>
+            </div>
+
+            <label className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-border px-3.5 py-2.5 transition-colors hover:bg-muted/40">
+              <Checkbox checked={autoPay} onCheckedChange={(v) => setAutoPay(!!v)} />
+              <div>
+                <div className="text-sm">抢到后自动付款</div>
+                <p className="text-[11px] text-muted-foreground">默认关闭。开启后用 OVH 账户默认支付方式扣款。</p>
+              </div>
+            </label>
+          </div>
+
+          <div className="relative z-10 shrink-0 space-y-2 border-t border-border/60 bg-card px-4 py-3 sm:px-6">
+            <div className="text-[12px] text-muted-foreground">
+              {selectedDCs.length > 0
+                ? `将创建 ${totalTasks} 个任务（${selectedDCs.length} DC × ${qty}）${selectedValues.length > 0 ? ` · ${selectedValues.length} 项选配` : ""
+                }`
+                : "请选数据中心后再创建抢购任务"}
+            </div>
+            <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button type="button" variant="outline" onClick={() => handleClose(false)} disabled={busy}>
+                取消
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!planCode || busy}
+                onClick={handleMonitor}
+              >
+                <Bell className="h-4 w-4" />
+                {existingMonitor ? "监控设置" : "加入监控"}
+              </Button>
+              <Button type="button" disabled={!canSubmit} onClick={() => void handleCreate()}>
+                {create.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <ShoppingCart className="h-4 w-4" />
+                )}
+                {selectedDCs.length > 0 ? `创建 ${totalTasks} 个任务` : "创建抢购任务"}
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <MonitorSubscribeDialog
+        open={monitorOpen}
+        onOpenChange={setMonitorOpen}
+        mode={existingMonitor ? "edit" : "create"}
+        lockPlanCode
+        planCode={planCode.trim()}
+        serverName={server?.name}
+        initial={
+          existingMonitor ?? {
+            planCode: planCode.trim(),
+            datacenters:
+              selectedDCs.length > 0 ? selectedDCs : OVH_DATACENTERS.map((dc) => dc.code),
+          }
         }
-      }
-    />
+      />
     </>
   );
 }
