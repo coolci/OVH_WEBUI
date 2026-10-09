@@ -177,7 +177,11 @@ func EditMessage(state *app.State, chatID interface{}, messageID int64, text str
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		state.Logger.Debug("editMessageText 失败: "+string(respBody), "telegram")
+		bodyStr := string(respBody)
+		if strings.Contains(bodyStr, "message is not modified") {
+			return true
+		}
+		state.Logger.Warn("editMessageText 失败: "+bodyStr, "telegram")
 		return false
 	}
 	return true

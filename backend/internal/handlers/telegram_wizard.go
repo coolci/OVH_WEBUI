@@ -242,14 +242,40 @@ func resolveShort(state *app.State, s string) string {
 }
 
 type wizardPlan struct {
-	Code string
-	Name string
+	Code    string
+	Name    string
+	CPU     string
+	Memory  string
+	Storage string
 }
 
 func getPlansForCategory(state *app.State, mon *monitor.Monitor, category string) (string, []wizardPlan) {
 	state.ServerPlansMu.RLock()
 	allPlans := append([]types.ServerPlan{}, state.ServerPlans...)
 	state.ServerPlansMu.RUnlock()
+
+	planMap := make(map[string]types.ServerPlan, len(allPlans))
+	for _, p := range allPlans {
+		planMap[p.PlanCode] = p
+	}
+
+	makePlan := func(code, name string) wizardPlan {
+		p, ok := planMap[code]
+		if ok {
+			cleanName := name
+			if cleanName == "" {
+				cleanName = p.Name
+			}
+			return wizardPlan{
+				Code:    code,
+				Name:    cleanName,
+				CPU:     p.CPU,
+				Memory:  p.Memory,
+				Storage: p.Storage,
+			}
+		}
+		return wizardPlan{Code: code, Name: name}
+	}
 
 	switch category {
 	case "mon":
@@ -272,43 +298,108 @@ func getPlansForCategory(state *app.State, mon *monitor.Monitor, category string
 		state.QueueMu.Unlock()
 		out := make([]wizardPlan, 0, len(seen))
 		for code, name := range seen {
-			out = append(out, wizardPlan{Code: code, Name: name})
+			out = append(out, makePlan(code, name))
 		}
 		sort.Slice(out, func(i, j int) bool { return out[i].Code < out[j].Code })
 		return "📋 我的监控/队列", out
 
-	case "ks":
+	case "instock":
+		out := []wizardPlan{}
+		seen := map[string]bool{}
+		for _, s := range allPlans {
+			for _, dc := range s.Datacenters {
+				if catalog.IsAvailableForOrder(dc.Availability) || dc.Availability == "available" {
+					if !seen[s.PlanCode] {
+						seen[s.PlanCode] = true
+						out = append(out, makePlan(s.PlanCode, s.Name))
+					}
+					break
+				}
+			}
+		}
+		if mon != nil {
+			for _, sub := range mon.Snapshot() {
+				if sub == nil || sub.PlanCode == "" || seen[sub.PlanCode] {
+					continue
+				}
+				for _, st := range sub.LastStatus {
+					if st == "available" || catalog.IsAvailableForOrder(st) {
+						seen[sub.PlanCode] = true
+						name := sub.ServerName
+						if name == "" {
+							name = sub.PlanCode
+						}
+						out = append(out, makePlan(sub.PlanCode, name))
+						break
+					}
+				}
+			}
+		}
+		return "🟢 实时有货机型", out
+
+	case "entry", "ks":
 		out := []wizardPlan{}
 		for _, s := range allPlans {
 			p := strings.ToLower(s.PlanCode)
 			n := strings.ToLower(s.Name)
 			if strings.HasPrefix(p, "24sk") || strings.HasPrefix(p, "ks") || strings.Contains(p, "kimsufi") || strings.Contains(n, "kimsufi") || strings.Contains(n, "ks-") {
-				out = append(out, wizardPlan{Code: s.PlanCode, Name: s.Name})
+				out = append(out, makePlan(s.PlanCode, s.Name))
 			}
 		}
-		return "💎 Kimsufi / KS 特惠系列", out
+		return "🏷️ 特惠入门系列 (<€20/月)", out
 
-	case "rise":
+	case "storage":
 		out := []wizardPlan{}
 		for _, s := range allPlans {
 			p := strings.ToLower(s.PlanCode)
 			n := strings.ToLower(s.Name)
-			if strings.HasPrefix(p, "24rise") || strings.HasPrefix(p, "rise") || strings.Contains(n, "rise") {
-				out = append(out, wizardPlan{Code: s.PlanCode, Name: s.Name})
+			st := strings.ToLower(s.Storage)
+			isStor := strings.Contains(st, "hdd") || strings.Contains(st, "sata") ||
+				strings.Contains(st, "sa") || strings.Contains(st, "softraid-2x") ||
+				strings.Contains(st, "2x2t") || strings.Contains(st, "2x4t") || strings.Contains(st, "2x6t") ||
+				strings.Contains(p, "stor") || strings.Contains(n, "stor") || strings.Contains(n, "storage")
+			if isStor {
+				out = append(out, makePlan(s.PlanCode, s.Name))
 			}
 		}
-		return "🚀 Rise 高性价比系列", out
+		return "💾 大盘存储系列 (多盘/大容量)", out
 
-	case "adv":
+	case "perf", "rise":
 		out := []wizardPlan{}
 		for _, s := range allPlans {
 			p := strings.ToLower(s.PlanCode)
 			n := strings.ToLower(s.Name)
+			st := strings.ToLower(s.Storage)
 			if strings.HasPrefix(p, "24adv") || strings.HasPrefix(p, "adv") || strings.Contains(n, "advance") {
-				out = append(out, wizardPlan{Code: s.PlanCode, Name: s.Name})
+				continue
+			}
+			isPerf := strings.HasPrefix(p, "24rise") || strings.HasPrefix(p, "rise") ||
+				strings.HasPrefix(p, "24game") || strings.HasPrefix(p, "game") ||
+				strings.Contains(n, "rise") || strings.Contains(n, "game") ||
+				strings.HasPrefix(p, "24sys") || strings.HasPrefix(p, "sys") ||
+				strings.Contains(st, "nvme") || strings.Contains(st, "ssd")
+			if isPerf {
+				out = append(out, makePlan(s.PlanCode, s.Name))
 			}
 		}
-		return "🏢 Advance 企业级系列", out
+		return "⚡ 性能主力系列 (高频/NVMe)", out
+
+	case "flagship", "adv":
+		out := []wizardPlan{}
+		for _, s := range allPlans {
+			p := strings.ToLower(s.PlanCode)
+			n := strings.ToLower(s.Name)
+			m := strings.ToLower(s.Memory)
+			isFlag := strings.HasPrefix(p, "24adv") || strings.HasPrefix(p, "adv") ||
+				strings.Contains(n, "advance") || strings.Contains(m, "64g") ||
+				strings.Contains(m, "128g") || strings.Contains(m, "256g") ||
+				strings.Contains(m, "512g") || strings.Contains(m, "64 gb") ||
+				strings.Contains(m, "128 gb")
+			if isFlag {
+				out = append(out, makePlan(s.PlanCode, s.Name))
+			}
+		}
+		return "🏢 旗舰高配系列 (64G+/企业专有)", out
 
 	case "sys":
 		out := []wizardPlan{}
@@ -316,19 +407,30 @@ func getPlansForCategory(state *app.State, mon *monitor.Monitor, category string
 			p := strings.ToLower(s.PlanCode)
 			n := strings.ToLower(s.Name)
 			if strings.HasPrefix(p, "sys") || strings.HasPrefix(p, "24sys") || strings.HasPrefix(p, "stor") || strings.Contains(n, "so you start") || strings.Contains(n, "sys-") {
-				out = append(out, wizardPlan{Code: s.PlanCode, Name: s.Name})
+				out = append(out, makePlan(s.PlanCode, s.Name))
 			}
 		}
-		return "💾 SYS / 存储型系列", out
+		return "⚡ So you Start / SYS 经典系列", out
+
+	case "game":
+		out := []wizardPlan{}
+		for _, s := range allPlans {
+			p := strings.ToLower(s.PlanCode)
+			n := strings.ToLower(s.Name)
+			if strings.HasPrefix(p, "24game") || strings.HasPrefix(p, "game") || strings.Contains(n, "game") {
+				out = append(out, makePlan(s.PlanCode, s.Name))
+			}
+		}
+		return "🎮 Game 游戏高防系列", out
 
 	default: // "all"
 		out := make([]wizardPlan, 0, len(allPlans))
 		for _, s := range allPlans {
-			out = append(out, wizardPlan{Code: s.PlanCode, Name: s.Name})
+			out = append(out, makePlan(s.PlanCode, s.Name))
 		}
 		if len(out) == 0 {
 			for _, p := range []string{"24ska01", "24rise01", "24game01", "ks-le-1", "sys-le-1"} {
-				out = append(out, wizardPlan{Code: p, Name: p})
+				out = append(out, makePlan(p, p))
 			}
 		}
 		return "🌐 全部服务器型号", out
@@ -336,10 +438,11 @@ func getPlansForCategory(state *app.State, mon *monitor.Monitor, category string
 }
 
 func renderCategoryPicker(state *app.State, mon *monitor.Monitor, chatID interface{}, messageID int64, mode string, edit bool) {
-	_, ksPlans := getPlansForCategory(state, mon, "ks")
-	_, risePlans := getPlansForCategory(state, mon, "rise")
-	_, advPlans := getPlansForCategory(state, mon, "adv")
-	_, sysPlans := getPlansForCategory(state, mon, "sys")
+	_, entryPlans := getPlansForCategory(state, mon, "entry")
+	_, storPlans := getPlansForCategory(state, mon, "storage")
+	_, perfPlans := getPlansForCategory(state, mon, "perf")
+	_, flagPlans := getPlansForCategory(state, mon, "flagship")
+	_, inStockPlans := getPlansForCategory(state, mon, "instock")
 	_, monPlans := getPlansForCategory(state, mon, "mon")
 	_, allPlans := getPlansForCategory(state, mon, "all")
 
@@ -361,32 +464,53 @@ func renderCategoryPicker(state *app.State, mon *monitor.Monitor, chatID interfa
 	}
 
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("%s OVH 服务器选购中枢 · %s\n", icon, actionText))
+	b.WriteString(fmt.Sprintf("%s 服务器选型中心 · %s\n", icon, actionText))
 	b.WriteString(telegram.CardDivider + "\n")
-	b.WriteString(fmt.Sprintf("🌐 官方机型库: 共收录 %d 款特惠与旗舰机型\n", len(allPlans)))
-	b.WriteString("💡 点击分类进入机型列表，或直接发送型号 (例: /buy 24rise01 gra)\n")
+	b.WriteString("🔥 明星标杆机型参考：\n")
+	b.WriteString("• KS-1  │ €4.99/月  │ Atom 4C ｜ 4G ｜ 500G HDD\n")
+	b.WriteString("• KS-5  │ €17.99/月 │ Xeon-E 6C ｜ 32G ECC ｜ 2×2T HDD\n")
+	b.WriteString("• SYS-1 │ €23.99/月 │ Xeon-E 6C ｜ 32G ECC ｜ 2×512G NVMe\n")
+	b.WriteString("• Rise-1│ €35.99/月 │ Ryzen 6C ｜ 32G DDR4 ｜ 2×512G NVMe\n")
 	b.WriteString(telegram.CardDivider + "\n")
-	b.WriteString("👇 请选择服务器产品线系列：")
+	b.WriteString("🎯 按核心硬件与需求拆解选型：\n")
+	b.WriteString(fmt.Sprintf("🏷️ 特惠入门 (%d款): 低至 €4.99，个人折腾与轻量服务超值首选\n", len(entryPlans)))
+	b.WriteString(fmt.Sprintf("💾 大盘存储 (%d款): 2×2T ~ 4×4T 海量机械多盘，归档备份利器\n", len(storPlans)))
+	b.WriteString(fmt.Sprintf("⚡ 性能主力 (%d款): 极速 NVMe 高频独立核心，企业生产主力\n", len(perfPlans)))
+	b.WriteString(fmt.Sprintf("🏢 旗舰高配 (%d款): 64G~128G+ 专有计算核心，集群与密集负载\n", len(flagPlans)))
+	b.WriteString(telegram.CardDivider + "\n")
+	if len(inStockPlans) > 0 {
+		b.WriteString(fmt.Sprintf("🟢 实时现货: 监控雷达检测到 %d 款机型可直接下单\n", len(inStockPlans)))
+	} else {
+		b.WriteString("💡 提示: 现货稀缺机型建议选择「📥 抢购排队」全天候挂机抢购\n")
+	}
 
 	btns := [][]map[string]string{
 		{
-			telegram.CallbackButton(fmt.Sprintf("💎 Kimsufi / KS (%d款)", len(ksPlans)), "i:cat:"+mode+":ks"),
-			telegram.CallbackButton(fmt.Sprintf("🚀 Rise 性能型 (%d款)", len(risePlans)), "i:cat:"+mode+":rise"),
+			telegram.CallbackButton("🏷️ 特惠入门 (<€20)", "i:cat:"+mode+":entry"),
+			telegram.CallbackButton("💾 大盘存储 (多盘)", "i:cat:"+mode+":storage"),
 		},
 		{
-			telegram.CallbackButton(fmt.Sprintf("🏢 Advance 旗舰 (%d款)", len(advPlans)), "i:cat:"+mode+":adv"),
-			telegram.CallbackButton(fmt.Sprintf("💾 SYS 存储型 (%d款)", len(sysPlans)), "i:cat:"+mode+":sys"),
+			telegram.CallbackButton("⚡ 性能主力 (NVMe)", "i:cat:"+mode+":perf"),
+			telegram.CallbackButton("🏢 旗舰高配 (64G+)", "i:cat:"+mode+":flagship"),
 		},
 	}
 
 	thirdRow := []map[string]string{}
-	if len(monPlans) > 0 {
-		thirdRow = append(thirdRow, telegram.CallbackButton(fmt.Sprintf("📋 监控/队列中 (%d款)", len(monPlans)), "i:cat:"+mode+":mon"))
+	stockBtnText := "🟢 实时有货机型速览"
+	if len(inStockPlans) > 0 {
+		stockBtnText = fmt.Sprintf("🟢 实时有货 (%d款)", len(inStockPlans))
 	}
-	thirdRow = append(thirdRow, telegram.CallbackButton(fmt.Sprintf("🌐 全部型号列表 (%d款)", len(allPlans)), "i:cat:"+mode+":all"))
+	thirdRow = append(thirdRow, telegram.CallbackButton(stockBtnText, "i:cat:"+mode+":instock"))
+	if len(monPlans) > 0 {
+		thirdRow = append(thirdRow, telegram.CallbackButton(fmt.Sprintf("📋 我的监控 (%d款)", len(monPlans)), "i:cat:"+mode+":mon"))
+	}
 	btns = append(btns, thirdRow)
+
 	btns = append(btns, []map[string]string{
-		telegram.CallbackButton("🔙 返回主菜单", "i:dash:refresh"),
+		telegram.CallbackButton(fmt.Sprintf("🌐 全部型号列表 (%d款)", len(allPlans)), "i:cat:"+mode+":all"),
+	})
+	btns = append(btns, []map[string]string{
+		telegram.CallbackButton("🔙 返回控制中心", "i:dash:refresh"),
 	})
 
 	markup := telegram.InlineKeyboard(btns)
@@ -401,7 +525,7 @@ func renderCategoryPicker(state *app.State, mon *monitor.Monitor, chatID interfa
 func renderPlanPage(state *app.State, mon *monitor.Monitor, chatID interface{}, messageID int64, mode, category string, page int, edit bool) {
 	catTitle, plans := getPlansForCategory(state, mon, category)
 	if len(plans) == 0 {
-		text := fmt.Sprintf("%s 暂无机型。\n\n请返回选择其他系列分类。", catTitle)
+		text := fmt.Sprintf("%s 暂无现货机型。\n\n💡 建议选择「📥 抢购排队」或「📡 添加监控」，有货时系统将毫秒级自动响应。", catTitle)
 		markup := telegram.InlineKeyboard([][]map[string]string{
 			{telegram.CallbackButton("🔙 返回系列分类", "i:cat:"+mode+":root")},
 		})
@@ -413,7 +537,7 @@ func renderPlanPage(state *app.State, mon *monitor.Monitor, chatID interface{}, 
 		return
 	}
 
-	pageSize := 10
+	pageSize := 6
 	totalPages := (len(plans) + pageSize - 1) / pageSize
 	if page < 0 {
 		page = 0
@@ -429,11 +553,61 @@ func renderPlanPage(state *app.State, mon *monitor.Monitor, chatID interface{}, 
 	}
 	pagePlans := plans[start:end]
 
+	actionText := "快速下单"
+	icon := "⚡"
+	switch mode {
+	case "q":
+		actionText = "抢购排队"
+		icon = "📥"
+	case "s":
+		actionText = "查询库存"
+		icon = "📦"
+	case "m":
+		actionText = "添加监控"
+		icon = "📡"
+	case "pr":
+		actionText = "查询价格"
+		icon = "💰"
+	}
+
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("🖥️ 机型列表 · %s\n", catTitle))
+	b.WriteString(fmt.Sprintf("%s 机型列表 · %s\n", icon, catTitle))
 	b.WriteString(telegram.CardDivider + "\n")
-	b.WriteString(fmt.Sprintf("📄 当前显示: 第 %d / %d 页 (共 %d 款机型)\n", page+1, totalPages, len(plans)))
-	b.WriteString("💡 点击型号进入规格选择与机房配置：")
+	b.WriteString(fmt.Sprintf("📄 浏览进度: 第 %d / %d 页 (共收录 %d 款型号)\n", page+1, totalPages, len(plans)))
+	b.WriteString(telegram.CardDivider + "\n")
+
+	for _, p := range pagePlans {
+		cleanName := p.Name
+		if idx := strings.Index(cleanName, " | "); idx != -1 {
+			cleanName = cleanName[:idx]
+		}
+		cleanName = strings.TrimSpace(cleanName)
+
+		title := p.Code
+		if cleanName != "" && !strings.EqualFold(cleanName, p.Code) {
+			title = fmt.Sprintf("%s (%s)", p.Code, cleanName)
+		}
+
+		var specs []string
+		if p.CPU != "" {
+			specs = append(specs, p.CPU)
+		}
+		if p.Memory != "" {
+			specs = append(specs, telegram.HumanizeHardware(p.Memory, ""))
+		}
+		if p.Storage != "" {
+			specs = append(specs, telegram.HumanizeHardware("", p.Storage))
+		}
+		specStr := strings.Join(specs, " ｜ ")
+		if specStr != "" {
+			b.WriteString(fmt.Sprintf("• %s\n  └ 规格: %s\n", title, specStr))
+		} else {
+			b.WriteString(fmt.Sprintf("• %s\n", title))
+		}
+	}
+
+	b.WriteString(telegram.CardDivider + "\n")
+	b.WriteString(fmt.Sprintf("👇 点选下方机型进入机房配置并%s：", actionText))
 
 	prefix := "i:P:" + mode + ":"
 	modelBtns := make([]map[string]string, 0, len(pagePlans))
@@ -443,6 +617,17 @@ func renderPlanPage(state *app.State, mon *monitor.Monitor, chatID interface{}, 
 			continue
 		}
 		label := "⚡ " + p.Code
+		cleanName := p.Name
+		if idx := strings.Index(cleanName, " | "); idx != -1 {
+			cleanName = cleanName[:idx]
+		}
+		cleanName = strings.TrimSpace(cleanName)
+		if cleanName != "" && !strings.EqualFold(cleanName, p.Code) {
+			label = fmt.Sprintf("⚡ %s", cleanName)
+			if len(label) > 28 {
+				label = "⚡ " + p.Code
+			}
+		}
 		modelBtns = append(modelBtns, telegram.CallbackButton(label, data))
 	}
 	rows := telegram.ChunkButtons(modelBtns, 2)
@@ -450,13 +635,13 @@ func renderPlanPage(state *app.State, mon *monitor.Monitor, chatID interface{}, 
 	// 分页导航按钮
 	navRow := []map[string]string{}
 	if page > 0 {
-		navRow = append(navRow, telegram.CallbackButton("⬅️ 上一页", fmt.Sprintf("i:pg:%s:%s:%d", mode, category, page-1)))
+		navRow = append(navRow, telegram.CallbackButton("◀ 上一页", fmt.Sprintf("i:pg:%s:%s:%d", mode, category, page-1)))
 	}
 	if totalPages > 1 {
-		navRow = append(navRow, telegram.CallbackButton(fmt.Sprintf("%d/%d 页", page+1, totalPages), fmt.Sprintf("i:pg:%s:%s:%d", mode, category, page)))
+		navRow = append(navRow, telegram.CallbackButton(fmt.Sprintf("📄 %d/%d 页", page+1, totalPages), fmt.Sprintf("i:pg:%s:%s:%d", mode, category, page)))
 	}
 	if page < totalPages-1 {
-		navRow = append(navRow, telegram.CallbackButton("下一页 ➡️", fmt.Sprintf("i:pg:%s:%s:%d", mode, category, page+1)))
+		navRow = append(navRow, telegram.CallbackButton("下一页 ▶", fmt.Sprintf("i:pg:%s:%s:%d", mode, category, page+1)))
 	}
 	if len(navRow) > 0 {
 		rows = append(rows, navRow)
@@ -467,31 +652,13 @@ func renderPlanPage(state *app.State, mon *monitor.Monitor, chatID interface{}, 
 		telegram.CallbackButton("🔙 返回系列分类", "i:cat:"+mode+":root"),
 	})
 
-	actionText := "抢购"
-	icon := "🛒"
-	switch mode {
-	case "q":
-		actionText = "加入队列"
-		icon = "📥"
-	case "s":
-		actionText = "查询库存"
-		icon = "📦"
-	case "m":
-		actionText = "添加监控"
-		icon = "👀"
-	case "pr":
-		actionText = "查询价格"
-		icon = "💰"
-	}
-	text := fmt.Sprintf("%s %s（第 %d/%d 页，共 %d 款）：\n请点击选择要%s的型号：", icon, catTitle, page+1, totalPages, len(plans), actionText)
-
 	markup := telegram.InlineKeyboard(rows)
 	if edit && messageID > 0 {
-		if telegram.EditMessage(state, chatID, messageID, text, markup) {
+		if telegram.EditMessage(state, chatID, messageID, b.String(), markup) {
 			return
 		}
 	}
-	_, _ = telegram.SendToChat(state, chatID, text, markup)
+	_, _ = telegram.SendToChat(state, chatID, b.String(), markup)
 }
 
 func validAndInStockDCs(state *app.State, planCode, accountID string) (validDCs []string, inStockDCs []string) {
@@ -2075,9 +2242,15 @@ func showStockCardWithButtons(state *app.State, mon *monitor.Monitor, chatID int
 	rows := telegram.ChunkButtons(btns, 2)
 	rows = append(rows, actionRow)
 	rows = append(rows, []map[string]string{
-		telegram.CallbackButton("🔙 返回主菜单", "i:dash:refresh"),
+		telegram.CallbackButton("🔙 返回系列分类", "i:cat:s:root"),
+		telegram.CallbackButton("🔙 返回控制中心", "i:dash:refresh"),
 	})
 	markup := telegram.InlineKeyboard(rows)
+	if replyTo > 0 {
+		if telegram.EditMessage(state, chatID, replyTo, rawText, markup) {
+			return
+		}
+	}
 	_, _ = telegram.SendToChat(state, chatID, rawText, markup)
 }
 
