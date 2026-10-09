@@ -353,10 +353,9 @@ func (m *Monitor) buildAvailabilityAlert(planCode string, availableDCs []map[str
 	case priceText != "":
 		if installText != "" {
 			msg.WriteString("💰 月付价格: " + priceText + "\n")
+			msg.WriteString("💵 安装费用: " + formatInstallFeeLine(installText) + "\n")
 			if firstMonthText != "" {
-				msg.WriteString("💵 安装费用: " + installText + "（一次性，首月合计 " + firstMonthText + "）\n")
-			} else {
-				msg.WriteString("💵 安装费用: " + installText + "（一次性）\n")
+				msg.WriteString("🧾 首月合计: " + firstMonthText + "\n")
 			}
 		} else {
 			msg.WriteString("💰 价格: " + priceText + "\n")
@@ -364,12 +363,12 @@ func (m *Monitor) buildAvailabilityAlert(planCode string, availableDCs []map[str
 	case priceErrorMessage != "":
 		msg.WriteString("💰 价格: 未获取到（" + priceErrorMessage + "）\n")
 		if installText != "" {
-			msg.WriteString("💵 安装费用: " + installText + "（一次性）\n")
+			msg.WriteString("💵 安装费用: " + formatInstallFeeLine(installText) + "\n")
 		}
 	default:
 		msg.WriteString("💰 价格: 未获取到\n")
 		if installText != "" {
-			msg.WriteString("💵 安装费用: " + installText + "（一次性）\n")
+			msg.WriteString("💵 安装费用: " + formatInstallFeeLine(installText) + "\n")
 		}
 	}
 
@@ -450,13 +449,16 @@ func (m *Monitor) buildAvailabilityAlert(planCode string, availableDCs []map[str
 	for _, dcInfo := range availableDCs {
 		dc, _ := dcInfo["dc"].(string)
 		if len(btnAccounts) == 0 {
-			targets = append(targets, target{dc: dc, accountID: btnAccountID,
-				label: dcDisplayShortName(dc) + " 一键下单"})
+			label := "⚡ 抢购 · " + dcButtonLabel(dc)
+			if len(availableDCs) == 1 {
+				label = "⚡ 立即抢购 (" + dcButtonLabel(dc) + ")"
+			}
+			targets = append(targets, target{dc: dc, accountID: btnAccountID, label: label})
 			continue
 		}
 		for _, a := range btnAccounts {
 			targets = append(targets, target{dc: dc, accountID: a.ID,
-				label: dcDisplayShortName(dc) + " · " + a.Name})
+				label: "⚡ " + dcButtonLabel(dc) + " · " + a.Name})
 		}
 	}
 
@@ -484,6 +486,38 @@ func (m *Monitor) buildAvailabilityAlert(planCode string, availableDCs []map[str
 			row = nil
 		}
 	}
+
+	// 底部高阶操作栏（全节点一键挂机 / 切换账户）
+	masterUUID := uuid.NewString()
+	allDCs := make([]string, 0, len(availableDCs))
+	for _, d := range availableDCs {
+		if dcStr, ok := d["dc"].(string); ok && dcStr != "" {
+			allDCs = append(allDCs, dcStr)
+		}
+	}
+	allDCsJoined := strings.Join(allDCs, ",")
+	m.AddMessageUUID(masterUUID, planCode, allDCsJoined, options, configInfo)
+	if btnAccountID != "" && m.state.DB != nil {
+		_ = m.state.DB.SetTelegramButtonAccount(masterUUID, btnAccountID)
+	}
+
+	hasMultiAccounts := m.state != nil && len(m.state.Accounts) > 1
+	var actionRow []btn
+	if len(availableDCs) > 1 {
+		cbAll, _ := json.Marshal(map[string]string{"a": "queue_all", "u": masterUUID})
+		actionRow = append(actionRow, btn{Text: "📥 全节点挂机入队", CallbackData: string(cbAll)})
+	} else if hasMultiAccounts {
+		cbQueue, _ := json.Marshal(map[string]string{"a": "queue_all", "u": masterUUID})
+		actionRow = append(actionRow, btn{Text: "📥 加入抢购队列", CallbackData: string(cbQueue)})
+	}
+	if hasMultiAccounts {
+		cbPick, _ := json.Marshal(map[string]string{"a": "pick_acc", "u": masterUUID})
+		actionRow = append(actionRow, btn{Text: "👤 切换下单账户", CallbackData: string(cbPick)})
+	}
+	if len(actionRow) > 0 {
+		keyboard = append(keyboard, actionRow)
+	}
+
 	replyMarkup := map[string]interface{}{"inline_keyboard": keyboard}
 	return msg.String(), replyMarkup
 }
@@ -614,10 +648,9 @@ func (m *Monitor) SendAvailabilityAlert(planCode, datacenter, status, changeType
 		if priceText != "" {
 			if installText != "" {
 				msg.WriteString("💰 月付价格: " + priceText + "\n")
+				msg.WriteString("💵 安装费用: " + formatInstallFeeLine(installText) + "\n")
 				if firstMonthText != "" {
-					msg.WriteString("💵 安装费用: " + installText + "（一次性，首月合计 " + firstMonthText + "）\n")
-				} else {
-					msg.WriteString("💵 安装费用: " + installText + "（一次性）\n")
+					msg.WriteString("🧾 首月合计: " + firstMonthText + "\n")
 				}
 			} else {
 				msg.WriteString("💰 实时价格: " + priceText + "\n")
@@ -713,8 +746,34 @@ func (m *Monitor) SendAvailabilityAlert(planCode, datacenter, status, changeType
 			configDesc = " [" + d + "]"
 		}
 	}
+	var replyMarkup map[string]interface{}
+	if changeType == "available" {
+		btnUUID := uuid.NewString()
+		options := optionsFromConfig(configInfo)
+		m.AddMessageUUID(btnUUID, planCode, datacenter, options, configInfo)
+		btnAccID := m.resolveNotifyAccountID(planCode)
+		if btnAccID != "" && m.state.DB != nil {
+			_ = m.state.DB.SetTelegramButtonAccount(btnUUID, btnAccID)
+		}
+		type btn struct {
+			Text         string `json:"text"`
+			CallbackData string `json:"callback_data"`
+		}
+		cb, _ := json.Marshal(map[string]string{"a": "add_to_queue", "u": btnUUID})
+		kb := [][]btn{
+			{{Text: "⚡ 立即抢购 (" + dcButtonLabel(datacenter) + ")", CallbackData: string(cb)}},
+		}
+		if m.state != nil && len(m.state.Accounts) > 1 {
+			cbPick, _ := json.Marshal(map[string]string{"a": "pick_acc", "u": btnUUID})
+			kb = append(kb, []btn{
+				{Text: "📥 加入抢购队列", CallbackData: string(cb)},
+				{Text: "👤 切换下单账户", CallbackData: string(cbPick)},
+			})
+		}
+		replyMarkup = map[string]interface{}{"inline_keyboard": kb}
+	}
 	m.state.Logger.Info(fmt.Sprintf("正在发送Telegram通知: %s@%s%s", planCode, datacenter, configDesc), "monitor")
-	if notify.Broadcast(m.state, msg.String(), nil) > 0 {
+	if notify.Broadcast(m.state, msg.String(), replyMarkup) > 0 {
 		m.state.Logger.Info(fmt.Sprintf("✅ Telegram通知发送成功: %s@%s%s - %s", planCode, datacenter, configDesc, changeType), "monitor")
 	} else {
 		m.state.Logger.Warn(fmt.Sprintf("⚠️ Telegram通知发送失败: %s@%s%s", planCode, datacenter, configDesc), "monitor")
@@ -763,7 +822,22 @@ func (m *Monitor) SendNewServerAlert(server map[string]interface{}) {
 	b.WriteString("⏰ 发现时间: " + m.nowBeijing().Format("2006-01-02 15:04:05") + "\n")
 	b.WriteString("⚡ 查看库存: /stock " + planCode)
 
-	notify.Broadcast(m.state, b.String(), nil)
+	type btn struct {
+		Text         string `json:"text"`
+		CallbackData string `json:"callback_data"`
+	}
+	var replyMarkup map[string]interface{}
+	if planCode != "" {
+		replyMarkup = map[string]interface{}{
+			"inline_keyboard": [][]btn{
+				{
+					{Text: "📦 查看当前库存", CallbackData: "i:P:s:" + planCode},
+					{Text: "⚡ 一键加入监控", CallbackData: "i:M:" + planCode},
+				},
+			},
+		}
+	}
+	notify.Broadcast(m.state, b.String(), replyMarkup)
 	m.state.Logger.Info(fmt.Sprintf("发送新服务器提醒: %v", planCode), "monitor")
 }
 
@@ -816,13 +890,30 @@ func (m *Monitor) productName(planCode, serverName string) string {
 		m.state.ServerPlansMu.RUnlock()
 	}
 	switch {
-	case name != "" && cpu != "":
+	case name != "" && cpu != "" && !strings.Contains(strings.ToLower(name), strings.ToLower(cpu)):
 		return name + " | " + cpu
 	case name != "":
 		return name
 	default:
 		return planCode
 	}
+}
+
+// dcButtonLabel 格式化按钮中的机房标签，统一国旗 + 大写 3 位代码 (如 🇩🇪 FRA, 🇫🇷 GRA)
+func dcButtonLabel(dc string) string {
+	city, az := availabilityDCCity(dc)
+	v, ok := dcDisplayShort[city]
+	if !ok {
+		return strings.ToUpper(dc)
+	}
+	parts := strings.SplitN(v, " ", 2)
+	if len(parts) == 2 {
+		v = parts[0] + " " + strings.ToUpper(parts[1])
+	}
+	if az != "" {
+		return v + "-" + az
+	}
+	return v
 }
 
 // dcLine "waw (波兰华沙)"。拿不到中文名就只写代码。
@@ -870,5 +961,21 @@ func computeFirstMonthTotal(monthlyText, installText string) string {
 		}
 	}
 	return ""
+}
+
+// formatInstallFeeLine 格式化安装费显示，附带（一次性）标识，并保留 addon 备注
+func formatInstallFeeLine(installText string) string {
+	if installText == "" {
+		return ""
+	}
+	if strings.Contains(installText, "（一次性") {
+		return installText
+	}
+	if idx := strings.Index(installText, "（"); idx != -1 {
+		prefix := strings.TrimSpace(installText[:idx])
+		suffix := installText[idx:]
+		return prefix + "（一次性，" + strings.TrimPrefix(suffix, "（")
+	}
+	return installText + "（一次性）"
 }
 

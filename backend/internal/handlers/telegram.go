@@ -299,10 +299,18 @@ func handleTelegramCallback(state *app.State, mon *monitor.Monitor, cb map[strin
 	}
 	state.Logger.Info(fmt.Sprintf("Telegram用户 %v 通过按钮添加到队列: %s@%s, 配置选项: %s, 账户: %s",
 		userID, planCode, dc, optsStr, accLabel), "telegram")
-	confirmMsg := fmt.Sprintf("✅ 已添加到抢购队列！\n\n型号: %s\n机房: %s\n配置: %s\n账户: %s\n\n系统将自动尝试下单。",
-		planCode, strings.ToUpper(dc), optsStr, accLabel)
-	telegram.AnswerCallback(state, idToString(cb["id"]), "已添加到队列！", false)
-	telegram.SendReply(state, chatID, confirmMsg, int64(messageID))
+	var b strings.Builder
+	b.WriteString("⚡ 抢购任务已建立入队！\n")
+	b.WriteString(telegram.CardDivider + "\n")
+	b.WriteString("📦 目标型号: " + planCode + "\n")
+	b.WriteString("📍 部署机房: " + telegram.DisplayDCFull(dc) + "\n")
+	b.WriteString("⚙️ 锁定配置: " + optsStr + "\n")
+	b.WriteString("👤 执行账户: " + accLabel + "\n")
+	b.WriteString(telegram.CardDivider + "\n")
+	b.WriteString("🚀 调度状态: 后台全天候高频监听中，官方一旦上架即刻锁单！\n")
+	b.WriteString("💡 常用指令: 发送 /queue 查看任务，/cancel 停止抢购")
+	telegram.AnswerCallback(state, idToString(cb["id"]), "⚡ 抢购任务已建立！正在极速锁单…", false)
+	telegram.SendReply(state, chatID, b.String(), int64(messageID))
 }
 
 // handleTelegramMessage 处理斜杠命令和文本下单消息。

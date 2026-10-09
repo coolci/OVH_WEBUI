@@ -277,8 +277,11 @@ func TestRenderPriceDisplayVariants(t *testing.T) {
 	if !contains(msg1, "💰 月付价格: €23.99/月") {
 		t.Errorf("应显示清晰的纯月付价格标签，实际：\n%s", msg1)
 	}
-	if !contains(msg1, "💵 安装费用: €35.99（一次性，首月合计 €59.98）") {
-		t.Errorf("应包含安装费与首月总计，实际：\n%s", msg1)
+	if !contains(msg1, "💵 安装费用: €35.99（一次性）") {
+		t.Errorf("应包含独立的安装费行，实际：\n%s", msg1)
+	}
+	if !contains(msg1, "🧾 首月合计: €59.98") {
+		t.Errorf("应独立换行优雅展示首月合计，实际：\n%s", msg1)
 	}
 
 	// Case 2: 无安装费
@@ -293,5 +296,39 @@ func TestRenderPriceDisplayVariants(t *testing.T) {
 		t.Errorf("无安装费时不应出现安装费行，实际：\n%s", msg2)
 	}
 }
+
+// 验证现代化按钮渲染（多机房排版、全节点入队等）
+func TestRenderModernButtons(t *testing.T) {
+	m := renderTestMonitor(t)
+	dcs := []map[string]interface{}{
+		{"dc": "fra", "raw_status": "1H-low"},
+		{"dc": "gra", "raw_status": "24H"},
+		{"dc": "bhs", "raw_status": "72H"},
+	}
+	cfg := map[string]interface{}{
+		"cached_price": "€23.99/月",
+	}
+	_, markup := m.buildAvailabilityAlert("24sys01-v1", dcs, cfg, "SYS-1", "", "", "")
+	lines := buttonLines(t, markup)
+
+	fmt.Println("\n┌─────────── 现代化多机房按钮渲染 ───────────")
+	for _, l := range lines {
+		fmt.Println("│ " + l)
+	}
+	fmt.Println("└──────────────────────────────────────────")
+
+	raw, _ := json.Marshal(markup)
+	rawStr := string(raw)
+	if !contains(rawStr, "⚡ 抢购 · 🇩🇪 FRA") {
+		t.Errorf("缺少 FRA 抢购按钮: %s", rawStr)
+	}
+	if !contains(rawStr, "⚡ 抢购 · 🇫🇷 GRA") {
+		t.Errorf("缺少 GRA 抢购按钮: %s", rawStr)
+	}
+	if !contains(rawStr, "📥 全节点挂机入队") {
+		t.Errorf("缺少全节点挂机入队按钮: %s", rawStr)
+	}
+}
+
 
 
