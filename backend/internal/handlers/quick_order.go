@@ -18,6 +18,13 @@ func QuickOrder(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "请求参数解析失败: " + err.Error()})
 			return
 		}
+		if params.AccountID == "" && params.AccountIDCamel == "" {
+			if acc := c.Query("account"); acc != "" {
+				params.AccountID = acc
+			} else if acc := c.Query("accountId"); acc != "" {
+				params.AccountID = acc
+			}
+		}
 
 		res := purchase.EnqueueQuickOrder(state, params)
 		if !res.Success {

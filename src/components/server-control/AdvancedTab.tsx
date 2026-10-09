@@ -8,7 +8,7 @@ function maskBlockValue(v: string, hidden: boolean): string {
 }
 import {
   Zap, Shield, FolderArchive, Globe, Wifi, Network, ShoppingBag, Settings, MapPin,
-  Power, AlertCircle, Plus, Trash2, KeyRound,
+  Power, AlertCircle, Plus, Trash2, KeyRound, Cloud,
 } from "lucide-react";
 import type { OwnedServer } from "@/hooks/use-server-control";
 import {
@@ -16,6 +16,7 @@ import {
   useServerFirewall, useSetFirewall,
   useServerBackupFtp, useActivateBackupFtp, useDeleteBackupFtp, useResetBackupFtpPassword,
   useBackupFtpAuthorizableBlocks, useAddBackupFtpAccess, useDeleteBackupFtpAccess,
+  useServerBackupCloud, useActivateBackupCloud, useDeleteBackupCloud, useChangeBackupCloudPassword,
   useServerSecondaryDns,
   useServerVirtualMac,
   useServerVrack,
@@ -35,7 +36,7 @@ import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { errorMessage } from "@/components/common/LoadFailed";
 
-/** 高级 Tab：旧前端的 9 个 sub-tab 全部接入 */
+/** 高级 Tab：独服运维管理（Burst, 防火墙, FTP备份, 云备份, DNS, vMAC, vRack, 可选配等） */
 export function AdvancedTab({ server }: { server: OwnedServer }) {
   const { t } = useTranslation();
   return (
@@ -44,6 +45,7 @@ export function AdvancedTab({ server }: { server: OwnedServer }) {
         <TabsTrigger value="burst" className="text-[11px] sm:text-[12px] px-2"><Zap className="w-3.5 h-3.5 mr-1" />Burst</TabsTrigger>
         <TabsTrigger value="firewall" className="text-[11px] sm:text-[12px] px-2"><Shield className="w-3.5 h-3.5 mr-1" />{t("maint.advanced.tabs.firewall")}</TabsTrigger>
         <TabsTrigger value="ftp" className="text-[11px] sm:text-[12px] px-2"><FolderArchive className="w-3.5 h-3.5 mr-1" />FTP</TabsTrigger>
+        <TabsTrigger value="cloud" className="text-[11px] sm:text-[12px] px-2"><Cloud className="w-3.5 h-3.5 mr-1" />{t("maint.advanced.tabs.cloud", "云备份")}</TabsTrigger>
         <TabsTrigger value="dns" className="text-[11px] sm:text-[12px] px-2"><Globe className="w-3.5 h-3.5 mr-1" />{t("maint.advanced.tabs.dns")}</TabsTrigger>
         <TabsTrigger value="vmac" className="text-[11px] sm:text-[12px] px-2"><Wifi className="w-3.5 h-3.5 mr-1" />{t("maint.advanced.tabs.vmac")}</TabsTrigger>
         <TabsTrigger value="vrack" className="text-[11px] sm:text-[12px] px-2"><Network className="w-3.5 h-3.5 mr-1" />vRack</TabsTrigger>
@@ -55,6 +57,7 @@ export function AdvancedTab({ server }: { server: OwnedServer }) {
       <TabsContent value="burst"><BurstPane serviceName={server.serviceName} /></TabsContent>
       <TabsContent value="firewall"><FirewallPane serviceName={server.serviceName} /></TabsContent>
       <TabsContent value="ftp"><BackupFtpPane serviceName={server.serviceName} /></TabsContent>
+      <TabsContent value="cloud"><BackupCloudPane serviceName={server.serviceName} /></TabsContent>
       <TabsContent value="dns"><SecondaryDnsPane serviceName={server.serviceName} /></TabsContent>
       <TabsContent value="vmac"><VirtualMacPane serviceName={server.serviceName} /></TabsContent>
       <TabsContent value="vrack"><VrackPane serviceName={server.serviceName} /></TabsContent>
@@ -367,6 +370,136 @@ function BackupFtpPane({ serviceName }: { serviceName: string }) {
             ))}
           </div>
         )}
+      </div>
+    </Pane>
+  );
+}
+
+// ─────────────────────────────── Backup Cloud ───────────────────────────────
+
+function BackupCloudPane({ serviceName }: { serviceName: string }) {
+  const { t } = useTranslation();
+  const q = useServerBackupCloud(serviceName);
+  const act = useActivateBackupCloud();
+  const del = useDeleteBackupCloud();
+  const resetPwd = useChangeBackupCloudPassword();
+  const [cloudProjectId, setCloudProjectId] = useState("");
+  const [newPassword, setNewPassword] = useState<string | null>(null);
+
+  if (q.isPending) return <PaneSkeleton />;
+  const data = q.data;
+  if (!data) return <EmptyState icon={Cloud} title={t("maint.advanced.cloud.empty", "无云备份信息")} />;
+  if (data.unknownService) {
+    return (
+      <NotAvailable
+        icon={Cloud}
+        title={t("maint.advanced.cloud.unknownTitle", "服务不匹配")}
+        message={data.reason ? `${data.error || ""}: ${data.reason}` : data.error}
+      />
+    );
+  }
+  if (data.notAvailable) {
+    return <NotAvailable icon={Cloud} title={t("maint.advanced.cloud.unavailable", "云备份不可用")} message={data.error} />;
+  }
+  if (data.notActivated) {
+    return (
+      <Pane title="Backup Cloud" icon={Cloud}>
+        <p className="text-[12px] text-muted-foreground">
+          {t("maint.advanced.cloud.notActivatedDesc", "当前服务器尚未激活云备份服务。")}
+        </p>
+        <div className="space-y-3 pt-3 max-w-sm">
+          <div>
+            <label className="text-[11px] text-muted-foreground block mb-1">
+              {t("maint.advanced.cloud.projectIdLabel", "Public Cloud 项目 ID（可选，复用已有项目）")}
+            </label>
+            <Input
+              value={cloudProjectId}
+              onChange={(e) => setCloudProjectId(e.target.value)}
+              placeholder="留空则自动创建新项目"
+              className="text-xs"
+            />
+          </div>
+          <Button
+            size="sm"
+            disabled={act.isPending}
+            onClick={async () => {
+              try {
+                await act.mutateAsync({ serviceName, cloudProjectId: cloudProjectId.trim() || undefined });
+                toast.success(t("maint.advanced.cloud.activateSent", "云备份激活请求已发送"));
+              } catch (e: any) {
+                toast.error(errorMessage(e));
+              }
+            }}
+          >
+            {act.isPending ? t("maint.advanced.cloud.activating", "激活中…") : t("maint.advanced.cloud.activateBtn", "激活云备份")}
+          </Button>
+        </div>
+      </Pane>
+    );
+  }
+
+  const cloud: Record<string, any> = data.backupCloud || {};
+  return (
+    <Pane title="Backup Cloud" icon={Cloud}>
+      <Row label={t("maint.advanced.cloud.status", "状态")} value={<Chip tone="success">{t("maint.advanced.cloud.active", "已激活")}</Chip>} />
+      {cloud.cloudProjectId && (
+        <Row label={t("maint.advanced.cloud.projectId", "项目 ID")} value={<code className="font-mono text-[12px]">{cloud.cloudProjectId}</code>} />
+      )}
+      {cloud.containerName && (
+        <Row label={t("maint.advanced.cloud.container", "容器名称")} value={<code className="font-mono text-[12px]">{cloud.containerName}</code>} />
+      )}
+      {cloud.storageType && (
+        <Row label={t("maint.advanced.cloud.storageType", "存储类型")} value={cloud.storageType} />
+      )}
+      {newPassword && (
+        <div className="p-3 my-2 rounded-xl bg-success/10 border border-success/30 text-[12px] space-y-1">
+          <div className="font-semibold text-success">{t("maint.advanced.cloud.newPwdTitle", "新生成的云备份密码：")}</div>
+          <code className="font-mono block select-all bg-background px-2 py-1 rounded text-foreground font-bold">
+            {newPassword}
+          </code>
+          <p className="text-[11px] text-muted-foreground">{t("maint.advanced.cloud.newPwdDesc", "请务必妥善保存，此密码不会再次展示。")}</p>
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-2 pt-2">
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={resetPwd.isPending}
+          onClick={async () => {
+            try {
+              const res = await resetPwd.mutateAsync(serviceName);
+              const pwd = res?.password || res?.result?.password;
+              if (pwd) {
+                setNewPassword(pwd);
+              }
+              toast.success(t("maint.advanced.cloud.pwdResetToast", "密码已重置"));
+            } catch (e: any) {
+              toast.error(errorMessage(e));
+            }
+          }}
+        >
+          <KeyRound className="w-3.5 h-3.5 mr-1" />
+          {resetPwd.isPending ? t("maint.advanced.cloud.resettingPwd", "重置中…") : t("maint.advanced.cloud.resetPwd", "重置密码")}
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className="text-destructive hover:text-destructive"
+          disabled={del.isPending}
+          onClick={async () => {
+            if (!window.confirm(t("maint.advanced.cloud.confirmDelete", "确认停用云备份服务？（容器内数据不会被删除）"))) return;
+            try {
+              await del.mutateAsync(serviceName);
+              toast.success(t("maint.advanced.cloud.delToast", "云备份已停用"));
+            } catch (e: any) {
+              toast.error(errorMessage(e));
+            }
+          }}
+        >
+          <Trash2 className="w-3.5 h-3.5 mr-1" />
+          {del.isPending ? t("maint.advanced.cloud.deleting", "停用中…") : t("maint.advanced.cloud.deleteBtn", "停用云备份")}
+        </Button>
       </div>
     </Pane>
   );

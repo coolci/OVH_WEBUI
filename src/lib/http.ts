@@ -182,7 +182,11 @@ function createApiClient(): AxiosInstance {
     }
 
     // 相对 /api 的路径，或绝对 URL 中含控制/账户段
-    const isVps = url.includes("/vps-control") || url.startsWith("vps-control");
+    const isVps =
+      url.includes("/vps-control") ||
+      url.startsWith("vps-control") ||
+      url.includes("/vps-models") ||
+      url.startsWith("vps-models");
     const needAccount =
       isVps ||
       url.includes("/server-control") ||

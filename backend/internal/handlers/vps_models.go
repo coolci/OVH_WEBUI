@@ -21,7 +21,11 @@ func GetVPSModels(state *app.State) gin.HandlerFunc {
 		sub := c.Query("subsidiary")
 		if sub == "" {
 			// 不写死 IE:跟着当前账户所在站点走
-			sub = vps.DefaultSubsidiary(state, c.Query("accountId"))
+			accountID := c.Query("accountId")
+			if accountID == "" {
+				accountID = c.Query("account")
+			}
+			sub = vps.DefaultSubsidiary(state, accountID)
 		}
 		models, err := vps.Models(sub)
 		if err != nil {

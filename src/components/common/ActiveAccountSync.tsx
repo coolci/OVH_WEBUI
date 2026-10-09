@@ -4,6 +4,8 @@ import { useAccounts } from "@/hooks/use-accounts";
 import {
   getActiveServerControlAccount,
   setActiveServerControlAccount,
+  getActiveVpsControlAccount,
+  setActiveVpsControlAccount,
 } from "@/lib/http";
 
 /**
@@ -13,37 +15,58 @@ import {
 export function ActiveAccountSync() {
   const { data: accounts, isSuccess } = useAccounts();
   const qc = useQueryClient();
-  const lastFixed = useRef<string>("");
+  const lastFixedServer = useRef<string>("");
+  const lastFixedVps = useRef<string>("");
 
   useEffect(() => {
     if (!isSuccess || !accounts) return;
 
-    const active = getActiveServerControlAccount();
-    const exists = active && accounts.some((a) => a.id === active);
+    const defaultAcc = accounts.find((a) => a.isDefault) || accounts[0];
+
+    // 1. 同步 Server Control 活跃账户
+    const activeServer = getActiveServerControlAccount();
+    const serverExists = activeServer && accounts.some((a) => a.id === activeServer);
 
     if (accounts.length === 0) {
-      if (active) {
+      if (activeServer) {
         setActiveServerControlAccount("");
-        lastFixed.current = "";
+        lastFixedServer.current = "";
+      }
+      if (getActiveVpsControlAccount()) {
+        setActiveVpsControlAccount("");
+        lastFixedVps.current = "";
       }
       return;
     }
 
-    if (exists) {
-      lastFixed.current = active;
-      return;
+    let shouldInvalidate = false;
+
+    if (!serverExists && defaultAcc && defaultAcc.id !== lastFixedServer.current) {
+      setActiveServerControlAccount(defaultAcc.id);
+      lastFixedServer.current = defaultAcc.id;
+      shouldInvalidate = true;
+    } else if (serverExists) {
+      lastFixedServer.current = activeServer;
     }
 
-    // 无效 / 空 → 切到默认账户
-    const next = accounts.find((a) => a.isDefault) || accounts[0];
-    if (!next || next.id === lastFixed.current) return;
+    // 2. 同步 VPS Control 活跃账户
+    const activeVps = getActiveVpsControlAccount();
+    const vpsExists = activeVps && accounts.some((a) => a.id === activeVps);
 
-    setActiveServerControlAccount(next.id);
-    lastFixed.current = next.id;
-    // 清掉带旧 account 的缓存结果
-    void qc.invalidateQueries({ queryKey: ["server-control"] });
-    void qc.invalidateQueries({ queryKey: ["account"] });
-    void qc.invalidateQueries({ queryKey: ["vps-control"] });
+    if (!vpsExists && defaultAcc && defaultAcc.id !== lastFixedVps.current) {
+      setActiveVpsControlAccount(defaultAcc.id);
+      lastFixedVps.current = defaultAcc.id;
+      shouldInvalidate = true;
+    } else if (vpsExists) {
+      lastFixedVps.current = activeVps;
+    }
+
+    if (shouldInvalidate) {
+      // 清掉带旧 account 的缓存结果
+      void qc.invalidateQueries({ queryKey: ["server-control"] });
+      void qc.invalidateQueries({ queryKey: ["account"] });
+      void qc.invalidateQueries({ queryKey: ["vps-control"] });
+    }
   }, [accounts, isSuccess, qc]);
 
   return null;

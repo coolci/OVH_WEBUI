@@ -554,6 +554,7 @@ func main() {
 		api.GET("/vps-monitor/models", handlers.GetVPSModels(state))
 		api.GET("/vps-monitor/subscriptions", handlers.GetVPSSubscriptions(state))
 		api.POST("/vps-monitor/subscriptions", handlers.AddVPSSubscription(state))
+		api.POST("/vps-monitor/subscriptions/batch-add-all", handlers.BatchAddAllVPS(state))
 		api.PUT("/vps-monitor/subscriptions/:subscription_id", handlers.UpdateVPSSubscription(state))
 		api.DELETE("/vps-monitor/subscriptions/clear", handlers.ClearVPSSubscriptions(state))
 		api.DELETE("/vps-monitor/subscriptions/:subscription_id", handlers.RemoveVPSSubscription(state))

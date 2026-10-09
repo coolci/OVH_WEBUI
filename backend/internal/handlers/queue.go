@@ -23,17 +23,28 @@ import (
 func AddQueueItem(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var body struct {
-			AccountID     string   `json:"account_id"`
-			PlanCode      string   `json:"planCode"`
-			Datacenter    string   `json:"datacenter"`
-			Options       []string `json:"options"`
-			RetryInterval int      `json:"retryInterval"`
+			AccountID      string   `json:"account_id"`
+			AccountIDCamel string   `json:"accountId"`
+			PlanCode       string   `json:"planCode"`
+			Datacenter     string   `json:"datacenter"`
+			Options        []string `json:"options"`
+			RetryInterval  int      `json:"retryInterval"`
 			// AutoPay 下单成功后用默认支付方式自动付款(显式开关,默认关)
 			AutoPay bool `json:"autoPay"`
 			// Force 强制添加自定义或未在当前目录收录的型号入队
 			Force bool `json:"force"`
 		}
 		_ = c.ShouldBindJSON(&body)
+		if body.AccountID == "" && body.AccountIDCamel != "" {
+			body.AccountID = body.AccountIDCamel
+		}
+		if body.AccountID == "" {
+			if acc := c.Query("account"); acc != "" {
+				body.AccountID = acc
+			} else if acc := c.Query("accountId"); acc != "" {
+				body.AccountID = acc
+			}
+		}
 		if body.AccountID == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "缺少 account_id", "code": "E34CBF1D4"})
 			return

@@ -213,11 +213,20 @@ export const api = {
     datacenter: string;
     options?: string[];
     retryInterval?: number;
-  }) =>
-    apiRequest<{ status?: string; id?: string }>("/api/queue", {
+    account_id?: string;
+    accountId?: string;
+    autoPay?: boolean;
+    force?: boolean;
+  }) => {
+    const payload = {
+      ...item,
+      account_id: item.account_id || item.accountId,
+    };
+    return apiRequest<{ status?: string; id?: string }>("/api/queue", {
       method: "POST",
-      body: JSON.stringify(item),
-    }),
+      body: JSON.stringify(payload),
+    });
+  },
   removeQueueItem: (id: string) => apiRequest(`/api/queue/${id}`, { method: "DELETE" }),
   clearQueue: () =>
     apiRequest<Record<string, any>>("/api/queue/clear", { method: "DELETE" }),
@@ -230,13 +239,21 @@ export const api = {
     planCode: string;
     datacenter: string;
     options?: string[];
-    account_id: string;
+    account_id?: string;
+    accountId?: string;
     autoPay?: boolean;
-  }) =>
-    apiRequest<any>("/api/queue/quick-order", {
+    fromMonitor?: boolean;
+    skipDuplicateCheck?: boolean;
+  }) => {
+    const payload = {
+      ...order,
+      account_id: order.account_id || order.accountId,
+    };
+    return apiRequest<any>("/api/queue/quick-order", {
       method: "POST",
-      body: JSON.stringify(order),
-    }),
+      body: JSON.stringify(payload),
+    });
+  },
   // Go 队列处理器启动时即运行；保留兼容方法供旧 UI 调用
   getQueueProcessorStatus: async () => {
     try {
@@ -387,8 +404,12 @@ export const api = {
     apiRequest<Record<string, any>>(`/api/server-control/${encodeURIComponent(serviceName)}/interventions`),
   getPlannedInterventions: (serviceName: string) =>
     apiRequest<Record<string, any>>(`/api/server-control/${encodeURIComponent(serviceName)}/planned-interventions`),
-  getIpmiAccess: (serviceName: string) =>
-    apiRequest<Record<string, any>>(`/api/server-control/${encodeURIComponent(serviceName)}/console`),
+  getIpmiAccess: (serviceName: string, type?: "html5" | "jnlp" | "sol") => {
+    const q = type ? `?type=${encodeURIComponent(type)}` : "";
+    return apiRequest<Record<string, any>>(
+      `/api/server-control/${encodeURIComponent(serviceName)}/console${q}`
+    );
+  },
   getBurstStatus: (serviceName: string) =>
     apiRequest<Record<string, any>>(`/api/server-control/${encodeURIComponent(serviceName)}/burst`),
   toggleBurst: (serviceName: string, enable: boolean) =>
@@ -442,10 +463,10 @@ export const api = {
     }),
 
   getCacheInfo: () => apiRequest<any>("/api/cache/info"),
-  clearCache: (type?: "all" | "memory" | "files") =>
+  clearCache: (type?: "all" | "memory" | "sqlite" | "files") =>
     apiRequest<any>("/api/cache/clear", {
       method: "POST",
-      body: JSON.stringify({ type: type || "all" }),
+      body: JSON.stringify({ type: type === "files" ? "sqlite" : type || "all" }),
     }),
 
   // ==================== OVH 账户信息 ====================
@@ -589,7 +610,7 @@ export const api = {
       body: "{}",
     }),
   batchAddAllVps: (options?: Record<string, unknown>) =>
-    apiRequest<any>("/api/vps-monitor/subscriptions", {
+    apiRequest<any>("/api/vps-monitor/subscriptions/batch-add-all", {
       method: "POST",
       body: JSON.stringify(options || {}),
     }),
@@ -606,11 +627,13 @@ export const api = {
     options?: string[],
     accountId?: string
   ): Promise<any> => {
-    return apiRequest(`/api/servers/${encodeURIComponent(planCode)}/price`, {
+    const qs = accountId ? `?account=${encodeURIComponent(accountId)}` : "";
+    return apiRequest(`/api/servers/${encodeURIComponent(planCode)}/price${qs}`, {
       method: "POST",
       body: JSON.stringify({
         datacenter,
         options: options || [],
+        account_id: accountId || undefined,
         accountId: accountId || undefined,
       }),
     });

@@ -22,6 +22,7 @@ var quickOrderMu sync.Mutex
 // QuickOrderParams 快速下单入参
 type QuickOrderParams struct {
 	AccountID          string   `json:"account_id"` // 必填,哪个账户下单
+	AccountIDCamel     string   `json:"accountId"`  // 兼容前端 camelCase
 	PlanCode           string   `json:"planCode"`
 	Datacenter         string   `json:"datacenter"`
 	Options            []string `json:"options"`
@@ -45,6 +46,9 @@ type QuickOrderResult struct {
 // EnqueueQuickOrder 执行快速下单验证与入队逻辑。
 // 供 HTTP Handler (handlers.QuickOrder) 以及进程内监控 (monitor.batchOrder) 直接调用。
 func EnqueueQuickOrder(state *app.State, params QuickOrderParams) *QuickOrderResult {
+	if params.AccountID == "" && params.AccountIDCamel != "" {
+		params.AccountID = params.AccountIDCamel
+	}
 	if params.PlanCode == "" || params.Datacenter == "" {
 		return &QuickOrderResult{
 			Success:    false,

@@ -1,11 +1,10 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Helmet } from "react-helmet-async";
-import { Cpu, Terminal, Server, RefreshCw, Eye, EyeOff, CalendarClock, CalendarPlus, Repeat, Activity, Network, CalendarRange, Undo2 } from "lucide-react";
+import { Cpu, Server, RefreshCw, Eye, EyeOff, Activity, Network, CalendarRange } from "lucide-react";
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Chip } from "@/components/common/Chip";
@@ -405,67 +404,6 @@ function ServerTabs({ server }: { server: OwnedServer }) {
     </div>
   );
 }
-
-/** 紧凑胶囊:服务信息条的单元素。
- *  传 onClick → 视觉与右侧 outline 按钮(监控/网络规格)对齐:bg-background + accent hover,
- *  跟纯展示的胶囊(到期/开通/OS,bg-secondary/50)在外观上明确区分。 */
-function InfoPill({
-  icon,
-  label,
-  value,
-  onClick,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  onClick?: () => void;
-}) {
-  // 注意:本项目 --accent 在亮色模式被定义为近黑色(用作强调对比),不能用作 hover bg。
-  // 跟旁边 Button outline 变体对齐(用 hover:bg-muted,见 button.tsx)。
-  const cls = [
-    "inline-flex items-center gap-1.5 h-7 pl-2.5 pr-3 rounded-full border text-[12px]",
-    onClick
-      ? "border-border bg-background hover:bg-muted cursor-pointer transition-colors shadow-sm"
-      : "border-border bg-secondary/50",
-  ].join(" ");
-  const inner = (
-    <>
-      <span className="flex items-center gap-1 text-muted-foreground">
-        {icon}
-        {label}
-      </span>
-      <span className="font-medium text-foreground">{value}</span>
-    </>
-  );
-  if (onClick) {
-    return (
-      <button type="button" onClick={onClick} className={cls}>
-        {inner}
-      </button>
-    );
-  }
-  return <div className={cls}>{inner}</div>;
-}
-
-/** 续费状态友好文案。OVH 在 manager 后台标的 "Cancellation scheduled"
- *  其实就是 renew.deleteAtExpiration=true(到期不续 + 自动注销)。
- *
- *  - 到期注销         deleteAtExpiration=true (优先级最高,其它字段无意义)
- *  - 强制自动续费     forced=true (OVH 套餐限制,用户改不了)
- *  - 自动 / 手动      根据 automatic 显示,带 N 月周期
- */
-function formatRenewal(info: {
-  renewalType: boolean;
-  renewalPeriod: number;
-  renewalDeleteAtExpiration: boolean;
-  renewalForced: boolean;
-}): string {
-  if (info.renewalDeleteAtExpiration) return "到期注销";
-  const period = info.renewalPeriod > 0 ? ` · ${info.renewalPeriod}月` : "";
-  if (info.renewalForced) return `强制自动${period}`;
-  return (info.renewalType ? "自动" : "手动") + period;
-}
-
 
 const Page = () => (
   <>

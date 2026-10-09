@@ -34,9 +34,15 @@ export interface LogEntry {
   source: string;
 }
 
+export interface HistoryPhaseTiming {
+  name: string;
+  ms: number;
+}
+
 export interface HistoryEntry {
   id: string;
   taskId?: string;
+  accountId?: string;
   planCode: string;
   datacenter: string;
   options?: string[];
@@ -44,10 +50,21 @@ export interface HistoryEntry {
   orderId?: string | null;
   orderUrl?: string | null;
   orderStatus?: string | null;
+  orderStatusAt?: string | null;
+  expirationTime?: string | null;
+  retractionTime?: string | null;
   errorMessage?: string | null;
   purchaseTime: string;
   attemptCount?: number;
-  price?: { withTax?: number; currency?: string };
+  timing?: HistoryPhaseTiming[];
+  totalMs?: number;
+  price?: {
+    withTax?: number;
+    withoutTax?: number;
+    tax?: number;
+    currency?: string;
+    currencyCode?: string;
+  };
 }
 
 /** 监控状态：后端 snake_case 为准，camelCase 仅兼容旧类型引用 */
@@ -55,11 +72,12 @@ export interface MonitorStatus {
   running: boolean;
   subscriptions_count?: number;
   check_interval?: number;
+  known_servers_count?: number;
+  region_issues?: string[];
   /** @deprecated 后端字段为 subscriptions_count */
   subscriptionCount?: number;
   /** @deprecated 后端字段为 check_interval */
   checkInterval?: number;
-  known_servers_count?: number;
 }
 
 export interface Subscription {
@@ -73,8 +91,11 @@ export interface Subscription {
   history?: unknown[];
   autoOrder?: boolean;
   quantity?: number;
+  autoOrderAccountId?: string;
+  /** @deprecated 兼容旧字段，推荐使用 autoOrderAccountId */
   accountId?: string;
   autoPay?: boolean;
+  createdAt?: string;
 }
 
 export interface VpsSubscription {
@@ -89,10 +110,15 @@ export interface VpsSubscription {
   notifyUnavailable?: boolean;
   lastStatus?: Record<string, unknown>;
   autoOrder?: boolean;
+  quantity?: number;
+  autoOrderAccountId?: string;
+  /** @deprecated 兼容旧字段 */
+  accountId?: string;
   autoPay?: boolean;
   os?: string;
   retired?: boolean;
   createdAt?: string;
+  history?: unknown[];
 }
 
 export interface ServerPlan {

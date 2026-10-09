@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -389,3 +390,88 @@ func ManualCheckVPS(state *app.State) gin.HandlerFunc {
 		})
 	}
 }
+
+// BatchAddAllVPS POST /api/vps-monitor/subscriptions/batch-add-all
+func BatchAddAllVPS(state *app.State) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if ok, reason := notify.AnyAvailable(state, true); !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "没有可用的通知通道(Telegram / Webhook 至少配一个):" + reason})
+			return
+		}
+		var body struct {
+			OvhSubsidiary      string `json:"ovhSubsidiary"`
+			NotifyAvailable    *bool  `json:"notifyAvailable"`
+			NotifyUnavailable  *bool  `json:"notifyUnavailable"`
+			AutoOrder          bool   `json:"autoOrder"`
+			AutoOrderAccountID string `json:"autoOrderAccountId"`
+			AutoPay            bool   `json:"autoPay"`
+		}
+		_ = c.ShouldBindJSON(&body)
+		sub := vps.NormalizeSubsidiary(body.OvhSubsidiary)
+		if sub == "" {
+			sub = vps.DefaultSubsidiary(state, body.AutoOrderAccountID)
+		}
+		if !ovh.KnownSubsidiary(sub) {
+			sub = "IE"
+		}
+		models, err := vps.Models(sub)
+		if err != nil || len(models) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "无法获取 VPS 在售型号列表"})
+			return
+		}
+		notifyAvail := true
+		if body.NotifyAvailable != nil {
+			notifyAvail = *body.NotifyAvailable
+		}
+		notifyUnavail := false
+		if body.NotifyUnavailable != nil {
+			notifyUnavail = *body.NotifyUnavailable
+		}
+
+		state.VPSSubsMu.Lock()
+		existingMap := make(map[string]bool)
+		for _, s := range state.VPSSubscriptions {
+			existingMap[s.PlanCode+"@"+s.OvhSubsidiary] = true
+		}
+		addedCount := 0
+		now := time.Now().Format("2006-01-02 15:04:05")
+		for _, m := range models {
+			key := m.PlanCode + "@" + sub
+			if existingMap[key] {
+				continue
+			}
+			newSub := types.VPSSubscription{
+				ID:                 uuid.New().String(),
+				PlanCode:           m.PlanCode,
+				OvhSubsidiary:      sub,
+				Datacenters:        m.Datacenters,
+				MonitorLinux:       true,
+				MonitorWindows:     false,
+				NotifyAvailable:    notifyAvail,
+				NotifyUnavailable:  notifyUnavail,
+				LastStatus:         make(map[string]string),
+				History:            make([]map[string]interface{}, 0),
+				CreatedAt:          now,
+				AutoOrderAccountID: body.AutoOrderAccountID,
+				AutoOrder:          body.AutoOrder,
+				AutoPay:            body.AutoPay,
+				Quantity:           1,
+			}
+			state.VPSSubscriptions = append(state.VPSSubscriptions, newSub)
+			existingMap[key] = true
+			addedCount++
+		}
+		state.VPSSubsMu.Unlock()
+		_ = vps.SaveSubscriptions(state)
+
+		if !vps.Running() && len(state.VPSSubscriptions) > 0 {
+			vps.Start(state)
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"status":  "success",
+			"message": "已批量添加 " + strconv.Itoa(addedCount) + " 个 VPS 型号订阅",
+			"count":   addedCount,
+		})
+	}
+}
+

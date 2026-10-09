@@ -1269,6 +1269,106 @@ export function useDeleteBackupFtpAccess() {
   });
 }
 
+// ───────────────────────────────── Backup Cloud ─────────────────────────────────
+
+export interface BackupCloudResult {
+  backupCloud?: Record<string, any> | null;
+  notAvailable?: boolean;
+  notActivated?: boolean;
+  unknownService?: boolean;
+  error?: string;
+  reason?: string;
+}
+
+export function useServerBackupCloud(serviceName: string | null) {
+  return useQuery({
+    queryKey: qk.serverControl.backupCloud(serviceName || ""),
+    queryFn: async (): Promise<BackupCloudResult> => {
+      try {
+        const res = await api.get(`/server-control/${serviceName}/backup-cloud`);
+        if (res.data?.success === false) {
+          return {
+            notAvailable: true,
+            unknownService: res.data?.unknownService === true,
+            error: res.data?.error,
+            reason: res.data?.reason,
+          };
+        }
+        return { backupCloud: res.data?.backupCloud || null };
+      } catch (e: any) {
+        if (e?.response?.status === 404) {
+          if (e?.response?.data?.unknownService === true) {
+            return {
+              notAvailable: true,
+              unknownService: true,
+              error: e?.response?.data?.error,
+              reason: e?.response?.data?.reason,
+            };
+          }
+          if (e?.response?.data?.notActivated === true) {
+            return { notActivated: true };
+          }
+        }
+        return { notAvailable: true, error: apiMessage(e) || e?.message };
+      }
+    },
+    enabled: !!serviceName,
+  });
+}
+
+export function useActivateBackupCloud() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { serviceName: string; cloudProjectId?: string; projectDescription?: string }) => {
+      const res = await api.post(`/server-control/${vars.serviceName}/backup-cloud`, {
+        cloudProjectId: vars.cloudProjectId,
+        projectDescription: vars.projectDescription,
+      });
+      return res.data;
+    },
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: qk.serverControl.backupCloud(vars.serviceName) });
+    },
+  });
+}
+
+export function useDeleteBackupCloud() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (serviceName: string) => {
+      const res = await api.delete(`/server-control/${serviceName}/backup-cloud`);
+      return res.data;
+    },
+    onSuccess: (_, serviceName) => {
+      qc.invalidateQueries({ queryKey: qk.serverControl.backupCloud(serviceName) });
+    },
+  });
+}
+
+export function useChangeBackupCloudPassword() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (serviceName: string) => {
+      const res = await api.post(`/server-control/${serviceName}/backup-cloud/password`);
+      return res.data;
+    },
+    onSuccess: (_, serviceName) => {
+      qc.invalidateQueries({ queryKey: qk.serverControl.backupCloud(serviceName) });
+    },
+  });
+}
+
+export function useBackupCloudOfferDetails(serviceName: string | null) {
+  return useQuery({
+    queryKey: qk.serverControl.backupCloudOffer(serviceName || ""),
+    queryFn: async () => {
+      const res = await api.get(`/server-control/${serviceName}/backup-cloud/offer-details`);
+      return res.data;
+    },
+    enabled: !!serviceName,
+  });
+}
+
 // ───────────────────────────────── Secondary DNS / vMAC / vRack ─────────────────────────────────
 
 export interface SecondaryDnsDomain extends DetailErrorMarked {

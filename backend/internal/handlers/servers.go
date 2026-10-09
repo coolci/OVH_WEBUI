@@ -376,15 +376,22 @@ func ServerPrice(state *app.State) gin.HandlerFunc {
 			return
 		}
 		var body struct {
-			AccountID  string   `json:"account_id"`
-			Datacenter string   `json:"datacenter"`
-			Options    []string `json:"options"`
+			AccountID      string   `json:"account_id"`
+			AccountIDCamel string   `json:"accountId"`
+			Datacenter     string   `json:"datacenter"`
+			Options        []string `json:"options"`
 		}
 		_ = c.ShouldBindJSON(&body)
 
 		accountID := c.Query("account")
 		if accountID == "" {
+			accountID = c.Query("accountId")
+		}
+		if accountID == "" {
 			accountID = body.AccountID
+		}
+		if accountID == "" {
+			accountID = body.AccountIDCamel
 		}
 		if accountID != "" {
 			if _, ok := state.FindAccount(accountID); !ok {
