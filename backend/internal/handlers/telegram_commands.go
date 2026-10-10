@@ -365,11 +365,10 @@ func cmdPrice(state *app.State, args []string) string {
 			b.WriteString(fmt.Sprintf("🧾 首月订单总计: %.2f %s（含安装费）\n", p.Monthly+p.Install, p.Currency))
 		}
 	} else {
-		if withTax != nil {
-			b.WriteString(fmt.Sprintf("💵 官方含税价: %v %s / 月\n", withTax, currency))
-		}
 		if withoutTax != nil {
-			b.WriteString(fmt.Sprintf("💴 官方未税价: %v %s / 月\n", withoutTax, currency))
+			b.WriteString(fmt.Sprintf("💵 官方月付续费: %v %s / 月\n", withoutTax, currency))
+		} else if withTax != nil {
+			b.WriteString(fmt.Sprintf("💵 官方月付续费: %v %s / 月\n", withTax, currency))
 		}
 	}
 	if pErr != nil && withTax == nil && withoutTax == nil {

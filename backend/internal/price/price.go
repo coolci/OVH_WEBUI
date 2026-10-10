@@ -401,9 +401,10 @@ func GetInternal(state *app.State, accountID, planCode, datacenter string, optio
 		}
 	}
 
+	withoutTaxStr := fmt.Sprintf("%v", priceInfo.Prices["withoutTax"])
 	withTaxStr := fmt.Sprintf("%v", priceInfo.Prices["withTax"])
 	currencyStr := fmt.Sprintf("%v", priceInfo.Prices["currencyCode"])
-	state.Logger.Info(fmt.Sprintf("价格查询成功: 总价含税=%s %s", withTaxStr, currencyStr), "price")
+	state.Logger.Info(fmt.Sprintf("价格查询成功: 总价未税=%s, 含税=%s %s", withoutTaxStr, withTaxStr, currencyStr), "price")
 
 	if degraded {
 		state.Logger.Warn("询价结果降级（购物车未完全配置成功）: "+degradedReason, "price")

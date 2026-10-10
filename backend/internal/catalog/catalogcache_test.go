@@ -302,3 +302,53 @@ func TestRegionBucketForSubsidiary(t *testing.T) {
 		}
 	}
 }
+
+func TestPriceForOptionsWithoutTax(t *testing.T) {
+	resetCatalogCaches()
+	orig := fetchSubsidiaryCatalog
+	defer func() { fetchSubsidiaryCatalog = orig; resetCatalogCaches() }()
+
+	fetchSubsidiaryCatalog = func(state *app.State, subsidiary string) (*subsidiaryCatalog, error) {
+		return &subsidiaryCatalog{
+			plans: map[string]planConfig{
+				"24sys01-v1": {
+					monthly: PriceParts{Price: 29.99, Tax: 5.998, OK: true},
+					install: PriceParts{Price: 29.99, Tax: 5.998, OK: true},
+				},
+			},
+			addons: map[string]planConfig{
+				"addon-ram-64g": {
+					monthly: PriceParts{Price: 10.0, Tax: 2.0, OK: true},
+					install: PriceParts{Price: 5.0, Tax: 1.0, OK: true},
+				},
+			},
+			currency:  "EUR",
+			fetchedAt: time.Now(),
+		}, nil
+	}
+
+	st := testState(t)
+	// 测试纯 plan，必须返回未税价格
+	p, err := PriceForOptions(st, "", "24sys01-v1", nil)
+	if err != nil {
+		t.Fatalf("PriceForOptions 出错: %v", err)
+	}
+	if p.Monthly != 29.99 {
+		t.Errorf("Monthly = %v, 期望 29.99 (不含税)", p.Monthly)
+	}
+	if p.Install != 29.99 {
+		t.Errorf("Install = %v, 期望 29.99 (不含税)", p.Install)
+	}
+
+	// 测试带 addon，必须累加未税价格
+	pWithAddon, err := PriceForOptions(st, "", "24sys01-v1", []string{"addon-ram-64g"})
+	if err != nil {
+		t.Fatalf("PriceForOptions 出错: %v", err)
+	}
+	if pWithAddon.Monthly != 39.99 {
+		t.Errorf("带 addon 的 Monthly = %v, 期望 39.99 (29.99 + 10.0)", pWithAddon.Monthly)
+	}
+	if pWithAddon.Install != 34.99 {
+		t.Errorf("带 addon 的 Install = %v, 期望 34.99 (29.99 + 5.0)", pWithAddon.Install)
+	}
+}

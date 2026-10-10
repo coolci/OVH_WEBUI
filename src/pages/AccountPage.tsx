@@ -229,10 +229,11 @@ function OrdersTab() {
           <div className="divide-y divide-border/40">
             {(orders.data || []).map((o, idx) => {
               const id = o.orderId != null ? o.orderId : idx;
+              const priceObj = o.priceWithoutTax?.value != null ? o.priceWithoutTax : o.priceWithTax;
               const priceText =
-                o.priceWithTax?.text ||
-                (o.priceWithTax?.value != null
-                  ? `${o.priceWithTax.value} ${o.priceWithTax.currencyCode || ""}`
+                priceObj?.text ||
+                (priceObj?.value != null
+                  ? `${priceObj.value} ${priceObj.currencyCode || ""}`
                   : "—");
               const dateStr = formatDateTime(o.date);
               return (

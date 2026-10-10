@@ -123,7 +123,7 @@ function orderStatusView(item: PurchaseHistory): {
  * 成交价 + 币种。币种缺失时只显示金额并在 title 里说明，绝不补 "EUR"。
  */
 function HistoryPrice({ item, strike }: { item: PurchaseHistory; strike: boolean }) {
-  const value = item.price?.withTax;
+  const value = item.price?.withoutTax != null ? item.price.withoutTax : item.price?.withTax;
   if (value == null) return <span className="text-muted-foreground">—</span>;
   const currency = (item.price?.currencyCode || "").trim();
   return (

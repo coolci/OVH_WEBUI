@@ -564,7 +564,9 @@ const TelegramOrderPage = () => {
                       <div className="p-3 bg-secondary/30 rounded-xl border border-border/60 flex items-center justify-between">
                         <span className="text-xs text-muted-foreground">价格信息</span>
                         <span className="text-base font-bold font-mono text-foreground">
-                          {lastResult.price.prices?.withTax?.toFixed(2) || lastResult.price} €
+                          {lastResult.price.prices?.withoutTax?.toFixed(2) ||
+                            lastResult.price.prices?.withTax?.toFixed(2) ||
+                            lastResult.price} €
                         </span>
                       </div>
                     )}

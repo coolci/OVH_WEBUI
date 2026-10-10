@@ -171,19 +171,22 @@ func (m *Monitor) verifyPriceAvailable(planCode, datacenter string, configInfo m
 		m.state.Logger.Debug(fmt.Sprintf("价格校验失败: %s@%s - prices字段缺失或类型错误", planCode, datacenter), "monitor")
 		return false, "prices字段缺失或类型错误"
 	}
-	withTax := prices["withTax"]
-	if withTax == nil {
-		errMsg := "withTax无效(<nil>)"
+	priceVal := prices["withoutTax"]
+	if priceVal == nil {
+		priceVal = prices["withTax"]
+	}
+	if priceVal == nil {
+		errMsg := "价格字段无效(<nil>)"
 		m.state.Logger.Debug(fmt.Sprintf("价格校验失败: %s@%s - %s", planCode, datacenter, errMsg), "monitor")
 		return false, errMsg
 	}
-	if v, ok := numconv.ToFloat64(withTax); ok {
+	if v, ok := numconv.ToFloat64(priceVal); ok {
 		if v == 0 {
-			m.state.Logger.Debug(fmt.Sprintf("价格校验失败: %s@%s - withTax无效(0)", planCode, datacenter), "monitor")
-			return false, "withTax无效(0)"
+			m.state.Logger.Debug(fmt.Sprintf("价格校验失败: %s@%s - 价格无效(0)", planCode, datacenter), "monitor")
+			return false, "价格无效(0)"
 		}
 	}
-	m.state.Logger.Debug(fmt.Sprintf("价格校验通过: %s@%s - 含税价格: %v", planCode, datacenter, withTax), "monitor")
+	m.state.Logger.Debug(fmt.Sprintf("价格校验通过: %s@%s - 价格(未税优先): %v", planCode, datacenter, priceVal), "monitor")
 	return true, ""
 }
 
@@ -245,9 +248,12 @@ func (m *Monitor) GetPriceInfoText(planCode, datacenter string, configInfo map[s
 		return ""
 	}
 	prices := result.Price.Prices
-	withTaxRaw, ok := prices["withTax"]
-	if !ok || withTaxRaw == nil {
-		m.state.Logger.Warn("价格获取成功但withTax为None", "monitor")
+	priceRaw := prices["withoutTax"]
+	if priceRaw == nil {
+		priceRaw = prices["withTax"]
+	}
+	if priceRaw == nil {
+		m.state.Logger.Warn("价格获取成功但withoutTax与withTax均为None", "monitor")
 		return ""
 	}
 	subsidiary := m.subsidiaryOfPricingAccount(accountID)
@@ -269,7 +275,7 @@ func (m *Monitor) GetPriceInfoText(planCode, datacenter string, configInfo map[s
 				planCode, datacenter, strings.ToUpper(currency), subsidiary, want), "monitor")
 		}
 	}
-	if v, ok := numconv.ToFloat64(withTaxRaw); ok {
+	if v, ok := numconv.ToFloat64(priceRaw); ok {
 		// 若能拿到目录中的安装费，且购物车总额包含了安装费，则月费应扣除安装费（避免安装费重复计算）
 		if p, err := catalog.PriceForOptions(m.state, accountID, planCode, options); err == nil && p.Install > 0 && v > p.Install {
 			v -= p.Install

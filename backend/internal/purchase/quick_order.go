@@ -253,8 +253,11 @@ func EnqueueQuickOrder(state *app.State, params QuickOrderParams) *QuickOrderRes
 				HTTPStatus: http.StatusBadRequest,
 			}
 		}
-		withTaxRaw, _ := priceResult.Price.Prices["withTax"]
-		if withTaxRaw == nil {
+		priceRaw := priceResult.Price.Prices["withoutTax"]
+		if priceRaw == nil {
+			priceRaw = priceResult.Price.Prices["withTax"]
+		}
+		if priceRaw == nil {
 			state.Logger.Warn("快速下单前价格缺失或无效: "+params.PlanCode+"@"+params.Datacenter, "quick_order")
 			return &QuickOrderResult{
 				Success:    false,
@@ -263,7 +266,7 @@ func EnqueueQuickOrder(state *app.State, params QuickOrderParams) *QuickOrderRes
 				HTTPStatus: http.StatusBadRequest,
 			}
 		}
-		if f, ok := numconv.ToFloat64(withTaxRaw); ok && f == 0 {
+		if f, ok := numconv.ToFloat64(priceRaw); ok && f == 0 {
 			state.Logger.Warn("快速下单前价格缺失或无效: "+params.PlanCode+"@"+params.Datacenter, "quick_order")
 			return &QuickOrderResult{
 				Success:    false,

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strings"
@@ -665,8 +666,7 @@ func WarmRegionCache(state *app.State) {
 
 // PlanPrice 一套配置的完整报价。
 type PlanPrice struct {
-	// Monthly / Install 都是含税金额(price + tax)。
-	// 只给含税:抢购时用户关心的是"要付多少",拆开反而要他自己加。
+	// Monthly / Install 统一使用不含税金额(price，不计入 tax)。
 	Monthly  float64
 	Install  float64
 	Currency string
@@ -678,6 +678,7 @@ type PlanPrice struct {
 //
 // 口径必须和前端 use-availability.ts 的 computePrice 一致:
 // base plan 的月费/安装费,加上每个选中 addon 各自的月费/安装费。
+// 统一按不含税价格计算。
 // 走的是已经缓存 2 小时的公开目录,不消耗账户 API 配额。
 //
 // 为什么不复用询价接口(price.GetInternal):那个要真的建购物车、加商品、拿 summary、删车,
@@ -697,8 +698,8 @@ func PriceForOptions(state *app.State, accountID, planCode string, options []str
 		return PlanPrice{}, fmt.Errorf("目录里 %s 没有可用的月费计价", planCode)
 	}
 	out := PlanPrice{
-		Monthly:  pc.monthly.Total(),
-		Install:  pc.install.Total(),
+		Monthly:  pc.monthly.Price,
+		Install:  pc.install.Price,
 		Currency: cat.currency,
 	}
 	for _, o := range options {
@@ -710,11 +711,13 @@ func PriceForOptions(state *app.State, accountID, planCode string, options []str
 			continue
 		}
 		if a.monthly.OK {
-			out.Monthly += a.monthly.Total()
+			out.Monthly += a.monthly.Price
 		}
 		if a.install.OK {
-			out.Install += a.install.Total()
+			out.Install += a.install.Price
 		}
 	}
+	out.Monthly = math.Round(out.Monthly*100) / 100
+	out.Install = math.Round(out.Install*100) / 100
 	return out, nil
 }
