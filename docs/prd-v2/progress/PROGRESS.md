@@ -157,9 +157,25 @@ test_ok:           true
     - **F01 / F01b 账户系统（19 端点）**：完整覆盖代理连通性探测、默认账户切换、全局代理池状态与测试、接口配置元数据、认证校验、账单发票、预付信用额度、OVH 邮件归档、客户档案、历史订单、退款记录、子账户管理、联系人变更申请审批/拒绝/重发邮件。
     - **F07 / F10 / F11 机器人与系统（18 端点）**：完整覆盖 Telegram 快捷下单、命令自动注册、状态检测与 Token 验真、日志检索/清空/即时刷盘、通知通道列表、多级缓存统计与手动清理、系统配置读写、仪表盘全局聚合统计、硬件/进程运行时指标、版本检测与在线自升级。
 
+13. **工业级规范吸收上游 Release v0.2.7 ~ v0.2.8（防腐层语义移植完成）**：
+    - **架构防腐层机制（Anti-Corruption Layer）**：
+      - 针对上游单体单仓目录（`server/` + `web/`）与当前工程的 Clean Architecture 架构（独立分层 `backend/` 与标准模块化 `src/`），制定并严格执行「防腐层语义吸收」标准，拒绝无脑 `git merge` 造成的目录污染与分层退化。
+    - **续费策略自愈容错**：
+      - 在 `backend/internal/ovh/explain.go` 中移植参数废弃诊断 `IsParamUnavailable`。
+      - 在 `backend/internal/handlers/util.go` 中封装通用自愈函数 `putServiceRenew`：当调用 OVH `/services/{serviceId}` 续费接口因参数废弃（如 `manualPayment` 不再支持）触发 400 校验错误时，自动剔除废弃参数并无感重试，彻底解决独服与 VPS 续费失败问题。
+    - **硬件中奖检测与多级报告系统（Hardware Lottery v2）**：
+      - 升级硬件中奖检测领域逻辑（`backend/internal/handlers/server_control_lottery.go`）：支持量化涨幅计算（`GainPct`）、硬盘介质越级判定（HDD→SSD→NVMe `MediaUp`）以及奖级评定（Tier 1: 单项中奖 / Tier 2: 双项大奖 / Tier 3: 全面头奖）。
+      - 引入 1 小时内存缓存保护（`hwLotteryCache`）与机器列表轻量级徽章预载，避免频繁打穿机房订购合同 API。
+      - 前端实现合规 `LotteryConfetti` 一次性庆祝动效粒子（遵循 `prefers-reduced-motion` 与 `sessionStorage` 会话保护），在设备选择器与服务器概览卡中呈现生动的中奖徽章与对比详情。
+    - **质量门禁与台账无偏差**：
+      - 后端 40 个 Go 包全量单测通过 (`go test -count=1 ./...` 100% OK)。
+      - 前端 Vite 生产构建 100% 通过 (`npm run build` 0 错误)。
+      - 台账权威校验保持 228/228 (100.0%) done，0 mismatches。
+      - 后端守护二进制已完成编译与热替换，生产服务稳定运行。
+
 ### 本会话未做完（下次第一件事）
 
-1. 全量 228 个端点已 100% 解耦并达到生产验收标准；保持日常自动化回归与监控即可。
+1. 全量 228 个端点与上游最新 release (v0.2.8) 已全量吸收并解耦落地；保持日常自动化回归与监控即可。
 
 ### 已尝试且失败的方案（避免重复踩坑）
 
