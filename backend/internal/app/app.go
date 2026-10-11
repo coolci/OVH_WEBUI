@@ -15,6 +15,7 @@ import (
 	"github.com/ovh-webui/server/internal/logger"
 	"github.com/ovh-webui/server/internal/netfp"
 	"github.com/ovh-webui/server/internal/ovh"
+	"github.com/ovh-webui/server/internal/repository"
 	"github.com/ovh-webui/server/internal/service/account"
 	"github.com/ovh-webui/server/internal/service/catalog"
 	"github.com/ovh-webui/server/internal/service/monitor"
@@ -185,6 +186,11 @@ type State struct {
 	CatalogService catalog.Service
 	ServerService  server.Service
 	MonitorService monitor.Service
+
+	// 数据持久层契约 (Repository Layer Contracts)
+	DeviceRepo   repository.DeviceRepository
+	TelegramRepo repository.TelegramRepository
+	ServerRepo   repository.ServerRepository
 }
 
 // NewState 构造应用状态。DB 必须已 Open。
@@ -205,16 +211,60 @@ func NewState(paths storage.Paths, cfg *config.Store, lg *logger.Logger, sqliteD
 		VPSCheckInterval:      60,
 		QueueProcessorRunning: true,
 	}
+	// 队列/历史以内存为真相源:OrderService 依赖 State 自身实现的 QueueStore/HistoryStore,
+	// 而不是直接依赖 DB(否则会被下一次整表落库覆盖)。
+	s.OrderService = order.NewService(s, s)
 	if sqliteDB != nil {
 		s.AccountService = account.NewService(sqliteDB)
-		s.OrderService = order.NewService(sqliteDB, sqliteDB)
 		s.CatalogService = catalog.NewService(sqliteDB)
 		s.ServerService = server.NewService(sqliteDB)
 		s.MonitorService = monitor.NewService(sqliteDB)
+
+		s.DeviceRepo = sqliteDB
+		s.TelegramRepo = sqliteDB
+		s.ServerRepo = sqliteDB
 	}
 	// Factory 闭包注入 lookup,允许按 id 查账户(空 id → 默认)
 	s.OVH = ovh.NewFactory(cfg, s.FindAccount)
 	return s
+}
+
+// ClearServerCache 清理服务器内存与/或 SQLite 缓存。
+func (s *State) ClearServerCache(cacheType string) []string {
+	cleared := []string{}
+	if cacheType == "all" || cacheType == "memory" {
+		s.ServerPlansMu.Lock()
+		s.ServerPlans = []types.ServerPlan{}
+		s.ServerPlansMu.Unlock()
+		s.ServerCache.Clear()
+		cleared = append(cleared, "memory")
+		s.Logger.Info("已清除内存缓存", "")
+	}
+	if cacheType == "all" || cacheType == "sqlite" {
+		if s.ServerRepo != nil {
+			if err := s.ServerRepo.ClearServers(); err != nil {
+				s.Logger.Error("清除 SQLite 服务器缓存失败: "+err.Error(), "")
+			} else {
+				cleared = append(cleared, "sqlite_servers")
+				s.Logger.Info("已清除 SQLite 服务器缓存", "")
+			}
+			if err := s.ServerRepo.ClearCatalogs(); err != nil {
+				s.Logger.Error("清除 SQLite catalog 缓存失败: "+err.Error(), "")
+			} else {
+				cleared = append(cleared, "sqlite_catalogs")
+				s.Logger.Info("已清除 SQLite catalog 缓存", "")
+			}
+		}
+	}
+	return cleared
+}
+
+// DBPath 返回底层 SQLite 文件路径(若未打开则为空)。
+func (s *State) DBPath() string {
+	if s.DB != nil {
+		return s.DB.Path
+	}
+	return ""
 }
 
 // HasAnyAccount 是否至少有一个 OVH 账户。

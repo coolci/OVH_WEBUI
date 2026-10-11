@@ -207,6 +207,7 @@ func Reboot(state *app.State) gin.HandlerFunc {
 			return
 		}
 		state.Logger.Info("服务器 "+svc+" 重启请求已发送", "server_control")
+		state.Logger.Audit("reboot_server", c.ClientIP(), svc, fmt.Sprintf("taskId=%v", result["taskId"]))
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"message": "服务器 " + svc + " 重启请求已发送",
@@ -885,6 +886,7 @@ func InstallOS(state *app.State) gin.HandlerFunc {
 			return
 		}
 		state.Logger.Info("服务器 "+svc+" 系统重装请求已发送，模板: "+templateName, "server_control")
+		state.Logger.Audit("reinstall_server", c.ClientIP(), svc, fmt.Sprintf("template=%s taskId=%v", templateName, result["taskId"]))
 		resp := gin.H{
 			"success": true,
 			"message": "服务器 " + svc + " 系统重装请求已发送",

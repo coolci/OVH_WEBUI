@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -29,6 +30,7 @@ func VpsStart(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
+		state.Logger.Audit("start_vps", c.ClientIP(), svc, fmt.Sprintf("taskId=%v", task["id"]))
 		state.Logger.Info("VPS "+svc+" 启动任务已创建", "vps_control")
 		c.JSON(http.StatusOK, gin.H{"success": true, "message": "启动任务已创建", "code": "E0216440D", "task": task})
 	}
@@ -54,6 +56,7 @@ func VpsStop(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
+		state.Logger.Audit("stop_vps", c.ClientIP(), svc, fmt.Sprintf("taskId=%v", task["id"]))
 		state.Logger.Info("VPS "+svc+" 关机任务已创建", "vps_control")
 		c.JSON(http.StatusOK, gin.H{"success": true, "message": "关机任务已创建", "code": "E5E03AED1", "task": task})
 	}
@@ -81,6 +84,7 @@ func VpsReboot(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
+		state.Logger.Audit("reboot_vps", c.ClientIP(), svc, fmt.Sprintf("taskId=%v", task["id"]))
 		state.Logger.Info("VPS "+svc+" 重启任务已创建", "vps_control")
 		c.JSON(http.StatusOK, gin.H{"success": true, "message": "重启任务已创建", "code": "E27941E94", "task": task})
 	}

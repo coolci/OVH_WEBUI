@@ -10,6 +10,7 @@ import (
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/monitor"
 	"github.com/ovh-webui/server/internal/ovh"
+	"github.com/ovh-webui/server/internal/platform/httperr"
 	"github.com/ovh-webui/server/internal/types"
 	"github.com/ovh-webui/server/internal/vps"
 )
@@ -149,20 +150,10 @@ func UpdateVPSSubscription(state *app.State) gin.HandlerFunc {
 			return
 		}
 
-		// 先在锁里取一份快照,校验和探测都在锁外做 —— 探测要发 HTTP,
-		// 拿着 VPSSubsMu 去等网络会把整个监控循环卡住
-		state.VPSSubsMu.Lock()
-		var cur types.VPSSubscription
-		found := false
-		for _, s := range state.VPSSubscriptions {
-			if s.ID == id {
-				cur, found = s, true
-				break
-			}
-		}
-		state.VPSSubsMu.Unlock()
+		// 获取当前快照，校验和探测都在锁外做 —— 探测要发 HTTP
+		cur, found := state.FindVPSSubscription(id)
 		if !found {
-			c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "订阅不存在: " + id})
+			httperr.NotFound(c, "订阅不存在: "+id, "")
 			return
 		}
 
@@ -251,43 +242,35 @@ func UpdateVPSSubscription(state *app.State) gin.HandlerFunc {
 			}
 		}
 
-		state.VPSSubsMu.Lock()
 		// 改子公司相当于换了一套库存视图,旧的 LastStatus 是对另一个站点的判断,
 		// 留着会让下一轮检查基于错误的基准算跳变。History 是既成事实,保留。
 		resetStatus := next.OvhSubsidiary != cur.OvhSubsidiary
-		idx := -1
-		for i, s := range state.VPSSubscriptions {
-			if s.ID == id {
-				idx = i
-				break
+		live, ok, err := state.MutateVPSSubscription(id, func(s *types.VPSSubscription) bool {
+			s.OvhSubsidiary = next.OvhSubsidiary
+			s.Datacenters = next.Datacenters
+			s.MonitorLinux = next.MonitorLinux
+			s.MonitorWindows = next.MonitorWindows
+			s.NotifyAvailable = next.NotifyAvailable
+			s.NotifyUnavailable = next.NotifyUnavailable
+			s.AutoOrderAccountID = next.AutoOrderAccountID
+			s.AutoOrder = next.AutoOrder
+			s.Quantity = next.Quantity
+			s.OS = next.OS
+			s.AutoPay = next.AutoPay
+			if resetStatus {
+				s.LastStatus = map[string]string{}
 			}
-		}
-		if idx < 0 {
-			// 校验期间被别人删了
-			state.VPSSubsMu.Unlock()
-			c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "订阅不存在: " + id})
+			return true
+		})
+		if err != nil {
+			httperr.Internal(c, "更新VPS订阅失败: "+err.Error())
 			return
 		}
-		// 拿锁里的当前值做基准,别把并发写进来的 History / LastStatus 覆盖掉
-		live := state.VPSSubscriptions[idx]
-		live.OvhSubsidiary = next.OvhSubsidiary
-		live.Datacenters = next.Datacenters
-		live.MonitorLinux = next.MonitorLinux
-		live.MonitorWindows = next.MonitorWindows
-		live.NotifyAvailable = next.NotifyAvailable
-		live.NotifyUnavailable = next.NotifyUnavailable
-		live.AutoOrderAccountID = next.AutoOrderAccountID
-		live.AutoOrder = next.AutoOrder
-		live.Quantity = next.Quantity
-		live.OS = next.OS
-		live.AutoPay = next.AutoPay
-		if resetStatus {
-			live.LastStatus = map[string]string{}
+		if !ok || live == nil {
+			httperr.NotFound(c, "订阅不存在: "+id, "")
+			return
 		}
-		state.VPSSubscriptions[idx] = live
-		state.VPSSubsMu.Unlock()
 
-		_ = vps.SaveSubscriptions(state)
 		state.Logger.Info("更新VPS订阅配置: "+live.PlanCode+" (subsidiary: "+live.OvhSubsidiary+")", "vps_monitor")
 
 		resp := gin.H{"status": "success", "message": "已更新 " + live.PlanCode, "subscription": live}

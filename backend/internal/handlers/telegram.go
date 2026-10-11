@@ -53,8 +53,8 @@ func ProcessTelegramUpdate(state *app.State, mon *monitor.Monitor, data map[stri
 		return
 	}
 
-	if updateID := telegram.ParseUpdateID(data["update_id"]); updateID > 0 && state.DB != nil {
-		claimed, err := state.DB.TryClaimTelegramUpdate(updateID)
+	if updateID := telegram.ParseUpdateID(data["update_id"]); updateID > 0 && state.TelegramRepo != nil {
+		claimed, err := state.TelegramRepo.TryClaimTelegramUpdate(updateID)
 		if err != nil {
 			state.Logger.Warn("update_id 幂等写入失败: "+err.Error(), "telegram")
 		} else if !claimed {
@@ -63,7 +63,7 @@ func ProcessTelegramUpdate(state *app.State, mon *monitor.Monitor, data map[stri
 		}
 		if updateID%50 == 0 {
 			before := float64(time.Now().Add(-time.Duration(telegram.UpdateIDRetentionDays) * 24 * time.Hour).Unix())
-			if n, err := state.DB.CleanupTelegramUpdates(before); err == nil && n > 0 {
+			if n, err := state.TelegramRepo.CleanupTelegramUpdates(before); err == nil && n > 0 {
 				state.Logger.Debug(fmt.Sprintf("已清理 %d 条过期 update_id", n), "telegram")
 			}
 		}
@@ -158,7 +158,7 @@ func handleTelegramCallback(state *app.State, mon *monitor.Monitor, cb map[strin
 
 	claimed := false // 是否占用了 DB 里的一次性按钮（失败要回滚）
 	{
-		row, ok, err := state.DB.ClaimTelegramButton(buttonID)
+		row, ok, err := state.TelegramRepo.ClaimTelegramButton(buttonID)
 		if err != nil {
 			state.Logger.Error("认领一键下单按钮失败: "+err.Error(), "telegram")
 			telegram.AnswerCallback(state, idToString(cb["id"]), "认领按钮失败", true)
@@ -167,7 +167,7 @@ func handleTelegramCallback(state *app.State, mon *monitor.Monitor, cb map[strin
 		if ok {
 			// 按钮过期（默认 24h）→ 归还并拒绝，避免用很久以前的库存信息下单
 			if time.Since(time.Unix(int64(row.CreatedAt), 0)) > telegram.ButtonTTL {
-				_ = state.DB.UnclaimTelegramButton(buttonID)
+				_ = state.TelegramRepo.UnclaimTelegramButton(buttonID)
 				state.Logger.Warn("一键下单按钮已过期: "+buttonID, "telegram")
 				telegram.AnswerCallback(state, idToString(cb["id"]), "该按钮已过期，请等待新的上架通知", true)
 				return
@@ -183,7 +183,7 @@ func handleTelegramCallback(state *app.State, mon *monitor.Monitor, cb map[strin
 			// 认领失败：要么已经点过（重放），要么这条按钮根本不存在
 			// DB 瞬时错误(busy/locked)时 exists=false,以前会掉进不消费 nonce 的内存回退,
 			// 同一颗按钮能下 N 单 —— 单独判错误,宁可让用户再点一次
-			_, exists, gerr := state.DB.GetTelegramButton(buttonID)
+			_, exists, gerr := state.TelegramRepo.GetTelegramButton(buttonID)
 			if gerr != nil {
 				state.Logger.Error("查询按钮状态失败,拒绝本次下单(防绕过一次性 nonce): "+gerr.Error(), "telegram")
 				telegram.AnswerCallback(state, cbID, "系统繁忙,请稍后再点一次", true)
@@ -216,7 +216,7 @@ func handleTelegramCallback(state *app.State, mon *monitor.Monitor, cb map[strin
 
 	if planCode == "" || dc == "" {
 		if claimed {
-			_ = state.DB.UnclaimTelegramButton(buttonID)
+			_ = state.TelegramRepo.UnclaimTelegramButton(buttonID)
 		}
 		telegram.AnswerCallback(state, idToString(cb["id"]), "缺少型号或机房", true)
 		return
@@ -244,7 +244,7 @@ func handleTelegramCallback(state *app.State, mon *monitor.Monitor, cb map[strin
 	}
 	if !hasAcc {
 		if claimed {
-			_ = state.DB.UnclaimTelegramButton(buttonID)
+			_ = state.TelegramRepo.UnclaimTelegramButton(buttonID)
 		}
 		state.Logger.Warn("Telegram 一键下单被拒绝：系统里没有任何 OVH 账户", "telegram")
 		telegram.AnswerCallback(state, idToString(cb["id"]), "未配置 OVH 账户", true)
@@ -283,7 +283,7 @@ func handleTelegramCallback(state *app.State, mon *monitor.Monitor, cb map[strin
 	// 这里只需要把按钮归还、告诉用户。ClaimTelegram 必须解开,否则用户按第二次会被当成重放。
 	if err := state.EnqueueItems([]types.QueueItem{item}, false); err != nil {
 		if claimed {
-			_ = state.DB.UnclaimTelegramButton(buttonID)
+			_ = state.TelegramRepo.UnclaimTelegramButton(buttonID)
 		}
 		state.Logger.Error("一键下单落库失败,已撤回: "+err.Error(), "telegram")
 		telegram.AnswerCallback(state, idToString(cb["id"]), "没能保存，请重试", true)

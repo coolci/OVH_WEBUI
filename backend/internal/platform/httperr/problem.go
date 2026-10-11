@@ -76,3 +76,13 @@ func PreconditionFailed(c *gin.Context, detail, code string) {
 func InternalError(c *gin.Context, detail, code string) {
 	Respond(c, http.StatusInternalServerError, "Internal Server Error", detail, code)
 }
+
+// Internal writes a 500 Internal Server Error problem response with default code.
+func Internal(c *gin.Context, detail string) {
+	InternalError(c, detail, "")
+}
+
+// BadGateway writes a 502 Bad Gateway problem response.
+func BadGateway(c *gin.Context, detail, code string) {
+	Respond(c, http.StatusBadGateway, "Bad Gateway", detail, code)
+}

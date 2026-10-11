@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Link, useLocation } from "react-router-dom";
-import { useBackendConnection } from "@/hooks/useApi";
+import { useBackendConnection } from "@/hooks/use-backend-connection";
 import { useRecentLogs } from "@/hooks/use-logs";
 import { useAccounts } from "@/hooks/use-accounts";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";

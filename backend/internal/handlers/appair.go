@@ -117,7 +117,7 @@ func (w *ipFailureWindow) fail(ip string) {
 // CreatePairingCode POST /api/app/pairing-codes —— 网页端生成二维码内容
 func CreatePairingCode(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		code, expiresAt, err := state.DB.CreatePairingCode()
+		code, expiresAt, err := state.DeviceRepo.CreatePairingCode()
 		if err != nil {
 			state.Logger.Error("生成配对码失败: "+err.Error(), "app")
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "生成配对码失败", "code": "E57703499"})
@@ -178,7 +178,7 @@ func RedeemPairingCode(state *app.State) gin.HandlerFunc {
 		if len(name) > 60 {
 			name = name[:60]
 		}
-		token, deviceID, err := state.DB.RedeemPairingCode(code, name)
+		token, deviceID, err := state.DeviceRepo.RedeemPairingCode(code, name)
 		if err != nil {
 			pairFailureLimiter.fail(ip)
 			pairGlobalLimiter.fail()
@@ -208,7 +208,7 @@ func RedeemPairingCode(state *app.State) gin.HandlerFunc {
 // ListAppDevices GET /api/app/devices —— 网页端设备管理列表
 func ListAppDevices(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		devs, err := state.DB.ListDevices()
+		devs, err := state.DeviceRepo.ListDevices()
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 			return
@@ -237,7 +237,7 @@ func RevokeAppDevice(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "设备 id 非法", "code": "E1703A9CF"})
 			return
 		}
-		if err := state.DB.RevokeDevice(id); err != nil {
+		if err := state.DeviceRepo.RevokeDevice(id); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 			return
 		}

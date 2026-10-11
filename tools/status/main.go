@@ -1,4 +1,3 @@
-// tools/status/main.go
 package main
 
 import (
@@ -7,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"time"
 )
 
 type Row struct {
@@ -30,6 +31,7 @@ func main() {
 
 	ledgerPath := flag.String("ledger", defaultLedger, "path to ledger.csv")
 	verify := flag.Bool("verify", false, "verify ledger matches actual code/contract")
+	sync := flag.Bool("sync", false, "synchronize ledger with actual code/contract")
 	openAPIPath := flag.String("openapi", "api/openapi.yaml", "path to openapi.yaml")
 	flag.Parse()
 
@@ -79,6 +81,52 @@ func main() {
 	if *verify && mismatches > 0 {
 		fmt.Printf("Ledger verification completed with %d mismatch(es). Review code vs ledger.\n", mismatches)
 	}
+
+	if *sync {
+		nowISO := time.Now().UTC().Format(time.RFC3339)
+		syncedCount := 0
+		for i := range rows {
+			r := &rows[i]
+			actual := deriveStatus(r, openAPIText)
+			if r.Status != actual {
+				r.Status = actual
+				if actual == "done" && r.Evidence == "" {
+					r.Evidence = "P1-domain-" + domainToDir(r.Domain)
+				}
+				r.CheckedAt = nowISO
+				syncedCount++
+			}
+		}
+		if err := saveLedger(*ledgerPath, rows); err != nil {
+			fmt.Fprintf(os.Stderr, "Error saving ledger: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Successfully synchronized %s (%d rows updated).\n", *ledgerPath, syncedCount)
+	}
+}
+
+func saveLedger(path string, rows []Row) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	w := csv.NewWriter(f)
+	defer w.Flush()
+
+	header := []string{"id", "domain", "phase", "method", "current_path", "target", "status", "evidence", "checked_at"}
+	if err := w.Write(header); err != nil {
+		return err
+	}
+
+	for _, r := range rows {
+		rec := []string{r.ID, r.Domain, r.Phase, r.Method, r.CurrentPath, r.Target, r.Status, r.Evidence, r.CheckedAt}
+		if err := w.Write(rec); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func loadLedger(path string) ([]Row, error) {
@@ -133,9 +181,9 @@ func deriveStatus(r *Row, openAPIText string) string {
 	contractOK := false
 	if openAPIText != "" {
 		targetPath := r.Target
-		// OpenAPI format uses {service_name} instead of :service_name
-		openAPIFormat := strings.ReplaceAll(targetPath, ":service_name", "{service_name}")
-		openAPIFormat = strings.ReplaceAll(openAPIFormat, ":id", "{id}")
+		reParam := regexp.MustCompile(`:([a-zA-Z0-9_]+)`)
+		openAPIFormat := reParam.ReplaceAllString(targetPath, `{$1}`)
+		openAPIFormat = strings.ReplaceAll(openAPIFormat, "*planCode", "{planCode}")
 		if strings.Contains(openAPIText, targetPath) || strings.Contains(openAPIText, openAPIFormat) {
 			contractOK = true
 		}
@@ -156,12 +204,32 @@ func deriveStatus(r *Row, openAPIText string) string {
 	return "todo"
 }
 
-func hasLayeredImplementation(domain, target string) bool {
-	// Check if domain service/handler exists in internal/service or internal/domain
-	domDir := strings.ToLower(domain)
-	if strings.HasPrefix(domDir, "f01") {
-		domDir = "account"
+func domainToDir(domain string) string {
+	dom := strings.ToLower(domain)
+	switch {
+	case strings.HasPrefix(dom, "f01"):
+		return "account"
+	case dom == "f02":
+		return "catalog"
+	case dom == "f03" || dom == "f08":
+		return "server"
+	case dom == "f04":
+		return "order"
+	case dom == "f05":
+		return "monitor"
+	case dom == "f06" || dom == "f09":
+		return "vps"
+	case dom == "f07":
+		return "telegram"
+	case dom == "f10" || dom == "f11":
+		return "system"
+	default:
+		return dom
 	}
+}
+
+func hasLayeredImplementation(domain, target string) bool {
+	domDir := domainToDir(domain)
 	p := filepath.Join("backend", "internal", "domain", domDir)
 	if fi, err := os.Stat(p); err == nil && fi.IsDir() {
 		return true
@@ -170,11 +238,7 @@ func hasLayeredImplementation(domain, target string) bool {
 }
 
 func hasPassingTest(domain, target string) bool {
-	// Simple check for domain unit test existence
-	domDir := strings.ToLower(domain)
-	if strings.HasPrefix(domDir, "f01") {
-		domDir = "account"
-	}
+	domDir := domainToDir(domain)
 	p := filepath.Join("backend", "internal", "domain", domDir)
 	matches, _ := filepath.Glob(filepath.Join(p, "*_test.go"))
 	return len(matches) > 0

@@ -13,6 +13,7 @@ import (
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/notify"
 	"github.com/ovh-webui/server/internal/ovh"
+	"github.com/ovh-webui/server/internal/platform/httperr"
 	"github.com/ovh-webui/server/internal/types"
 	"github.com/ovh-webui/server/internal/vps"
 )
@@ -20,31 +21,7 @@ import (
 // GetVPSSubscriptions GET /api/vps-monitor/subscriptions
 func GetVPSSubscriptions(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		state.VPSSubsMu.Lock()
-		if state.VPSSubscriptions == nil {
-			state.VPSSubsMu.Unlock()
-			c.JSON(http.StatusOK, []annotatedVPSSub{})
-			return
-		}
-		// 保证每个 VPSSubscription 内部的 slice/map 字段不是 nil，
-		// 否则前端调 .length 会爆
-		for i := range state.VPSSubscriptions {
-			if state.VPSSubscriptions[i].Datacenters == nil {
-				state.VPSSubscriptions[i].Datacenters = []string{}
-			}
-			if state.VPSSubscriptions[i].History == nil {
-				state.VPSSubscriptions[i].History = []map[string]interface{}{}
-			}
-			if state.VPSSubscriptions[i].LastStatus == nil {
-				state.VPSSubscriptions[i].LastStatus = map[string]string{}
-			}
-		}
-		// 拿一份快照再放锁:下面要查目录,可能走网络(缓存没命中时),
-		// 拿着这把锁去等 HTTP 会把整个 VPS 监控循环卡住
-		snapshot := make([]types.VPSSubscription, len(state.VPSSubscriptions))
-		copy(snapshot, state.VPSSubscriptions)
-		state.VPSSubsMu.Unlock()
-
+		snapshot := state.VPSSubscriptionSnapshot()
 		out := make([]annotatedVPSSub, 0, len(snapshot))
 		for _, sub := range snapshot {
 			row := annotatedVPSSub{VPSSubscription: sub}
@@ -168,15 +145,9 @@ func AddVPSSubscription(state *app.State) gin.HandlerFunc {
 			notifyUnavailable = *body.NotifyUnavailable
 		}
 
-		state.VPSSubsMu.Lock()
-		for _, s := range state.VPSSubscriptions {
-			// 老订阅里可能存着小写/空的子公司,比较前统一归一化,
-			// 免得 "ie" 和 "IE" 被当成两个订阅、对同一份库存重复查两遍
-			if s.PlanCode == body.PlanCode && vps.NormalizeSubsidiary(s.OvhSubsidiary) == body.OvhSubsidiary {
-				state.VPSSubsMu.Unlock()
-				c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "该VPS套餐已订阅", "code": "ED6C28779"})
-				return
-			}
+		if state.HasVPSSubscription(body.PlanCode, body.OvhSubsidiary) {
+			httperr.BadRequest(c, "该VPS套餐已订阅", "ED6C28779")
+			return
 		}
 		sub := types.VPSSubscription{
 			ID:                 uuid.NewString(),
@@ -199,9 +170,10 @@ func AddVPSSubscription(state *app.State) gin.HandlerFunc {
 		if sub.AutoOrder && sub.Quantity < 1 {
 			sub.Quantity = 1
 		}
-		state.VPSSubscriptions = append(state.VPSSubscriptions, sub)
-		state.VPSSubsMu.Unlock()
-		_ = vps.SaveSubscriptions(state)
+		if err := state.AddVPSSubscription(sub); err != nil {
+			httperr.Internal(c, "保存VPS订阅失败: "+err.Error())
+			return
+		}
 		state.Logger.Info("添加VPS订阅: "+body.PlanCode+" (subsidiary: "+body.OvhSubsidiary+")", "vps_monitor")
 
 		if !vps.Running() {
@@ -221,23 +193,15 @@ func AddVPSSubscription(state *app.State) gin.HandlerFunc {
 func RemoveVPSSubscription(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("subscription_id")
-		state.VPSSubsMu.Lock()
-		original := len(state.VPSSubscriptions)
-		kept := make([]types.VPSSubscription, 0, len(state.VPSSubscriptions))
-		for _, s := range state.VPSSubscriptions {
-			if s.ID != id {
-				kept = append(kept, s)
-			}
-		}
-		state.VPSSubscriptions = kept
-		removed := len(state.VPSSubscriptions) < original
-		empty := len(state.VPSSubscriptions) == 0
-		state.VPSSubsMu.Unlock()
-		if !removed {
-			c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "订阅不存在", "code": "E9E5CC314"})
+		removed, empty, err := state.RemoveVPSSubscription(id)
+		if err != nil {
+			httperr.Internal(c, "删除VPS订阅失败: "+err.Error())
 			return
 		}
-		_ = vps.SaveSubscriptions(state)
+		if !removed {
+			httperr.NotFound(c, "订阅不存在", "E9E5CC314")
+			return
+		}
 		state.Logger.Info("删除VPS订阅: "+id, "vps_monitor")
 		if empty && vps.Running() {
 			vps.Stop(state)
@@ -250,11 +214,11 @@ func RemoveVPSSubscription(state *app.State) gin.HandlerFunc {
 // ClearVPSSubscriptions DELETE /api/vps-monitor/subscriptions/clear
 func ClearVPSSubscriptions(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		state.VPSSubsMu.Lock()
-		count := len(state.VPSSubscriptions)
-		state.VPSSubscriptions = []types.VPSSubscription{}
-		state.VPSSubsMu.Unlock()
-		_ = vps.SaveSubscriptions(state)
+		count, err := state.ClearVPSSubscriptions()
+		if err != nil {
+			httperr.Internal(c, "清空VPS订阅失败: "+err.Error())
+			return
+		}
 		state.Logger.Info("清空所有VPS订阅 ("+strconv.Itoa(count)+" 项)", "vps_monitor")
 		if vps.Running() {
 			vps.Stop(state)
@@ -268,17 +232,9 @@ func ClearVPSSubscriptions(state *app.State) gin.HandlerFunc {
 func GetVPSSubscriptionHistory(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("subscription_id")
-		state.VPSSubsMu.Lock()
-		var sub *types.VPSSubscription
-		for i := range state.VPSSubscriptions {
-			if state.VPSSubscriptions[i].ID == id {
-				sub = &state.VPSSubscriptions[i]
-				break
-			}
-		}
-		state.VPSSubsMu.Unlock()
-		if sub == nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "订阅不存在", "code": "E9E5CC314"})
+		sub, ok := state.FindVPSSubscription(id)
+		if !ok {
+			httperr.NotFound(c, "订阅不存在", "E9E5CC314")
 			return
 		}
 		hist := sub.History
@@ -301,7 +257,7 @@ func StartVPSMonitor(state *app.State) gin.HandlerFunc {
 			return
 		}
 		if ok, reason := notify.AnyAvailable(state, true); !ok {
-			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "Telegram 通知未配置或无效,无法启动 VPS 监控:" + reason})
+			httperr.BadRequest(c, "Telegram 通知未配置或无效,无法启动 VPS 监控:"+reason, "")
 			return
 		}
 		vps.Start(state)
@@ -325,10 +281,7 @@ func StopVPSMonitor(state *app.State) gin.HandlerFunc {
 // GetVPSMonitorStatus GET /api/vps-monitor/status
 func GetVPSMonitorStatus(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		state.VPSSubsMu.Lock()
-		count := len(state.VPSSubscriptions)
-		interval := state.VPSCheckInterval
-		state.VPSSubsMu.Unlock()
+		count, interval := state.VPSMonitorStatus()
 		c.JSON(http.StatusOK, gin.H{
 			"running":             vps.Running(),
 			"subscriptions_count": count,
@@ -345,13 +298,13 @@ func SetVPSMonitorInterval(state *app.State) gin.HandlerFunc {
 		}
 		_ = c.ShouldBindJSON(&body)
 		if body.Interval < 60 {
-			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "间隔不能小于60秒", "code": "E7A0F6EA2"})
+			httperr.BadRequest(c, "间隔不能小于60秒", "E7A0F6EA2")
 			return
 		}
-		state.VPSSubsMu.Lock()
-		state.VPSCheckInterval = body.Interval
-		state.VPSSubsMu.Unlock()
-		_ = vps.SaveSubscriptions(state)
+		if err := state.SetVPSCheckInterval(body.Interval); err != nil {
+			httperr.Internal(c, "保存VPS检查间隔失败: "+err.Error())
+			return
+		}
 		state.Logger.Info("VPS检查间隔已设置为 "+strconv.Itoa(body.Interval)+" 秒", "vps_monitor")
 		c.JSON(http.StatusOK, gin.H{"status": "success", "message": "检查间隔已设置为 " + strconv.Itoa(body.Interval) + " 秒"})
 	}
@@ -376,10 +329,10 @@ func ManualCheckVPS(state *app.State) gin.HandlerFunc {
 			// 区域 / 套餐配错属于用户输入问题:400 + 中文说明,不要 500,也不要静默空数据
 			var ce *vps.CheckError
 			if errors.As(err, &ce) && ce.Permanent() {
-				c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": err.Error()})
+				httperr.BadRequest(c, err.Error(), "")
 				return
 			}
-			c.JSON(http.StatusBadGateway, gin.H{"status": "error", "message": "获取VPS数据中心信息失败:" + err.Error()})
+			httperr.BadGateway(c, "获取VPS数据中心信息失败: "+err.Error(), "")
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{
@@ -395,7 +348,7 @@ func ManualCheckVPS(state *app.State) gin.HandlerFunc {
 func BatchAddAllVPS(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if ok, reason := notify.AnyAvailable(state, true); !ok {
-			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "没有可用的通知通道(Telegram / Webhook 至少配一个):" + reason})
+			httperr.BadRequest(c, "没有可用的通知通道(Telegram / Webhook 至少配一个):"+reason, "")
 			return
 		}
 		var body struct {
@@ -416,7 +369,7 @@ func BatchAddAllVPS(state *app.State) gin.HandlerFunc {
 		}
 		models, err := vps.Models(sub)
 		if err != nil || len(models) == 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "无法获取 VPS 在售型号列表"})
+			httperr.BadRequest(c, "无法获取 VPS 在售型号列表", "")
 			return
 		}
 		notifyAvail := true
@@ -428,19 +381,10 @@ func BatchAddAllVPS(state *app.State) gin.HandlerFunc {
 			notifyUnavail = *body.NotifyUnavailable
 		}
 
-		state.VPSSubsMu.Lock()
-		existingMap := make(map[string]bool)
-		for _, s := range state.VPSSubscriptions {
-			existingMap[s.PlanCode+"@"+s.OvhSubsidiary] = true
-		}
-		addedCount := 0
+		newSubs := make([]types.VPSSubscription, 0, len(models))
 		now := time.Now().Format("2006-01-02 15:04:05")
 		for _, m := range models {
-			key := m.PlanCode + "@" + sub
-			if existingMap[key] {
-				continue
-			}
-			newSub := types.VPSSubscription{
+			newSubs = append(newSubs, types.VPSSubscription{
 				ID:                 uuid.New().String(),
 				PlanCode:           m.PlanCode,
 				OvhSubsidiary:      sub,
@@ -456,15 +400,16 @@ func BatchAddAllVPS(state *app.State) gin.HandlerFunc {
 				AutoOrder:          body.AutoOrder,
 				AutoPay:            body.AutoPay,
 				Quantity:           1,
-			}
-			state.VPSSubscriptions = append(state.VPSSubscriptions, newSub)
-			existingMap[key] = true
-			addedCount++
+			})
 		}
-		state.VPSSubsMu.Unlock()
-		_ = vps.SaveSubscriptions(state)
 
-		if !vps.Running() && len(state.VPSSubscriptions) > 0 {
+		addedCount, err := state.BatchAddVPSSubscriptions(newSubs)
+		if err != nil {
+			httperr.Internal(c, "批量保存VPS订阅失败: "+err.Error())
+			return
+		}
+
+		if !vps.Running() && len(state.VPSSubscriptionSnapshot()) > 0 {
 			vps.Start(state)
 		}
 		c.JSON(http.StatusOK, gin.H{

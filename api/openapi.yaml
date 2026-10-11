@@ -163,6 +163,5679 @@ paths:
               schema:
                 $ref: '#/components/schemas/CredentialVerificationResult'
 
+  /catalog:
+    get:
+      summary: Fetch raw or cached OVH Eco server catalog
+      operationId: GetCatalog
+      tags:
+        - F02
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: subsidiary
+          in: query
+          required: false
+          schema:
+            type: string
+            example: "IE"
+        - name: forceRefresh
+          in: query
+          required: false
+          schema:
+            type: boolean
+            example: false
+      responses:
+        '200':
+          description: Raw OVH catalog payload with server plans and options
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ServerPlan'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /availability/{planCode}:
+    get:
+      summary: Check stock and delivery times for a given server model
+      operationId: GetAvailability
+      tags:
+        - F02
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: planCode
+          in: path
+          required: true
+          schema:
+            type: string
+            example: "24ska01"
+      responses:
+        '200':
+          description: Availability status across datacenters
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DatacenterAvailability'
+    post:
+      summary: Refresh stock check for a given server model
+      operationId: CheckAvailability
+      tags:
+        - F02
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: planCode
+          in: path
+          required: true
+          schema:
+            type: string
+            example: "24ska01"
+      responses:
+        '200':
+          description: Updated availability status across datacenters
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DatacenterAvailability'
+
+  /queue:
+    get:
+      summary: List all active sniping queue tasks
+      operationId: GetQueue
+      tags:
+        - F04
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: List of queue items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/QueueItem'
+    post:
+      summary: Add a new server model to the sniping queue
+      operationId: AddQueueItem
+      tags:
+        - F04
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddQueueItemRequest'
+      responses:
+        '200':
+          description: Successfully enqueued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  itemIds:
+                    type: array
+                    items:
+                      type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /queue/{id}:
+    delete:
+      summary: Remove an item from the sniping queue
+      operationId: RemoveQueueItem
+      tags:
+        - F04
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successfully removed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /queue/{id}/interval:
+    put:
+      summary: Update retry interval for a queue item
+      operationId: UpdateQueueInterval
+      tags:
+        - F04
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - interval
+              properties:
+                interval:
+                  type: integer
+                  minimum: 1
+                  maximum: 86400
+                  example: 30
+      responses:
+        '200':
+          description: Interval updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /queue/{id}/status:
+    put:
+      summary: Update status (pause or resume) of a queue item
+      operationId: UpdateQueueStatus
+      tags:
+        - F04
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: string
+                  enum: [running, paused]
+                  example: "paused"
+      responses:
+        '200':
+          description: Status updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /queue/clear:
+    delete:
+      summary: Clear all items from sniping queue
+      operationId: ClearQueue
+      tags:
+        - F04
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Queue cleared
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  removed:
+                    type: integer
+
+  /queue/quick-order:
+    post:
+      summary: Place high-frequency quick order for in-stock server
+      operationId: QuickOrder
+      tags:
+        - F04
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuickOrderRequest'
+      responses:
+        '200':
+          description: Quick order enqueued or fulfilled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /queue/timings:
+    get:
+      summary: Get latency metrics and checkout step timings
+      operationId: GetQueueTimings
+      tags:
+        - F04
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Latency statistics
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /purchase-history:
+    get:
+      summary: Retrieve server purchase history log
+      operationId: GetPurchaseHistory
+      tags:
+        - F04
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Purchase history entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PurchaseHistoryEntry'
+    delete:
+      summary: Clear purchase history log
+      operationId: ClearPurchaseHistory
+      tags:
+        - F04
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: History cleared
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /purchase-history/refresh-status:
+    post:
+      summary: Sync and refresh real billing order statuses from OVHcloud
+      operationId: RefreshOrderStatuses
+      tags:
+        - F04
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Orders refreshed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  refreshed:
+                    type: integer
+
+  /servers:
+    get:
+      summary: List dedicated server catalog with cached availability
+      operationId: ListServers
+      tags:
+        - F03
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: account
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: showApiServers
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: forceRefresh
+          in: query
+          required: false
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Server plans list with cache metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServerCatalogResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '503':
+          description: No catalog data available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+
+  /servers/{planCode}/price:
+    post:
+      summary: Query dynamic real-time price for a dedicated server configuration
+      operationId: GetServerPrice
+      tags:
+        - F03
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: planCode
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: account
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: datacenter
+          in: query
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                accountId:
+                  type: string
+                datacenter:
+                  type: string
+                options:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Price calculation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceInfo'
+
+  /internal/monitor/price:
+    post:
+      summary: Query server price internally (local access)
+      operationId: InternalMonitorPrice
+      tags:
+        - F05
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - plan_code
+              properties:
+                account_id:
+                  type: string
+                plan_code:
+                  type: string
+                datacenter:
+                  type: string
+                options:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Internal price check result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceInfo'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          description: Forbidden for non-local IP
+
+  /monitor/interval:
+    put:
+      summary: Set polling check interval for server stock monitor
+      operationId: SetMonitorInterval
+      tags:
+        - F05
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                interval:
+                  type: integer
+                  minimum: 5
+                  maximum: 3600
+                  example: 30
+                check_interval:
+                  type: integer
+      responses:
+        '200':
+          description: Interval updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+                  check_interval:
+                    type: integer
+
+  /monitor/start:
+    post:
+      summary: Start the dedicated server inventory monitor background loop
+      operationId: StartMonitor
+      tags:
+        - F05
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Monitor started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+                  code:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /monitor/status:
+    get:
+      summary: Get status of server monitor
+      operationId: GetMonitorStatus
+      tags:
+        - F05
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Monitor status details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MonitorStatus'
+
+  /monitor/stop:
+    post:
+      summary: Stop the server inventory monitor background loop
+      operationId: StopMonitor
+      tags:
+        - F05
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Monitor stopped
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+                  code:
+                    type: string
+
+  /monitor/subscriptions:
+    get:
+      summary: List all active server stock subscriptions
+      operationId: GetSubscriptions
+      tags:
+        - F05
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: List of subscriptions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Subscription'
+    post:
+      summary: Add a new server stock subscription
+      operationId: AddSubscription
+      tags:
+        - F05
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddSubscriptionRequest'
+      responses:
+        '200':
+          description: Subscription added
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+                  region:
+                    type: string
+                  subsidiary:
+                    type: string
+                  regionWarning:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /monitor/subscriptions/{planCode}:
+    put:
+      summary: Update an existing server stock subscription
+      operationId: UpdateSubscription
+      tags:
+        - F05
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: planCode
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddSubscriptionRequest'
+      responses:
+        '200':
+          description: Subscription updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      summary: Remove a server stock subscription
+      operationId: RemoveSubscription
+      tags:
+        - F05
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: planCode
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Subscription removed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /monitor/subscriptions/{planCode}/history:
+    get:
+      summary: Get inventory availability history for a subscribed server plan
+      operationId: GetSubscriptionHistory
+      tags:
+        - F05
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: planCode
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Availability history entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SubscriptionHistoryEntry'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /monitor/subscriptions/batch-add-all:
+    post:
+      summary: Batch subscribe to all catalog server plans
+      operationId: BatchAddAllSubscriptions
+      tags:
+        - F05
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                notifyAvailable:
+                  type: boolean
+                notifyUnavailable:
+                  type: boolean
+                autoOrder:
+                  type: boolean
+                autoOrderAccountId:
+                  type: string
+      responses:
+        '200':
+          description: Batch subscribe result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  added:
+                    type: integer
+                  skipped:
+                    type: integer
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                  message:
+                    type: string
+
+  /monitor/subscriptions/clear:
+    delete:
+      summary: Clear all server stock subscriptions
+      operationId: ClearSubscriptions
+      tags:
+        - F05
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: All subscriptions cleared
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  count:
+                    type: integer
+                  message:
+                    type: string
+
+  /monitor/test-notification:
+    post:
+      summary: Broadcast a test notification across configured channels
+      operationId: TestNotification
+      tags:
+        - F05
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Test notification delivered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  delivered:
+                    type: integer
+                  message:
+                    type: string
+        '500':
+          description: No channels delivered
+
+  /vps-monitor/models:
+    get:
+      summary: List orderable VPS models from public catalog
+      operationId: GetVPSModels
+      tags:
+        - F06
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: subsidiary
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: accountId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of VPS models
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subsidiary:
+                    type: string
+                  models:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/VPSModel'
+
+  /vps-monitor/subscriptions:
+    get:
+      summary: List all active VPS stock subscriptions
+      operationId: GetVPSSubscriptions
+      tags:
+        - F06
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: List of VPS subscriptions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VPSSubscription'
+    post:
+      summary: Add a new VPS stock subscription
+      operationId: AddVPSSubscription
+      tags:
+        - F06
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddVPSSubscriptionRequest'
+      responses:
+        '200':
+          description: VPS subscription added
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+                  subscription:
+                    $ref: '#/components/schemas/VPSSubscription'
+                  retiredWarning:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /vps-monitor/subscriptions/{subscription_id}:
+    put:
+      summary: Update an existing VPS stock subscription
+      operationId: UpdateVPSSubscription
+      tags:
+        - F06
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: subscription_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddVPSSubscriptionRequest'
+      responses:
+        '200':
+          description: VPS subscription updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      summary: Remove a VPS stock subscription
+      operationId: RemoveVPSSubscription
+      tags:
+        - F06
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: subscription_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: VPS subscription removed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /vps-monitor/subscriptions/{subscription_id}/history:
+    get:
+      summary: Get inventory availability history for a VPS subscription
+      operationId: GetVPSSubscriptionHistory
+      tags:
+        - F06
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: subscription_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: VPS availability history entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /vps-monitor/subscriptions/batch-add-all:
+    post:
+      summary: Batch subscribe to all available VPS models
+      operationId: BatchAddAllVPSSubscriptions
+      tags:
+        - F06
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ovhSubsidiary:
+                  type: string
+                notifyAvailable:
+                  type: boolean
+                notifyUnavailable:
+                  type: boolean
+                autoOrder:
+                  type: boolean
+                autoOrderAccountId:
+                  type: string
+                autoPay:
+                  type: boolean
+      responses:
+        '200':
+          description: Batch VPS subscribe result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+                  count:
+                    type: integer
+
+  /vps-monitor/subscriptions/clear:
+    delete:
+      summary: Clear all VPS stock subscriptions
+      operationId: ClearVPSSubscriptions
+      tags:
+        - F06
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: All VPS subscriptions cleared
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  count:
+                    type: integer
+                  message:
+                    type: string
+
+  /vps-monitor/start:
+    post:
+      summary: Start the VPS inventory monitor background loop
+      operationId: StartVPSMonitor
+      tags:
+        - F06
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: VPS monitor started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+                  code:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /vps-monitor/stop:
+    post:
+      summary: Stop the VPS inventory monitor background loop
+      operationId: StopVPSMonitor
+      tags:
+        - F06
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: VPS monitor stopped
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+                  code:
+                    type: string
+
+  /vps-monitor/status:
+    get:
+      summary: Get status of VPS inventory monitor
+      operationId: GetVPSMonitorStatus
+      tags:
+        - F06
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: VPS monitor status details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  running:
+                    type: boolean
+                  subscriptions_count:
+                    type: integer
+                  check_interval:
+                    type: integer
+
+  /vps-monitor/interval:
+    put:
+      summary: Set polling check interval for VPS stock monitor
+      operationId: SetVPSMonitorInterval
+      tags:
+        - F06
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - interval
+              properties:
+                interval:
+                  type: integer
+                  minimum: 60
+                  example: 60
+      responses:
+        '200':
+          description: VPS monitor interval updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /vps-monitor/check/{plan_code}:
+    post:
+      summary: Manually check real-time datacenter availability for a VPS plan
+      operationId: ManualCheckVPS
+      tags:
+        - F06
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: plan_code
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ovhSubsidiary:
+                  type: string
+                accountId:
+                  type: string
+      responses:
+        '200':
+          description: VPS DC availability data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  ovhSubsidiary:
+                    type: string
+                  region:
+                    type: string
+                  data:
+                    type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /servers/list:
+    get:
+      summary: List dedicated servers belonging to account
+      operationId: ListMyServers
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: account
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of dedicated servers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DedicatedServerDetail'
+
+  /servers/aliases:
+    get:
+      summary: List all user-defined server aliases
+      operationId: ListServerAliases
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Map of server name to alias
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+
+  /servers/order-mapping:
+    get:
+      summary: Get mapping between servers and OVH purchase orders
+      operationId: GetOrderMapping
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Order mapping dictionary
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /servers/{service_name}/alias:
+    put:
+      summary: Set user-defined alias for a server
+      operationId: SetServerAlias
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - alias
+              properties:
+                alias:
+                  type: string
+      responses:
+        '200':
+          description: Alias updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+    delete:
+      summary: Remove user-defined alias for a server
+      operationId: DeleteServerAlias
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Alias removed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /servers/{service_name}/reboot:
+    post:
+      summary: Reboot dedicated server (hard power cycle)
+      operationId: RebootServer
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Reboot task queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  taskId:
+                    type: integer
+                  comment:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /servers/{service_name}/templates:
+    get:
+      summary: List available installation OS templates for server
+      operationId: GetOSTemplates
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OS templates list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    distribution:
+                      type: string
+
+  /servers/{service_name}/install:
+    post:
+      summary: Install operating system on dedicated server
+      operationId: InstallOS
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - templateName
+              properties:
+                templateName:
+                  type: string
+                hostname:
+                  type: string
+                sshKeyName:
+                  type: string
+      responses:
+        '200':
+          description: OS install task started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  taskId:
+                    type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /servers/{service_name}/install/status:
+    get:
+      summary: Get ongoing OS installation progress
+      operationId: GetInstallStatus
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Installation progress details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  progress:
+                    type: integer
+                  status:
+                    type: string
+
+  /servers/{service_name}/tasks:
+    get:
+      summary: List recent operations and maintenance tasks for server
+      operationId: GetServerTasks
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Tasks list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ServerTask'
+
+  /servers/{service_name}/tasks/{task_id}/available-timeslots:
+    get:
+      summary: Get available timeslots for a scheduled maintenance task
+      operationId: GetTaskAvailableTimeslots
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Available maintenance timeslots
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+
+  /servers/{service_name}/tasks/{task_id}/schedule:
+    post:
+      summary: Schedule a maintenance timeslot for task
+      operationId: ScheduleTaskTimeslot
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - timeslot
+              properties:
+                timeslot:
+                  type: string
+      responses:
+        '200':
+          description: Task scheduled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /servers/{service_name}/boot:
+    get:
+      summary: Get server boot script / iPXE configuration
+      operationId: GetBootConfig
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Boot configuration details
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /servers/{service_name}/boot/{boot_id}:
+    put:
+      summary: Update server boot configuration by ID
+      operationId: SetBootConfig
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: boot_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Boot configuration updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /servers/{service_name}/boot-mode:
+    get:
+      summary: Get available and current boot modes
+      operationId: GetBootModes
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Boot modes
+          content:
+            application/json:
+              schema:
+                type: object
+    put:
+      summary: Change server boot mode (local hard drive, rescue, network)
+      operationId: ChangeBootMode
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - bootMode
+              properties:
+                bootMode:
+                  type: string
+                rescueMail:
+                  type: string
+      responses:
+        '200':
+          description: Boot mode changed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /servers/{service_name}/monitoring:
+    get:
+      summary: Get ping/monitoring alert status from OVH SLA system
+      operationId: GetMonitoringStatus
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Monitoring status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  monitoring:
+                    type: boolean
+    put:
+      summary: Enable or disable OVH monitoring on dedicated server
+      operationId: SetMonitoringStatus
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - monitoring
+              properties:
+                monitoring:
+                  type: boolean
+      responses:
+        '200':
+          description: Monitoring state updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /servers/{service_name}/hardware:
+    get:
+      summary: Get physical hardware specifications of dedicated server
+      operationId: GetHardwareInfo
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Hardware specifications
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServerHardwareInfo'
+
+  /servers/{service_name}/hardware-disk-info:
+    get:
+      summary: Get physical disks and SMART details
+      operationId: GetHardwareDiskInfo
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Hardware disk information
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
+  /servers/{service_name}/hardware-raid-profiles:
+    get:
+      summary: Get hardware RAID profiles available on server controller
+      operationId: GetHardwareRaidProfiles
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: RAID profiles list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
+  /servers/{service_name}/hardware/replace:
+    post:
+      summary: Request technician hardware component replacement
+      operationId: HardwareReplace
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - component
+              properties:
+                component:
+                  type: string
+                comment:
+                  type: string
+      responses:
+        '200':
+          description: Replacement ticket opened
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  taskId:
+                    type: integer
+
+  /servers/{service_name}/bios-settings:
+    get:
+      summary: Get motherboard BIOS settings
+      operationId: GetBIOSSettings
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: BIOS configuration details
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /servers/{service_name}/bios-settings/sgx:
+    get:
+      summary: Get Intel SGX security enclave configuration
+      operationId: GetBIOSSettingsSGX
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: SGX status
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /servers/{service_name}/partition-schemes:
+    get:
+      summary: Get available partitioning schemes for server disk geometry
+      operationId: GetPartitionSchemes
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Partition schemes list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
+  /servers/{service_name}/ips:
+    get:
+      summary: List IP addresses routed to dedicated server
+      operationId: GetServerIPs
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of IP strings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+
+  /servers/{service_name}/ip-specs:
+    get:
+      summary: Get IP specifications and quota limits
+      operationId: GetIPSpecs
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: IP specifications
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /servers/{service_name}/reverse:
+    get:
+      summary: List reverse DNS records configured on server IPs
+      operationId: GetReverseDNS
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Reverse DNS records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ServerReverseDNS'
+    post:
+      summary: Set reverse DNS record for an IP address
+      operationId: SetReverseDNS
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServerReverseDNS'
+      responses:
+        '200':
+          description: Reverse DNS updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /servers/{service_name}/reverse/{ip}:
+    delete:
+      summary: Delete reverse DNS record for an IP address
+      operationId: DeleteReverseDNS
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: ip
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Reverse DNS deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /servers/{service_name}/secondary-dns:
+    get:
+      summary: List secondary DNS slave domains
+      operationId: GetSecondaryDNS
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Secondary DNS domains
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+    post:
+      summary: Add secondary DNS slave zone
+      operationId: AddSecondaryDNS
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - domain
+              properties:
+                domain:
+                  type: string
+      responses:
+        '200':
+          description: Secondary DNS domain added
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /servers/{service_name}/secondary-dns/{domain}:
+    delete:
+      summary: Delete secondary DNS slave zone
+      operationId: DeleteSecondaryDNS
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Secondary DNS domain removed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /servers/{service_name}/network-interfaces:
+    get:
+      summary: List physical network interface cards and MAC addresses
+      operationId: GetNetworkInterfaces
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: NIC list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
+  /servers/{service_name}/network-specs:
+    get:
+      summary: Get network specifications (public/vrack bandwidth limits)
+      operationId: GetNetworkSpecs
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Network bandwidth and routing limits
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /servers/{service_name}/network-stats:
+    get:
+      summary: Get real-time network interface packet statistics
+      operationId: GetNetworkInterfaceStats
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Interface traffic stats
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /servers/{service_name}/mrtg:
+    get:
+      summary: Get MRTG traffic metrics graph data
+      operationId: GetMRTGData
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: period
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [daily, weekly, monthly, yearly]
+      responses:
+        '200':
+          description: MRTG traffic series
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
+  /servers/{service_name}/statistics:
+    get:
+      summary: Get aggregate bandwidth consumption statistics
+      operationId: GetTrafficStatistics
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Traffic statistics
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /servers/{service_name}/console:
+    get:
+      summary: Request IPMI / KVM console session URL
+      operationId: GetIPMIConsole
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: IPMI console session
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url:
+                    type: string
+
+  /servers/{service_name}/ipmi-types:
+    get:
+      summary: Get supported remote console types (HTML5, Java, SOL)
+      operationId: GetIPMIAccessTypes
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Available IPMI types
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+
+  /servers/{service_name}/burst:
+    get:
+      summary: Get network bandwidth burst status
+      operationId: GetBurst
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Burst status
+          content:
+            application/json:
+              schema:
+                type: object
+    put:
+      summary: Enable or disable bandwidth burst
+      operationId: UpdateBurst
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: string
+                  enum: [active, inactive]
+      responses:
+        '200':
+          description: Burst updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /servers/{service_name}/firewall:
+    get:
+      summary: Get hardware anti-DDoS firewall state
+      operationId: GetFirewall
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Firewall state
+          content:
+            application/json:
+              schema:
+                type: object
+    put:
+      summary: Update hardware anti-DDoS firewall state
+      operationId: UpdateFirewall
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - enabled
+              properties:
+                enabled:
+                  type: boolean
+      responses:
+        '200':
+          description: Firewall state updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /servers/{service_name}/backup-ftp:
+    get:
+      summary: Get free 500GB Backup FTP storage details
+      operationId: GetBackupFTP
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Backup FTP details
+          content:
+            application/json:
+              schema:
+                type: object
+    post:
+      summary: Activate free Backup FTP storage
+      operationId: ActivateBackupFTP
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Backup FTP activation queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  taskId:
+                    type: integer
+    delete:
+      summary: Terminate Backup FTP storage
+      operationId: DeleteBackupFTP
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Backup FTP terminated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /servers/{service_name}/backup-ftp/access:
+    get:
+      summary: List authorized IP blocks for Backup FTP access
+      operationId: GetBackupFTPAccess
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Authorized IP blocks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+    post:
+      summary: Authorize an IP block for Backup FTP access
+      operationId: AddBackupFTPAccess
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - ipBlock
+              properties:
+                ipBlock:
+                  type: string
+      responses:
+        '200':
+          description: IP block authorized
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+    delete:
+      summary: Remove authorized IP block from Backup FTP
+      operationId: DeleteBackupFTPAccessQuery
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: ipBlock
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: IP block removed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /servers/{service_name}/backup-ftp/access/{ip_block}:
+    delete:
+      summary: Remove authorized IP block by path from Backup FTP
+      operationId: DeleteBackupFTPAccess
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: ip_block
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: IP block removed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /servers/{service_name}/backup-ftp/authorizable-blocks:
+    get:
+      summary: List eligible IP blocks that can be authorized for Backup FTP
+      operationId: GetBackupFTPAuthorizableBlocks
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Authorizable IP blocks list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+
+  /servers/{service_name}/backup-ftp/password:
+    post:
+      summary: Reset Backup FTP password (sent to account primary email)
+      operationId: ChangeBackupFTPPassword
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Password reset requested
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /servers/{service_name}/backup-cloud:
+    get:
+      summary: Get Backup Cloud storage configuration
+      operationId: GetBackupCloud
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Backup Cloud configuration
+          content:
+            application/json:
+              schema:
+                type: object
+    post:
+      summary: Activate Backup Cloud storage
+      operationId: ActivateBackupCloud
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Backup Cloud activated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+    delete:
+      summary: Delete Backup Cloud storage
+      operationId: DeleteBackupCloud
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Backup Cloud deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /servers/{service_name}/backup-cloud/offer-details:
+    get:
+      summary: Get Backup Cloud offer details and quota limits
+      operationId: GetBackupCloudOfferDetails
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Backup Cloud offer details
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /servers/{service_name}/backup-cloud/password:
+    post:
+      summary: Reset Backup Cloud password
+      operationId: ChangeBackupCloudPassword
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Password reset requested
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /servers/{service_name}/serviceinfo:
+    get:
+      summary: Get server subscription billing and renewal metadata
+      operationId: GetServiceInfo
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Service billing info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  serviceId:
+                    type: integer
+                  expiration:
+                    type: string
+                  status:
+                    type: string
+
+  /servers/{service_name}/serviceinfo/renewal:
+    put:
+      summary: Update server renewal policy (manual / automatic)
+      operationId: UpdateServiceRenewal
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - mode
+              properties:
+                mode:
+                  type: string
+                  enum: [manual, automatic]
+      responses:
+        '200':
+          description: Renewal policy updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /servers/{service_name}/terminate:
+    post:
+      summary: Immediately suspend and terminate dedicated server
+      operationId: TerminateService
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Server termination submitted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /servers/{service_name}/confirm-termination:
+    post:
+      summary: Confirm secondary token for server termination
+      operationId: ConfirmTermination
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - token
+              properties:
+                token:
+                  type: string
+                comment:
+                  type: string
+      responses:
+        '200':
+          description: Termination confirmed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /servers/{service_name}/termination-policy:
+    put:
+      summary: Set server expiration termination policy
+      operationId: UpdateTerminationPolicy
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - terminateAtExpiration
+              properties:
+                terminateAtExpiration:
+                  type: boolean
+      responses:
+        '200':
+          description: Termination policy updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /vps/list:
+    get:
+      summary: List all VPS instances
+      operationId: ListVps
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: List of VPS instances
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+
+  /vps/{service_name}/automated-backup:
+    get:
+      summary: Get VPS automated backup status
+      operationId: GetVpsAutomatedBackup
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Automated backup status
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /vps/{service_name}/change-contact:
+    post:
+      summary: Request change of contacts for VPS
+      operationId: ChangeVpsContact
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                contactAdmin:
+                  type: string
+                contactTech:
+                  type: string
+                contactBilling:
+                  type: string
+      responses:
+        '200':
+          description: Contact change requested
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /vps/{service_name}/confirm-termination:
+    post:
+      summary: Confirm VPS termination with token
+      operationId: ConfirmVpsTermination
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - token
+              properties:
+                token:
+                  type: string
+      responses:
+        '200':
+          description: VPS termination confirmed
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /vps/{service_name}/console:
+    post:
+      summary: Generate VPS web console URL
+      operationId: VpsGetConsoleUrl
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Console access URL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url:
+                    type: string
+
+  /vps/{service_name}/current-os:
+    get:
+      summary: Get currently installed operating system on VPS
+      operationId: GetVpsCurrentOS
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Current OS details
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /vps/{service_name}/datacenter:
+    get:
+      summary: Get VPS datacenter location
+      operationId: GetVpsDatacenter
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Datacenter details
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /vps/{service_name}/engagement:
+    get:
+      summary: Get VPS commitment / engagement details
+      operationId: GetVpsEngagement
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Commitment information
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /vps/{service_name}/engagement/available:
+    get:
+      summary: Get available engagement options for VPS
+      operationId: GetVpsEngagementAvailable
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Available engagement options
+          content:
+            application/json:
+              schema:
+                type: array
+
+  /vps/{service_name}/engagement/end-rule:
+    put:
+      summary: Update VPS commitment end rule
+      operationId: UpdateVpsEngagementEndRule
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                strategy:
+                  type: string
+      responses:
+        '200':
+          description: Engagement end rule updated
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /vps/{service_name}/engagement/request:
+    get:
+      summary: Get current commitment request
+      operationId: GetVpsEngagementRequest
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Engagement request details
+          content:
+            application/json:
+              schema:
+                type: object
+    post:
+      summary: Create new VPS commitment request
+      operationId: CreateVpsEngagementRequest
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Engagement request created
+          content:
+            application/json:
+              schema:
+                type: object
+    delete:
+      summary: Cancel pending commitment request
+      operationId: DeleteVpsEngagementRequest
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Engagement request cancelled
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /vps/{service_name}/info:
+    get:
+      summary: Get VPS technical specifications and status
+      operationId: GetVpsInfo
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: VPS technical specifications
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /vps/{service_name}/ips:
+    get:
+      summary: Get IP addresses assigned to VPS
+      operationId: GetVpsIps
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Assigned IP addresses
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+
+  /vps/{service_name}/ips/{ip}/reverse:
+    put:
+      summary: Set reverse DNS for VPS IP address
+      operationId: SetVpsIpReverse
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: ip
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - reverse
+              properties:
+                reverse:
+                  type: string
+      responses:
+        '200':
+          description: Reverse DNS updated
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /vps/{service_name}/mitigation:
+    get:
+      summary: Get VPS anti-DDoS mitigation status
+      operationId: GetVpsMitigation
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Anti-DDoS mitigation details
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /vps/{service_name}/mitigation/{ip}:
+    post:
+      summary: Enable anti-DDoS permanent mitigation for VPS IP
+      operationId: EnableVpsMitigation
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: ip
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Mitigation enabled
+          content:
+            application/json:
+              schema:
+                type: object
+    delete:
+      summary: Disable anti-DDoS permanent mitigation for VPS IP
+      operationId: DisableVpsMitigation
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: ip
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Mitigation disabled
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /vps/{service_name}/options:
+    get:
+      summary: Get active options on VPS
+      operationId: GetVpsOptions
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of active options
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+
+  /vps/{service_name}/options/{option}:
+    delete:
+      summary: Terminate/delete an active VPS option
+      operationId: DeleteVpsOption
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: option
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Option terminated
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /vps/{service_name}/password:
+    post:
+      summary: Request VPS root password reset
+      operationId: VpsSetPassword
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Password reset task created
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /vps/{service_name}/reboot:
+    post:
+      summary: Soft or hard reboot VPS instance
+      operationId: VpsReboot
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: VPS reboot initiated
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /vps/{service_name}/rebuild:
+    post:
+      summary: Reinstall / rebuild VPS operating system
+      operationId: ReinstallVps
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - templateId
+              properties:
+                templateId:
+                  type: string
+      responses:
+        '200':
+          description: Rebuild task created
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /vps/{service_name}/secondary-dns:
+    get:
+      summary: Get secondary DNS domains configured for VPS
+      operationId: GetVpsSecondaryDns
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of secondary DNS domains
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+    post:
+      summary: Add secondary DNS domain for VPS
+      operationId: AddVpsSecondaryDns
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - domain
+              properties:
+                domain:
+                  type: string
+      responses:
+        '200':
+          description: Secondary DNS domain added
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /vps/{service_name}/secondary-dns/{domain}:
+    delete:
+      summary: Delete secondary DNS domain for VPS
+      operationId: DeleteVpsSecondaryDns
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Secondary DNS domain removed
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /vps/{service_name}/serviceinfo:
+    get:
+      summary: Get VPS service contract info (expiration, renewal)
+      operationId: GetVpsServiceInfo
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Service contract information
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /vps/{service_name}/serviceinfo/renewal:
+    put:
+      summary: Update VPS service renewal policy
+      operationId: UpdateVpsRenewal
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                automatic:
+                  type: boolean
+                deleteAtExpiration:
+                  type: boolean
+                forced:
+                  type: boolean
+                period:
+                  type: integer
+      responses:
+        '200':
+          description: Service renewal updated
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /vps/{service_name}/snapshot:
+    get:
+      summary: Get VPS snapshot details
+      operationId: GetVpsSnapshot
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Snapshot details
+          content:
+            application/json:
+              schema:
+                type: object
+    post:
+      summary: Create new VPS snapshot
+      operationId: CreateVpsSnapshot
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                description:
+                  type: string
+      responses:
+        '200':
+          description: Snapshot task initiated
+          content:
+            application/json:
+              schema:
+                type: object
+    put:
+      summary: Update VPS snapshot description
+      operationId: UpdateVpsSnapshotDescription
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - description
+              properties:
+                description:
+                  type: string
+      responses:
+        '200':
+          description: Snapshot description updated
+          content:
+            application/json:
+              schema:
+                type: object
+    delete:
+      summary: Delete VPS snapshot
+      operationId: DeleteVpsSnapshot
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Snapshot deletion initiated
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /vps/{service_name}/snapshot/revert:
+    post:
+      summary: Revert VPS to snapshot
+      operationId: RevertVpsSnapshot
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Snapshot revert task initiated
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /vps/{service_name}/start:
+    post:
+      summary: Start VPS instance
+      operationId: VpsStart
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: VPS started
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /vps/{service_name}/status:
+    get:
+      summary: Get VPS operational state and status
+      operationId: GetVpsServiceStatus
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: VPS operational status
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /vps/{service_name}/stop:
+    post:
+      summary: Stop VPS instance
+      operationId: VpsStop
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: VPS stopped
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /vps/{service_name}/tasks:
+    get:
+      summary: Get recent tasks for VPS instance
+      operationId: GetVpsTasks
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of task IDs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: integer
+
+  /vps/{service_name}/tasks/{task_id}:
+    get:
+      summary: Get VPS task details
+      operationId: GetVpsTaskDetail
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Task details
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /vps/{service_name}/templates:
+    get:
+      summary: Get available OS templates for VPS
+      operationId: GetVpsTemplates
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of available OS templates
+          content:
+            application/json:
+              schema:
+                type: array
+
+  /vps/{service_name}/terminate:
+    post:
+      summary: Request VPS termination
+      operationId: TerminateVps
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Termination request initiated
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /vps/{service_name}/termination-policy:
+    put:
+      summary: Update VPS expiration termination policy
+      operationId: UpdateVpsTerminationPolicy
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - terminateAtExpiration
+              properties:
+                terminateAtExpiration:
+                  type: boolean
+      responses:
+        '200':
+          description: VPS termination policy updated
+          content:
+            application/json:
+              schema:
+                type: object
+
+
+  /servers/{service_name}/change-contact:
+    post:
+      summary: Change server contacts
+      operationId: ChangeServerContact
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                contactAdmin:
+                  type: string
+                contactTech:
+                  type: string
+                contactBilling:
+                  type: string
+      responses:
+        '200':
+          description: Contact change requested
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /servers/{service_name}/engagement:
+    get:
+      summary: Get server commitment details
+      operationId: GetServerEngagement
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Commitment information
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /servers/{service_name}/engagement/available:
+    get:
+      summary: Get available commitment periods for server
+      operationId: GetServerEngagementAvailable
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Available commitments
+          content:
+            application/json:
+              schema:
+                type: array
+
+  /servers/{service_name}/engagement/end-rule:
+    put:
+      summary: Update commitment end rule for server
+      operationId: UpdateServerEngagementEndRule
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: End rule updated
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /servers/{service_name}/engagement/request:
+    get:
+      summary: Get active commitment request
+      operationId: GetServerEngagementRequest
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Active request
+          content:
+            application/json:
+              schema:
+                type: object
+    post:
+      summary: Create commitment request for server
+      operationId: CreateServerEngagementRequest
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Request created
+          content:
+            application/json:
+              schema:
+                type: object
+    delete:
+      summary: Cancel commitment request for server
+      operationId: DeleteServerEngagementRequest
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Request deleted
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /servers/{service_name}/interventions:
+    get:
+      summary: List datacenter hardware interventions for server
+      operationId: GetServerInterventions
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Interventions list
+          content:
+            application/json:
+              schema:
+                type: array
+
+  /servers/{service_name}/interventions/{intervention_id}:
+    get:
+      summary: Get hardware intervention details
+      operationId: GetServerInterventionDetails
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: intervention_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Intervention details
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /servers/{service_name}/ip/can-be-moved-to:
+    get:
+      summary: List servers that an IP can be moved to
+      operationId: GetIPCanBeMovedTo
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Target destinations
+          content:
+            application/json:
+              schema:
+                type: array
+
+  /servers/{service_name}/ip/country-available:
+    get:
+      summary: List countries available for failover IPs
+      operationId: GetIPCountryAvailable
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Available country codes
+          content:
+            application/json:
+              schema:
+                type: array
+
+  /servers/{service_name}/ip/move:
+    post:
+      summary: Move failover IP to another server
+      operationId: MoveIP
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - ip
+                - to
+              properties:
+                ip:
+                  type: string
+                to:
+                  type: string
+      responses:
+        '200':
+          description: IP move task started
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /servers/{service_name}/license/windows-sql/compliant:
+    get:
+      summary: Get compliant Windows SQL versions
+      operationId: GetCompliantWindowsSqlVersions
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Compliant SQL versions
+          content:
+            application/json:
+              schema:
+                type: array
+
+  /servers/{service_name}/license/windows/compliant:
+    get:
+      summary: Get compliant Windows Server OS versions
+      operationId: GetCompliantWindowsVersions
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Compliant Windows versions
+          content:
+            application/json:
+              schema:
+                type: array
+
+  /servers/{service_name}/mitigation:
+    get:
+      summary: Get server anti-DDoS mitigation status
+      operationId: GetServerMitigation
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Mitigation status
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /servers/{service_name}/mitigation/{ip}:
+    post:
+      summary: Enable anti-DDoS permanent mitigation for server IP
+      operationId: EnableServerMitigation
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: ip
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Mitigation enabled
+          content:
+            application/json:
+              schema:
+                type: object
+    delete:
+      summary: Disable anti-DDoS permanent mitigation for server IP
+      operationId: DisableServerMitigation
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: ip
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Mitigation disabled
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /servers/{service_name}/ola/aggregation:
+    post:
+      summary: Configure OVHcloud Link Aggregation (OLA)
+      operationId: ConfigureOLAAggregation
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: OLA aggregation configured
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /servers/{service_name}/ola/group:
+    post:
+      summary: Group network interfaces into OLA
+      operationId: OLAGroup
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Interfaces grouped
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /servers/{service_name}/ola/reset:
+    post:
+      summary: Reset OLA network configuration
+      operationId: ResetOLAConfiguration
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OLA configuration reset
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /servers/{service_name}/ola/ungroup:
+    post:
+      summary: Ungroup interfaces from OLA
+      operationId: OLAUngroup
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Interfaces ungrouped
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /servers/{service_name}/ongoing:
+    get:
+      summary: Get ongoing tasks for dedicated server
+      operationId: GetOngoingTasks
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of ongoing tasks
+          content:
+            application/json:
+              schema:
+                type: array
+
+  /servers/{service_name}/options:
+    get:
+      summary: Get active options for dedicated server
+      operationId: GetServerOptions
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Server options
+          content:
+            application/json:
+              schema:
+                type: array
+
+  /servers/{service_name}/orderable/bandwidth:
+    get:
+      summary: Get orderable bandwidth upgrades
+      operationId: GetOrderableBandwidth
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Bandwidth upgrade options
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /servers/{service_name}/orderable/ip:
+    get:
+      summary: Get orderable IP specifications
+      operationId: GetOrderableIP
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Orderable IP options
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /servers/{service_name}/orderable/traffic:
+    get:
+      summary: Get orderable traffic options
+      operationId: GetOrderableTraffic
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Orderable traffic options
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /servers/{service_name}/planned-interventions:
+    get:
+      summary: List planned datacenter interventions
+      operationId: GetPlannedInterventions
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Planned interventions
+          content:
+            application/json:
+              schema:
+                type: array
+
+  /servers/{service_name}/planned-interventions/{intervention_id}:
+    get:
+      summary: Get planned intervention details
+      operationId: GetPlannedInterventionDetails
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: intervention_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Planned intervention details
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /servers/{service_name}/spla:
+    get:
+      summary: List SPLA licenses attached to server
+      operationId: GetSPLAList
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: SPLA licenses
+          content:
+            application/json:
+              schema:
+                type: array
+    post:
+      summary: Add SPLA license to server
+      operationId: CreateSPLA
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                type:
+                  type: string
+                serial:
+                  type: string
+      responses:
+        '200':
+          description: SPLA added
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /servers/{service_name}/virtual-mac:
+    get:
+      summary: Get virtual MAC list for dedicated server
+      operationId: GetVirtualMACList
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Virtual MAC list
+          content:
+            application/json:
+              schema:
+                type: array
+    post:
+      summary: Create new virtual MAC on dedicated server
+      operationId: CreateVirtualMAC
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - ipAddress
+                - type
+              properties:
+                ipAddress:
+                  type: string
+                type:
+                  type: string
+                virtualMachineName:
+                  type: string
+      responses:
+        '200':
+          description: Virtual MAC created
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /servers/{service_name}/virtual-network-interface:
+    get:
+      summary: List virtual network interfaces
+      operationId: GetVirtualNetworkInterfaces
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Interfaces list
+          content:
+            application/json:
+              schema:
+                type: array
+
+  /servers/{service_name}/virtual-network-interface/{uuid}/disable:
+    post:
+      summary: Disable virtual network interface
+      operationId: DisableVirtualNetworkInterface
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: uuid
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Interface disabled
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /servers/{service_name}/virtual-network-interface/{uuid}/enable:
+    post:
+      summary: Enable virtual network interface
+      operationId: EnableVirtualNetworkInterface
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: uuid
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Interface enabled
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /servers/{service_name}/vrack:
+    get:
+      summary: List vRack associations for dedicated server
+      operationId: GetVRackList
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: vRack associations
+          content:
+            application/json:
+              schema:
+                type: array
+
+  /servers/{service_name}/vrack/{vrack}:
+    delete:
+      summary: Remove server from vRack
+      operationId: RemoveFromVRack
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: vrack
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Server removed from vRack
+          content:
+            application/json:
+              schema:
+                type: object
+
+
+  /accounts/{id}/proxy-check:
+    post:
+      summary: Check proxy connectivity for account
+      operationId: CheckAccountProxy
+      tags:
+        - F01
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Proxy check result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /accounts/{id}/proxy-test:
+    post:
+      summary: Test proxy latency and exit IP for account
+      operationId: TestAccountProxy
+      tags:
+        - F01
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Proxy test result
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /accounts/{id}/set-default:
+    post:
+      summary: Set account as default
+      operationId: SetDefaultAccount
+      tags:
+        - F01
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Account marked as default
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /accounts/proxy-status:
+    get:
+      summary: Get global proxy pool status
+      operationId: GetProxyStatus
+      tags:
+        - F01
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Proxy pool status
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /accounts/proxy/test:
+    post:
+      summary: Test custom proxy configuration
+      operationId: TestCustomProxy
+      tags:
+        - F01
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - proxyUrl
+              properties:
+                proxyUrl:
+                  type: string
+      responses:
+        '200':
+          description: Proxy validation result
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /endpoint-config:
+    get:
+      summary: Get supported OVH API endpoints configuration
+      operationId: GetEndpointConfig
+      tags:
+        - F01
+      responses:
+        '200':
+          description: Endpoint configuration
+          content:
+            application/json:
+              schema:
+                type: array
+
+  /verify-auth:
+    post:
+      summary: Verify API key authentication
+      operationId: VerifyAuth
+      tags:
+        - F01
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Authentication valid
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authenticated:
+                    type: boolean
+
+  /ovh/account/bills:
+    get:
+      summary: List billing invoices
+      operationId: GetAccountBills
+      tags:
+        - F01b
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: accountId
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of bills
+          content:
+            application/json:
+              schema:
+                type: array
+
+  /ovh/account/credit-balance:
+    get:
+      summary: Get prepaid account credit balance
+      operationId: GetAccountCreditBalance
+      tags:
+        - F01b
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: accountId
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Credit balance
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /ovh/account/email-history:
+    get:
+      summary: Get email communications history from OVH
+      operationId: GetAccountEmailHistory
+      tags:
+        - F01b
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: accountId
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of email communications
+          content:
+            application/json:
+              schema:
+                type: array
+
+  /ovh/account/info:
+    get:
+      summary: Get OVH customer account profile info
+      operationId: GetAccountInfo
+      tags:
+        - F01b
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: accountId
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Account profile information
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /ovh/account/orders:
+    get:
+      summary: Get account order history
+      operationId: GetAccountOrders
+      tags:
+        - F01b
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: accountId
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Order history
+          content:
+            application/json:
+              schema:
+                type: array
+
+  /ovh/account/refunds:
+    get:
+      summary: Get account refund list
+      operationId: GetAccountRefunds
+      tags:
+        - F01b
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: accountId
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of refunds
+          content:
+            application/json:
+              schema:
+                type: array
+
+  /ovh/account/sub-accounts:
+    get:
+      summary: Get sub-account list
+      operationId: GetAccountSubAccounts
+      tags:
+        - F01b
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: accountId
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of sub-accounts
+          content:
+            application/json:
+              schema:
+                type: array
+
+  /ovh/contact-change-requests:
+    get:
+      summary: List pending contact change requests
+      operationId: GetContactChangeRequests
+      tags:
+        - F01b
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: accountId
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of contact change requests
+          content:
+            application/json:
+              schema:
+                type: array
+
+  /ovh/contact-change-requests/{task_id}:
+    get:
+      summary: Get contact change request details
+      operationId: GetContactChangeRequestDetails
+      tags:
+        - F01b
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: accountId
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Request details
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /ovh/contact-change-requests/{task_id}/accept:
+    post:
+      summary: Accept contact change request with token
+      operationId: AcceptContactChangeRequest
+      tags:
+        - F01b
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - token
+              properties:
+                token:
+                  type: string
+                accountId:
+                  type: string
+      responses:
+        '200':
+          description: Contact change accepted
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /ovh/contact-change-requests/{task_id}/refuse:
+    post:
+      summary: Refuse contact change request with token
+      operationId: RefuseContactChangeRequest
+      tags:
+        - F01b
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - token
+              properties:
+                token:
+                  type: string
+                accountId:
+                  type: string
+      responses:
+        '200':
+          description: Contact change refused
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /ovh/contact-change-requests/{task_id}/resend-email:
+    post:
+      summary: Resend verification email for contact change request
+      operationId: ResendContactChangeRequestEmail
+      tags:
+        - F01b
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                accountId:
+                  type: string
+      responses:
+        '200':
+          description: Email resent
+          content:
+            application/json:
+              schema:
+                type: object
+
+
+  /telegram/quick-order:
+    post:
+      summary: Place quick server order via Telegram bot
+      operationId: TelegramQuickOrder
+      tags:
+        - F07
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - planCode
+              properties:
+                planCode:
+                  type: string
+                datacenter:
+                  type: string
+                quantity:
+                  type: integer
+      responses:
+        '200':
+          description: Quick order initiated
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /telegram/register-commands:
+    post:
+      summary: Register bot commands with Telegram Bot API
+      operationId: RegisterTelegramCommands
+      tags:
+        - F07
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Commands registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /telegram/status:
+    get:
+      summary: Get Telegram bot connection and polling status
+      operationId: GetTelegramStatus
+      tags:
+        - F07
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Bot status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  running:
+                    type: boolean
+                  botUsername:
+                    type: string
+
+  /telegram/verify:
+    get:
+      summary: Test Telegram Bot token validity
+      operationId: VerifyTelegramBot
+      tags:
+        - F07
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Token validation result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid:
+                    type: boolean
+
+  /logs:
+    get:
+      summary: Query system and audit log entries
+      operationId: GetLogs
+      tags:
+        - F10
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: level
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Log entries
+          content:
+            application/json:
+              schema:
+                type: array
+    delete:
+      summary: Clear system log buffer
+      operationId: ClearLogs
+      tags:
+        - F10
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Logs cleared
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /logs/flush:
+    post:
+      summary: Flush memory logs to disk immediately
+      operationId: FlushLogs
+      tags:
+        - F10
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Logs flushed to disk
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /notify/channels:
+    get:
+      summary: List configured notification channels
+      operationId: GetNotifyChannels
+      tags:
+        - F10
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Notification channels
+          content:
+            application/json:
+              schema:
+                type: array
+
+  /cache/clear:
+    post:
+      summary: Purge in-memory and disk caches
+      operationId: ClearCache
+      tags:
+        - F11
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Cache cleared
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /cache/info:
+    get:
+      summary: Get cache statistics and hit rates
+      operationId: GetCacheInfo
+      tags:
+        - F11
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Cache statistics
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /settings:
+    get:
+      summary: Get application settings
+      operationId: GetSettings
+      tags:
+        - F11
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Current settings
+          content:
+            application/json:
+              schema:
+                type: object
+    post:
+      summary: Save application settings
+      operationId: SaveSettings
+      tags:
+        - F11
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Settings saved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /stats:
+    get:
+      summary: Get overview dashboard statistics
+      operationId: GetStats
+      tags:
+        - F11
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Dashboard statistics
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /system/metrics:
+    get:
+      summary: Get runtime hardware and process metrics
+      operationId: GetSystemMetrics
+      tags:
+        - F11
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Process and system resource metrics
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /version:
+    get:
+      summary: Get current application version and build info
+      operationId: GetVersion
+      tags:
+        - F11
+      responses:
+        '200':
+          description: Version information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: string
+                  buildTime:
+                    type: string
+
+  /version/check-update:
+    get:
+      summary: Check GitHub releases for updates
+      operationId: CheckUpdate
+      tags:
+        - F11
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Update status
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /version/update:
+    post:
+      summary: Perform self-update from release
+      operationId: PerformUpdate
+      tags:
+        - F11
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Update process initiated
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /version/update/status:
+    get:
+      summary: Get current self-update status
+      operationId: GetUpdateStatus
+      tags:
+        - F11
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Update progress status
+          content:
+            application/json:
+              schema:
+                type: object
+
+
 components:
   securitySchemes:
     ApiKeyAuth:
@@ -350,3 +6023,526 @@ components:
             checkedAt:
               type: string
               format: date-time
+
+    Datacenter:
+      type: object
+      required:
+        - datacenter
+        - availability
+      properties:
+        datacenter:
+          type: string
+          example: "gra"
+        availability:
+          type: string
+          example: "available"
+
+    ServerOption:
+      type: object
+      required:
+        - option
+        - value
+      properties:
+        option:
+          type: string
+        value:
+          type: string
+        family:
+          type: string
+        isDefault:
+          type: boolean
+
+    ServerPlan:
+      type: object
+      required:
+        - planCode
+        - name
+      properties:
+        planCode:
+          type: string
+          example: "24ska01"
+        name:
+          type: string
+          example: "KS-1"
+        description:
+          type: string
+        cpu:
+          type: string
+        memory:
+          type: string
+        storage:
+          type: string
+        bandwidth:
+          type: string
+        vrackBandwidth:
+          type: string
+        datacenters:
+          type: array
+          items:
+            $ref: '#/components/schemas/Datacenter'
+        defaultOptions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ServerOption'
+        availableOptions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ServerOption'
+
+    DatacenterAvailability:
+      type: object
+      required:
+        - datacenter
+        - availability
+      properties:
+        datacenter:
+          type: string
+          example: "rbx"
+        availability:
+          type: string
+          example: "available"
+
+    QueueItem:
+      type: object
+      required:
+        - id
+        - accountId
+        - planCode
+        - datacenter
+        - status
+      properties:
+        id:
+          type: string
+        accountId:
+          type: string
+        planCode:
+          type: string
+        datacenter:
+          type: string
+        options:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum: [running, pending, paused, completed]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+        retryInterval:
+          type: integer
+        retryCount:
+          type: integer
+        failureCount:
+          type: integer
+        maxRetries:
+          type: integer
+        quickOrder:
+          type: boolean
+        autoPay:
+          type: boolean
+
+    AddQueueItemRequest:
+      type: object
+      required:
+        - planCode
+      properties:
+        accountId:
+          type: string
+        planCode:
+          type: string
+          example: "24ska01"
+        datacenter:
+          type: string
+          example: "gra"
+        datacenters:
+          type: array
+          items:
+            type: string
+        options:
+          type: array
+          items:
+            type: string
+        retryInterval:
+          type: integer
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 20
+        autoPay:
+          type: boolean
+
+    QuickOrderRequest:
+      type: object
+      required:
+        - planCode
+      properties:
+        accountId:
+          type: string
+        planCode:
+          type: string
+          example: "24ska01"
+        datacenter:
+          type: string
+          example: "gra"
+        datacenters:
+          type: array
+          items:
+            type: string
+        options:
+          type: array
+          items:
+            type: string
+        quantity:
+          type: integer
+        autoPay:
+          type: boolean
+
+    PriceInfo:
+      type: object
+      properties:
+        withTax:
+          type: number
+          nullable: true
+        withoutTax:
+          type: number
+          nullable: true
+        tax:
+          type: number
+          nullable: true
+        currencyCode:
+          type: string
+
+    PhaseTiming:
+      type: object
+      properties:
+        phase:
+          type: string
+        durationMs:
+          type: integer
+
+    PurchaseHistoryEntry:
+      type: object
+      required:
+        - id
+        - accountId
+        - planCode
+        - datacenter
+        - status
+      properties:
+        id:
+          type: string
+        accountId:
+          type: string
+        taskId:
+          type: string
+        planCode:
+          type: string
+        datacenter:
+          type: string
+        options:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum: [success, failed]
+        orderId:
+          type: string
+        orderUrl:
+          type: string
+        errorMessage:
+          type: string
+          nullable: true
+        purchaseTime:
+          type: string
+        attemptCount:
+          type: integer
+        price:
+          $ref: '#/components/schemas/PriceInfo'
+        orderStatus:
+          type: string
+        orderStatusAt:
+          type: string
+
+    ServerCacheInfo:
+      type: object
+      properties:
+        cached:
+          type: boolean
+        usingExpiredCache:
+          type: boolean
+        cacheAgeMinutes:
+          type: integer
+        timestamp:
+          type: number
+          nullable: true
+        cacheAge:
+          type: integer
+          nullable: true
+        cacheDuration:
+          type: integer
+        nextAutoRefresh:
+          type: number
+          nullable: true
+        autoRefreshEnabled:
+          type: boolean
+
+    ServerCatalogResponse:
+      type: object
+      required:
+        - servers
+      properties:
+        servers:
+          type: array
+          items:
+            $ref: '#/components/schemas/ServerPlan'
+        cacheInfo:
+          $ref: '#/components/schemas/ServerCacheInfo'
+
+    Subscription:
+      type: object
+      required:
+        - planCode
+      properties:
+        planCode:
+          type: string
+        name:
+          type: string
+        datacenters:
+          type: array
+          items:
+            type: string
+        notifyAvailable:
+          type: boolean
+        notifyUnavailable:
+          type: boolean
+        autoOrder:
+          type: boolean
+        quantity:
+          type: integer
+        autoOrderAccountId:
+          type: string
+        autoPay:
+          type: boolean
+        options:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+        lastChecked:
+          type: string
+
+    AddSubscriptionRequest:
+      type: object
+      required:
+        - planCode
+      properties:
+        planCode:
+          type: string
+        datacenters:
+          type: array
+          items:
+            type: string
+        notifyAvailable:
+          type: boolean
+        notifyUnavailable:
+          type: boolean
+        autoOrder:
+          type: boolean
+        quantity:
+          type: integer
+        autoOrderAccountId:
+          type: string
+        autoPay:
+          type: boolean
+        options:
+          type: array
+          items:
+            type: string
+
+    MonitorStatus:
+      type: object
+      properties:
+        running:
+          type: boolean
+        checkInterval:
+          type: integer
+        totalSubscriptions:
+          type: integer
+        activeSubscriptions:
+          type: integer
+        lastCheckTime:
+          type: string
+        lastDurationMs:
+          type: integer
+
+    SubscriptionHistoryEntry:
+      type: object
+      properties:
+        timestamp:
+          type: string
+        datacenter:
+          type: string
+        available:
+          type: boolean
+        price:
+          type: number
+
+    VPSModel:
+      type: object
+      required:
+        - planCode
+        - name
+      properties:
+        planCode:
+          type: string
+        name:
+          type: string
+        vcore:
+          type: integer
+        ram:
+          type: integer
+        disk:
+          type: integer
+        datacenters:
+          type: array
+          items:
+            type: string
+
+    VPSSubscription:
+      type: object
+      required:
+        - id
+        - planCode
+        - ovhSubsidiary
+      properties:
+        id:
+          type: string
+        planCode:
+          type: string
+        ovhSubsidiary:
+          type: string
+        datacenters:
+          type: array
+          items:
+            type: string
+        monitorLinux:
+          type: boolean
+        monitorWindows:
+          type: boolean
+        notifyAvailable:
+          type: boolean
+        notifyUnavailable:
+          type: boolean
+        autoOrder:
+          type: boolean
+        quantity:
+          type: integer
+        autoOrderAccountId:
+          type: string
+        autoPay:
+          type: boolean
+        os:
+          type: string
+        createdAt:
+          type: string
+        retired:
+          type: boolean
+
+    AddVPSSubscriptionRequest:
+      type: object
+      required:
+        - planCode
+      properties:
+        planCode:
+          type: string
+        ovhSubsidiary:
+          type: string
+        datacenters:
+          type: array
+          items:
+            type: string
+        monitorLinux:
+          type: boolean
+        monitorWindows:
+          type: boolean
+        notifyAvailable:
+          type: boolean
+        notifyUnavailable:
+          type: boolean
+        autoOrder:
+          type: boolean
+        quantity:
+          type: integer
+        autoOrderAccountId:
+          type: string
+        autoPay:
+          type: boolean
+        os:
+          type: string
+
+    DedicatedServerDetail:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        datacenter:
+          type: string
+        ip:
+          type: string
+        boot:
+          type: string
+        state:
+          type: string
+        os:
+          type: string
+        expiration:
+          type: string
+        commercialRange:
+          type: string
+        supportLevel:
+          type: string
+
+    ServerTask:
+      type: object
+      properties:
+        id:
+          type: integer
+        function:
+          type: string
+        status:
+          type: string
+        startDate:
+          type: string
+        doneDate:
+          type: string
+        progress:
+          type: integer
+
+    ServerHardwareInfo:
+      type: object
+      properties:
+        cpu:
+          type: string
+        memory:
+          type: string
+        disk:
+          type: string
+        motherBoard:
+          type: string
+
+    ServerReverseDNS:
+      type: object
+      required:
+        - ip
+        - reverse
+      properties:
+        ip:
+          type: string
+        reverse:
+          type: string

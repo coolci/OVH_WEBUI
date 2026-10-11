@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -91,6 +92,7 @@ func CreateVpsSnapshot(state *app.State) gin.HandlerFunc {
 			respondOVHError(c, err)
 			return
 		}
+		state.Logger.Audit("create_vps_snapshot", c.ClientIP(), svc, fmt.Sprintf("description=%s taskId=%v", body.Description, task["id"]))
 		state.Logger.Info("VPS "+svc+" 创建快照任务已提交", "vps_control")
 		c.JSON(http.StatusOK, gin.H{"success": true, "message": "创建快照任务已提交", "code": "E6EB65166", "task": task})
 	}
@@ -162,6 +164,7 @@ func RevertVpsSnapshot(state *app.State) gin.HandlerFunc {
 			respondOVHError(c, err)
 			return
 		}
+		state.Logger.Audit("revert_vps_snapshot", c.ClientIP(), svc, fmt.Sprintf("taskId=%v", task["id"]))
 		state.Logger.Warn("VPS "+svc+" 已触发快照回滚 (destructive)", "vps_control")
 		c.JSON(http.StatusOK, gin.H{"success": true, "message": "回滚任务已提交,VPS 即将进入维护态", "code": "ED5A9B443", "task": task})
 	}
@@ -189,6 +192,7 @@ func DeleteVpsSnapshot(state *app.State) gin.HandlerFunc {
 			respondOVHError(c, err)
 			return
 		}
+		state.Logger.Audit("delete_vps_snapshot", c.ClientIP(), svc, fmt.Sprintf("taskId=%v", task["id"]))
 		state.Logger.Info("VPS "+svc+" 快照已删除", "vps_control")
 		c.JSON(http.StatusOK, gin.H{"success": true, "message": "快照删除任务已提交", "code": "E6D751507", "task": task})
 	}

@@ -1,5 +1,6 @@
 import { Activity, Database, Cpu, HardDrive, Github, Flame } from "lucide-react";
-import { useStats, useBackendConnection } from "@/hooks/useApi";
+import { useStats } from "@/hooks/use-stats";
+import { useBackendConnection } from "@/hooks/use-backend-connection";
 import { cn } from "@/lib/utils";
 
 export function StatusBar() {

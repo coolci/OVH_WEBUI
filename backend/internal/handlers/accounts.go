@@ -14,6 +14,8 @@ import (
 	"github.com/ovh-webui/server/internal/monitor"
 	"github.com/ovh-webui/server/internal/netfp"
 	"github.com/ovh-webui/server/internal/ovh"
+	"github.com/ovh-webui/server/internal/platform/httperr"
+	"github.com/ovh-webui/server/internal/service/account"
 	"github.com/ovh-webui/server/internal/types"
 )
 
@@ -157,14 +159,10 @@ func sanitizeAccount(a types.OVHAccount) types.OVHAccount {
 
 func ListAccounts(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		accs, err := state.DB.ListAccounts()
+		out, err := state.AccountService.ListAccounts()
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			httperr.InternalError(c, err.Error(), "ERR_LIST_ACCOUNTS")
 			return
-		}
-		out := make([]types.OVHAccount, 0, len(accs))
-		for _, a := range accs {
-			out = append(out, sanitizeAccount(a))
 		}
 		c.JSON(http.StatusOK, gin.H{"accounts": out, "total": len(out)})
 	}
@@ -174,16 +172,16 @@ func ListAccounts(state *app.State) gin.HandlerFunc {
 func GetAccountByID(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
-		acc, ok, err := state.DB.GetAccount(id)
+		acc, err := state.AccountService.GetAccount(id)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			if errors.Is(err, account.ErrAccountNotFound) {
+				httperr.NotFound(c, "账户不存在", "ERR_ACCOUNT_NOT_FOUND")
+				return
+			}
+			httperr.InternalError(c, err.Error(), "ERR_GET_ACCOUNT")
 			return
 		}
-		if !ok {
-			c.JSON(http.StatusNotFound, gin.H{"error": "账户不存在"})
-			return
-		}
-		c.JSON(http.StatusOK, sanitizeAccount(acc))
+		c.JSON(http.StatusOK, acc)
 	}
 }
 
@@ -210,7 +208,7 @@ func CreateAccount(state *app.State) gin.HandlerFunc {
 		// 之后所有不带 ?account= 的调用(队列里空 AccountID 的下单)都会打到新账户上。
 		// 这种情况退回内存里的账户表判断,内存也是空的才认为这是第一个账户。
 		isDefault := in.SetDefault
-		if count, err := state.DB.CountAccounts(); err != nil {
+		if count, err := state.AccountService.CountAccounts(); err != nil {
 			state.Logger.Warn("统计账户数量失败,改用内存账户表判断是否设为默认: "+err.Error(), "accounts")
 			isDefault = isDefault || !state.HasAnyAccount()
 		} else if count == 0 {
@@ -235,7 +233,7 @@ func CreateAccount(state *app.State) gin.HandlerFunc {
 		if in.Fingerprint != nil {
 			acc.Fingerprint = strings.TrimSpace(*in.Fingerprint)
 		}
-		if err := state.DB.UpsertAccount(acc); err != nil {
+		if err := state.AccountService.UpsertAccount(acc); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -282,7 +280,7 @@ func CreateAccount(state *app.State) gin.HandlerFunc {
 func UpdateAccount(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
-		existing, ok, err := state.DB.GetAccount(id)
+		existing, ok, err := state.AccountService.FindAccount(id)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -352,7 +350,7 @@ func UpdateAccount(state *app.State) gin.HandlerFunc {
 		// 恢复了旧 .env 配新 db。而 main.go 那道"新生成密钥+库里有密文就拒绝启动"
 		// 的保护在这里不生效 —— 密钥是存在的,只是不对。
 		if acc.AppKey == "" || acc.AppSecret == "" || acc.ConsumerKey == "" {
-			if raw, ok, _ := state.DB.GetAccountRaw(id); ok && raw.HasCiphertext() {
+			if raw, ok, _ := state.AccountService.GetAccountRaw(id); ok && raw.HasCiphertext() {
 				c.JSON(http.StatusConflict, gin.H{
 					"error": "这个账户的凭据当前解不开(密钥不匹配),为避免把密文覆盖掉,已拒绝保存。" +
 						"请先恢复正确的 OVH_DB_KEY;确实找不回就在这里重新填写完整的三个凭据",
@@ -371,7 +369,7 @@ func UpdateAccount(state *app.State) gin.HandlerFunc {
 			return
 		}
 
-		if err := state.DB.UpsertAccount(acc); err != nil {
+		if err := state.AccountService.UpsertAccount(acc); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -415,8 +413,8 @@ func UpdateAccount(state *app.State) gin.HandlerFunc {
 func DeleteAccountByID(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
-		if err := state.DB.DeleteAccount(id); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		if err := state.AccountService.DeleteAccount(id); err != nil {
+			httperr.InternalError(c, err.Error(), "ERR_DELETE_ACCOUNT")
 			return
 		}
 		state.OVH.Invalidate(id)
@@ -434,8 +432,8 @@ func DeleteAccountByID(state *app.State) gin.HandlerFunc {
 func SetDefaultAccountByID(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
-		if err := state.DB.SetDefaultAccount(id); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		if err := state.AccountService.SetDefault(id); err != nil {
+			httperr.InternalError(c, err.Error(), "ERR_SET_DEFAULT")
 			return
 		}
 		_ = state.ReloadAccounts()
@@ -477,7 +475,7 @@ func verifyAccountCreds(state *app.State, accountID string) CredentialVerificati
 	cli, err := state.OVH.ClientFor(accountID)
 	if err != nil {
 		detail := err.Error()
-		_ = state.DB.UpdateAccountCredState(accountID, "invalid", types.NowISO(), detail)
+		_ = state.AccountService.UpdateCredState(accountID, "invalid", types.NowISO(), detail)
 		return CredentialVerificationResult{
 			Valid:       false,
 			CredState:   "invalid",
@@ -523,7 +521,7 @@ func verifyAccountCreds(state *app.State, accountID string) CredentialVerificati
 			remediations = []string{"retry_later"}
 		}
 
-		_ = state.DB.UpdateAccountCredState(accountID, credState, types.NowISO(), detail)
+		_ = state.AccountService.UpdateCredState(accountID, credState, types.NowISO(), detail)
 		_ = state.ReloadAccounts()
 
 		return CredentialVerificationResult{
@@ -544,7 +542,7 @@ func verifyAccountCreds(state *app.State, accountID string) CredentialVerificati
 		}
 	}
 
-	_ = state.DB.UpdateAccountCredState(accountID, "verified", types.NowISO(), "")
+	_ = state.AccountService.UpdateCredState(accountID, "verified", types.NowISO(), "")
 	_ = state.ReloadAccounts()
 
 	return CredentialVerificationResult{
@@ -564,43 +562,11 @@ var monitorRef *monitor.Monitor
 func SetMonitorRef(m *monitor.Monitor) { monitorRef = m }
 
 func reloadAfterAccountDelete(state *app.State, accountID string) {
-	if items, err := state.DB.ListQueue(); err == nil {
-		state.QueueMu.Lock()
-		// 被级联删掉的任务里,可能有正跑在 PurchaseServer 中段的。
-		// 光用新列表覆盖内存,那些协程收不到任何信号:
-		// 队列处理器每轮是拿 state.Queue 的**快照**去复核"还在不在队列里"的,
-		// 而它们已经不在快照里了 —— 那条复核永远轮不到它们。
-		// 结果是协程拿着已删账户的凭据把整条建车链路跑完,一路 401/403。
-		// 删单、清空队列、TG /cancel 三个入口都调了 MarkTaskDeleted,
-		// 只有这里漏了。MarkTaskDeleted 会 cancel 它们的 ctx,
-		// 正在进行的 OVH 调用当场中断。
-		alive := make(map[string]struct{}, len(items))
-		for _, it := range items {
-			alive[it.ID] = struct{}{}
-		}
-		gone := []string{}
-		for _, it := range state.Queue {
-			if _, ok := alive[it.ID]; !ok {
-				gone = append(gone, it.ID)
-			}
-		}
-		state.Queue = items
-		if state.Queue == nil {
-			state.Queue = []types.QueueItem{}
-		}
-		state.QueueMu.Unlock()
-		// 出锁再标记:MarkTaskDeleted 会同步调 cancel,不该占着 QueueMu
-		for _, id := range gone {
-			state.MarkTaskDeleted(id)
-		}
+	if err := state.ReloadQueueFromDB(); err != nil {
+		state.Logger.Warn("删账户后重载队列失败: "+err.Error(), "accounts")
 	}
-	if items, err := state.DB.ListHistory(); err == nil {
-		state.HistoryMu.Lock()
-		state.History = items
-		if state.History == nil {
-			state.History = []types.PurchaseHistoryEntry{}
-		}
-		state.HistoryMu.Unlock()
+	if err := state.ReloadHistoryFromDB(); err != nil {
+		state.Logger.Warn("删账户后重载购买历史失败: "+err.Error(), "accounts")
 	}
 	// 监控订阅的 auto_order_account_id 已经被 SQL UPDATE 清空,内存也必须同步清:
 	// SaveToDB 是拿内存整表 Replace 回写的,不清内存的话,下一次任何订阅增删改
@@ -611,13 +577,8 @@ func reloadAfterAccountDelete(state *app.State, accountID string) {
 			state.Logger.Info(fmt.Sprintf("删账户 %s:已解除 %d 条监控订阅的自动下单绑定", accountID, n), "accounts")
 		}
 	}
-	if subs, err := state.DB.ListVPSSubscriptions(); err == nil {
-		state.VPSSubsMu.Lock()
-		state.VPSSubscriptions = subs
-		if state.VPSSubscriptions == nil {
-			state.VPSSubscriptions = []types.VPSSubscription{}
-		}
-		state.VPSSubsMu.Unlock()
+	if err := state.ReloadVPSSubscriptionsFromDB(); err != nil {
+		state.Logger.Warn("重新加载VPS订阅失败: "+err.Error(), "accounts")
 	}
 }
 

@@ -436,8 +436,13 @@ func CacheInfo(state *app.State) gin.HandlerFunc {
 			a := int(time.Since(*bucketTS).Seconds())
 			age = &a
 		}
-		sqliteCount, _ := state.DB.ServerCount()
-		sqliteUpdatedMs, _ := state.DB.ServersUpdatedAt()
+		sqliteCount := 0
+		var sqliteUpdatedMs int64
+		dbPath := state.DBPath()
+		if state.ServerRepo != nil {
+			sqliteCount, _ = state.ServerRepo.ServerCount()
+			sqliteUpdatedMs, _ = state.ServerRepo.ServersUpdatedAt()
+		}
 		c.JSON(http.StatusOK, gin.H{
 			"backend": gin.H{
 				"hasCachedData": len(cached) > 0,
@@ -450,7 +455,7 @@ func CacheInfo(state *app.State) gin.HandlerFunc {
 			"sqlite": gin.H{
 				"serverCount": sqliteCount,
 				"updatedAtMs": sqliteUpdatedMs, // 0 表示从没刷新过
-				"path":        state.DB.Path,
+				"path":        dbPath,
 			},
 			"storage": gin.H{
 				"dataDir":  state.Paths.DataDir,
@@ -479,33 +484,7 @@ func ClearCache(state *app.State) gin.HandlerFunc {
 		if cacheType == "" {
 			cacheType = "all"
 		}
-		cleared := []string{}
-
-		if cacheType == "all" || cacheType == "memory" {
-			state.ServerPlansMu.Lock()
-			state.ServerPlans = []types.ServerPlan{}
-			state.ServerPlansMu.Unlock()
-			// 分桶后"清内存缓存"= 清掉所有账户视角的桶
-			state.ServerCache.Clear()
-			cleared = append(cleared, "memory")
-			state.Logger.Info("已清除内存缓存", "")
-		}
-
-		if cacheType == "all" || cacheType == "sqlite" {
-			if err := state.DB.ClearServers(); err != nil {
-				state.Logger.Error("清除 SQLite 服务器缓存失败: "+err.Error(), "")
-			} else {
-				cleared = append(cleared, "sqlite_servers")
-				state.Logger.Info("已清除 SQLite 服务器缓存", "")
-			}
-			if err := state.DB.ClearCatalogs(); err != nil {
-				state.Logger.Error("清除 SQLite catalog 缓存失败: "+err.Error(), "")
-			} else {
-				cleared = append(cleared, "sqlite_catalogs")
-				state.Logger.Info("已清除 SQLite catalog 缓存", "")
-			}
-		}
-
+		cleared := state.ClearServerCache(cacheType)
 		c.JSON(http.StatusOK, gin.H{
 			"status":  "success",
 			"cleared": cleared,

@@ -206,6 +206,7 @@ func EnterRescue(state *app.State) gin.HandlerFunc {
 			return
 		}
 		state.Logger.Warn(fmt.Sprintf("服务器 %s 已切换到救援模式并重启(bootId=%d)", svc, bootID), "server_control")
+		state.Logger.Audit("enter_rescue_mode", c.ClientIP(), svc, fmt.Sprintf("bootId=%d email=%s", bootID, body.Email))
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"bootId":  bootID,
@@ -285,6 +286,7 @@ func ExitRescue(state *app.State) gin.HandlerFunc {
 			return
 		}
 		state.Logger.Info(fmt.Sprintf("服务器 %s 已退出救援模式并重启(bootId=%d)", svc, bootID), "server_control")
+		state.Logger.Audit("exit_rescue_mode", c.ClientIP(), svc, fmt.Sprintf("bootId=%d", bootID))
 		c.JSON(http.StatusOK, gin.H{
 			"success": true, "bootId": bootID, "task": task,
 			"message": "已切回硬盘启动并重启,约 3~5 分钟后恢复正常系统", "code": "E9F35BA62",

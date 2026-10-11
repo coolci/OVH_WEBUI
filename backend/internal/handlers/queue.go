@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 	"github.com/ovh-webui/server/internal/catalog"
 	"github.com/ovh-webui/server/internal/platform/httperr"
 	"github.com/ovh-webui/server/internal/purchase"
+	"github.com/ovh-webui/server/internal/service/order"
 	"github.com/ovh-webui/server/internal/telegram"
 	"github.com/ovh-webui/server/internal/types"
 )
@@ -96,18 +98,13 @@ func AddQueueItem(state *app.State) gin.HandlerFunc {
 			AutoPay:       body.AutoPay,
 			Force:         body.Force,
 		}
-		// 入队 + 落库是一件事:EnqueueItems 失败会把这条从内存撤回,
-		// 不留"这次能跑但重启就丢"的半成功任务
-		if err := state.EnqueueItems([]types.QueueItem{item}, false); err != nil {
+		// 入队 + 落库由 OrderService 统一保证:失败时自动撤回,不存在半成功任务
+		if err := state.OrderService.Enqueue(item, false); err != nil {
 			state.Logger.Error("添加任务后保存队列失败,已撤回: "+err.Error(), "queue")
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"status": "error",
-				"error":  "任务没能写进数据库，已撤回：" + err.Error(),
-			})
+			httperr.InternalError(c, "任务没能写进数据库，已撤回："+err.Error(), "ERR_ENQUEUE_FAILED")
 			return
 		}
 		state.Logger.Info("添加任务 "+item.ID+" ("+item.PlanCode+" 在 "+item.Datacenter+", 账户 "+body.AccountID+") 到队列并立即启动 (状态: running)", "")
-		// 不再有 warning 分支:落库要么成功、要么整条撤回并报错,没有中间态
 		c.JSON(http.StatusOK, gin.H{"status": "success", "id": item.ID})
 	}
 }
@@ -117,34 +114,13 @@ func RemoveQueueItem(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
 
-		// MarkTaskDeleted 除了打标记,还会取消这条任务正在进行的下单(如果它正跑在
-		// PurchaseServer 里)。以前只打标记,处理器要到下一轮才看得见,这一轮照跑到结账。
-		state.MarkTaskDeleted(id)
-		state.Logger.Info("标记任务 "+id+" 为删除，正在进行的下单已取消，后台线程将停止处理", "system")
-
-		state.QueueMu.Lock()
-		var removed *types.QueueItem
-		// 重新分配新 slice，避免 [:0] 与原 backing array 共享导致快照读到已被覆盖的元素
-		kept := make([]types.QueueItem, 0, len(state.Queue))
-		for i := range state.Queue {
-			if state.Queue[i].ID == id {
-				cp := state.Queue[i]
-				removed = &cp
-				continue
-			}
-			kept = append(kept, state.Queue[i])
-		}
-		state.Queue = kept
-		state.QueueMu.Unlock()
-		if err := state.SaveQueue(); err != nil {
-			// 删除没落库 → 重启后这条任务会"复活"并继续抢。必须告诉用户。
+		removed, err := state.OrderService.RemoveQueueItem(id)
+		if err != nil {
 			state.Logger.Error("删除任务后保存队列失败: "+err.Error(), "queue")
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"status": "error",
-				"error":  "已从运行中的队列移除，但没能写进数据库，重启后这条任务会重新出现：" + err.Error(),
-			})
+			httperr.InternalError(c, "已从运行中的队列移除，但没能写进数据库，重启后这条任务会重新出现："+err.Error(), "ERR_DB_SAVE")
 			return
 		}
+		state.Logger.Info("标记任务 "+id+" 为删除，正在进行的下单已取消，后台线程将停止处理", "system")
 		if removed != nil {
 			state.Logger.Info("Removed "+removed.PlanCode+" from queue (ID: "+id+")", "system")
 			// 云下单:把绑定的 Telegram 进度卡片改成"已终止"(未绑卡片时 NotifyTaskProgress 直接返回)
@@ -157,34 +133,25 @@ func RemoveQueueItem(state *app.State) gin.HandlerFunc {
 }
 
 // UpdateQueueInterval PUT /api/queue/:id/interval  body: { "retryInterval": 秒 }
-// 改一条正在跑的任务的重试间隔。处理器每轮都读 item 上的值,所以改完下一轮就生效。
 func UpdateQueueInterval(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
 		var body struct {
 			RetryInterval int `json:"retryInterval"`
 		}
-		if err := c.ShouldBindJSON(&body); err != nil ||
-			body.RetryInterval < types.MinRetryInterval || body.RetryInterval > types.MaxRetryInterval {
+		if err := c.ShouldBindJSON(&body); err != nil {
 			httperr.BadRequest(c, fmt.Sprintf("重试间隔必须是 %d ~ %d 之间的整数秒", types.MinRetryInterval, types.MaxRetryInterval), "ERR_INVALID_INTERVAL")
 			return
 		}
-		found := false
-		state.QueueMu.Lock()
-		for i := range state.Queue {
-			if state.Queue[i].ID == id {
-				state.Queue[i].RetryInterval = body.RetryInterval
-				state.Queue[i].UpdatedAt = types.NowISO()
-				found = true
-				break
+		if err := state.OrderService.UpdateQueueInterval(id, body.RetryInterval); err != nil {
+			if errors.Is(err, order.ErrInvalidInterval) {
+				httperr.BadRequest(c, err.Error(), "ERR_INVALID_INTERVAL")
+				return
 			}
-		}
-		state.QueueMu.Unlock()
-		if !found {
-			httperr.NotFound(c, "任务不存在", "ERR_QUEUE_NOT_FOUND")
-			return
-		}
-		if err := state.SaveQueue(); err != nil {
+			if errors.Is(err, order.ErrItemNotFound) {
+				httperr.NotFound(c, "任务不存在", "ERR_QUEUE_NOT_FOUND")
+				return
+			}
 			state.Logger.Error("改任务间隔后保存队列失败: "+err.Error(), "queue")
 			httperr.InternalError(c, "间隔已在本次运行中改掉，但没能写进数据库，重启后会回到原值："+err.Error(), "ERR_DB_SAVE")
 			return
@@ -197,30 +164,20 @@ func UpdateQueueInterval(state *app.State) gin.HandlerFunc {
 // ClearQueue DELETE /api/queue/clear
 func ClearQueue(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		state.QueueMu.Lock()
-		count := len(state.Queue)
-		oldQueue := append([]types.QueueItem{}, state.Queue...)
-		for _, it := range state.Queue {
-			state.MarkTaskDeleted(it.ID) // 同时取消正在进行的下单
-		}
-		state.Queue = []types.QueueItem{}
-		state.QueueMu.Unlock()
-		if err := state.SaveQueue(); err != nil {
+		oldQueue, err := state.OrderService.ClearQueue()
+		if err != nil {
 			state.Logger.Error("清空队列后保存失败: "+err.Error(), "queue")
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"status": "error",
-				"error":  "已清空运行中的队列，但没能写进数据库，重启后这些任务会重新出现：" + err.Error(),
-			})
+			httperr.InternalError(c, "已清空运行中的队列，但没能写进数据库，重启后这些任务会重新出现："+err.Error(), "ERR_DB_SAVE")
 			return
 		}
-		// 云下单:绑定了进度卡片的任务逐条回写"已终止"(队列已清空,不会再出现"剩余机房")
+		// 云下单:绑定了进度卡片的任务逐条回写"已终止"
 		for i := range oldQueue {
 			telegram.NotifyTaskProgress(state, &oldQueue[i], "cancelled", map[string]string{
 				"reason": "已在网页控制台清空抢购队列",
 			})
 		}
-		state.Logger.Info("Cleared all queue items ("+strconv.Itoa(count)+" items removed)", "")
-		c.JSON(http.StatusOK, gin.H{"status": "success", "count": count})
+		state.Logger.Info("Cleared all queue items ("+strconv.Itoa(len(oldQueue))+" items removed)", "")
+		c.JSON(http.StatusOK, gin.H{"status": "success", "count": len(oldQueue)})
 	}
 }
 
@@ -232,38 +189,28 @@ func UpdateQueueStatus(state *app.State) gin.HandlerFunc {
 			Status string `json:"status"`
 		}
 		_ = c.ShouldBindJSON(&body)
-		if body.Status == "" {
-			body.Status = "pending"
-		}
-		state.QueueMu.Lock()
-		var target *types.QueueItem
-		for i := range state.Queue {
-			if state.Queue[i].ID == id {
-				state.Queue[i].Status = body.Status
-				state.Queue[i].UpdatedAt = types.NowISO()
-				cp := state.Queue[i]
-				target = &cp
-				state.Logger.Info("Updated "+state.Queue[i].PlanCode+" status to "+body.Status, "")
-				break
+
+		target, err := state.OrderService.UpdateQueueStatus(id, body.Status)
+		if err != nil {
+			if errors.Is(err, order.ErrItemNotFound) {
+				httperr.NotFound(c, "任务不存在", "ERR_QUEUE_NOT_FOUND")
+				return
 			}
-		}
-		state.QueueMu.Unlock()
-		if err := state.SaveQueue(); err != nil {
+			if errors.Is(err, order.ErrInvalidStatus) {
+				httperr.BadRequest(c, err.Error(), "ERR_INVALID_STATUS")
+				return
+			}
 			state.Logger.Error("改任务状态后保存队列失败: "+err.Error(), "queue")
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"status": "error",
-				"error":  "状态已在本次运行中改掉，但没能写进数据库，重启后会回到原状态：" + err.Error(),
-			})
+			httperr.InternalError(c, "状态已在本次运行中改掉，但没能写进数据库，重启后会回到原状态："+err.Error(), "ERR_DB_SAVE")
 			return
 		}
+		state.Logger.Info("Updated "+target.PlanCode+" status to "+target.Status, "")
 		// 云下单:网页端暂停/恢复同步到 Telegram 进度卡片
-		if target != nil {
-			switch body.Status {
-			case "paused":
-				telegram.NotifyTaskProgress(state, target, "paused", nil)
-			case "running":
-				telegram.NotifyTaskProgress(state, target, "queued", nil)
-			}
+		switch target.Status {
+		case "paused":
+			telegram.NotifyTaskProgress(state, &target, "paused", nil)
+		case "running":
+			telegram.NotifyTaskProgress(state, &target, "queued", nil)
 		}
 		c.JSON(http.StatusOK, gin.H{"status": "success"})
 	}
@@ -308,27 +255,9 @@ func RefreshOrderStatuses(state *app.State) gin.HandlerFunc {
 // ClearPurchaseHistory DELETE /api/purchase-history
 func ClearPurchaseHistory(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 落库失败必须报出去。上面的 ClearQueue 就是这么写的,只有这里
-		// 用 `_ =` 把错吞了 —— 表现是前端弹"已清空"、库里其实一条没删,
-		// 重启后整个购买历史原样复活。用户会以为是程序把删掉的记录找回来了。
-		state.HistoryMu.Lock()
-		backup := make([]types.PurchaseHistoryEntry, len(state.History))
-		copy(backup, state.History)
-		state.History = []types.PurchaseHistoryEntry{}
-		state.HistoryMu.Unlock()
-
-		if err := state.SaveHistory(); err != nil {
-			// 内存回滚,让两边保持一致 —— 否则界面是空的、库里是满的,
-			// 下一次任何写历史的操作都会把整表按"空"覆盖回去。
-			// 回滚要保留这中间新落的记录(下单完成会 append),所以是拼接不是覆盖。
-			state.HistoryMu.Lock()
-			state.History = append(backup, state.History...)
-			state.HistoryMu.Unlock()
+		if err := state.OrderService.ClearHistory(); err != nil {
 			state.Logger.Error("清空购买历史失败: "+err.Error(), "queue")
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"status": "error",
-				"error":  "没能写进数据库，购买历史未被清空：" + err.Error(),
-			})
+			httperr.InternalError(c, "没能写进数据库，购买历史未被清空："+err.Error(), "ERR_DB_SAVE")
 			return
 		}
 		state.Logger.Info("Purchase history cleared", "")

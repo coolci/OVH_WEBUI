@@ -233,14 +233,37 @@ export default api;
 
 // ─── fetch 风格 facade（供 lib/api.ts 业务方法） ────────────
 
+export interface ProblemDetails {
+  type?: string;
+  title?: string;
+  status?: number;
+  detail?: string;
+  instance?: string;
+  code?: string;
+  remediation?: string[];
+  [key: string]: unknown;
+}
+
 export class ApiError extends Error {
   status: number;
   data: unknown;
+  code?: string;
+  detail?: string;
+  remediation?: string[];
+
   constructor(message: string, status: number, data?: unknown) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.data = data;
+    if (data && typeof data === "object") {
+      const d = data as Record<string, unknown>;
+      if (typeof d.code === "string") this.code = d.code;
+      if (typeof d.detail === "string") this.detail = d.detail;
+      if (Array.isArray(d.remediation)) {
+        this.remediation = d.remediation.filter((x): x is string => typeof x === "string");
+      }
+    }
   }
 }
 
@@ -307,12 +330,14 @@ export async function apiRequest<T = unknown>(
     if (res.status === 204) return undefined as T;
     return res.data;
   } catch (err) {
-    const ax = err as AxiosError<{ message?: string; error?: string }>;
+    const ax = err as AxiosError<ProblemDetails | { message?: string; error?: string }>;
     const status = ax.response?.status ?? 0;
-    const errorData = ax.response?.data ?? {};
+    const errorData = (ax.response?.data ?? {}) as Record<string, unknown>;
     const msg =
-      (errorData as { message?: string }).message ||
-      (errorData as { error?: string }).error ||
+      (typeof errorData.detail === "string" && errorData.detail) ||
+      (typeof errorData.message === "string" && errorData.message) ||
+      (typeof errorData.error === "string" && errorData.error) ||
+      (typeof errorData.title === "string" && errorData.title) ||
       ax.message ||
       (status ? `HTTP ${status}` : "网络错误");
     throw new ApiError(msg, status, errorData);

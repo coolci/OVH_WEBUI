@@ -3,6 +3,8 @@
 package repository
 
 import (
+	"time"
+
 	"github.com/ovh-webui/server/internal/db"
 	"github.com/ovh-webui/server/internal/types"
 )
@@ -54,4 +56,33 @@ type MonitorRepository interface {
 	UpsertMonitorSubscription(sub types.Subscription) error
 	DeleteMonitorSubscription(planCode string) error
 	ClearMonitorSubscriptions() (int64, error)
+}
+
+// DeviceRepository defines operations for mobile app pairing codes and authorized devices.
+type DeviceRepository interface {
+	CreatePairingCode() (string, time.Time, error)
+	RedeemPairingCode(code, deviceName string) (string, int64, error)
+	ListDevices() ([]db.AppDevice, error)
+	RevokeDevice(id int64) error
+	DeviceTokenValid(token string) (deviceID int64, ok bool)
+}
+
+// TelegramRepository defines operations for Telegram idempotency, button clicks, and short IDs.
+type TelegramRepository interface {
+	FindShortIDByFull(full string) (string, bool, error)
+	UpsertShortID(shortID, full, category string) error
+	GetShortID(shortID string) (string, bool, error)
+	ClaimTelegramButton(buttonID string) (db.TelegramButtonRow, bool, error)
+	UnclaimTelegramButton(buttonID string) error
+	GetTelegramButton(buttonID string) (db.TelegramButtonRow, bool, error)
+	TryClaimTelegramUpdate(updateID int64) (bool, error)
+	CleanupTelegramUpdates(beforeUnix float64) (int64, error)
+}
+
+// ServerRepository defines server and catalog cache operations.
+type ServerRepository interface {
+	ServerCount() (int, error)
+	ServersUpdatedAt() (int64, error)
+	ClearServers() error
+	ClearCatalogs() error
 }

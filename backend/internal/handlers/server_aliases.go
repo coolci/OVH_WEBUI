@@ -7,7 +7,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/platform/httperr"
-	serverService "github.com/ovh-webui/server/internal/service/server"
 )
 
 // ListServerAliases GET /api/server-control/aliases[?account=<id>]
@@ -18,7 +17,7 @@ func ListServerAliases(state *app.State) gin.HandlerFunc {
 			httperr.PreconditionFailed(c, "未配置 OVH 账户", "NO_OVH_ACCOUNT")
 			return
 		}
-		svc := serverService.NewService(state.DB)
+		svc := state.ServerService
 		m, err := svc.ListAliases(acc.ID)
 		if err != nil {
 			state.Logger.Error("list aliases: "+err.Error(), "server_control")
@@ -51,7 +50,7 @@ func SetServerAlias(state *app.State) gin.HandlerFunc {
 		_ = c.ShouldBindJSON(&body)
 		alias := strings.TrimSpace(body.Alias)
 
-		svc := serverService.NewService(state.DB)
+		svc := state.ServerService
 		if err := svc.SetAlias(acc.ID, svcName, alias); err != nil {
 			state.Logger.Error("set alias: "+err.Error(), "server_control")
 			httperr.InternalError(c, err.Error(), "INTERNAL_ERROR")
@@ -74,7 +73,7 @@ func DeleteServerAlias(state *app.State) gin.HandlerFunc {
 			httperr.BadRequest(c, "缺少 service_name", "E6803C9EF")
 			return
 		}
-		svc := serverService.NewService(state.DB)
+		svc := state.ServerService
 		if err := svc.DeleteAlias(acc.ID, svcName); err != nil {
 			state.Logger.Error("delete alias: "+err.Error(), "server_control")
 			httperr.InternalError(c, err.Error(), "INTERNAL_ERROR")

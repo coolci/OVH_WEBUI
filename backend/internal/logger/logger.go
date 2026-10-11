@@ -105,11 +105,15 @@ func (l *Logger) Add(level, message, source string) {
 	}
 }
 
-// Info/Warn/Error/Debug 便捷方法
+// Info/Warn/Error/Debug/Audit 便捷方法
 func (l *Logger) Info(msg, source string)  { l.Add("INFO", msg, source) }
 func (l *Logger) Warn(msg, source string)  { l.Add("WARNING", msg, source) }
 func (l *Logger) Error(msg, source string) { l.Add("ERROR", msg, source) }
 func (l *Logger) Debug(msg, source string) { l.Add("DEBUG", msg, source) }
+func (l *Logger) Audit(action, actor, resource, detail string) {
+	msg := fmt.Sprintf("action=%s actor=%s resource=%s %s", action, actor, resource, detail)
+	l.Add("INFO", msg, "audit")
+}
 
 // Flush 强制刷盘
 func (l *Logger) Flush() {
