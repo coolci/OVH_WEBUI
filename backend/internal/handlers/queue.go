@@ -13,6 +13,7 @@ import (
 
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/catalog"
+	"github.com/ovh-webui/server/internal/platform/httperr"
 	"github.com/ovh-webui/server/internal/purchase"
 	"github.com/ovh-webui/server/internal/telegram"
 	"github.com/ovh-webui/server/internal/types"
@@ -165,8 +166,7 @@ func UpdateQueueInterval(state *app.State) gin.HandlerFunc {
 		}
 		if err := c.ShouldBindJSON(&body); err != nil ||
 			body.RetryInterval < types.MinRetryInterval || body.RetryInterval > types.MaxRetryInterval {
-			c.JSON(http.StatusBadRequest, gin.H{"status": "error",
-				"error": fmt.Sprintf("重试间隔必须是 %d ~ %d 之间的整数秒", types.MinRetryInterval, types.MaxRetryInterval)})
+			httperr.BadRequest(c, fmt.Sprintf("重试间隔必须是 %d ~ %d 之间的整数秒", types.MinRetryInterval, types.MaxRetryInterval), "ERR_INVALID_INTERVAL")
 			return
 		}
 		found := false
@@ -181,15 +181,12 @@ func UpdateQueueInterval(state *app.State) gin.HandlerFunc {
 		}
 		state.QueueMu.Unlock()
 		if !found {
-			c.JSON(http.StatusNotFound, gin.H{"status": "error", "error": "任务不存在", "code": "E10FEEC40"})
+			httperr.NotFound(c, "任务不存在", "ERR_QUEUE_NOT_FOUND")
 			return
 		}
 		if err := state.SaveQueue(); err != nil {
 			state.Logger.Error("改任务间隔后保存队列失败: "+err.Error(), "queue")
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"status": "error",
-				"error":  "间隔已在本次运行中改掉，但没能写进数据库，重启后会回到原值：" + err.Error(),
-			})
+			httperr.InternalError(c, "间隔已在本次运行中改掉，但没能写进数据库，重启后会回到原值："+err.Error(), "ERR_DB_SAVE")
 			return
 		}
 		state.Logger.Info(fmt.Sprintf("任务 %s 重试间隔改为 %d 秒", id, body.RetryInterval), "queue")

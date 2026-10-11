@@ -13,6 +13,7 @@ import (
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/netfp"
 	"github.com/ovh-webui/server/internal/ovh"
+	"github.com/ovh-webui/server/internal/platform/httperr"
 )
 
 // catalogTTL OVH 公开 catalog 缓存时长，与前端 useOvhCatalog 的 staleTime 对齐
@@ -44,19 +45,15 @@ func GetCatalog(state *app.State) gin.HandlerFunc {
 		// "upstream returned 400" —— 完全看不出是子公司写错了。
 		if !ovh.KnownSubsidiary(sub) {
 			state.Logger.Warn("catalog 请求了未知子公司: "+sub, "catalog")
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "未知的 ovhSubsidiary: " + sub,
-				"message": "OVH 的 EU / US / CA 是三套独立站点，各自只认自己的子公司：" +
-					"EU=CZ DE ES EU FI FR GB IE IT LT MA NL PL PT SN TN；CA=ASIA AU CA IN QC SG WE WS；US=US",
-			})
+			httperr.BadRequest(c, "未知的 ovhSubsidiary: "+sub, "ERR_INVALID_SUBSIDIARY")
 			return
 		}
 		region := ovh.SubsidiaryRegion(sub)
 		force := strings.EqualFold(c.Query("forceRefresh"), "true")
 
 		// 1. 命中 SQLite 缓存且未过期 → 直接返回
-		if !force {
-			raw, ts, ok, err := state.DB.GetCatalog(sub)
+		if !force && state.CatalogService != nil {
+			raw, ts, ok, err := state.CatalogService.GetCatalog(sub)
 			if err == nil && ok {
 				age := time.Since(time.UnixMilli(ts))
 				if age < catalogTTL {
@@ -78,10 +75,12 @@ func GetCatalog(state *app.State) gin.HandlerFunc {
 		resp, err := client.Do(req)
 		if err != nil {
 			// 拉失败时回退到 stale 缓存（如果有），比直接给 500 强
-			if raw, _, ok, _ := state.DB.GetCatalog(sub); ok {
-				c.Header("X-Cache-Warning", "stale (upstream fetch failed)")
-				c.Data(http.StatusOK, "application/json; charset=utf-8", []byte(raw))
-				return
+			if state.CatalogService != nil {
+				if raw, _, ok, _ := state.CatalogService.GetCatalog(sub); ok {
+					c.Header("X-Cache-Warning", "stale (upstream fetch failed)")
+					c.Data(http.StatusOK, "application/json; charset=utf-8", []byte(raw))
+					return
+				}
 			}
 			state.Logger.Error("catalog 拉取失败 "+sub+": "+err.Error(), "catalog")
 			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
@@ -99,10 +98,12 @@ func GetCatalog(state *app.State) gin.HandlerFunc {
 			state.Logger.Error(fmt.Sprintf("catalog 上游 HTTP %d: 子公司 %s / %s 站点(%s)", resp.StatusCode, sub, region, baseURL), "catalog")
 			// 上游报错时同样先退回 stale 缓存:目录一天也变不了几次,
 			// 给一份两小时前的目录也比让整个浏览页空掉强。
-			if raw, _, ok, _ := state.DB.GetCatalog(sub); ok {
-				c.Header("X-Cache-Warning", "stale (upstream returned "+strconv.Itoa(resp.StatusCode)+")")
-				c.Data(http.StatusOK, "application/json; charset=utf-8", []byte(raw))
-				return
+			if state.CatalogService != nil {
+				if raw, _, ok, _ := state.CatalogService.GetCatalog(sub); ok {
+					c.Header("X-Cache-Warning", "stale (upstream returned "+strconv.Itoa(resp.StatusCode)+")")
+					c.Data(http.StatusOK, "application/json; charset=utf-8", []byte(raw))
+					return
+				}
 			}
 			c.JSON(http.StatusBadGateway, gin.H{
 				"error": fmt.Sprintf("upstream returned %d", resp.StatusCode),
@@ -113,10 +114,12 @@ func GetCatalog(state *app.State) gin.HandlerFunc {
 		}
 
 		// 3. 落 SQLite + 回写响应
-		if err := state.DB.UpsertCatalog(sub, string(body)); err != nil {
-			state.Logger.Warn("catalog 写库失败 "+sub+": "+err.Error(), "catalog")
-		} else {
-			state.Logger.Info(fmt.Sprintf("catalog %s(%s 站点) 已缓存 (%d KB)", sub, region, len(body)/1024), "catalog")
+		if state.CatalogService != nil {
+			if err := state.CatalogService.SaveCatalog(sub, string(body)); err != nil {
+				state.Logger.Warn("catalog 写库失败 "+sub+": "+err.Error(), "catalog")
+			} else {
+				state.Logger.Info(fmt.Sprintf("catalog %s(%s 站点) 已缓存 (%d KB)", sub, region, len(body)/1024), "catalog")
+			}
 		}
 		c.Header("X-Cache-Age-Seconds", "0")
 		c.Data(http.StatusOK, "application/json; charset=utf-8", body)

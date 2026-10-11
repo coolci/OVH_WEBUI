@@ -1,30 +1,16 @@
-import { AppLayout } from "@/components/layout/AppLayout";
-import { Helmet } from "react-helmet-async";
-import {
-  ListOrdered,
-  RefreshCw,
-  Trash2,
-  PauseCircle,
-  PlayCircle,
-  X,
-  Clock,
-  Plus,
-  Loader2,
-  Search,
-} from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import {
+  ListOrdered, RefreshCw, Trash2, PauseCircle, PlayCircle, Plus, Search,
+} from "lucide-react";
+import { Helmet } from "react-helmet-async";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
+import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/common/PageHeader";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Chip } from "@/components/common/Chip";
-import { StatusDot } from "@/components/common/StatusDot";
-import { EmptyState } from "@/components/common/EmptyState";
 import { Skeleton } from "@/components/common/Skeleton";
+import { EmptyState } from "@/components/common/EmptyState";
 import { LoadFailed } from "@/components/common/LoadFailed";
 import {
   Dialog,
@@ -34,92 +20,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { QueueFilterBar } from "@/components/queue/QueueFilterBar";
+import { QueueRow } from "@/components/queue/QueueRow";
+import { CreateQueueDialog } from "@/components/queue/CreateQueueDialog";
 import {
   useQueueList,
   useToggleQueueItem,
   useRemoveQueueItem,
   useClearQueue,
-  useCreateQueueItem,
-  useUpdateQueueInterval,
-  type QueueItem,
 } from "@/hooks/use-queue";
-import { useSettings, RETRY_INTERVAL } from "@/hooks/use-settings";
-import { useServers } from "@/hooks/use-servers";
-import { mergeDcAvailability } from "@/lib/datacenters";
-import { DatacenterPicker } from "@/components/common/DatacenterPicker";
-import { AccountSelect } from "@/components/common/AccountSelect";
-import { AccountChip } from "@/components/common/AccountChip";
-import { PlanCodeCombobox } from "@/components/common/PlanCodeCombobox";
-import { OptionGroupSection } from "@/components/common/OptionGroupSection";
-import { describeOptionCode, describeOptionCodes, groupOptions, type OptionGroupKey } from "@/lib/option-groups";
-import {
-  useAvailability,
-  buildAvailabilityMap,
-  buildVariantIndex,
-  hasStockWithOption,
-} from "@/hooks/use-availability";
-
-/** 抢购队列：列表 + 暂停/恢复/删除/清空 + 新建抢购任务 */
-/** 新建任务时的兜底间隔。真正的默认值来自设置（/api/settings.defaultRetryInterval） */
-const FALLBACK_RETRY_INTERVAL = RETRY_INTERVAL.defaultTask;
-
-/**
- * 队列卡片上那个可点的秒数。
- * 点一下变输入框，回车/失焦提交。改的是这一条任务自己的间隔，下一轮就生效。
- */
-function IntervalEditor({ id, value }: { id: string; value: number }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(String(value));
-  const update = useUpdateQueueInterval();
-
-  const commit = () => {
-    setEditing(false);
-    const n = Number(draft);
-    if (!n || n === value) return setDraft(String(value));
-    if (n < RETRY_INTERVAL.min || n > RETRY_INTERVAL.max) {
-      toast.error(`重试间隔要在 ${RETRY_INTERVAL.min} ~ ${RETRY_INTERVAL.max} 秒之间`);
-      return setDraft(String(value));
-    }
-    update.mutate({ id, retryInterval: n });
-  };
-
-  if (!editing) {
-    return (
-      <button
-        type="button"
-        onClick={() => {
-          setDraft(String(value));
-          setEditing(true);
-        }}
-        className="font-medium text-foreground underline decoration-dotted underline-offset-2 hover:text-primary"
-        title="点击修改这条任务的重试间隔"
-      >
-        {value}
-      </button>
-    );
-  }
-  return (
-    <input
-      autoFocus
-      type="text"
-      inputMode="numeric"
-      value={draft}
-      onChange={(e) => {
-        const v = e.target.value;
-        if (v === "" || /^\d*$/.test(v)) setDraft(v);
-      }}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") commit();
-        if (e.key === "Escape") {
-          setDraft(String(value));
-          setEditing(false);
-        }
-      }}
-      className="w-14 px-1 py-0.5 rounded border border-input bg-background text-base sm:text-[11px] text-center"
-    />
-  );
-}
+import { cn } from "@/lib/utils";
 
 function QueuePage() {
   const queue = useQueueList();
@@ -135,7 +45,6 @@ function QueuePage() {
   const [prefillPlanCode, setPrefillPlanCode] = useState<string>("");
   const [prefillOptions, setPrefillOptions] = useState<string>("");
 
-  // 从其它页跳到 /queue?create=KS-A-1&options=...，自动打开新建对话框并预填
   useEffect(() => {
     if (createPlanCode) {
       setPrefillPlanCode(createPlanCode);
@@ -219,61 +128,16 @@ function QueuePage() {
       />
 
       {items.length > 0 && (
-        <Card className="surface-card rounded-xl border-border">
-          <CardContent className="p-3 sm:p-4 flex flex-col sm:flex-row items-center gap-3">
-            <div className="relative flex-1 w-full min-w-0">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
-              <Input
-                placeholder="搜索型号 / 机房 / 账户..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-9 pr-9 rounded-lg h-8 text-xs bg-background/50 border-border/80 focus-visible:ring-1 focus-visible:ring-primary/40"
-              />
-              {search && (
-                <button
-                  type="button"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-muted-foreground hover:text-foreground transition-colors"
-                  onClick={() => setSearch("")}
-                  aria-label="清空搜索"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-            <div className="grid grid-cols-4 sm:flex items-center gap-1 w-full sm:w-auto p-1 bg-muted/50 rounded-lg border border-border/60">
-              {[
-                { id: "all", label: "全部", count: items.length },
-                { id: "running", label: "运行中", count: runningCount },
-                { id: "paused", label: "已暂停", count: pausedCount },
-                { id: "failed", label: "失败", count: failedCount },
-              ].map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setStatusFilter(tab.id)}
-                  className={cn(
-                    "px-2 py-1 text-xs font-medium rounded-md transition-all duration-200 justify-center flex items-center gap-1 sm:gap-1.5",
-                    statusFilter === tab.id
-                      ? "bg-background text-foreground font-semibold shadow-sm border border-border/60"
-                      : "text-muted-foreground hover:bg-secondary/40 hover:text-foreground"
-                  )}
-                >
-                  <span className="truncate">{tab.label}</span>
-                  <span
-                    className={cn(
-                      "text-[10px] px-1.5 py-0.2 rounded-full",
-                      statusFilter === tab.id
-                        ? "bg-primary/10 text-primary"
-                        : "bg-muted text-muted-foreground"
-                    )}
-                  >
-                    {tab.count}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+        <QueueFilterBar
+          search={search}
+          onSearchChange={setSearch}
+          statusFilter={statusFilter}
+          onStatusFilterChange={setStatusFilter}
+          totalCount={items.length}
+          runningCount={runningCount}
+          pausedCount={pausedCount}
+          failedCount={failedCount}
+        />
       )}
 
       {items.length > 0 && (
@@ -404,7 +268,6 @@ function QueuePage() {
           if (!v) {
             setPrefillPlanCode("");
             setPrefillOptions("");
-            // 清掉 URL 上的 create / options 参数
             navigate("/queue", { replace: true });
           }
         }}
@@ -414,490 +277,6 @@ function QueuePage() {
     </div>
   );
 }
-
-/** 创建抢购任务对话框 */
-function CreateQueueDialog({
-  open,
-  onOpenChange,
-  initialPlanCode,
-  initialOptions,
-}: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  initialPlanCode?: string;
-  initialOptions?: string;
-}) {
-  const servers = useServers();
-  const availQ = useAvailability();
-  const variantIndex = useMemo(() => buildVariantIndex(availQ.data), [availQ.data]);
-  const availMap = useMemo(() => buildAvailabilityMap(availQ.data), [availQ.data]);
-  const create = useCreateQueueItem();
-  const settingsQ = useSettings();
-  const cfgDefault = settingsQ.data?.defaultRetryInterval || FALLBACK_RETRY_INTERVAL;
-  const [accountId, setAccountId] = useState("");
-  const [planCode, setPlanCode] = useState(initialPlanCode || "");
-  const [datacenters, setDatacenters] = useState<string[]>([]);
-  const [quantity, setQuantity] = useState("1");
-  const [retryInterval, setRetryInterval] = useState("");
-  const intervalTouchedRef = useRef(false);
-  useEffect(() => {
-    if (!intervalTouchedRef.current) setRetryInterval(String(cfgDefault));
-  }, [cfgDefault]);
-  // 用户选的 addon,按组索引。每次切 planCode 自动清空(让用户重新选)。
-  const [picked, setPicked] = useState<Partial<Record<OptionGroupKey, string>>>({});
-  // 手填的额外 addon planCode(catalog 里没分组覆盖到的、或用户想加的特殊 addon)
-  const [extraInput, setExtraInput] = useState("");
-  const [autoPay, setAutoPay] = useState(false);
-
-  useEffect(() => {
-    if (open) {
-      if (initialPlanCode) setPlanCode(initialPlanCode);
-    }
-  }, [initialPlanCode, open]);
-
-  /** planCode 匹配到的服务器（用于显示名称提示） */
-  const matchedServer = useMemo(
-    () => (servers.data || []).find((s) => s.planCode === planCode.trim()),
-    [servers.data, planCode]
-  );
-
-  // 切 planCode 清空 picked —— 之前选的 addon 对新机型多半不适用。
-  // initialOptions 由外部传入时(从其它入口"快速添加"过来),解析后塞进 picked 让用户能看到。
-  const prevPlanCodeRef = useRef("");
-  useEffect(() => {
-    const code = planCode.trim();
-    if (code === prevPlanCodeRef.current) return;
-    prevPlanCodeRef.current = code;
-    if (initialOptions && code === (initialPlanCode || "").trim()) {
-      // 走"外部带 initialOptions 进来"分支:
-      //   - 能映射到 chip 组的塞进 picked
-      //   - 剩下没匹配上的(chip 没覆盖到的 addon)塞进 extraInput
-      const wantedList = initialOptions.split(",").map((v) => v.trim()).filter(Boolean);
-      const consumed = new Set<string>();
-      const next: Partial<Record<OptionGroupKey, string>> = {};
-      const groupedMap = matchedServer ? groupOptions(matchedServer.availableOptions) : null;
-      if (groupedMap) {
-        for (const g of Object.keys(groupedMap) as OptionGroupKey[]) {
-          const hit = groupedMap[g].find((o) => wantedList.includes(o.value));
-          if (hit) {
-            next[g] = hit.value;
-            consumed.add(hit.value);
-          }
-        }
-      }
-      setPicked(next);
-      const leftover = wantedList.filter((v) => !consumed.has(v));
-      setExtraInput(leftover.join(", "));
-    } else {
-      setPicked({});
-      setExtraInput("");
-    }
-  }, [planCode, initialOptions, initialPlanCode, matchedServer]);
-
-  /** 按组拆分该机型的所有可选 addon */
-  const grouped = useMemo(
-    () => (matchedServer ? groupOptions(matchedServer.availableOptions) : null),
-    [matchedServer]
-  );
-  const defaultValueSet = useMemo(
-    () => new Set((matchedServer?.defaultOptions || []).map((o) => o.value)),
-    [matchedServer]
-  );
-
-  /** 提交给后端的 addon planCode 列表。
-   *  matchedServer 在 → 走 chip 选择(picked);不在 → 走手填(extraInput)。
-   *  二选一,不混用。 */
-  const parsedOptions = useMemo(() => {
-    if (matchedServer) {
-      return Object.values(picked).filter(Boolean) as string[];
-    }
-    return extraInput
-      .split(",")
-      .map((v) => v.trim())
-      .filter(Boolean);
-  }, [matchedServer, picked, extraInput]);
-
-  // option chip 的绿/红点:跟服务器列表对话框同一套逻辑
-  const variants = matchedServer ? variantIndex[matchedServer.planCode] : undefined;
-  const optionHasStock = (groupKey: OptionGroupKey, value: string): boolean => {
-    if (groupKey === "bandwidth" || groupKey === "vrack" || groupKey === "cpu" || groupKey === "other") {
-      return true;
-    }
-    return hasStockWithOption(
-      variants,
-      picked as Record<string, string>,
-      groupKey,
-      value,
-      datacenters.length > 0 ? datacenters : undefined
-    );
-  };
-
-  const qty = Number(quantity) || 1;
-  const totalTasks = datacenters.length * qty;
-  const canSubmit = !!accountId && planCode.trim().length > 0 && datacenters.length > 0 && qty > 0;
-
-  const reset = () => {
-    setPlanCode("");
-    setDatacenters([]);
-    setQuantity("1");
-    intervalTouchedRef.current = false;
-    setRetryInterval(String(cfgDefault));
-    setPicked({});
-    setExtraInput("");
-    setAutoPay(false);
-    prevPlanCodeRef.current = "";
-  };
-
-  const handleClose = () => {
-    if (create.isPending) return;
-    onOpenChange(false);
-  };
-
-  const dcAvailability = useMemo(
-    () =>
-      mergeDcAvailability(
-        matchedServer?.datacenters,
-        matchedServer ? availMap[matchedServer.planCode] : undefined
-      ),
-    [matchedServer, availMap]
-  );
-
-  const handleSubmit = async () => {
-    if (!canSubmit) {
-      toast.error("请填写计划代码并至少选择一个数据中心");
-      return;
-    }
-    const isCustomPlan = Boolean(
-      planCode.trim() && !servers.data?.some((s) => s.planCode.toLowerCase() === planCode.trim().toLowerCase())
-    );
-    const result = await create.mutateAsync({
-      account_id: accountId,
-      planCode: planCode.trim(),
-      datacenters,
-      quantity: qty,
-      retryInterval: Number(retryInterval) || cfgDefault,
-      options: parsedOptions,
-      autoPay,
-      force: isCustomPlan,
-    });
-    if (result.success > 0) {
-      toast.success(`已创建 ${result.success}/${result.total} 个抢购任务`);
-    }
-    // 有具体原因时 hook 已经 toast 过,这里只兜底没拿到原因的情况
-    if (result.failed > 0 && !result.firstError) {
-      toast.error(`${result.failed} 个任务创建失败`);
-    }
-    if (result.success > 0) {
-      reset();
-      onOpenChange(false);
-    }
-  };
-
-  const isCustomPlan = Boolean(
-    planCode.trim() && !servers.data?.some((s) => s.planCode.toLowerCase() === planCode.trim().toLowerCase())
-  );
-
-  return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="w-[95vw] sm:w-full sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>新建抢购任务</DialogTitle>
-          <DialogDescription>
-            为每个数据中心创建指定数量的独立任务，每台服务器单独成单。
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-5 py-2">
-          {/* OVH 账户 */}
-          <div>
-            <label className="block text-[13px] font-medium mb-1.5">OVH 账户 *</label>
-            <AccountSelect value={accountId} onChange={setAccountId} />
-            <p className="text-[11px] text-muted-foreground mt-1">下单时用该账户的凭据,购物车 subsidiary 跟随账户 zone</p>
-          </div>
-
-          {/* 服务器计划代码 */}
-          <div>
-            <label className="block text-[13px] font-medium mb-1.5">服务器计划代码</label>
-            <PlanCodeCombobox
-              value={planCode}
-              onChange={setPlanCode}
-              servers={servers.data || []}
-              placeholder="输入或搜索型号，例如 24ska01"
-            />
-            {matchedServer && (
-              <p className="text-[11px] text-muted-foreground mt-1 truncate">
-                {matchedServer.cpu} · {matchedServer.memory} · {matchedServer.storage}
-              </p>
-            )}
-            {isCustomPlan && (
-              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-200/90 flex items-start gap-2 mt-1.5">
-                <span className="text-amber-400 font-bold shrink-0">自定义型号:</span>
-                <span className="text-muted-foreground text-[11px] leading-relaxed">
-                  当前型号未在已知官方目录中收录，已启用强制创建模式。若为您自拟的新款或未公开型号，有货后会自动提交；若为拼写错误（如想买 24sk20），建议更正型号。
-                </span>
-              </div>
-            )}
-          </div>
-
-          <DatacenterPicker
-            value={datacenters}
-            onChange={setDatacenters}
-            availability={dcAvailability}
-          />
-
-          {/* 数量 + 重试间隔 */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-[13px] font-medium mb-1.5">
-                每个数据中心数量
-              </label>
-              <Input
-                type="text"
-                inputMode="numeric"
-                value={quantity}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  if (v === "" || /^\d*$/.test(v)) setQuantity(v);
-                }}
-                placeholder="默认: 1"
-              />
-              <p className="text-[11px] text-muted-foreground mt-1">
-                每台服务器单独成单
-              </p>
-            </div>
-            <div>
-              <label className="block text-[13px] font-medium mb-1.5">
-                重试间隔（秒）
-              </label>
-              <Input
-                type="text"
-                inputMode="numeric"
-                value={retryInterval}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  intervalTouchedRef.current = true;
-                  if (v === "" || /^\d*$/.test(v)) setRetryInterval(v);
-                }}
-                placeholder={`默认: ${cfgDefault}`}
-              />
-              <p className="text-[11px] text-muted-foreground mt-1">
-                抢购失败后等待秒数再重试
-              </p>
-            </div>
-          </div>
-
-          {/* 可选配置:planCode 在 catalog 里 → 走 chip 选择;
-                planCode 自定义不在 catalog → 走手填。两者互斥不同时存在。 */}
-          <div>
-            <label className="block text-[13px] font-medium mb-1.5">
-              可选配置
-              <span className="text-muted-foreground ml-2 font-normal">
-                {grouped
-                  ? "（点击 chip 选择,留空走 OVH 默认下单）"
-                  : "（catalog 里没找到这个型号,需要手填 addon planCode）"}
-              </span>
-            </label>
-            {grouped ? (
-              <div className="space-y-4">
-                {(["cpu", "memory", "systemStorage", "storage", "bandwidth", "vrack", "other"] as OptionGroupKey[])
-                  .filter((g) => grouped[g].length > 0)
-                  .map((g) => (
-                    <OptionGroupSection
-                      key={g}
-                      groupKey={g}
-                      options={grouped[g]}
-                      picked={picked[g] || ""}
-                      defaultValueSet={defaultValueSet}
-                      hasStock={variants && variants.length > 0 ? (value) => optionHasStock(g, value) : undefined}
-                      onPick={(value) =>
-                        setPicked((p) => ({
-                          ...p,
-                          [g]: p[g] === value ? "" : value, // 再点一次取消选中
-                        }))
-                      }
-                    />
-                  ))}
-              </div>
-            ) : (
-              // planCode 不在 catalog 里(用户手填了自定义型号) → 走手动输入
-              <Input
-                placeholder="addon planCode,逗号分隔。例如:ram-64g-ecc-2400, softraid-2x450nvme-24sk50"
-                value={extraInput}
-                onChange={(e) => setExtraInput(e.target.value)}
-              />
-            )}
-
-            {parsedOptions.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-border">
-                <span className="text-[11px] text-muted-foreground">已选:</span>
-                {parsedOptions.map((opt, i) => (
-                  <Chip key={`${opt}-${i}`} tone="default" title={opt}>
-                    {describeOptionCode(opt)}
-                  </Chip>
-                ))}
-              </div>
-            )}
-          </div>
-
-
-          <label className="flex items-center gap-2.5 cursor-pointer rounded-xl border border-border px-3.5 py-2.5 hover:bg-muted/40 transition-colors">
-            <Checkbox checked={autoPay} onCheckedChange={(v) => setAutoPay(!!v)} />
-            <div>
-              <div className="text-sm">抢到后自动付款</div>
-              <p className="text-[11px] text-muted-foreground">默认关闭。开启后用 OVH 账户默认支付方式扣款。</p>
-            </div>
-          </label>
-
-          {/* 汇总提示 */}
-          {datacenters.length > 0 && (
-            <div className="border border-border rounded-2xl p-3 text-[12px] text-muted-foreground">
-              将创建 <span className="font-semibold text-foreground">{totalTasks}</span> 个独立任务
-              （{datacenters.length} 个数据中心 × {qty} 台
-              {parsedOptions.length > 0 ? ` · ${describeOptionCodes(parsedOptions)}` : ""}）
-            </div>
-          )}
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={handleClose} disabled={create.isPending}>
-            取消
-          </Button>
-          <Button onClick={handleSubmit} disabled={!canSubmit || create.isPending}>
-            {create.isPending ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                创建中...
-              </>
-            ) : (
-              <>
-                <Plus className="w-4 h-4" />
-                {datacenters.length > 0 ? `创建 ${totalTasks} 个任务` : "创建任务"}
-              </>
-            )}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function QueueRow({
-  item,
-  onToggle,
-  onDelete,
-}: {
-  item: QueueItem;
-  onToggle: () => void;
-  onDelete: () => void;
-}) {
-  const chip = (() => {
-    if (item.status === "running")
-      return (
-        <Chip tone="success">
-          <StatusDot tone="success" pulse size="xs" />运行中
-        </Chip>
-      );
-    if (item.status === "pending")
-      return (
-        <Chip tone="warning">
-          <StatusDot tone="warning" size="xs" />等待中
-        </Chip>
-      );
-    if (item.status === "paused")
-      return (
-        <Chip tone="default">
-          <StatusDot tone="muted" size="xs" />已暂停
-        </Chip>
-      );
-    if (item.status === "completed")
-      return (
-        <Chip tone="info">
-          <StatusDot tone="info" size="xs" />已完成
-        </Chip>
-      );
-    return (
-      <Chip tone="danger">
-        <StatusDot tone="danger" size="xs" />失败
-      </Chip>
-    );
-  })();
-
-  return (
-    <Card className="surface-card rounded-xl border-border hover:border-border/80 transition-all duration-200 shadow-sm">
-      <CardContent className="p-3.5 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-            <span className="font-mono font-semibold text-sm text-foreground tracking-tight">{item.planCode}</span>
-            <AccountChip accountId={item.accountId} />
-            <Chip tone="default">DC {item.datacenter.toUpperCase()}</Chip>
-            {item.fromTelegram && (
-              <Chip tone="default">TG 任务</Chip>
-            )}
-            {item.quickOrder && (
-              <Chip tone="default">极速抢购</Chip>
-            )}
-            {item.autoPay && (
-              <Chip tone="default">自动扣款</Chip>
-            )}
-            {item.options && item.options.length > 0 && (
-              <Chip tone="default" title={item.options.join("\n")}>
-                {describeOptionCodes(item.options)}
-              </Chip>
-            )}
-          </div>
-          <div className="text-[11px] text-muted-foreground flex items-center gap-2 flex-wrap">
-            <Clock className="w-3.5 h-3.5 text-muted-foreground/80" />
-            {item.status === "failed" ? (
-              <span>已停止重试（原因见抢购历史）</span>
-            ) : item.status === "completed" ? (
-              <span>已完成</span>
-            ) : (
-              <span className="inline-flex items-center gap-1">
-                下次尝试
-                {item.retryCount > 0 ? (
-                  <>
-                    <IntervalEditor id={item.id} value={item.retryInterval} />
-                    秒后（第 {item.retryCount + 1} 次）
-                  </>
-                ) : (
-                  "即将开始"
-                )}
-              </span>
-            )}
-            <span>·</span>
-            <span>{new Date(item.createdAt).toLocaleString()}</span>
-          </div>
-        </div>
-        <div className="flex items-center justify-between sm:justify-end gap-2 flex-shrink-0 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-border/40">
-          {chip}
-          <div className="flex items-center gap-1">
-            {item.status !== "completed" && item.status !== "failed" && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-secondary rounded-lg"
-                onClick={onToggle}
-                aria-label={item.status === "running" ? "暂停" : "恢复"}
-              >
-                {item.status === "running" ? <PauseCircle className="w-4 h-4 text-amber-400" /> : <PlayCircle className="w-4 h-4 text-emerald-400" />}
-              </Button>
-            )}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg"
-              onClick={onDelete}
-              aria-label="删除"
-            >
-              <X className="w-4 h-4" />
-            </Button>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
 
 const Page = () => (
   <>

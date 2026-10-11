@@ -15,6 +15,11 @@ import (
 	"github.com/ovh-webui/server/internal/logger"
 	"github.com/ovh-webui/server/internal/netfp"
 	"github.com/ovh-webui/server/internal/ovh"
+	"github.com/ovh-webui/server/internal/service/account"
+	"github.com/ovh-webui/server/internal/service/catalog"
+	"github.com/ovh-webui/server/internal/service/monitor"
+	"github.com/ovh-webui/server/internal/service/order"
+	"github.com/ovh-webui/server/internal/service/server"
 	"github.com/ovh-webui/server/internal/storage"
 	"github.com/ovh-webui/server/internal/types"
 )
@@ -173,6 +178,13 @@ type State struct {
 
 	// onProxyError 代理故障回调,由 main 接到 proxyguard。
 	onProxyError func(accountID string, err error)
+
+	// 领域应用服务层 (Clean Architecture Application Services)
+	AccountService account.Service
+	OrderService   order.Service
+	CatalogService catalog.Service
+	ServerService  server.Service
+	MonitorService monitor.Service
 }
 
 // NewState 构造应用状态。DB 必须已 Open。
@@ -192,6 +204,13 @@ func NewState(paths storage.Paths, cfg *config.Store, lg *logger.Logger, sqliteD
 		VPSSubscriptions:      []types.VPSSubscription{},
 		VPSCheckInterval:      60,
 		QueueProcessorRunning: true,
+	}
+	if sqliteDB != nil {
+		s.AccountService = account.NewService(sqliteDB)
+		s.OrderService = order.NewService(sqliteDB, sqliteDB)
+		s.CatalogService = catalog.NewService(sqliteDB)
+		s.ServerService = server.NewService(sqliteDB)
+		s.MonitorService = monitor.NewService(sqliteDB)
 	}
 	// Factory 闭包注入 lookup,允许按 id 查账户(空 id → 默认)
 	s.OVH = ovh.NewFactory(cfg, s.FindAccount)
