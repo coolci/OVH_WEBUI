@@ -12,8 +12,8 @@ phase:             全量穿刺解耦 (Clean Architecture / Google SWE Standards
 domain:            后端应用层 / 持久层契约 / 控制器解耦 / RFC 7807 / 前端 hooks 模块化 / 228 端点全契约覆盖
 unit:              全项目 228 个端点穿刺解耦 & 7 大领域 DDD 闭环 & OpenAPI 3.1 契约 100% 覆盖
 unit_status:       done
-last_commit:       sync/upstream-v0.1.36
-branch:            sync/upstream-v0.1.36
+last_commit:       f40c4db
+branch:            main
 build_ok:          true
 test_ok:           true
 ```
