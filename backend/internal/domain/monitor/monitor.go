@@ -16,10 +16,10 @@ const (
 )
 
 var (
-	ErrEmptyPlanCode        = errors.New("subscription plan code cannot be empty")
-	ErrInvalidInterval      = fmt.Errorf("monitor interval must be between %d and %d seconds", MinIntervalSeconds, MaxIntervalSeconds)
-	ErrEmptyDatacenters     = errors.New("at least one datacenter must be specified")
-	ErrDatacenterNotFound   = errors.New("datacenter not found in availability snapshot")
+	ErrEmptyPlanCode      = errors.New("subscription plan code cannot be empty")
+	ErrInvalidInterval    = fmt.Errorf("monitor interval must be between %d and %d seconds", MinIntervalSeconds, MaxIntervalSeconds)
+	ErrEmptyDatacenters   = errors.New("at least one datacenter must be specified")
+	ErrDatacenterNotFound = errors.New("datacenter not found in availability snapshot")
 )
 
 // DatacenterAvailability maps datacenter codes to OVH availability enumeration.
@@ -44,13 +44,13 @@ func (d DatacenterAvailability) IsInStock() bool {
 
 // Subscription represents an active inventory monitoring rule.
 type Subscription struct {
-	PlanCode        string                 `json:"planCode"`
-	Datacenters     []string               `json:"datacenters"` // Empty slice = all datacenters
-	IntervalSeconds int                    `json:"intervalSeconds"`
-	Enabled         bool                   `json:"enabled"`
-	CreatedAt       time.Time              `json:"createdAt"`
-	LastCheckedAt   *time.Time             `json:"lastCheckedAt,omitempty"`
-	LastNotifiedAt  *time.Time             `json:"lastNotifiedAt,omitempty"`
+	PlanCode        string                            `json:"planCode"`
+	Datacenters     []string                          `json:"datacenters"` // Empty slice = all datacenters
+	IntervalSeconds int                               `json:"intervalSeconds"`
+	Enabled         bool                              `json:"enabled"`
+	CreatedAt       time.Time                         `json:"createdAt"`
+	LastCheckedAt   *time.Time                        `json:"lastCheckedAt,omitempty"`
+	LastNotifiedAt  *time.Time                        `json:"lastNotifiedAt,omitempty"`
 	LastState       map[string]DatacenterAvailability `json:"lastState,omitempty"`
 }
 

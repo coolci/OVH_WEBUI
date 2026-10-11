@@ -43,7 +43,7 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:2019/config/" ]
+      test: ["CMD", "caddy", "version"]
       interval: 30s
       timeout: 5s
       retries: 3

@@ -160,7 +160,8 @@ func DefaultAccountID(state *app.State) string {
 
 // ParseOrderArgs 从命令参数解析 planCode / dc / qty / options。
 // 约定与 free-form ParseOrderMessage 一致：
-//   planCode [datacenter] [quantity] [options(逗号分隔)]
+//
+//	planCode [datacenter] [quantity] [options(逗号分隔)]
 func ParseOrderArgs(args []string) *OrderInfo {
 	if len(args) == 0 {
 		return nil

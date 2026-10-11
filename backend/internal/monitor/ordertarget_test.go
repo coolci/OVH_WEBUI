@@ -101,4 +101,3 @@ func TestNeedsPriceCheck_仅上架时验价下架不验价(t *testing.T) {
 		}
 	}
 }
-

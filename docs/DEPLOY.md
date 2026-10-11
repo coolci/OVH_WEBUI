@@ -92,14 +92,15 @@ docker compose -f docker-compose.yml -f docker-compose.ssl.yml ps
 ./scripts/linux-oneclick-deploy.sh --logs
 
 # 重启后端
-docker compose -f docker-compose.yml -f docker-compose.ssl.yml restart backend
+docker compose -f docker-compose.https.yml restart backend
 
 # 停止
 ./scripts/linux-oneclick-deploy.sh --down
 
-# 备份数据卷
+# 备份数据卷与解密密钥（特别注意：OVH_DB_KEY 数据库加密密钥与 API_SECRET_KEY 保存在宿主机 .env 中，恢复时必须同时具备数据卷与 .env！）
 docker run --rm -v ovh_webui_data:/data -v "$PWD":/b alpine \
   tar czf /b/ovh-data-$(date +%F).tgz -C /data .
+cp .env ./ovh-env-$(date +%F).backup
 ```
 
 ---

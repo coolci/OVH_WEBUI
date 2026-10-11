@@ -479,8 +479,6 @@ func fetchSupportTickets(client *ovhsdk.Client, ids []int64) ([]supportTicket, [
 	return out, errs
 }
 
-
-
 func ticketTime(raw string) time.Time {
 	t, err := time.Parse(time.RFC3339, raw)
 	if err != nil {

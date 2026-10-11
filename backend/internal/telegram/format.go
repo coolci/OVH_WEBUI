@@ -10,14 +10,14 @@ import (
 const CardDivider = "━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 var (
-	memRegex        = regexp.MustCompile(`(?i)ram-(\d+)g(?:-(ecc|noecc))?(?:-(\d+))?`)
-	hybridRaidRegex = regexp.MustCompile(`(?i)hybridsoftraid-(\d+)x(\d+)(sa|ssd|hdd|nvme)-(\d+)x(\d+)(sa|ssd|hdd|nvme)`)
-	stdRaidRegex    = regexp.MustCompile(`(?i)(?:soft)?raid-(\d+)x(\d+)(sa|ssd|hdd|nvme)`)
-	simpleDiskRegex = regexp.MustCompile(`(?i)^(\d+)x(\d+)(sa|ssd|hdd|nvme)`)
-	bandwidthRegex  = regexp.MustCompile(`(?i)bandwidth-(\d+)`)
-	vrackRegex      = regexp.MustCompile(`(?i)vrack-bandwidth-(\d+)`)
+	memRegex         = regexp.MustCompile(`(?i)ram-(\d+)g(?:-(ecc|noecc))?(?:-(\d+))?`)
+	hybridRaidRegex  = regexp.MustCompile(`(?i)hybridsoftraid-(\d+)x(\d+)(sa|ssd|hdd|nvme)-(\d+)x(\d+)(sa|ssd|hdd|nvme)`)
+	stdRaidRegex     = regexp.MustCompile(`(?i)(?:soft)?raid-(\d+)x(\d+)(sa|ssd|hdd|nvme)`)
+	simpleDiskRegex  = regexp.MustCompile(`(?i)^(\d+)x(\d+)(sa|ssd|hdd|nvme)`)
+	bandwidthRegex   = regexp.MustCompile(`(?i)bandwidth-(\d+)`)
+	vrackRegex       = regexp.MustCompile(`(?i)vrack-bandwidth-(\d+)`)
 	trafficCombRegex = regexp.MustCompile(`(?i)traffic-(\d+)(tb|gb)-(\d+)`)
-	trafficRegex    = regexp.MustCompile(`(?i)traffic-(\d+)(tb|gb)`)
+	trafficRegex     = regexp.MustCompile(`(?i)traffic-(\d+)(tb|gb)`)
 )
 
 func formatDiskType(t string) string {

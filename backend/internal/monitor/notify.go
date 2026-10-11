@@ -978,4 +978,3 @@ func formatInstallFeeLine(installText string) string {
 	}
 	return installText + "（一次性）"
 }
-

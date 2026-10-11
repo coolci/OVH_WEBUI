@@ -261,7 +261,7 @@ func GetRetraction(state *app.State) gin.HandlerFunc {
 				"eligible": false,
 				"reason":   "region_unsupported",
 				"message":  "美区（OVHcloud US）的 API 没有撤单接口，这台机器不能从这里申请撤单。如需退款请联系 OVH 美区客服", "code": "E2D18BF55",
-				"reasons":  retractionReasons,
+				"reasons": retractionReasons,
 			})
 			return
 		}

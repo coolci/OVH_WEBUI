@@ -23,8 +23,8 @@ var DatacenterRegion = map[string]string{
 // PlanSpec represents parsed characteristics of an OVH server plan.
 type PlanSpec struct {
 	PlanCode  string `json:"planCode"`
-	Line      string `json:"line"`      // kimsufi, soyoustart, rise, advance, scale, hgr
-	Family    string `json:"family"`    // sk, sys, rise, etc.
+	Line      string `json:"line"`   // kimsufi, soyoustart, rise, advance, scale, hgr
+	Family    string `json:"family"` // sk, sys, rise, etc.
 	MemoryGB  int    `json:"memoryGb"`
 	StorageGB int    `json:"storageGb"`
 }

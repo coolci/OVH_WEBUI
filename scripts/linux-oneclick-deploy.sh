@@ -133,7 +133,7 @@ fi
 # 数据库凭据加密密钥（生产 compose 必填）
 if ! grep -qE '^OVH_DB_KEY=.+' .env; then
   upsert_env OVH_DB_KEY "$(gen_hex)"
-  grn "    已生成 OVH_DB_KEY"
+  grn "    已生成 OVH_DB_KEY（保存在宿主机 .env，备份恢复数据必须包含此文件）"
 fi
 
 # 加载 .env

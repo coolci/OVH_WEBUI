@@ -9,6 +9,15 @@ import (
 	"github.com/ovh-webui/server/internal/types"
 )
 
+// Pairing code sentinel errors for device repository operations.
+var (
+	ErrPairingCodeNotFound = db.ErrPairingCodeNotFound
+	ErrPairingCodeUsed     = db.ErrPairingCodeUsed
+	ErrPairingCodeExpired  = db.ErrPairingCodeExpired
+
+	ParseTelegramButtonOptions = db.ParseTelegramButtonOptions
+)
+
 // AccountRepository defines operations for managing configured OVH accounts.
 type AccountRepository interface {
 	ListAccounts() ([]types.OVHAccount, error)

@@ -12,6 +12,8 @@ export interface DashboardStats {
   monitorRunning?: boolean;
 }
 
+export type StatsResponse = DashboardStats;
+
 /** 拉取仪表盘 KPI 总览 */
 export function useStats() {
   return useQuery({

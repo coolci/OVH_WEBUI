@@ -102,3 +102,15 @@ graph TD
     Services --> Repo_Interfaces
     Repo_Interfaces --> SQLite_DB
 ```
+
+## 工程规范复核与问题清零 — 2026-10-12
+
+针对 [工程规范验证报告](../docs/handover/ENGINEERING-AUDIT-2026-10-12.md) 提出的所有质量阻塞项，已完成闭环修复与工程落地：
+
+1. **后端编译阻断清零（P1）**：在 `internal/repository/interfaces.go` 抽象配对码 sentinel error 与 `ParseTelegramButtonOptions`，彻底消除 `telegram.go` 与 `appair.go` 对 `internal/db` 的遗留引用。后端 40 个 Go 包全量单测 (`go test -count=1 ./...`) 与 `go vet ./...` 100% PASS。全量 Handlers 保持 0 个 `internal/db` 导入。
+2. **前端类型错误清零（P1）**：修复 `StatsResponse`、`UpdateCheckResult`、`OSTemplate[]` 与 `FieldProps` 缺失属性。`tsc -b` 与 `tsc --noEmit --project tsconfig.app.json` 达到 0 错误；在 `package.json` 的 `build` 脚本中强置 `tsc -b && vite build`，生产构建无法再绕过类型检查。
+3. **超大业务组件解耦**：将原 1054 行的 `AccountsSection.tsx` 解耦抽离为独立的 `LinkCheckDialog.tsx` 与 `AccountDialog.tsx`，核心组件压缩至 342 行（精简 68%）。
+4. **对账门禁强化（P1）**：升级 `tools/status/main.go` 严谨处理 OpenAPI 读取失败，并在 `--verify` 存在不一致时返回退出码 1；通过根目录 `go.work` 统一包路径；运行双台账同步对账，两份台账均达 228/228 (100.0%) done、0 mismatches。
+5. **部署安全与密钥备份（P1）**：修复 `docker-compose.ssl.yml` Caddy 健康检查命令；在 `Dockerfile.frontend` 严苛锁定 `npm ci`；在 `DEPLOY.md` 与 `README.md` 中全面纠正部署架构路径与 `OVH_DB_KEY` 宿主机备份指南。
+6. **统一质量门禁**：新增 `npm run verify`，一键串联 `typecheck`、`build`、`test:unit:backend` 与 `verify:ledger`，全量测试与契约对账 100% 通过。
+

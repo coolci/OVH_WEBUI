@@ -22,7 +22,7 @@ const (
 )
 
 var (
-	ErrEmptyServiceName    = errors.New("vps service name cannot be empty")
+	ErrEmptyServiceName     = errors.New("vps service name cannot be empty")
 	ErrInvalidPowerAction   = errors.New("invalid power transition for current VPS state")
 	ErrMissingRebuildTarget = errors.New("rebuild requires either imageId or templateId")
 	ErrConflictingTarget    = errors.New("cannot specify both imageId and templateId simultaneously")

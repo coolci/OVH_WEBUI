@@ -603,8 +603,8 @@ func ChangeContact(state *app.State) gin.HandlerFunc {
 		if region := srvRegionFor(state, c); region == srvRegionUS {
 			state.Logger.Warn("账户所在大区 "+region+" 不提供服务器联系人变更(changeContact),已拦截请求", "server_control")
 			c.JSON(http.StatusBadRequest, gin.H{
-				"success":     false,
-				"error":       "美区账户不支持通过 API 变更服务器联系人 —— OVHcloud US 没有 NIC 联系人系统,请在 OVHcloud US 控制台或联系客服办理", "code": "ED999C012",
+				"success": false,
+				"error":   "美区账户不支持通过 API 变更服务器联系人 —— OVHcloud US 没有 NIC 联系人系统,请在 OVHcloud US 控制台或联系客服办理", "code": "ED999C012",
 				"unsupported": true,
 				"region":      region,
 			})

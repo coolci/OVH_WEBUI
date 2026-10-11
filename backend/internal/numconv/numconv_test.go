@@ -4,9 +4,9 @@ import "testing"
 
 func TestToInt64(t *testing.T) {
 	cases := []struct {
-		in      interface{}
-		want    int64
-		wantOK  bool
+		in     interface{}
+		want   int64
+		wantOK bool
 	}{
 		{1, 1, true},
 		{int64(2), 2, true},

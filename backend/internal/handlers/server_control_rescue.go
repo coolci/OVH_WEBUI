@@ -293,4 +293,3 @@ func ExitRescue(state *app.State) gin.HandlerFunc {
 		})
 	}
 }
-

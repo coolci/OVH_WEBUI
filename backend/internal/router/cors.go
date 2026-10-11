@@ -61,10 +61,10 @@ func AllowedOrigins(port string) []string {
 // NewCORSMiddleware 构建跨域安全中间件
 func NewCORSMiddleware() gin.HandlerFunc {
 	return cors.New(cors.Config{
-		AllowOriginFunc: IsOriginAllowed,
-		AllowMethods:    []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
-		AllowHeaders:    []string{"Content-Type", "Authorization", "X-API-Key", "X-Request-Time"},
-		ExposeHeaders:   []string{"X-Cache-Warning", "X-Partial-Failures", "X-Cache-Age-Seconds"},
+		AllowOriginFunc:  IsOriginAllowed,
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
+		AllowHeaders:     []string{"Content-Type", "Authorization", "X-API-Key", "X-Request-Time"},
+		ExposeHeaders:    []string{"X-Cache-Warning", "X-Partial-Failures", "X-Cache-Age-Seconds"},
 		AllowCredentials: false,
 	})
 }

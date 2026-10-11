@@ -329,6 +329,3 @@ func TestRenderModernButtons(t *testing.T) {
 		t.Errorf("缺少全节点挂机入队按钮: %s", rawStr)
 	}
 }
-
-
-

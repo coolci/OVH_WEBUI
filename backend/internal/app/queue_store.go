@@ -156,4 +156,3 @@ func (s *State) ReloadHistoryFromDB() error {
 	s.HistoryMu.Unlock()
 	return nil
 }
-

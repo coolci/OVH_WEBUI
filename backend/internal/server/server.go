@@ -18,29 +18,29 @@ import (
 
 // Server 封装 HTTP 服务器全生命周期管理
 type Server struct {
-	httpServer          *http.Server
-	sqlDB               io.Closer
-	state               *app.State
-	supervisor          Stopper
-	console             *slog.Logger
-	addr                string
-	enableAuth          bool
-	usingDefaultAPIKey  bool
-	restartPending      atomic.Bool
-	shutdownPending     atomic.Bool
-	shutdownDone        chan struct{}
+	httpServer         *http.Server
+	sqlDB              io.Closer
+	state              *app.State
+	supervisor         Stopper
+	console            *slog.Logger
+	addr               string
+	enableAuth         bool
+	usingDefaultAPIKey bool
+	restartPending     atomic.Bool
+	shutdownPending    atomic.Bool
+	shutdownDone       chan struct{}
 }
 
 // Config 服务器运行配置
 type Config struct {
-	Addr                string
-	Handler             http.Handler
-	SqlDB               io.Closer
-	State               *app.State
-	Supervisor          Stopper
-	EnableAuth          bool
-	UsingDefaultAPIKey  bool
-	Console             *slog.Logger
+	Addr               string
+	Handler            http.Handler
+	SqlDB              io.Closer
+	State              *app.State
+	Supervisor         Stopper
+	EnableAuth         bool
+	UsingDefaultAPIKey bool
+	Console            *slog.Logger
 }
 
 // New 创建应用服务实例

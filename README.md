@@ -43,33 +43,32 @@ docker pull ghcr.io/gokele/ovh:latest
 
 ```
 .
-├── server/   # Go 后端 (Gin, 默认 :19998)
+├── backend/          # Go 模块 (Gin, Clean Architecture, 默认 :19998)
 │   ├── main.go
-│   ├── webembed_ui.go    # build tag=ui 时把 web/ 整目录 embed 进二进制
-│   ├── webembed_noui.go  # 默认 build,无前端
-│   └── internal/
-│       ├── app/          # State 聚合
-│       ├── db/           # SQLite 层 (schema.sql + 各表 CRUD)
-│       ├── handlers/     # Gin handler
-│       ├── monitor/      # 服务器补货监控
-│       ├── vps/          # VPS 补货监控
-│       ├── purchase/     # 下单流程
-│       ├── price/        # OVH cart 询价
-│       ├── ovh/          # 按 account_id 路由的多账户 client 工厂
-│       ├── notify/       # 多通道通知(Telegram / 自定义 Webhook)
-│       ├── secret/       # 凭据落盘加密(AES-256-GCM)
-│       ├── updater/      # 在线更新:下载 / 校验 / 自替换 / 回滚
-│       └── ...
-└── web/      # 前端 (Vite + TanStack, dev 默认 :19997)
-    └── src/
-        ├── routes/       # 文件路由
-        ├── components/   # 共享组件 + AuthGate / OvhCredsGate
-        ├── hooks/        # TanStack Query hooks
-        ├── i18n/         # 多语言:语言包(模块化)+ 错误码翻译层 + 本地化格式化
-        └── lib/          # 子公司表 / OVH 数据中心常量 / utils
+│   ├── internal/
+│   │   ├── domain/   # 纯 DDD 领域实体 (Account/Order/Server/Monitor/VPS/Telegram/System)
+│   │   ├── service/  # 业务编排与用例服务
+│   │   ├── repository/ # 持久化抽象接口
+│   │   ├── handlers/ # HTTP 控制器 (仅依赖 Service/Repository)
+│   │   ├── router/   # Gin 路由注册与 CORS
+│   │   ├── monitor/  # 服务器补货监控
+│   │   ├── purchase/ # 下单流程与抢购队列
+│   │   ├── ovh/      # 按 account_id 路由的多账户 client 工厂
+│   │   ├── notify/   # 多通道通知(Telegram / 自定义 Webhook)
+│   │   ├── secret/   # 凭据落盘加密(AES-256-GCM)
+│   │   └── updater/  # 在线更新:下载 / 校验 / 自替换 / 回滚
+│   └── ...
+├── src/              # 前端工程 (Vite + React + TanStack Router + Tailwind)
+│   ├── components/   # 共享组件 + 模态框
+│   ├── hooks/        # 数据获取与操作 Hooks
+│   ├── routes/       # 文件路由
+│   ├── i18n/         # 多语言系统
+│   └── lib/          # API 客户端与工具库
+├── api/              # OpenAPI 3.1 接口契约规范 (openapi.yaml)
+└── progress/         # 进度与双向对账台账 (ledger.csv)
 ```
 
-后端详细文档见 [server/README.md](server/README.md)。
+后端架构分层详见 `backend/` 与 `docs/prd-v2/`。
 
 ## 部署方式
 
@@ -96,10 +95,18 @@ docker run -d --name ovh-console \
 
 镜像由打 tag 时的 GitHub Action 构建并推到 `ghcr.io/gokele/ovh`,提供 `linux/amd64` 与 `linux/arm64`。
 
-**数据全在 `/data` 这一个目录下**:SQLite 数据库、**数据库加密密钥**(`.env`)、缓存、日志。备份就备份这个目录。
+**数据全在 `/data` 这一个目录下**:SQLite 数据库、缓存、日志。
+使用 Docker Compose 或一键脚本部署时，**数据库解密密钥（`OVH_DB_KEY`）保存在宿主机根目录的 `.env` 中**。
+备份时请务必**同时备份 `/data` 目录与宿主机 `.env` 文件**：
+```bash
+# 备份数据卷与密钥配置
+docker run --rm -v ovh_webui_data:/data -v "$PWD":/b alpine \
+  tar czf /b/ovh-data-$(date +%F).tgz -C /data .
+cp .env ./ovh-env-$(date +%F).backup
+```
 
-> ⚠️ 删了这个目录 = 已保存的 OVH 凭据和 Telegram Token 再也解不开。
-> 加密密钥默认自动生成并写进 `/data/.env`,跟着卷走;也可以用 `OVH_DB_KEY` 显式提供(迁移、k8s secret 时更可控)。
+> ⚠️ 删除了宿主机 `.env` 且丢失了 `OVH_DB_KEY` = 已保存的 OVH 凭据和 Telegram Token 再也解不开。
+> 加密密钥也可以由 `OVH_DB_KEY` 显式提供(迁移、k8s secret 时更可控)。
 
 首次启动时容器会把 `/data` 的归属改成 `PUID:PGID`(默认 10001)。
 bind mount 进来的宿主目录归属是宿主机那边的 uid,不处理的话容器里的非 root 用户写不进去,程序根本起不来。
@@ -111,42 +118,39 @@ bind mount 进来的宿主目录归属是宿主机那边的 uid,不处理的话�
 
 ### 方式 B:单二进制
 
-前端 build → Vite 输出到 `server/web/` → Go `-tags ui` 触发 `//go:embed` 把整目录嵌入二进制 → 单文件部署、双击即用。
+前端 build → Vite 输出到 `dist/` → Go `-tags ui` 触发 `//go:embed` 把整目录嵌入二进制 → 单文件部署、双击即用。
 
 ```bash
-# 1) 前端构建到 server/web/
-cd web
+# 1) 前端构建
 npm ci
 npm run build
 
 # 2) 编译带前端的单二进制(CGO_ENABLED=0 走纯 Go SQLite,交叉编译不需要 gcc)
-cd ../server
+cd backend
 CGO_ENABLED=0 go build -tags ui -trimpath \
-  -ldflags "-s -w -X github.com/ovh-buy/server/internal/handlers.Version=$(cat ../VERSION)" \
-  -o ovh-server .
-./ovh-server
+  -ldflags "-s -w -X github.com/ovh-webui/server/internal/handlers.Version=$(cat ../VERSION)" \
+  -o ../ovh-webui.exe .
 ```
 
-Windows 把产物名改成 `ovh-server.exe` 即可;交叉编译加 `GOOS=linux GOARCH=arm64` 这类前缀。
+Windows 把产物名改成 `ovh-webui.exe` 即可;交叉编译加 `GOOS=linux GOARCH=arm64` 这类前缀。
 **不需要外部 SQLite 库,二进制自带。** 默认监听 `:19998`,浏览器打开 `http://localhost:19998` 即用,
-数据库自动建在 `./data/sniper.db`。
+数据库自动建在 `./data/ovh.db`。
 
 > Release 页提供 Windows amd64 / Linux amd64 / Linux arm64 三个预编译产物,不想自己编译可以直接下。
 
 ### 方式 C:开发(前后端分开跑)
 
 ```bash
-# 后端
-cd server
+# 后端 (终端 1)
+cd backend
 go run .                # 默认 :19998
 
-# 前端(另一个终端)
-cd web
+# 前端 (终端 2)
 npm install
-npm run dev             # 默认 :19997, /api/* 自动反代到 19998
+npm run dev             # 默认 :8080, /api/* 自动反代到 19998
 ```
 
-浏览器打开 `http://localhost:19997`。
+浏览器打开 `http://localhost:8080`。
 
 
 ## 文本编码检查

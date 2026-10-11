@@ -26,29 +26,29 @@ const (
 )
 
 var (
-	ErrEmptyPlanCode       = errors.New("plan code cannot be empty")
-	ErrEmptyAccountID      = errors.New("account ID cannot be empty")
-	ErrInvalidQuantity     = fmt.Errorf("quantity must be between %d and %d", MinQuantity, MaxQuantity)
-	ErrInvalidInterval     = fmt.Errorf("check interval must be between %d ms and %d ms", MinIntervalMs, MaxIntervalMs)
-	ErrIllegalTransition   = errors.New("illegal queue status transition")
-	ErrQueueItemTerminal   = errors.New("cannot modify terminal queue item")
+	ErrEmptyPlanCode     = errors.New("plan code cannot be empty")
+	ErrEmptyAccountID    = errors.New("account ID cannot be empty")
+	ErrInvalidQuantity   = fmt.Errorf("quantity must be between %d and %d", MinQuantity, MaxQuantity)
+	ErrInvalidInterval   = fmt.Errorf("check interval must be between %d ms and %d ms", MinIntervalMs, MaxIntervalMs)
+	ErrIllegalTransition = errors.New("illegal queue status transition")
+	ErrQueueItemTerminal = errors.New("cannot modify terminal queue item")
 )
 
 // QueueItem represents an automated purchasing task in the queue.
 type QueueItem struct {
-	ID             string      `json:"id"`
-	AccountID      string      `json:"accountId"`
-	PlanCode       string      `json:"planCode"`
-	Datacenter     string      `json:"datacenter"`
-	Quantity       int         `json:"quantity"`
-	IntervalMs     int         `json:"intervalMs"`
-	AutoPay        bool        `json:"autoPay"`
-	Status         QueueStatus `json:"status"`
-	CreatedAt      time.Time   `json:"createdAt"`
-	UpdatedAt      time.Time   `json:"updatedAt"`
-	Attempts       int         `json:"attempts"`
-	LastError      string      `json:"lastError,omitempty"`
-	OrderId        string      `json:"orderId,omitempty"`
+	ID         string      `json:"id"`
+	AccountID  string      `json:"accountId"`
+	PlanCode   string      `json:"planCode"`
+	Datacenter string      `json:"datacenter"`
+	Quantity   int         `json:"quantity"`
+	IntervalMs int         `json:"intervalMs"`
+	AutoPay    bool        `json:"autoPay"`
+	Status     QueueStatus `json:"status"`
+	CreatedAt  time.Time   `json:"createdAt"`
+	UpdatedAt  time.Time   `json:"updatedAt"`
+	Attempts   int         `json:"attempts"`
+	LastError  string      `json:"lastError,omitempty"`
+	OrderId    string      `json:"orderId,omitempty"`
 }
 
 // NewQueueItem creates a validated QueueItem domain entity.

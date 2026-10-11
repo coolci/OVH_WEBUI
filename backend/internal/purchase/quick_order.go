@@ -280,14 +280,14 @@ func EnqueueQuickOrder(state *app.State, params QuickOrderParams) *QuickOrderRes
 
 	now := types.NowISO()
 	item := types.QueueItem{
-		ID:            uuid.NewString(),
-		AccountID:     params.AccountID,
-		PlanCode:      params.PlanCode,
-		Datacenter:    params.Datacenter,
-		Options:       options,
-		Status:        "running",
-		RetryCount:    0,
-		AutoPay:       params.AutoPay,
+		ID:         uuid.NewString(),
+		AccountID:  params.AccountID,
+		PlanCode:   params.PlanCode,
+		Datacenter: params.Datacenter,
+		Options:    options,
+		Status:     "running",
+		RetryCount: 0,
+		AutoPay:    params.AutoPay,
 		// MaxRetries 封顶的是**真正提交并失败的次数**(FailureCount),无货轮次不计。
 		MaxRetries:    20,
 		RetryInterval: state.Config.QuickOrderRetryInterval(),

@@ -41,7 +41,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	openAPIContent, _ := os.ReadFile(*openAPIPath)
+	openAPIContent, err := os.ReadFile(*openAPIPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading OpenAPI contract from %s: %v\n", *openAPIPath, err)
+		os.Exit(1)
+	}
 	openAPIText := string(openAPIContent)
 
 	mismatches := 0
@@ -79,7 +83,8 @@ func main() {
 		total, done, pct, wip, todo, blocked, mismatches)
 
 	if *verify && mismatches > 0 {
-		fmt.Printf("Ledger verification completed with %d mismatch(es). Review code vs ledger.\n", mismatches)
+		fmt.Fprintf(os.Stderr, "Ledger verification failed with %d mismatch(es). Review code vs ledger.\n", mismatches)
+		os.Exit(1)
 	}
 
 	if *sync {

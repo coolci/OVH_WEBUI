@@ -56,11 +56,11 @@ func TestVpsRebuildEndpoints(t *testing.T) {
 
 			w.WriteHeader(http.StatusOK)
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"id":        888123,
-				"action":    "rebuildVm",
-				"status":    "todo",
-				"type":      "rebuildVm",
-				"progress":  0,
+				"id":       888123,
+				"action":   "rebuildVm",
+				"status":   "todo",
+				"type":     "rebuildVm",
+				"progress": 0,
 			})
 			return
 		}

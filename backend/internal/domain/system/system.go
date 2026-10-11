@@ -51,20 +51,20 @@ func NewLogEntry(level LogLevel, msg, source string, now time.Time) (*LogEntry, 
 
 // MetricsSnapshot captures runtime resource consumption.
 type MetricsSnapshot struct {
-	AllocBytes   uint64    `json:"allocBytes"`
-	TotalAlloc   uint64    `json:"totalAlloc"`
-	SysBytes     uint64    `json:"sysBytes"`
-	NumGC        uint32    `json:"numGc"`
-	Goroutines   int       `json:"goroutines"`
-	CollectedAt  time.Time `json:"collectedAt"`
+	AllocBytes  uint64    `json:"allocBytes"`
+	TotalAlloc  uint64    `json:"totalAlloc"`
+	SysBytes    uint64    `json:"sysBytes"`
+	NumGC       uint32    `json:"numGc"`
+	Goroutines  int       `json:"goroutines"`
+	CollectedAt time.Time `json:"collectedAt"`
 }
 
 // VersionInfo represents the semantic versioning state of the application.
 type VersionInfo struct {
-	CurrentVersion string `json:"currentVersion"`
-	LatestVersion  string `json:"latestVersion"`
-	UpdateAvailable bool  `json:"updateAvailable"`
-	Channel        string `json:"channel"`
+	CurrentVersion  string `json:"currentVersion"`
+	LatestVersion   string `json:"latestVersion"`
+	UpdateAvailable bool   `json:"updateAvailable"`
+	Channel         string `json:"channel"`
 }
 
 // CheckUpdate evaluates whether a target version exceeds the current deployed version.
@@ -72,9 +72,9 @@ func CheckUpdate(current, latest, channel string) VersionInfo {
 	current = strings.TrimSpace(current)
 	latest = strings.TrimSpace(latest)
 	return VersionInfo{
-		CurrentVersion: current,
-		LatestVersion:  latest,
+		CurrentVersion:  current,
+		LatestVersion:   latest,
 		UpdateAvailable: latest != "" && current != "" && latest != current,
-		Channel:        channel,
+		Channel:         channel,
 	}
 }

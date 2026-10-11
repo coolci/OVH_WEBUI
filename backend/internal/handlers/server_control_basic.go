@@ -794,7 +794,7 @@ func InstallOS(state *app.State) gin.HandlerFunc {
 					"success": false,
 					"error": fmt.Sprintf("/var/lib/vz 容量 %dMB 超出可用范围：本机 RAID%d 下可用约 %dMB，扣除 /boot %dMB 和 swap %dMB 后，该值必须小于 %dMB",
 						vzSizeMB, raidLevel, usableCapacityMB, bootSizeMB, swapSizeMB, usableCapacityMB-bootSwapMB),
-					"code":   "ZFS_VZ_OVER_LIMIT",
+					"code": "ZFS_VZ_OVER_LIMIT",
 					"params": map[string]interface{}{
 						"vz": vzSizeMB, "level": raidLevel, "usable": usableCapacityMB,
 						"boot": bootSizeMB, "swap": swapSizeMB, "max": usableCapacityMB - bootSwapMB,

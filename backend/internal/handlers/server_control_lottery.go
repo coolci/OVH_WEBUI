@@ -32,13 +32,13 @@ import (
 
 // hwLotteryItem 单项中奖明细(只列出"实际优于订购"的项)
 type hwLotteryItem struct {
-	Kind    string  `json:"kind"`    // cpu | memory | disk
-	Ordered string  `json:"ordered"` // 订购配置展示文案
-	Actual  string  `json:"actual"`  // 实际配置展示文案
+	Kind    string `json:"kind"`    // cpu | memory | disk
+	Ordered string `json:"ordered"` // 订购配置展示文案
+	Actual  string `json:"actual"`  // 实际配置展示文案
 	// 量化幅度,前端据此显示 "+100%"。0 = 算不出来(前端退回普通文案)
 	GainPct float64 `json:"gainPct,omitempty"`
 	// 硬盘专属:介质升级(HDD→SSD→NVMe)
-	MediaUp bool    `json:"mediaUp,omitempty"`
+	MediaUp bool `json:"mediaUp,omitempty"`
 }
 
 // hwLottery 返回给前端的比对结果

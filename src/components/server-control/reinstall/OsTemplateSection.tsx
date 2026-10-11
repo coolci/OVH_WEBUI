@@ -7,19 +7,13 @@ import { LoadFailed, errorMessage } from "@/components/common/LoadFailed";
 import { OsIcon, detectOsKind, osBrandColor, osBrandTextColor } from "@/components/server-control/OsIcon";
 import { Trans, useTranslation } from "react-i18next";
 import { fmtDateTime } from "@/i18n/format";
-import type { useServerTemplates } from "@/hooks/use-server-control";
+import type { useServerTemplates, OSTemplate } from "@/hooks/use-server-control";
 import type { OS_GROUPS } from "./constants";
 
 export interface GroupedTemplateItem {
   kind: ReturnType<typeof detectOsKind>;
   label: string;
-  items: Array<{
-    templateName: string;
-    distribution: string;
-    family: string;
-    bitFormat: number;
-    [key: string]: unknown;
-  }>;
+  items: OSTemplate[];
 }
 
 export interface OsTemplateSectionProps {
@@ -30,13 +24,7 @@ export interface OsTemplateSectionProps {
   setTemplateName: (v: string) => void;
   activeGroup: ReturnType<typeof detectOsKind> | null;
   setActiveGroup: (v: ReturnType<typeof detectOsKind> | null) => void;
-  filtered: Array<{
-    templateName: string;
-    distribution: string;
-    family: string;
-    bitFormat: number;
-    [key: string]: unknown;
-  }>;
+  filtered: OSTemplate[];
   groupedTemplates: GroupedTemplateItem[];
   brandDark: boolean;
 }

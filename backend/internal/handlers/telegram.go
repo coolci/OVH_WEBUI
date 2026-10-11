@@ -12,9 +12,9 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/ovh-webui/server/internal/app"
-	"github.com/ovh-webui/server/internal/db"
 	"github.com/ovh-webui/server/internal/monitor"
 	"github.com/ovh-webui/server/internal/ovh"
+	"github.com/ovh-webui/server/internal/repository"
 	"github.com/ovh-webui/server/internal/telegram"
 	"github.com/ovh-webui/server/internal/types"
 )
@@ -175,7 +175,7 @@ func handleTelegramCallback(state *app.State, mon *monitor.Monitor, cb map[strin
 			claimed = true
 			planCode = row.PlanCode
 			dc = row.Datacenter
-			options = db.ParseTelegramButtonOptions(row.Options)
+			options = repository.ParseTelegramButtonOptions(row.Options)
 			btnAccountID = strings.TrimSpace(row.AccountID)
 			state.Logger.Info(fmt.Sprintf("✅ 按钮已认领: id=%s, %s@%s, options=%v, account=%s",
 				buttonID, planCode, dc, options, btnAccountID), "telegram")

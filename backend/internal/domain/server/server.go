@@ -22,7 +22,7 @@ const (
 )
 
 var (
-	ErrEmptyServiceName    = errors.New("server service name cannot be empty")
+	ErrEmptyServiceName     = errors.New("server service name cannot be empty")
 	ErrRescueMailRequired   = errors.New("rescue mail address is required for rescue boot mode")
 	ErrInvalidEmail         = errors.New("invalid email address format")
 	ErrRetractionExpired    = fmt.Errorf("statutory retraction period (%d days) has expired", RetractionMaxDays)

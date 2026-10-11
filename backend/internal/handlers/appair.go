@@ -11,7 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/ovh-webui/server/internal/app"
-	"github.com/ovh-webui/server/internal/db"
+	"github.com/ovh-webui/server/internal/repository"
 )
 
 // App 配对接口(网页端管理 + App 端兑换)。
@@ -184,11 +184,11 @@ func RedeemPairingCode(state *app.State) gin.HandlerFunc {
 			pairGlobalLimiter.fail()
 			msg, code2 := "配对失败", "ED03B15C6"
 			switch {
-			case errors.Is(err, db.ErrPairingCodeNotFound):
+			case errors.Is(err, repository.ErrPairingCodeNotFound):
 				msg, code2 = "配对码不存在 —— 检查大小写,或去网页重新生成", "E79820B5A"
-			case errors.Is(err, db.ErrPairingCodeUsed):
+			case errors.Is(err, repository.ErrPairingCodeUsed):
 				msg, code2 = "配对码已被使用(一码一机)。去网页重新生成再试", "EA92792C8"
-			case errors.Is(err, db.ErrPairingCodeExpired):
+			case errors.Is(err, repository.ErrPairingCodeExpired):
 				msg, code2 = "配对码已过期(有效期 2 分钟)。去网页重新生成再试", "E21D475B2"
 			}
 			state.Logger.Warn("App 配对失败 ip="+ip+" code="+code+" 原因="+err.Error(), "app")
