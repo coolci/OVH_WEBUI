@@ -1,0 +1,7 @@
+FROM ovh-webui-backend:latest
+USER root
+COPY ovh-webui /app/ovh-webui
+COPY backend/docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod 755 /app/ovh-webui /app/docker-entrypoint.sh
+LABEL org.opencontainers.image.version="0.2.8" org.opencontainers.image.revision="73f47a8"
+USER ovh

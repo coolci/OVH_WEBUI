@@ -1,0 +1,4 @@
+FROM ovh-webui-frontend:latest
+COPY nginx/default.conf /etc/nginx/conf.d/default.conf
+COPY dist/ /usr/share/nginx/html/
+LABEL org.opencontainers.image.version="0.2.8" org.opencontainers.image.revision="73f47a8"

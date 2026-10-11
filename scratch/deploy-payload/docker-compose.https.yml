@@ -1,0 +1,143 @@
+# ═══════════════════════════════════════════════════════════
+# OVH_WEBUI · 完整 HTTPS 栈（生产）
+# ═══════════════════════════════════════════════════════════
+#
+# 前置：域名 A → 本机；放行 80/443；.env 含 DOMAIN / ACME_EMAIL / API_SECRET_KEY / OVH_DB_KEY
+#
+#   ./scripts/linux-oneclick-deploy.sh
+#   docker compose -f docker-compose.https.yml up -d --build
+#
+# 公网仅暴露 Caddy 80/443；backend/frontend 仅 Docker 内网。
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    image: ovh-webui-backend:latest
+    container_name: ovh-webui-backend
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PORT: "19998"
+      LISTEN_HOST: ""
+      DATA_DIR: /data
+      GIN_MODE: release
+      ENABLE_API_KEY_AUTH: ${ENABLE_API_KEY_AUTH:-true}
+      API_SECRET_KEY: ${API_SECRET_KEY:?Set API_SECRET_KEY in .env}
+      PUBLIC_BASE_URL: https://${DOMAIN:?Set DOMAIN in .env}
+      TZ: ${TZ:-Asia/Shanghai}
+      OVH_ENV_FILE: /data/.env
+      OVH_DB_KEY: ${OVH_DB_KEY:?Set OVH_DB_KEY in .env}
+    volumes:
+      - ovh_webui_data:/data
+    expose:
+      - "19998"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=64m,noexec,nosuid
+    mem_limit: 384m
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:19998/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    networks:
+      - ovh_net
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    image: ovh-webui-frontend:latest
+    container_name: ovh-webui-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    expose:
+      - "80"
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+      - /tmp
+    mem_limit: 96m
+    pids_limit: 64
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - ovh_net
+
+  caddy:
+    image: caddy:2.8-alpine
+    container_name: ovh-webui-caddy
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:-admin@example.com}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    pids_limit: 128
+    healthcheck:
+      test: ["CMD", "caddy", "version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - ovh_net
+
+volumes:
+  ovh_webui_data:
+    name: ovh_webui_data
+  caddy_data:
+    name: ovh_webui_caddy_data
+  caddy_config:
+    name: ovh_webui_caddy_config
+
+networks:
+  ovh_net:
+    name: ovh_webui_net
