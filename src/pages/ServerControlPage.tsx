@@ -131,7 +131,7 @@ function ServerControlPage() {
           datacenter: s.datacenter,
           subtext: s.commercialRange || "OVH 独服",
           state: s.state,
-          lottery: lotteries.get(s.serviceName),
+          lottery: lotteries.get(s.serviceName) || (s.lottery?.won ? { checked: true, won: true, tier: s.lottery.tier, items: [] } : undefined),
         }))}
         selectedName={selectedName || undefined}
         onSelectName={(name) => setSelectedName(name)}

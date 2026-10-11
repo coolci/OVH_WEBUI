@@ -355,7 +355,12 @@ const pack: MaintDialogsPack = {
         ordered: "Ordered",
         tip: "Delivered hardware beats the configuration you ordered\nOrdered: {{ordered}}\nDelivered: {{actual}}",
         bannerTitle: "🎉 Hardware lottery won! Delivered hardware beats your order",
-        bannerDesc: "{{plan}} differs from the ordered configuration: {{items}}",
+        title1: "You won the hardware lottery!",
+        title2: "Big win — double upgrade!",
+        title3: "JACKPOT — upgraded across the board!",
+        bannerDesc: "Delivered hardware is better than ordered: {{items}}",
+        gainPct: "+{{pct}}%",
+        gainMedia: "media upgrade",
         kind: {
           cpu: "CPU upgrade",
           memory: "Memory upgrade",

@@ -5,6 +5,7 @@ import { useHideIp, maskSensitive } from "@/hooks/use-hide-ip";
 import { Skeleton } from "@/components/common/Skeleton";
 import { PartialNotice, DetailErrorTag } from "@/components/common/PartialNotice";
 import { MrtgTrafficChart } from "./MrtgTrafficChart";
+import { LotteryConfetti } from "./LotteryConfetti";
 import { useTranslation } from "react-i18next";
 
 /** 概览 Tab：硬件 + 网络（IP / 接口 / MRTG 流量）。服务信息胶囊条已上提到 ServerTabs 同行 */
@@ -64,17 +65,48 @@ export function OverviewTab({ server }: { server: OwnedServer }) {
       )}
 
       {lottery?.checked && lottery.won && (
-        <div className="relative overflow-hidden flex items-center gap-2.5 rounded-xl border border-amber-400/40 bg-gradient-to-r from-amber-400/15 via-orange-400/10 to-transparent px-3.5 py-2.5">
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-300 to-orange-500 flex items-center justify-center flex-shrink-0 shadow-[0_0_14px_rgba(251,191,36,0.45)]">
-            <PartyPopper className="w-4 h-4 text-white" />
+        <div className="relative overflow-hidden flex items-start gap-3 rounded-xl border border-amber-400/40 bg-gradient-to-r from-amber-400/15 via-orange-400/10 to-transparent p-3.5">
+          <LotteryConfetti sessionKey={server.serviceName} />
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-300 to-orange-500 flex items-center justify-center flex-shrink-0 shadow-[0_0_14px_rgba(251,191,36,0.45)] mt-0.5">
+            <PartyPopper className={`text-white ${lottery.tier === 3 ? "w-5 h-5" : "w-4 h-4"}`} />
           </div>
-          <div className="min-w-0 text-[12px] leading-snug">
-            <div className="font-semibold text-amber-600 dark:text-amber-300">{t("maint.overview.lottery.bannerTitle")}</div>
-            <div className="text-muted-foreground truncate">
+          <div className="min-w-0 text-[12px] leading-snug flex-1">
+            <div className="font-semibold text-amber-600 dark:text-amber-300">
+              {t(`maint.overview.lottery.title${Math.min(lottery.tier || 1, 3)}`)}
+            </div>
+            <div className="text-muted-foreground mt-0.5">
               {t("maint.overview.lottery.bannerDesc", {
-                plan: lottery.planName || lottery.planCode || "",
-                items: lottery.items.map((i) => t(`maint.overview.lottery.kind.${i.kind}`)).join(" · "),
+                items: lottery.items
+                  .map((i) => {
+                    const label = t(`maint.overview.lottery.kind.${i.kind}`);
+                    if (i.gainPct && i.gainPct >= 1) {
+                      return `${label} ${t("maint.overview.lottery.gainPct", { pct: Math.round(i.gainPct) })}`;
+                    }
+                    if (i.mediaUp) {
+                      return `${label} ${t("maint.overview.lottery.gainMedia")}`;
+                    }
+                    return label;
+                  })
+                  .join(" · "),
               })}
+            </div>
+            <div className="mt-2 space-y-1">
+              {lottery.items.map((i) => (
+                <p key={i.kind} className="text-[11px] text-muted-foreground">
+                  <span className="font-medium text-foreground/80">{t(`maint.overview.lottery.kind.${i.kind}`)}</span>
+                  ：{i.ordered} → <span className="font-semibold text-amber-600 dark:text-amber-300">{i.actual}</span>
+                  {i.gainPct && i.gainPct >= 1 && (
+                    <span className="ml-1.5 inline-flex items-center px-1.5 py-0.2 rounded text-[10px] bg-amber-500/15 text-amber-600 dark:text-amber-400 font-mono">
+                      +{Math.round(i.gainPct)}%
+                    </span>
+                  )}
+                  {i.mediaUp && (
+                    <span className="ml-1.5 inline-flex items-center px-1.5 py-0.2 rounded text-[10px] bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-mono">
+                      {t("maint.overview.lottery.gainMedia")}
+                    </span>
+                  )}
+                </p>
+              ))}
             </div>
           </div>
         </div>

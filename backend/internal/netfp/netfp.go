@@ -503,6 +503,7 @@ func ProbeTarget(o Options, name, url string) Probe {
 	}
 	var total time.Duration
 	var min time.Duration
+	hasMin := false
 	ok := 0
 	for i := 0; i < probeSamples; i++ {
 		req, rerr := http.NewRequest(http.MethodGet, url, nil)
@@ -526,8 +527,9 @@ func ProbeTarget(o Options, name, url string) Probe {
 		p.Status = resp.StatusCode
 		ok++
 		total += elapsed
-		if min == 0 || elapsed < min {
+		if !hasMin || elapsed < min {
 			min = elapsed
+			hasMin = true
 		}
 	}
 	if ok == 0 {
@@ -536,6 +538,9 @@ func ProbeTarget(o Options, name, url string) Probe {
 	p.OK = true
 	p.MinMS = min.Milliseconds()
 	p.AvgMS = (total / time.Duration(ok)).Milliseconds()
+	if p.AvgMS < p.MinMS {
+		p.AvgMS = p.MinMS
+	}
 	// 有成功的采样就不要再挂着那条偶发错误了，否则界面上"通了但红着"
 	if ok == probeSamples {
 		p.Error = ""

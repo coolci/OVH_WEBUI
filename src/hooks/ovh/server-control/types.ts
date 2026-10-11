@@ -15,17 +15,25 @@ export interface OwnedServer {
   renewalType?: boolean | null;
   svcInfoError?: string;
   error?: string;
+  /** 中奖摘要(后端 1h 缓存,只有确实中奖的机器才带)。徽章用,详情在概览页 */
+  lottery?: { won: boolean; tier?: number };
 }
 
 export interface HardwareLotteryItem {
   kind: "cpu" | "memory" | "disk";
   ordered: string;
   actual: string;
+  /** 量化涨幅(%),0/缺省 = 算不出来 */
+  gainPct?: number;
+  /** 硬盘介质升级(HDD→SSD→NVMe) */
+  mediaUp?: boolean;
 }
 
 export interface HardwareLottery {
   checked: boolean;
   won: boolean;
+  /** 1=中奖 2=大奖 3=头奖(中奖项数 + 翻倍加成,后端算好) */
+  tier?: number;
   planCode?: string;
   planName?: string;
   items: HardwareLotteryItem[];

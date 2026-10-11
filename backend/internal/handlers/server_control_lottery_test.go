@@ -95,3 +95,55 @@ func TestHardwareLottery_NoSpec(t *testing.T) {
 		t.Fatalf("无订购配置时应 checked=false 且 items 非 nil, got %+v", r)
 	}
 }
+
+// 量化收益与等级:内存翻倍+CPU 跨代 → tier 2;三代全中+翻倍 → 封顶 3;跨族 CPU 不算代差
+func TestLotteryTierAndGains(t *testing.T) {
+	// CPU 换型号 + 内存 32→64:中两项 → tier 2(翻倍是 OVH 惯例,不作为提级依据)
+	spec := &orderedSpec{CPU: "Intel Xeon E5-1620v2", MemoryGB: 32}
+	hw := map[string]interface{}{
+		"processorName": "Intel Xeon E5-1630v4",
+		"memorySize":    map[string]interface{}{"value": float64(64), "unit": "GB"},
+	}
+	lot := computeHardwareLottery(spec, hw)
+	if !lot.Won || len(lot.Items) != 2 {
+		t.Fatalf("应中 CPU+内存两项: %+v", lot.Items)
+	}
+	for _, it := range lot.Items {
+		if it.Kind == "memory" && it.GainPct < 99.9 {
+			t.Errorf("内存涨幅应约 100%%,实际 %.1f", it.GainPct)
+		}
+	}
+	if lot.Tier != 2 {
+		t.Errorf("两项应为 tier 2,实际 %d", lot.Tier)
+	}
+
+	// CPU 换品牌、内存不变:只中一项,tier 1
+	lot2 := computeHardwareLottery(&orderedSpec{CPU: "Intel Xeon E5-1620v2", MemoryGB: 32},
+		map[string]interface{}{
+			"processorName": "AMD EPYC 7302",
+			"memorySize":    map[string]interface{}{"value": float64(32), "unit": "GB"},
+		})
+	if !lot2.Won {
+		t.Fatal("跨品牌 CPU 不同仍应算中奖")
+	}
+	if lot2.Tier != 1 {
+		t.Errorf("单项无翻倍应为 tier 1,实际 %d", lot2.Tier)
+	}
+
+	// 硬盘介质升级带 mediaUp,不加容量 pct
+	lot3 := computeHardwareLottery(&orderedSpec{Disks: []diskSpec{{Count: 2, SizeGB: 480, Type: "sa"}}},
+		map[string]interface{}{
+			"diskGroups": []interface{}{
+				map[string]interface{}{"numberOfDisks": float64(2), "diskSize": map[string]interface{}{"value": float64(480), "unit": "GB"}, "diskType": "nvme"},
+			},
+		})
+	if !lot3.Won || len(lot3.Items) != 1 {
+		t.Fatalf("介质升级应中硬盘一项: %+v", lot3.Items)
+	}
+	if !lot3.Items[0].MediaUp || lot3.Items[0].GainPct != 0 {
+		t.Errorf("纯介质升级应只标 mediaUp: %+v", lot3.Items[0])
+	}
+	if lot3.Tier != 1 {
+		t.Errorf("单项介质升级应 tier 1,实际 %d", lot3.Tier)
+	}
+}

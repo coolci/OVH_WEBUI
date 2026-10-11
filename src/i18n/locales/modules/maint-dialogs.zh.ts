@@ -350,7 +350,12 @@ export const maintDialogsZh = {
         ordered: "订购",
         tip: "实际交付硬件优于下单时订购的配置\n订购：{{ordered}}\n实配：{{actual}}",
         bannerTitle: "🎉 恭喜中奖！实际交付硬件优于订购配置",
-        bannerDesc: "{{plan}} 订购配置与机房实配不同：{{items}}",
+        title1: "你中奖了！",
+        title2: "大奖！配置双升级",
+        title3: "头奖！！全面升级",
+        bannerDesc: "实际交付优于订购：{{items}}",
+        gainPct: "+{{pct}}%",
+        gainMedia: "介质升级",
         kind: {
           cpu: "CPU 升级",
           memory: "内存升级",
