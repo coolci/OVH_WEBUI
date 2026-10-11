@@ -10,7 +10,7 @@ export const ORDER_MODES: (OrderMode & { icon: React.ReactNode })[] = [
     name: '库存查询',
     description: '查询指定服务器的实时库存状态',
     icon: <Search className="h-5 w-5" />,
-    example: '/stock 24ska01',
+    example: '/stock 24sk102',
     color: 'text-blue-500'
   },
   {
@@ -18,7 +18,7 @@ export const ORDER_MODES: (OrderMode & { icon: React.ReactNode })[] = [
     name: '加入队列',
     description: '将服务器添加到抢购队列中',
     icon: <ShoppingCart className="h-5 w-5" />,
-    example: '/queue 24ska01 gra',
+    example: '/queue 24sk102 gra',
     color: 'text-orange-500'
   },
   {
@@ -26,7 +26,7 @@ export const ORDER_MODES: (OrderMode & { icon: React.ReactNode })[] = [
     name: '添加监控',
     description: '添加服务器到监控列表，有货时通知',
     icon: <Eye className="h-5 w-5" />,
-    example: '/monitor 24ska01',
+    example: '/monitor 24sk102',
     color: 'text-green-500'
   },
   {
@@ -34,7 +34,7 @@ export const ORDER_MODES: (OrderMode & { icon: React.ReactNode })[] = [
     name: '价格查询',
     description: '查询服务器在指定机房的价格',
     icon: <DollarSign className="h-5 w-5" />,
-    example: '/price 24ska01 gra',
+    example: '/price 24sk102 gra',
     color: 'text-yellow-500'
   },
   {
@@ -42,7 +42,7 @@ export const ORDER_MODES: (OrderMode & { icon: React.ReactNode })[] = [
     name: '快速下单',
     description: '立即尝试购买指定服务器',
     icon: <Zap className="h-5 w-5" />,
-    example: '/buy 24ska01 gra',
+    example: '/buy 24sk102 gra',
     color: 'text-red-500'
   },
   {
@@ -50,7 +50,7 @@ export const ORDER_MODES: (OrderMode & { icon: React.ReactNode })[] = [
     name: '盯盘补货',
     description: '缺货自动盯盘，支持补货通知或自动抢购',
     icon: <Radar className="h-5 w-5" />,
-    example: '/watch 24ska01 gra x1',
+    example: '/watch 24sk102 gra x1',
     color: 'text-purple-500'
   }
 ];

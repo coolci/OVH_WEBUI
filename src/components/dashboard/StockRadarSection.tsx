@@ -27,10 +27,10 @@ interface StockRadarSectionProps {
 }
 
 const RECOMMENDED_PLANS = [
-  { code: "24ska01", name: "KS-LE-1 爆款", desc: "高性价比独服" },
-  { code: "24ska02", name: "KS-LE-2 进阶", desc: "大内存计算" },
-  { code: "24sk602", name: "Rise 系列", desc: "高频主频" },
-  { code: "24sk40", name: "Eco 入门", desc: "低价轻量" },
+  { code: "24sk102", name: "KS-1 爆款入门", desc: "高性价比独服" },
+  { code: "24sk202", name: "KS-2 进阶主力", desc: "大内存计算" },
+  { code: "24sk40-v1", name: "KS-4 轻量入门", desc: "低价轻量" },
+  { code: "24sk602", name: "KS-6 大内存神机", desc: "Epyc · 128G" },
 ];
 
 export function StockRadarSection({
@@ -267,6 +267,7 @@ export function StockRadarSection({
                     key={item.code}
                     type="button"
                     onClick={() => onOpenSubscribe(item.code)}
+                    title={`${item.code} - ${item.name} (${item.desc})`}
                     className="p-2 rounded-xl border border-border/70 hover:border-primary/50 bg-secondary/30 hover:bg-secondary/60 text-left transition-colors group touch-manipulation"
                   >
                     <div className="font-mono text-xs font-bold text-foreground group-hover:text-primary transition-colors">

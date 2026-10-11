@@ -438,7 +438,7 @@ Most likely a **mistyped datacenter code**. Check the "orderable in …" hint un
 Early parsers required **half-width** commas between options; full-width `，` from Chinese IMEs collapsed the whole string into one token and dropped it. Half-width/full-width commas, enumeration commas, and spaces all work now. Format:
 
 ```
-24ska01 gra 2 ram-64g,softraid-2x960ssd
+24sk102 gra 2 ram-64g,softraid-2x960ssd
 model   DC  qty options (multiple allowed)
 ```
 

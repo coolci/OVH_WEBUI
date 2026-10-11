@@ -259,7 +259,7 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
                 value={planCode}
                 onChange={setPlanCode}
                 servers={servers}
-                placeholder={serversQ.isPending ? "型号加载中…" : "输入或搜索型号，例如 24ska01"}
+                placeholder={serversQ.isPending ? "型号加载中…" : "输入或搜索型号，例如 24sk102"}
               />
               {server && (
                 <p className="truncate text-[11px] text-muted-foreground">

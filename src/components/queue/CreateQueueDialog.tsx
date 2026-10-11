@@ -224,7 +224,7 @@ export function CreateQueueDialog({
               value={planCode}
               onChange={setPlanCode}
               servers={servers.data || []}
-              placeholder="输入或搜索型号，例如 24ska01"
+              placeholder="输入或搜索型号，例如 24sk102"
             />
             {matchedServer && (
               <p className="text-[11px] text-muted-foreground mt-1 truncate">

@@ -72,7 +72,7 @@ export const watchPagesZh = {
       editDesc: "只改配置，已记录的库存状态和历史不会重置",
       addDesc: "填写需要监控的服务器型号与可选条件",
       planCode: "服务器型号",
-      planCodePlaceholder: "例如: 24ska01",
+      planCodePlaceholder: "例如: 24sk102",
       planCodeReadOnly: "型号不可改。要换机型请删掉这条订阅再新建",
       dcLabel: "数据中心（可选，多个用逗号分隔）",
       dcPlaceholder: "例如: gra,rbx,sbg 或留空监控所有",

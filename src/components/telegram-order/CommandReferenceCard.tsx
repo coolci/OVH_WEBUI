@@ -108,12 +108,12 @@ export function CommandReferenceCard() {
               在 Telegram 聊天框或快捷命令中直接发送（无需斜杠前缀）：
             </p>
             <div className="flex items-center justify-between bg-background/80 px-3 py-2 rounded-lg border border-border/70 font-mono text-xs text-primary">
-              <span>24ska01 gra 1</span>
+              <span>24sk102 gra 1</span>
               <button
                 type="button"
                 onClick={() => {
-                  navigator.clipboard.writeText("24ska01 gra 1");
-                  toast.success("已复制: 24ska01 gra 1");
+                  navigator.clipboard.writeText("24sk102 gra 1");
+                  toast.success("已复制: 24sk102 gra 1");
                 }}
                 className="text-muted-foreground hover:text-primary transition-colors ml-2 p-1 rounded hover:bg-secondary"
                 title="复制"

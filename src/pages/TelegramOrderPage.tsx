@@ -277,7 +277,7 @@ const TelegramOrderPage = () => {
                     <Label className="text-xs font-medium">服务器型号 *</Label>
                     <div className="flex items-center gap-1 flex-wrap">
                       <span className="text-[10px] text-muted-foreground mr-0.5">常用:</span>
-                      {["24ska01", "24ska02", "24sk602", "24sk40"].map((code) => (
+                      {["24sk102", "24sk202", "24sk40-v1", "24sk602"].map((code) => (
                         <button
                           key={code}
                           type="button"
@@ -298,7 +298,7 @@ const TelegramOrderPage = () => {
                     value={planCode}
                     onChange={setPlanCode}
                     servers={servers || []}
-                    placeholder="输入或搜索型号，例如 24ska01"
+                    placeholder="输入或搜索型号，例如 24sk102"
                   />
                 </div>
 

@@ -227,7 +227,7 @@ export function MonitorSubscribeDialog({
               value={planCode}
               onChange={setPlanCode}
               servers={serversQ.data || []}
-              placeholder="输入或搜索型号，例如 24ska01"
+              placeholder="输入或搜索型号，例如 24sk102"
               disabled={planLocked}
             />
           </div>

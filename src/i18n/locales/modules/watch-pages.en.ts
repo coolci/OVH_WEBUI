@@ -75,7 +75,7 @@ const pack: WatchPagesPack = {
       editDesc: "Only the configuration changes; recorded stock states and history are kept",
       addDesc: "Enter the server model to monitor and optional conditions",
       planCode: "Server model",
-      planCodePlaceholder: "e.g. 24ska01",
+      planCodePlaceholder: "e.g. 24sk102",
       planCodeReadOnly: "The model cannot be changed. To switch models, delete this subscription and create a new one",
       dcLabel: "Datacenters (optional, comma-separated)",
       dcPlaceholder: "e.g. gra,rbx,sbg — or leave empty to monitor all",

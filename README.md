@@ -476,7 +476,7 @@ DELETE  /*
 变成一个词而被丢掉。现在半角/全角逗号、顿号、空格分隔都认。格式:
 
 ```
-24ska01 gra 2 ram-64g,softraid-2x960ssd
+24sk102 gra 2 ram-64g,softraid-2x960ssd
 型号     机房 数量 配置(可多个)
 ```
 
