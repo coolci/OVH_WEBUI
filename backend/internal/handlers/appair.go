@@ -3,6 +3,7 @@ package handlers
 import (
 	"errors"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -135,10 +136,17 @@ func CreatePairingCode(state *app.State) gin.HandlerFunc {
 
 // pairURL 生成 App 可识别的配对 URL(ovhconsole://pair?host=...&code=...)
 func pairURL(c *gin.Context, code string) string {
+	if pub := strings.TrimRight(strings.TrimSpace(os.Getenv("PUBLIC_BASE_URL")), "/"); pub != "" {
+		return pub + "/api/app/pair#" + code
+	}
 	scheme := "https"
 	if c.Request.TLS == nil {
-		// 本地 http 部署(127.0.0.1:19998)也要能配对;App 侧对私有地址允许明文
-		scheme = "http"
+		if proto := strings.ToLower(strings.TrimSpace(c.Request.Header.Get("X-Forwarded-Proto"))); proto == "https" {
+			scheme = "https"
+		} else {
+			// 本地 http 部署(127.0.0.1:19998)也要能配对;App 侧对私有地址允许明文
+			scheme = "http"
+		}
 	}
 	host := c.Request.Host
 	return scheme + "://" + host + "/api/app/pair#" + code

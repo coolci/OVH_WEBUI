@@ -84,10 +84,12 @@ export function AliasEditor({
   serviceName,
   aliases,
   onSetAlias,
+  accountId,
 }: {
   serviceName: string;
   aliases: ReturnType<typeof useServerAliases>;
   onSetAlias: ReturnType<typeof useSetServerAlias>;
+  accountId?: string;
 }) {
   const [v, setV] = useState(aliasOf(aliases.data, serviceName, ""));
 
@@ -102,7 +104,7 @@ export function AliasEditor({
         size="sm"
         onClick={async () => {
           try {
-            await onSetAlias.mutateAsync({ serviceName, alias: v });
+            await onSetAlias.mutateAsync({ serviceName, alias: v, accountId });
             toast.success("别名已保存");
           } catch (e: any) {
             toast.error(e?.message || "保存失败");

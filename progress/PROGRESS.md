@@ -6,22 +6,46 @@
 ## 当前断点（CHECKPOINT）
 
 ```yaml
-updated_at:        2026-10-11T04:00:00Z
-updated_by:        Antigravity (AI Multi-Agents Decoupling System)
-phase:             P0-P2 / 全项目模块化与纵向穿刺解耦 (Clean Architecture + DDD)
-domain:            纵向穿刺全栈解耦 (前端组件化 -> Handlers薄控制器 -> Service业务层 -> Domain纯领域模型 -> Repository仓储 -> SQLite)
-unit:              全项目模块化工程落地完成 (前后端+数据库，纵向穿刺解耦全部完成)
+updated_at:        2026-10-13T17:45:00Z
+updated_by:        Antigravity (Technical Ledger Audit & Logic Defect Resolution)
+phase:             P1-P2 / 技术台账校对与逻辑缺陷闭环 (LOGIC-REVIEW-2026-10-13)
+domain:            下单控制与死锁防护 / VPS功能边界收敛 / 账户作用域与缓存隔离 / 代理网络真实IP限流与配对
+unit:              L01-L10 十项技术缺陷全部修复完成并通过回归测试
 unit_status:       done
-last_commit:       sync/upstream-v0.1.36
+last_commit:       c71487e
 branch:            main
 build_ok:          true
 test_ok:           true
 live_ok:           true
 ```
 
-### 本会话已做（DoD 证据）
+### 本会话已做（DoD 证据 - 2026-10-13 技术台账缺陷闭环）
 
-1. **标准规范底座落地 (RFC 7807 Problem Details)**:
+1. **独服结账前控制与生命周期死锁修复 (L01-L03)**:
+   - **L01**: 入队保存失败回滚时调用 `MarkTaskDeleted` 与 context 取消，并在 `purchase.go` 结账前做 `IsTaskActiveInQueue` 存活性与非删除校验。单测 `order_audit_test.go:TestAuditFailedEnqueueBeforeCheckout` **PASS**。
+   - **L02**: 暂停操作 `UpdateQueueStatus("paused")` 实时取消在途 context，结账前 `IsTaskActiveInQueue` 拦截 paused 状态。单测 `order_audit_test.go:TestAuditPauseBeforeCheckout` **PASS**。
+   - **L03**: `vps.go` 引入 `lifecycleMu`，将 `loopWg.Wait()` 移出 `runningMu` 临界区，彻底消除 Stop/Start 与旧循环竞争死锁；补齐 nil 指针安全校验。单测 `lifecycle_test.go:TestAuditVPSRestartMustNotDeadlock` **PASS**。
+
+2. **VPS 订阅功能边界收敛 (L04)**:
+   - 严格按照用户需求收敛 VPS 订阅为“仅监控与通知”：下线后台 `autoOrderOnRestock` 并将 `PurchaseVPS` 置为 Fatal 不可达；修改订阅强制置空 AutoOrder 字段。
+   - 前端移除 `AddVPSDialog.tsx` 下单与自动付款表单控件，移除 `VPSRow.tsx` 购买 Badge。单测 `lifecycle_test.go:TestAuditVPSAutoOrderDisabled` **PASS**。
+
+3. **账户隔离与前端状态一致性修复 (L05-L08)**:
+   - **L05**: 快速下单与 Telegram 去重键补充 `AccountID` 隔离，多账户互不冲突。单测 `TestAuditCrossAccountQuickOrder` 与 `TestAuditTelegramDifferentAccountNotDuplicate` **PASS**。
+   - **L06**: 前端 `use-accounts.ts` 与 `AccountDialog.tsx` 捕获 422 响应并绑定 saved account，重试走 PUT，避免重复新建账户。
+   - **L07 & L08**: 别名 hook 显式传 `accountId`，VPS 控制页透传选定账户，QueryKey 与 QueryFn 强一致，根除切账户缓存污染。
+
+4. **反代网络真实 IP 限流与 HTTPS 配对 (L09-L10)**:
+   - **L09**: `auth/middleware.go` 解析 `X-Real-IP` 与 `X-Forwarded-For` 首 IP 实现独立客户端限流。单测 `proxy_audit_test.go:TestAuditProxyAuthFailuresAreClientIsolated` **PASS**。
+   - **L10**: `appair.go` 优先尊重 `PUBLIC_BASE_URL` 与 `X-Forwarded-Proto` 头生成 HTTPS 配对地址。单测 `proxy_audit_test.go:TestAuditPairURLUsesPublicHTTPS` **PASS**。
+
+5. **全量工程质量门禁 100% 通过**:
+   - 后端 `go test -count=1 ./...` 全量包 **100% PASS**，`go vet ./...` **0 警告**。
+   - 前端 `npm run typecheck` (`tsc -b`) 与 `npm run build` (`vite build`) **0 错误**。
+   - 双份进度台账 `npm run verify:ledger` **228/228 endpoints (100.0%) done, 0 mismatches**。
+
+### 历史里程碑记录（前期解耦工作）
+
    - `backend/internal/platform/httperr/problem.go`：封装标准 RFC 7807 错误封套（`NewProblem`, `Respond`, `BadRequest`, `Unauthorized`, `NotFound`, `Unprocessable`, `PreconditionFailed`, `InternalError`），向后兼容旧前端 `success: false` 与 `error: string`。
    - 单测 `problem_test.go` **100% PASS**。
 
@@ -113,4 +137,10 @@ graph TD
 4. **对账门禁强化（P1）**：升级 `tools/status/main.go` 严谨处理 OpenAPI 读取失败，并在 `--verify` 存在不一致时返回退出码 1；通过根目录 `go.work` 统一包路径；运行双台账同步对账，两份台账均达 228/228 (100.0%) done、0 mismatches。
 5. **部署安全与密钥备份（P1）**：修复 `docker-compose.ssl.yml` Caddy 健康检查命令；在 `Dockerfile.frontend` 严苛锁定 `npm ci`；在 `DEPLOY.md` 与 `README.md` 中全面纠正部署架构路径与 `OVH_DB_KEY` 宿主机备份指南。
 6. **统一质量门禁**：新增 `npm run verify`，一键串联 `typecheck`、`build`、`test:unit:backend` 与 `verify:ledger`，全量测试与契约对账 100% 通过。
+
+## 程序逻辑校对补记 — 2026-10-13
+
+基于 `c71487e` 的当前代码，后端 `go test -count=1 ./...`、`go vet ./...` 与前端应用类型检查通过。定向故障复现仍发现独服入队失败后继续结账、暂停后新发起结账、VPS 重启监控死锁等逻辑缺陷；测试通过不能替代这些业务场景的验收。用户确认 VPS 订阅只做监控与通知，当前源码却包含可达的自动下单入口，因此 L04 已更正为实现超出需求，撤回补齐 VPS 成交持久化的处理方向。
+
+详见 [程序逻辑校对](../docs/handover/LOGIC-REVIEW-2026-10-13.md)，共 9 项逻辑缺陷及 1 项实现超出需求的问题。此次未修改业务源码、ledger 或线上程序。下一步优先移除 L04 的 VPS 购买能力，修复 L01–L03，并把适用的隔离复现用例转为正式回归测试。
 

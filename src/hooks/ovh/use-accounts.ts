@@ -88,8 +88,15 @@ export function useCreateAccount() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: AccountInput) => {
-      const res = await api.post<{ account: OVHAccount } & AccountVerifyResult>("/accounts", input);
-      return res.data;
+      try {
+        const res = await api.post<{ account: OVHAccount } & AccountVerifyResult>("/accounts", input);
+        return res.data;
+      } catch (err: any) {
+        if (err?.response?.status === 422 && err.response.data?.account) {
+          return err.response.data as { account: OVHAccount } & AccountVerifyResult;
+        }
+        throw err;
+      }
     },
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ACCOUNTS_KEY });
@@ -114,8 +121,15 @@ export function useUpdateAccount() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, input }: { id: string; input: Partial<AccountInput> }) => {
-      const res = await api.put<{ account: OVHAccount } & AccountVerifyResult>(`/accounts/${id}`, input);
-      return res.data;
+      try {
+        const res = await api.put<{ account: OVHAccount } & AccountVerifyResult>(`/accounts/${id}`, input);
+        return res.data;
+      } catch (err: any) {
+        if (err?.response?.status === 422 && err.response.data?.account) {
+          return err.response.data as { account: OVHAccount } & AccountVerifyResult;
+        }
+        throw err;
+      }
     },
     onSuccess: (data, vars) => {
       qc.invalidateQueries({ queryKey: ACCOUNTS_KEY });

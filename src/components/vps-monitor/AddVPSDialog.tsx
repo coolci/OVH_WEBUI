@@ -5,7 +5,6 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import { AccountSelect } from "@/components/common/AccountSelect";
 import {
   Select,
   SelectContent,
@@ -52,10 +51,6 @@ export function AddVPSDialog({ open, onOpenChange, initial }: AddVPSDialogProps)
   const [monitorWindows, setMonitorWindows] = useState(true);
   const [notifyAvailable, setNotifyAvailable] = useState(true);
   const [notifyUnavailable, setNotifyUnavailable] = useState(false);
-  const [autoOrder, setAutoOrder] = useState(false);
-  const [quantity, setQuantity] = useState(1);
-  const [autoOrderAccountId, setAutoOrderAccountId] = useState("");
-  const [autoPay, setAutoPay] = useState(false);
 
   useEffect(() => {
     if (isEdit) return;
@@ -73,10 +68,6 @@ export function AddVPSDialog({ open, onOpenChange, initial }: AddVPSDialogProps)
     setMonitorWindows(true);
     setNotifyAvailable(true);
     setNotifyUnavailable(false);
-    setAutoOrder(false);
-    setQuantity(1);
-    setAutoOrderAccountId("");
-    setAutoPay(false);
   };
 
   useEffect(() => {
@@ -89,10 +80,6 @@ export function AddVPSDialog({ open, onOpenChange, initial }: AddVPSDialogProps)
       setMonitorWindows(initial.monitorWindows);
       setNotifyAvailable(initial.notifyAvailable);
       setNotifyUnavailable(initial.notifyUnavailable);
-      setAutoOrder(!!initial.autoOrder);
-      setQuantity(initial.quantity && initial.quantity > 0 ? initial.quantity : 1);
-      setAutoOrderAccountId(initial.autoOrderAccountId || "");
-      setAutoPay(!!initial.autoPay);
       return;
     }
     reset();
@@ -106,10 +93,6 @@ export function AddVPSDialog({ open, onOpenChange, initial }: AddVPSDialogProps)
       .map((d) => d.trim())
       .filter(Boolean);
 
-    if (autoOrder && !autoOrderAccountId) {
-      toast.error("开启自动下单时必须选 OVH 账户");
-      return;
-    }
     const payload = {
       ovhSubsidiary,
       datacenters: dcs,
@@ -117,10 +100,6 @@ export function AddVPSDialog({ open, onOpenChange, initial }: AddVPSDialogProps)
       monitorWindows,
       notifyAvailable,
       notifyUnavailable,
-      autoOrder,
-      quantity: autoOrder ? quantity : undefined,
-      autoOrderAccountId: autoOrder ? autoOrderAccountId : "",
-      autoPay: autoOrder ? autoPay : false,
     };
     const onSuccess = () => {
       reset();
@@ -251,7 +230,7 @@ export function AddVPSDialog({ open, onOpenChange, initial }: AddVPSDialogProps)
           </div>
 
           <div>
-            <p className="text-xs font-medium text-muted-foreground mb-2">通知与下单</p>
+            <p className="text-xs font-medium text-muted-foreground mb-2">通知提醒</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label className="flex items-center gap-2.5 cursor-pointer rounded-xl border border-border px-3.5 py-2.5 hover:bg-muted/40 transition-colors">
                 <Checkbox
@@ -267,45 +246,8 @@ export function AddVPSDialog({ open, onOpenChange, initial }: AddVPSDialogProps)
                 />
                 <span className="text-sm">无货时提醒</span>
               </label>
-              <label className="flex items-center gap-2.5 cursor-pointer rounded-xl border border-border px-3.5 py-2.5 hover:bg-muted/40 transition-colors sm:col-span-2">
-                <Checkbox checked={autoOrder} onCheckedChange={(v) => setAutoOrder(!!v)} />
-                <span className="text-sm">有货时自动下单</span>
-              </label>
             </div>
           </div>
-
-          {autoOrder && (
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1.5">
-                  下单账户 <span className="text-destructive">*</span>
-                </label>
-                <AccountSelect value={autoOrderAccountId} onChange={setAutoOrderAccountId} />
-                <label className="flex items-center gap-2.5 cursor-pointer rounded-xl border border-border px-3.5 py-2.5 hover:bg-muted/40 transition-colors mt-3">
-                  <Checkbox checked={autoPay} onCheckedChange={(v) => setAutoPay(!!v)} />
-                  <span className="text-sm">抢到后自动付款</span>
-                </label>
-                <p className="text-[11px] text-muted-foreground mt-1">不选账户 = 只通知不下单</p>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1.5">
-                  下单数量
-                </label>
-                <Input
-                  type="number"
-                  min={1}
-                  max={100}
-                  value={quantity}
-                  onChange={(e) => {
-                    const v = Number(e.target.value);
-                    if (Number.isFinite(v)) {
-                      setQuantity(Math.max(1, Math.min(100, Math.floor(v))));
-                    }
-                  }}
-                />
-              </div>
-            </div>
-          )}
 
           <DialogFooter>
             <Button

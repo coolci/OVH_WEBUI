@@ -55,7 +55,7 @@ function VpsControlPage() {
   }, [vpsList, selectedName]);
 
   const selected = vpsList.find((v) => v.serviceName === selectedName) || null;
-  const aliases = useServerAliases();
+  const aliases = useServerAliases(activeAccount || undefined);
   const setAlias = useSetServerAlias();
   const activeEndpoint = (accounts || []).find((a) => a.id === activeAccount)?.endpoint;
 
@@ -138,6 +138,7 @@ function VpsControlPage() {
             onSetAlias={setAlias}
             isUS={isUsEndpoint(activeEndpoint)}
             region={regionLabel(endpointRegion(activeEndpoint))}
+            activeAccount={activeAccount || undefined}
           />
         </>
       ) : q.isPending ? (

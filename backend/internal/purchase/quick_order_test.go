@@ -82,6 +82,7 @@ func TestEnqueueQuickOrderDuplicateChecks(t *testing.T) {
 	s.HistoryMu.Lock()
 	s.History = append(s.History, types.PurchaseHistoryEntry{
 		ID:           "hist-1",
+		AccountID:    "acc-1",
 		PlanCode:     "24sk602",
 		Datacenter:   "gra",
 		Options:      []string{"opt-a", "opt-b"},
@@ -110,6 +111,7 @@ func TestEnqueueQuickOrderDuplicateChecks(t *testing.T) {
 	s.QueueMu.Lock()
 	s.Queue = append(s.Queue, types.QueueItem{
 		ID:         "q-1",
+		AccountID:  "acc-1",
 		PlanCode:   "24sk602",
 		Datacenter: "rbx",
 		Options:    []string{"opt-1"},

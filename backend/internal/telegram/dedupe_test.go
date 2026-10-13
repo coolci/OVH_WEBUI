@@ -41,3 +41,12 @@ func TestMaxQueueLenIs500(t *testing.T) {
 		t.Fatalf("MaxQueueLen=%d, want 500", MaxQueueLen)
 	}
 }
+
+func TestAuditTelegramDifferentAccountNotDuplicate(t *testing.T) {
+	state := &app.State{Queue: []types.QueueItem{{ID: "q-a", AccountID: "account-a", PlanCode: "plan-test", Datacenter: "gra", Options: []string{"ram-test"}, Status: "running"}}}
+	result := EnqueueSingle(state, "account-b", "plan-test", "gra", []string{"ram-test"}, false)
+	if !result.Success {
+		t.Fatalf("account-b blocked by account-a task: %s", result.Message)
+	}
+}
+

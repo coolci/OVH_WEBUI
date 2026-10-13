@@ -66,6 +66,10 @@ func (f *fakeStore) MutateQueueItem(id string, fn func(*types.QueueItem)) (types
 	return types.QueueItem{}, false, nil
 }
 
+func (f *fakeStore) CancelTask(id string) {
+	f.deleted = append(f.deleted, "cancel:"+id)
+}
+
 func (f *fakeStore) HistorySnapshot() []types.PurchaseHistoryEntry {
 	return append([]types.PurchaseHistoryEntry{}, f.history...)
 }

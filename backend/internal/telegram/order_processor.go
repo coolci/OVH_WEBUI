@@ -177,13 +177,13 @@ func ProcessOrder(state *app.State, accountID, planCode, datacenter string, quan
 		configOptions := append([]string{}, ce.data.Options...)
 		for _, dc := range dcsToOrder {
 			// 检查是否已有相同配置的活跃抢购任务
-			if HasActiveDuplicate(state, planCode, dc, configOptions) {
-				state.Logger.Info(fmt.Sprintf("[Telegram下单] 跳过重复活跃任务: %s@%s", planCode, dc), "telegram")
+			if HasActiveDuplicateForAccount(state, accountID, planCode, dc, configOptions) {
+				state.Logger.Info(fmt.Sprintf("[Telegram下单] 跳过重复活跃任务: %s@%s (account=%s)", planCode, dc, accountID), "telegram")
 				continue
 			}
 			// 检查近期是否已成功下单同一配置
-			if RecentSuccessDuplicate(state, planCode, dc, configOptions) {
-				state.Logger.Info(fmt.Sprintf("[Telegram下单] 跳过近期已成功下单的重复任务: %s@%s", planCode, dc), "telegram")
+			if RecentSuccessDuplicateForAccount(state, accountID, planCode, dc, configOptions) {
+				state.Logger.Info(fmt.Sprintf("[Telegram下单] 跳过近期已成功下单的重复任务: %s@%s (account=%s)", planCode, dc, accountID), "telegram")
 				continue
 			}
 			for i := 0; i < quantity; i++ {

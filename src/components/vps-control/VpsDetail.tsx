@@ -44,6 +44,7 @@ interface VpsDetailProps {
   onSetAlias: ReturnType<typeof useSetServerAlias>;
   isUS: boolean;
   region: string;
+  activeAccount?: string;
 }
 
 export function VpsDetail({
@@ -52,6 +53,7 @@ export function VpsDetail({
   onSetAlias,
   isUS,
   region,
+  activeAccount,
 }: VpsDetailProps) {
   const info = useVpsServiceInfo(server.serviceName);
   const ips = useVpsIps(server.serviceName);
@@ -384,7 +386,7 @@ export function VpsDetail({
           <div className="border border-border rounded-2xl p-4 space-y-3">
             <h3 className="text-sm font-semibold">服务器别名</h3>
             <p className="text-[12px] text-muted-foreground">本地别名,不影响 OVH 真实名(`{maskSensitive(server.serviceName, hidden)}`)</p>
-            <AliasEditor serviceName={server.serviceName} aliases={aliases} onSetAlias={onSetAlias} />
+            <AliasEditor serviceName={server.serviceName} aliases={aliases} onSetAlias={onSetAlias} accountId={activeAccount} />
           </div>
 
           {!isUS ? (

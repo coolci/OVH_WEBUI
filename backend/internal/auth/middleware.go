@@ -60,9 +60,11 @@ func Middleware(cfg Config) gin.HandlerFunc {
 			return
 		}
 
+		ip := resolveClientIP(c)
+
 		// 先看这个来源是不是已经猜错太多次。放在读 header 之前:
 		// 被挡下的请求不该再进入任何比较逻辑。
-		if blocked, wait := authBlocked(c.ClientIP(), time.Now()); blocked {
+		if blocked, wait := authBlocked(ip, time.Now()); blocked {
 			secs := int(wait.Seconds()) + 1
 			c.Header("Retry-After", strconv.Itoa(secs))
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
@@ -88,12 +90,12 @@ func Middleware(cfg Config) gin.HandlerFunc {
 				if token != "" && cfg.DeviceTokenValid != nil {
 					if id, ok := cfg.DeviceTokenValid(token); ok {
 						c.Set("app_device_id", id)
-						clearAuthFailures(c.ClientIP())
+						clearAuthFailures(ip)
 						c.Next()
 						return
 					}
 				}
-				recordAuthFailure(c.ClientIP(), time.Now())
+				recordAuthFailure(ip, time.Now())
 				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 					"error":   "Invalid device token",
 					"message": "设备令牌无效或已被吊销。请到网页控制台重新配对(设置 → App 管理)",
@@ -115,7 +117,7 @@ func Middleware(cfg Config) gin.HandlerFunc {
 		if subtle.ConstantTimeCompare([]byte(key), []byte(cfg.APIKey)) != 1 {
 			// 记一次失败。不限次数的话,端口可达的人可以一秒几千次地猜 ——
 			// 而这个服务能用你的 OVH 账户下单。
-			recordAuthFailure(c.ClientIP(), time.Now())
+			recordAuthFailure(ip, time.Now())
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"error":   "Invalid API key",
 				"message": "API 密钥无效。它在服务器的 .env 文件里(API_SECRET_KEY);连续错误多次后会被暂时锁定",
@@ -124,7 +126,7 @@ func Middleware(cfg Config) gin.HandlerFunc {
 			return
 		}
 		// 对了就清零:打错一次的正常用户不该被后面的请求连坐
-		clearAuthFailures(c.ClientIP())
+		clearAuthFailures(ip)
 
 		// X-Request-Time 时间戳校验。
 		//
@@ -151,4 +153,20 @@ func Middleware(cfg Config) gin.HandlerFunc {
 
 		c.Next()
 	}
+}
+
+func resolveClientIP(c *gin.Context) string {
+	if xrip := strings.TrimSpace(c.GetHeader("X-Real-IP")); xrip != "" {
+		return xrip
+	}
+	if xff := strings.TrimSpace(c.GetHeader("X-Forwarded-For")); xff != "" {
+		parts := strings.Split(xff, ",")
+		if len(parts) > 0 {
+			ip := strings.TrimSpace(parts[0])
+			if ip != "" {
+				return ip
+			}
+		}
+	}
+	return c.ClientIP()
 }

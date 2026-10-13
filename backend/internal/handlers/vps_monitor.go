@@ -161,14 +161,11 @@ func AddVPSSubscription(state *app.State) gin.HandlerFunc {
 			LastStatus:         map[string]string{},
 			History:            []map[string]interface{}{},
 			CreatedAt:          types.NowISO(),
-			AutoOrderAccountID: body.AutoOrderAccountID,
-			AutoOrder:          body.AutoOrder && body.AutoOrderAccountID != "",
-			Quantity:           body.Quantity,
+			AutoOrderAccountID: "",
+			AutoOrder:          false,
+			Quantity:           0,
 			OS:                 strings.TrimSpace(body.OS),
-			AutoPay:            body.AutoPay && body.AutoOrder && body.AutoOrderAccountID != "",
-		}
-		if sub.AutoOrder && sub.Quantity < 1 {
-			sub.Quantity = 1
+			AutoPay:            false,
 		}
 		if err := state.AddVPSSubscription(sub); err != nil {
 			httperr.Internal(c, "保存VPS订阅失败: "+err.Error())

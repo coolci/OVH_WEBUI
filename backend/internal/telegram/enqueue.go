@@ -33,10 +33,10 @@ func enqueuePrepared(state *app.State, item types.QueueItem, requirePrice bool) 
 	if planCode == "" || datacenter == "" {
 		return OrderResult{Success: false, Message: "缺少 planCode 或 datacenter"}
 	}
-	if HasActiveDuplicate(state, planCode, datacenter, options) {
+	if HasActiveDuplicateForAccount(state, accountID, planCode, datacenter, options) {
 		return OrderResult{Success: false, Message: "已存在相同配置的购买任务，请勿重复点击"}
 	}
-	if RecentSuccessDuplicate(state, planCode, datacenter, options) {
+	if RecentSuccessDuplicateForAccount(state, accountID, planCode, datacenter, options) {
 		return OrderResult{Success: false, Message: "刚刚已成功下过同配置订单，稍后再试"}
 	}
 	if len(options) == 0 {
@@ -62,15 +62,19 @@ func enqueuePrepared(state *app.State, item types.QueueItem, requirePrice bool) 
 	if item.ID == "" {
 		item = NewTelegramQueueItem(accountID, planCode, datacenter, options)
 	}
-	// QuickOrder 只表示队列优先级,间隔一律走「抢购参数」里的新任务默认值。
-	// 监控自动下单那条 2 秒间隔由 quick_order 入队时自己写上,这里不当成 Telegram 指令的默认。
-	item.RetryInterval = types.ClampRetryInterval(item.RetryInterval, state.Config.RetryInterval())
+	defaultInterval := 10
+	if state != nil && state.Config != nil {
+		defaultInterval = state.Config.RetryInterval()
+	}
+	item.RetryInterval = types.ClampRetryInterval(item.RetryInterval, defaultInterval)
 	created, errMsg := appendAndSave(state, []types.QueueItem{item})
 	if errMsg != "" {
 		return OrderResult{Success: false, Message: errMsg}
 	}
-	state.Logger.Info(fmt.Sprintf("Telegram 受控入队: %s@%s account=%s opts=%v",
-		planCode, datacenter, accountID, options), "telegram")
+	if state != nil && state.Logger != nil {
+		state.Logger.Info(fmt.Sprintf("Telegram 受控入队: %s@%s account=%s opts=%v",
+			planCode, datacenter, accountID, options), "telegram")
+	}
 	ids := make([]string, 0, len(created))
 	for _, it := range created {
 		ids = append(ids, it.ID)
@@ -92,7 +96,7 @@ func appendAndSave(state *app.State, items []types.QueueItem) ([]types.QueueItem
 	}
 	filtered := make([]types.QueueItem, 0, len(items))
 	for _, it := range items {
-		if RecentSuccessDuplicate(state, it.PlanCode, it.Datacenter, it.Options) {
+		if RecentSuccessDuplicateForAccount(state, it.AccountID, it.PlanCode, it.Datacenter, it.Options) {
 			continue
 		}
 		filtered = append(filtered, it)
@@ -107,7 +111,8 @@ func appendAndSave(state *app.State, items []types.QueueItem) ([]types.QueueItem
 		fp := OptionsFingerprint(it.Options)
 		dup := false
 		for _, q := range state.Queue {
-			if q.PlanCode == it.PlanCode && q.Datacenter == it.Datacenter &&
+			if (it.AccountID == "" || q.AccountID == it.AccountID) &&
+				q.PlanCode == it.PlanCode && q.Datacenter == it.Datacenter &&
 				(q.Status == "running" || q.Status == "pending" || q.Status == "paused") &&
 				OptionsFingerprint(q.Options) == fp {
 				dup = true
@@ -130,7 +135,9 @@ func appendAndSave(state *app.State, items []types.QueueItem) ([]types.QueueItem
 	state.QueueMu.Unlock()
 
 	if err := state.EnqueueItems(keep, false); err != nil {
-		state.Logger.Error("Telegram 入队落盘失败: "+err.Error(), "telegram")
+		if state != nil && state.Logger != nil {
+			state.Logger.Error("Telegram 入队落盘失败: "+err.Error(), "telegram")
+		}
 		return nil, "订单入队落盘失败，请重试"
 	}
 	return keep, ""

@@ -476,6 +476,9 @@ func (s *State) SaveQueue() error {
 	cp := make([]types.QueueItem, len(s.Queue))
 	copy(cp, s.Queue)
 	s.QueueMu.Unlock()
+	if s.DB == nil {
+		return nil
+	}
 	return s.DB.ReplaceQueue(cp)
 }
 
@@ -574,9 +577,41 @@ func (s *State) EnqueueItems(items []types.QueueItem, prepend bool) error {
 		}
 		s.Queue = kept
 		s.QueueMu.Unlock()
+		for _, it := range items {
+			s.MarkTaskDeleted(it.ID)
+		}
 		return err
 	}
 	return nil
+}
+
+// CancelTask 取消一个任务当前正在进行的下单执行（如暂停任务时使用，不标记删除）。
+func (s *State) CancelTask(id string) {
+	s.taskCancelMu.Lock()
+	cancel := s.taskCancel[id]
+	delete(s.taskCancel, id)
+	s.taskCancelMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+// IsTaskActiveInQueue 检查任务是否仍在队列中且未被标记删除或暂停。
+func (s *State) IsTaskActiveInQueue(id string) bool {
+	if id == "" {
+		return true
+	}
+	if s.IsTaskDeleted(id) {
+		return false
+	}
+	s.QueueMu.Lock()
+	defer s.QueueMu.Unlock()
+	for i := range s.Queue {
+		if s.Queue[i].ID == id {
+			return s.Queue[i].Status != "paused"
+		}
+	}
+	return false
 }
 
 func (s *State) MarkTaskDeleted(id string) {
@@ -637,6 +672,9 @@ func (s *State) SaveHistory() error {
 	cp := make([]types.PurchaseHistoryEntry, len(s.History))
 	copy(cp, s.History)
 	s.HistoryMu.Unlock()
+	if s.DB == nil {
+		return nil
+	}
 	return s.DB.ReplaceHistory(cp)
 }
 

@@ -60,6 +60,11 @@ var dcRegion = map[string]string{
 // PurchaseVPS 在指定机房下单一台 VPS。
 // dcCode 是 OVH 的机房代码(GRA / BHS / US-EAST-VA ...),来自可用性接口。
 func PurchaseVPS(state *app.State, sub types.VPSSubscription, dcCode string) Outcome {
+	// 用户已确认 VPS 订阅仅支持库存监控与通知，不包含自动下单；此功能已下线。
+	return Outcome{Fatal: true, Reason: "VPS 订阅仅支持库存监控与通知，不包含自动下单"}
+}
+
+func purchaseVPSInternal(state *app.State, sub types.VPSSubscription, dcCode string) Outcome {
 	if strings.TrimSpace(sub.AutoOrderAccountID) == "" {
 		return Outcome{Fatal: true, Reason: "没有指定下单账户"}
 	}
@@ -355,9 +360,11 @@ func recordVPSPurchase(state *app.State, sub types.VPSSubscription, dcCode strin
 // 只对"从无货变成有货"的机房下单 —— 首次检查发现的存量不算补货,
 // 那可能是一台挂了几个月的订阅刚启动,用户并没打算现在就买。
 func autoOrderOnRestock(state *app.State, sub types.VPSSubscription, dcs []map[string]interface{}) {
-	if !sub.AutoOrder || strings.TrimSpace(sub.AutoOrderAccountID) == "" {
-		return
-	}
+	// 用户已确认 VPS 订阅仅支持库存监控与通知，不包含自动下单；此功能已下线。
+	return
+}
+
+func autoOrderOnRestockInternal(state *app.State, sub types.VPSSubscription, dcs []map[string]interface{}) {
 	// 同独服 quick-order 的 120 秒近期成功闸门:VPS 库存自然抖动
 	// (有货→抢光→再放货)每个回摆都会重新触发无货→有货跳变,
 	// 不挡的话同一窗口反复买 quantity 台直到用户肉眼发现。

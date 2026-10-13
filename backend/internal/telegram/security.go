@@ -179,12 +179,13 @@ func OptionsFingerprint(opts []string) string {
 	return strings.Join(list, "|")
 }
 
-func HasActiveDuplicate(state *app.State, planCode, datacenter string, options []string) bool {
+func HasActiveDuplicateForAccount(state *app.State, accountID, planCode, datacenter string, options []string) bool {
 	fp := OptionsFingerprint(options)
 	state.QueueMu.Lock()
 	defer state.QueueMu.Unlock()
 	for _, it := range state.Queue {
-		if it.PlanCode == planCode && it.Datacenter == datacenter &&
+		if (accountID == "" || it.AccountID == accountID) &&
+			it.PlanCode == planCode && it.Datacenter == datacenter &&
 			(it.Status == "running" || it.Status == "pending" || it.Status == "paused") &&
 			OptionsFingerprint(it.Options) == fp {
 			return true
@@ -193,14 +194,15 @@ func HasActiveDuplicate(state *app.State, planCode, datacenter string, options [
 	return false
 }
 
-func RecentSuccessDuplicate(state *app.State, planCode, datacenter string, options []string) bool {
+func RecentSuccessDuplicateForAccount(state *app.State, accountID, planCode, datacenter string, options []string) bool {
 	fp := OptionsFingerprint(options)
 	nowTS := time.Now().Unix()
 	state.HistoryMu.Lock()
 	defer state.HistoryMu.Unlock()
 	for i := len(state.History) - 1; i >= 0; i-- {
 		h := state.History[i]
-		if h.PlanCode == planCode && h.Datacenter == datacenter && h.Status == "success" &&
+		if (accountID == "" || h.AccountID == accountID) &&
+			h.PlanCode == planCode && h.Datacenter == datacenter && h.Status == "success" &&
 			OptionsFingerprint(h.Options) == fp {
 			if t, ok := types.ParseTS(h.PurchaseTime); ok {
 				if nowTS-t.Unix() < 120 {
@@ -210,6 +212,14 @@ func RecentSuccessDuplicate(state *app.State, planCode, datacenter string, optio
 		}
 	}
 	return false
+}
+
+func HasActiveDuplicate(state *app.State, planCode, datacenter string, options []string) bool {
+	return HasActiveDuplicateForAccount(state, "", planCode, datacenter, options)
+}
+
+func RecentSuccessDuplicate(state *app.State, planCode, datacenter string, options []string) bool {
+	return RecentSuccessDuplicateForAccount(state, "", planCode, datacenter, options)
 }
 
 func NewTelegramQueueItem(accountID, planCode, datacenter string, options []string) types.QueueItem {

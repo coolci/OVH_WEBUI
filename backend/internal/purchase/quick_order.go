@@ -147,7 +147,7 @@ func EnqueueQuickOrder(state *app.State, params QuickOrderParams) *QuickOrderRes
 		state.HistoryMu.Lock()
 		for i := len(state.History) - 1; i >= 0; i-- {
 			h := state.History[i]
-			if h.PlanCode == params.PlanCode && h.Datacenter == params.Datacenter && h.Status == "success" &&
+			if (h.AccountID == "" || h.AccountID == params.AccountID) && h.PlanCode == params.PlanCode && h.Datacenter == params.Datacenter && h.Status == "success" &&
 				fingerprint(h.Options) == fp0 {
 				if t, ok := types.ParseTS(h.PurchaseTime); ok && nowTS0-t.Unix() < 120 {
 					state.HistoryMu.Unlock()
@@ -167,7 +167,7 @@ func EnqueueQuickOrder(state *app.State, params QuickOrderParams) *QuickOrderRes
 		fp := fingerprint(options)
 		state.QueueMu.Lock()
 		for _, it := range state.Queue {
-			if it.PlanCode == params.PlanCode && it.Datacenter == params.Datacenter &&
+			if (it.AccountID == "" || it.AccountID == params.AccountID) && it.PlanCode == params.PlanCode && it.Datacenter == params.Datacenter &&
 				(it.Status == "running" || it.Status == "pending" || it.Status == "paused") &&
 				fingerprint(it.Options) == fp {
 				state.QueueMu.Unlock()
@@ -186,7 +186,7 @@ func EnqueueQuickOrder(state *app.State, params QuickOrderParams) *QuickOrderRes
 		state.HistoryMu.Lock()
 		for i := len(state.History) - 1; i >= 0; i-- {
 			h := state.History[i]
-			if h.PlanCode == params.PlanCode && h.Datacenter == params.Datacenter && h.Status == "success" &&
+			if (h.AccountID == "" || h.AccountID == params.AccountID) && h.PlanCode == params.PlanCode && h.Datacenter == params.Datacenter && h.Status == "success" &&
 				fingerprint(h.Options) == fp {
 				// PurchaseTime 是 types.NowISO() 写的,不带时区 —— 用 RFC3339Nano
 				// 解必然失败,于是这道"刚刚已经买成过同款,别再买一次"的闸门

@@ -231,7 +231,14 @@ export function AccountDialog({ acc, onClose }: { acc?: OVHAccount; onClose: () 
   const submit = async () => {
     const id = await save();
     if (!id) return;
-    await verify.mutateAsync(id);
+    try {
+      const vRes = await verify.mutateAsync(id);
+      if (!vRes.valid) {
+        return;
+      }
+    } catch {
+      return;
+    }
     onClose();
   };
 

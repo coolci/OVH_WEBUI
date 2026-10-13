@@ -506,7 +506,7 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 	// 最后一个点 —— 从这里往下,结账请求一旦发出就**不再接受取消**:
 	// 请求已经到了 OVH、我们这边却中途断开,订单可能已经生成而我们不知道,
 	// 既没 history 也没通知,那比"多下了一单"更糟。
-	if ctx.Err() != nil || state.IsTaskDeleted(item.ID) {
+	if ctx.Err() != nil || state.IsTaskDeleted(item.ID) || !state.IsTaskActiveInQueue(item.ID) {
 		return cancelledOutcome(state, item, "结账前复核")
 	}
 	state.Logger.Info("对购物车 "+cartID+" 执行结账", "purchase")

@@ -19,8 +19,9 @@ import (
 )
 
 var (
-	runningMu sync.Mutex
-	running   bool
+	lifecycleMu sync.Mutex
+	runningMu   sync.Mutex
+	running     bool
 	// generation 循环代际号,每次 Start 递增。
 	// 只翻 running 布尔的话,"停止后立刻启动"会让旧循环活下来:
 	// 它下一个检查点看到 running 又是 true,不退出 → 两个循环并存 →
@@ -72,6 +73,9 @@ func clearCheckFailure(subID string) {
 // checkNotifyOrStop 节流后体检所有通知通道,全挂才 Stop()。
 // 返回 true=继续 loop,false=已自停。
 func checkNotifyOrStop(state *app.State) bool {
+	if state == nil || state.Config == nil {
+		return true
+	}
 	tgCheckMu.Lock()
 	due := time.Since(lastTGCheck) >= tgRecheckInterval
 	tgCheckMu.Unlock()
@@ -631,20 +635,6 @@ func monitorLoopGen(state *app.State, gen int64) {
 						state.Logger.Info(fmt.Sprintf("VPS %s 补货：%d个数据中心", sub.PlanCode, len(newAvailable)), "vps_monitor")
 						SendSummaryNotification(state, sub.PlanCode, ovhSub, newAvailable, "available")
 					}
-					// 补货了就下单。放在通知之后:先让用户知道有货,
-					// 下单本身要走五六次 OVH 往返,失败了通知也已经发出去了。
-					// 只认"无货→有货"这一种跳变,首次检查发现的存量不算 ——
-					// 那可能是一台挂了几个月的订阅刚启动,用户并没打算现在就买。
-					if len(newAvailable) > 0 && sub.AutoOrder {
-						toOrder := *sub
-						toOrder.OvhSubsidiary = ovhSub
-						autoOrderOnRestock(state, toOrder, newAvailable)
-						// 下单/通知已发生,立即把本轮 lastStatus 落库 —— 不等轮末统一 Save。
-						// 中间崩溃/自更新重启的话,磁盘上还是旧状态,重启后同一波有货被当成
-						// 新跳变:重复发通知 + 再下一单(订单侧 120s 闸门依赖 history 已落库,
-						// 两个窗口叠加时兜不住)
-						_ = SaveSubscriptions(state)
-					}
 					if len(newUnavailable) > 0 && sub.NotifyUnavailable {
 						state.Logger.Info(fmt.Sprintf("VPS %s 下架：%d个数据中心", sub.PlanCode, len(newUnavailable)), "vps_monitor")
 						SendSummaryNotification(state, sub.PlanCode, ovhSub, newUnavailable, "unavailable")
@@ -692,39 +682,47 @@ func monitorLoopGen(state *app.State, gen int64) {
 
 // Start 启动监控
 func Start(state *app.State) bool {
+	lifecycleMu.Lock()
+	defer lifecycleMu.Unlock()
+
+	runningMu.Lock()
+	if running {
+		runningMu.Unlock()
+		return false
+	}
+	prevWg := loopWg
+	runningMu.Unlock()
+
+	// 等上一代循环退出:必须在 runningMu 锁外等待，
+	// 否则旧循环退出前调用 stillMine 会尝试获取 runningMu，导致死锁
+	if prevWg != nil {
+		prevWg.Wait()
+	}
+
 	runningMu.Lock()
 	if running {
 		runningMu.Unlock()
 		return false
 	}
 	running = true
-	// 代际号:Start/Stop 只翻布尔的话,"停止后立刻启动"会让旧循环活下来 ——
-	// 它下一个检查点看到 running 又是 true,不退出,于是两个循环并存,
-	// 同一次补货被下两次单(VPS 侧界面就一个 停止/启动 按钮,点两下即可复现,
-	// 而 VPS 循环退出延迟很大:每订阅一次 10 秒超时的 HTTP + 下单的五六次往返)。
-	// 每个循环记住自己出生时的代际号,不是当前代就退出。
 	generation++
 	gen := generation
-	// 等上一代循环退出:不等的话旧循环正在处理的那个订阅(含下单链)会跑完,
-	// 新循环同时处理同一订阅 → 一次补货两次下单(120s 闸门只挡"已成功",
-	// 首单成交前拦不住)
-	if loopWg != nil {
-		loopWg.Wait()
-	}
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 	loopWg = wg
 	runningMu.Unlock()
+
 	// 重置 TG 检查时间戳,保证启动后第一轮一定 verify
 	tgCheckMu.Lock()
 	lastTGCheck = time.Time{}
 	tgCheckMu.Unlock()
 	go func() {
-		defer wg.Done() // 闭包捕获局部引用:Stop→Start 换新 WaitGroup 后,
-		// 旧 goroutine 仍 Done 自己出生时那份(读全局会打到新 wg 上,计数变负 panic)
+		defer wg.Done()
 		monitorLoopGen(state, gen)
 	}()
-	state.Logger.Info(fmt.Sprintf("VPS监控已启动 (检查间隔: %d秒)", state.VPSCheckInterval), "vps_monitor")
+	if state != nil && state.Logger != nil {
+		state.Logger.Info(fmt.Sprintf("VPS监控已启动 (检查间隔: %d秒)", state.VPSCheckInterval), "vps_monitor")
+	}
 	return true
 }
 

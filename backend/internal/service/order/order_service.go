@@ -39,6 +39,7 @@ type QueueStore interface {
 	ClearQueueItems() ([]types.QueueItem, error)
 	// MutateQueueItem found=false 表示不存在;found=true 且 err!=nil 表示落库失败
 	MutateQueueItem(id string, fn func(*types.QueueItem)) (types.QueueItem, bool, error)
+	CancelTask(id string)
 }
 
 // HistoryStore 购买历史的"内存 + 落库"存储契约。
@@ -124,6 +125,9 @@ func (s *orderService) UpdateQueueStatus(id, status string) (types.QueueItem, er
 	})
 	if !found {
 		return types.QueueItem{}, ErrItemNotFound
+	}
+	if status == StatusPaused {
+		s.queue.CancelTask(id)
 	}
 	return item, persistErr(err)
 }

@@ -9,10 +9,13 @@ import { apiMessage } from "@/lib/api-error";
  *  - 切账户时 active-account 变 → axios 自动用新 id,需要前端再 invalidate 这个 query
  *  - alias 为空字符串等于"未设置",后端会去删除该行
  */
-export function useServerAliases() {
+export function useServerAliases(explicitAccountId?: string) {
+  const account = explicitAccountId ?? getActiveAccount();
   return useQuery<Record<string, string>>({
-    queryKey: ["server-control", "aliases", getActiveAccount()],
-    queryFn: async () => (await api.get<Record<string, string>>("/server-control/aliases")).data,
+    queryKey: ["server-control", "aliases", account],
+    queryFn: async () => (await api.get<Record<string, string>>("/server-control/aliases", {
+      params: account ? { account } : undefined,
+    })).data,
     staleTime: 30 * 60_000,
     gcTime: 60 * 60_000,
     refetchOnWindowFocus: false,
@@ -23,17 +26,22 @@ export function useServerAliases() {
 export function useSetServerAlias() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ serviceName, alias }: { serviceName: string; alias: string }) => {
+    mutationFn: async ({ serviceName, alias, accountId }: { serviceName: string; alias: string; accountId?: string }) => {
       const trimmed = alias.trim();
+      const account = accountId ?? getActiveAccount();
+      const params = account ? { account } : undefined;
       if (trimmed === "") {
-        await api.delete(`/server-control/${encodeURIComponent(serviceName)}/alias`);
+        await api.delete(`/server-control/${encodeURIComponent(serviceName)}/alias`, { params });
       } else {
-        await api.put(`/server-control/${encodeURIComponent(serviceName)}/alias`, { alias: trimmed });
+        await api.put(`/server-control/${encodeURIComponent(serviceName)}/alias`, { alias: trimmed }, { params });
       }
-      return { serviceName, alias: trimmed };
+      return { serviceName, alias: trimmed, accountId: account };
     },
-    onSuccess: ({ alias }) => {
+    onSuccess: ({ alias, accountId }) => {
       qc.invalidateQueries({ queryKey: ["server-control", "aliases"] });
+      if (accountId) {
+        qc.invalidateQueries({ queryKey: ["server-control", "aliases", accountId] });
+      }
       toast.success(i18n.t(alias === "" ? "hooksMsg.aliases.cleared" : "hooksMsg.aliases.saved"));
     },
     onError: (e: any) => {
