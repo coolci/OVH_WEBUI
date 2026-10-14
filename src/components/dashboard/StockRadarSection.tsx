@@ -11,7 +11,9 @@ import {
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Chip } from "@/components/common/Chip";
 import { Skeleton } from "@/components/common/Skeleton";
+import { StatusDot } from "@/components/common/StatusDot";
 import { isDcInStock } from "@/lib/datacenters";
 import { cn } from "@/lib/utils";
 import type { MonitorSubscription } from "@/hooks/use-monitor";
@@ -50,7 +52,7 @@ export function StockRadarSection({
             <span
               className={cn(
                 "animate-ping absolute inline-flex h-3 w-3 rounded-full opacity-75",
-                monitorRunning ? "bg-emerald-400" : "bg-muted"
+                monitorRunning ? "bg-primary" : "bg-muted"
               )}
             />
             <Radar
@@ -63,16 +65,12 @@ export function StockRadarSection({
           <div className="min-w-0">
             <CardTitle className="text-sm font-semibold flex items-center gap-2 flex-wrap">
               <span className="truncate">实时盯盘与补货信号雷达</span>
-              <span
-                className={cn(
-                  "text-[10px] px-2 py-0.5 rounded-full font-mono font-medium border flex-shrink-0",
-                  monitorRunning
-                    ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
-                    : "bg-muted text-muted-foreground border-border"
-                )}
+              <Chip
+                tone={monitorRunning ? "success" : "default"}
+                className="flex-shrink-0 font-mono text-[10px]"
               >
                 {monitorRunning ? "探针实时轮询中" : "监控引擎待机"}
-              </span>
+              </Chip>
             </CardTitle>
           </div>
         </div>
@@ -133,7 +131,7 @@ export function StockRadarSection({
                   className={cn(
                     "p-3.5 rounded-xl border transition-all duration-200 flex flex-col justify-between gap-2.5",
                     hasStock
-                      ? "border-emerald-500/50 bg-emerald-500/10 shadow-sm"
+                      ? "border-primary/50 bg-primary/10 shadow-sm"
                       : "border-border/70 hover:border-primary/40 bg-secondary/20 hover:bg-secondary/35"
                   )}
                 >
@@ -150,15 +148,15 @@ export function StockRadarSection({
                         )}
                       </div>
                       {sub.autoOrder ? (
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 flex items-center gap-1 font-semibold flex-shrink-0">
+                        <Chip tone="success" className="flex-shrink-0 rounded-md font-mono text-[10px] font-semibold">
                           <Zap className="w-3 h-3" />
                           自抢 x{sub.quantity || 1}
-                        </span>
+                        </Chip>
                       ) : (
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-secondary text-muted-foreground border border-border flex items-center gap-1 font-medium flex-shrink-0">
+                        <Chip tone="default" className="flex-shrink-0 rounded-md font-mono text-[10px] text-muted-foreground">
                           <Bell className="w-3 h-3" />
                           仅通知
-                        </span>
+                        </Chip>
                       )}
                     </div>
 
@@ -168,13 +166,12 @@ export function StockRadarSection({
                         const status = sub.lastStatus?.[dc.toLowerCase()];
                         const inStock = isDcInStock(status);
                         return (
-                          <span
+                          <Chip
                             key={dc}
+                            tone={inStock ? "success" : "default"}
                             className={cn(
-                              "text-[10px] font-mono uppercase px-1.5 py-0.5 rounded border transition-colors flex items-center gap-1",
-                              inStock
-                                ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border-emerald-500/40 font-bold"
-                                : "bg-background/60 text-muted-foreground/80 border-border/60"
+                              "uppercase font-mono text-[10px] rounded-md",
+                              inStock ? "font-bold" : "bg-background/60 text-muted-foreground/80"
                             )}
                             title={
                               status
@@ -182,19 +179,16 @@ export function StockRadarSection({
                                 : `${dc.toUpperCase()}: 持续探测中`
                             }
                           >
-                            <span
-                              className={cn(
-                                "w-1.5 h-1.5 rounded-full",
-                                inStock
-                                  ? "bg-emerald-500 animate-pulse"
-                                  : "bg-muted-foreground/40"
-                              )}
+                            <StatusDot
+                              tone={inStock ? "success" : "muted"}
+                              size="xs"
+                              pulse={inStock}
                             />
                             {dc}
                             {inStock && (
                               <span className="text-[9px] font-normal">({status})</span>
                             )}
-                          </span>
+                          </Chip>
                         );
                       })}
                       {targetDcs.length > 6 && (
@@ -207,7 +201,7 @@ export function StockRadarSection({
 
                   <div className="flex items-center justify-between pt-2 border-t border-border/40 text-[11px]">
                     {hasStock ? (
-                      <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-semibold text-xs">
+                      <div className="flex items-center gap-1 text-primary font-semibold text-xs">
                         <CheckCircle2 className="w-3.5 h-3.5" />
                         <span>发现现货补货！</span>
                       </div>
@@ -229,10 +223,7 @@ export function StockRadarSection({
                         size="sm"
                         variant={hasStock ? "default" : "secondary"}
                         onClick={() => onOpenQuickOrder(sub.planCode)}
-                        className={cn(
-                          "h-7 text-[11px] px-2.5 rounded-md font-medium gap-1",
-                          hasStock && "bg-emerald-600 hover:bg-emerald-500 text-white"
-                        )}
+                        className="h-7 text-[11px] px-2.5 rounded-md font-medium gap-1"
                       >
                         {hasStock && <Zap className="w-3 h-3" />}
                         <span>{hasStock ? "立即秒抢" : "下单"}</span>

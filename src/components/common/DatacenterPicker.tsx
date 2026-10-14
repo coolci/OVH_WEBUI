@@ -149,7 +149,7 @@ export function DatacenterPicker({
                       {dc.code.toUpperCase()}
                     </span>
                     {isOk ? (
-                      <span className="text-[10px] font-medium text-emerald-500">
+                      <span className="text-[10px] font-medium text-primary">
                         有货
                       </span>
                     ) : (
@@ -163,12 +163,7 @@ export function DatacenterPicker({
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 flex-shrink-0">
-                  <span
-                    className={cn(
-                      "inline-block w-1.5 h-1.5 rounded-full",
-                      isOk ? "bg-emerald-500" : "bg-muted-foreground/30"
-                    )}
-                  />
+                  <StatusDot tone={isOk ? "success" : "muted"} size="xs" />
                   <div
                     className={cn(
                       "w-4 h-4 rounded-sm flex items-center justify-center transition-colors border",

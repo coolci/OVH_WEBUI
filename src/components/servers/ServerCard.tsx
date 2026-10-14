@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Bell, ShoppingCart, Cpu, MemoryStick, HardDrive, Wifi } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Chip } from "@/components/common/Chip";
 import { StatusDot } from "@/components/common/StatusDot";
 import { type ServerPlan } from "@/hooks/use-servers";
 import { type PriceInfo, formatPrice } from "@/hooks/use-availability";
@@ -46,15 +47,15 @@ export function ServerCard({
             {server.planCode}
           </h3>
           {okCount > 0 ? (
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium border border-emerald-500/25 bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 flex-shrink-0">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            <Chip tone="success" className="flex-shrink-0">
+              <StatusDot tone="success" size="xs" pulse />
               <span>{okCount} 机房有货</span>
-            </div>
+            </Chip>
           ) : (
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium border border-border/80 bg-secondary/60 text-muted-foreground flex-shrink-0">
-              <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50" />
+            <Chip tone="default" className="flex-shrink-0 text-muted-foreground">
+              <StatusDot tone="muted" size="xs" />
               <span>暂时缺货</span>
-            </div>
+            </Chip>
           )}
         </div>
 
@@ -79,19 +80,18 @@ export function ServerCard({
         {/* DC 点阵：12 个标准 OVH DC */}
         <div className="flex flex-wrap items-center gap-1.5 py-1">
           {dcStatuses.map(({ dc, isOk }) => (
-            <span
+            <Chip
               key={dc.code}
+              tone={isOk ? "success" : "default"}
               title={`${dc.name} · ${dc.region}`}
               className={cn(
-                "inline-flex items-center gap-1 px-1.5 h-5 rounded-full border text-[10px] font-mono transition-colors",
-                isOk
-                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-                  : "border-border/60 bg-muted/30 text-muted-foreground/60"
+                "h-5 px-1.5 font-mono text-[10px]",
+                !isOk && "bg-muted/30 text-muted-foreground/60"
               )}
             >
               <StatusDot tone={isOk ? "success" : "danger"} size="xs" pulse={isOk} />
               {dc.code.toUpperCase()}
-            </span>
+            </Chip>
           ))}
         </div>
 

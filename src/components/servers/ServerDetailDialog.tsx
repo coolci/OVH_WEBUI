@@ -7,7 +7,9 @@ import { DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/co
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AccountSelect } from "@/components/common/AccountSelect";
+import { Chip } from "@/components/common/Chip";
 import { DatacenterPicker } from "@/components/common/DatacenterPicker";
+import { StatusDot } from "@/components/common/StatusDot";
 import { OptionGroupSection } from "@/components/common/OptionGroupSection";
 import { type ServerPlan } from "@/hooks/use-servers";
 import { useCreateQueueItem } from "@/hooks/use-queue";
@@ -125,15 +127,15 @@ export function ServerDetailDialog({
             {server.name}
           </DialogDescription>
           {ok > 0 ? (
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11.5px] font-medium border border-emerald-500/25 bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 flex-shrink-0">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            <Chip tone="success" className="flex-shrink-0">
+              <StatusDot tone="success" size="xs" pulse />
               <span>{ok} 机房有货</span>
-            </div>
+            </Chip>
           ) : (
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11.5px] font-medium border border-border/80 bg-secondary/60 text-muted-foreground flex-shrink-0">
-              <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50" />
+            <Chip tone="default" className="flex-shrink-0 text-muted-foreground">
+              <StatusDot tone="muted" size="xs" />
               <span>暂时缺货</span>
-            </div>
+            </Chip>
           )}
         </div>
       </DialogHeader>
