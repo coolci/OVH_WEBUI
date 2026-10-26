@@ -40,6 +40,7 @@ const TelegramOrderPage = () => {
   const [datacenter, setDatacenter] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [accountRef, setAccountRef] = useState<string>('');
+  const [coupon, setCoupon] = useState('');
 
   // 命令行直接输入
   const [rawInput, setRawInput] = useState<string>('');
@@ -141,6 +142,9 @@ const TelegramOrderPage = () => {
     if (accountRef) {
       cmd += ` @${accountRef.replace(/^@/, '')}`;
     }
+    if ((selectedMode === 'buy' || selectedMode === 'queue') && coupon.trim()) {
+      cmd += ` coupon=${coupon.trim()}`;
+    }
     return cmd;
   };
 
@@ -202,6 +206,7 @@ const TelegramOrderPage = () => {
         datacenter: datacenter || undefined,
         quantity: selectedMode === 'buy' || selectedMode === 'watch' ? quantity : undefined,
         accountRef: accountRef || undefined,
+        coupon: (selectedMode === 'buy' || selectedMode === 'queue') && coupon.trim() ? coupon.trim() : undefined,
       });
 
       setLastResult(result);
@@ -517,6 +522,26 @@ const TelegramOrderPage = () => {
                           placeholder="0 = 仅发通知，1 = 自动抢 1 台"
                           className="h-8 rounded-lg text-xs bg-background/50 border-border/80"
                         />
+                      </div>
+                    )}
+
+                    {(selectedMode === 'buy' || selectedMode === 'queue') && (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs font-medium">优惠码（可选）</Label>
+                          <span className="text-[10px] text-muted-foreground font-mono">结账时自动核销</span>
+                        </div>
+                        <Input
+                          value={coupon}
+                          onChange={(e) => setCoupon(e.target.value.toUpperCase())}
+                          placeholder="输入 OVH 优惠码（如 SAVE10），留空不使用"
+                          className="h-8 rounded-lg text-xs bg-background/50 border-border/80 font-mono uppercase"
+                          autoCapitalize="none"
+                          spellCheck={false}
+                        />
+                        <p className="text-[11px] text-muted-foreground">
+                          展示价格未扣除此优惠码；实际优惠以 OVH 校验为准。优惠码被拒绝时会自动跳过优惠继续锁单，并在历史记录中提示。
+                        </p>
                       </div>
                     )}
                   </>

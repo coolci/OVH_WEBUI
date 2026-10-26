@@ -275,16 +275,18 @@ type OrderInfo struct {
 	AccountRef string
 	Quantity   int
 	Options    []string
+	Coupon     string
 }
 
-// 格式: <planCode> [机房] [数量] [配置...]
+// 格式: <planCode> [机房] [数量] [配置...] [优惠码...]
 //
 // 除 planCode 必须打头外,后面的部分**位置无关**,按形状认:
 //
-//	@xxx    → 账户(任意位置,手机上很容易顺手打在末尾)
-//	纯数字   → 数量
-//	3~4 字母 → 机房(不区分大小写,统一转小写)
-//	其余     → 配置(addon planCode),逗号或空格分隔都认
+//	@xxx            → 账户(任意位置,手机上很容易顺手打在末尾)
+//	coupon=xxx/#xxx → 优惠码(支持 coupon=, code=, c=, # 甚至 coupon xxx 格式)
+//	纯数字           → 数量
+//	3~4 字母         → 机房(不区分大小写,统一转小写)
+//	其余             → 配置(addon planCode),逗号或空格分隔都认
 func ParseOrderMessage(text string) *OrderInfo {
 	text = strings.TrimSpace(text)
 	if text == "" {
@@ -311,12 +313,31 @@ func ParseOrderMessage(text string) *OrderInfo {
 	}
 
 	qtySet := false
-	for _, p := range parts[1:] {
+	for i := 1; i < len(parts); i++ {
+		p := parts[i]
+		lower := strings.ToLower(p)
 		switch {
 		case strings.HasPrefix(p, "@"):
 			if len(p) > 1 && result.AccountRef == "" {
 				result.AccountRef = strings.ToLower(p[1:])
 			}
+		case strings.HasPrefix(lower, "coupon="):
+			result.Coupon = strings.TrimSpace(p[7:])
+		case strings.HasPrefix(lower, "coupon:"):
+			result.Coupon = strings.TrimSpace(p[7:])
+		case strings.HasPrefix(lower, "code="):
+			result.Coupon = strings.TrimSpace(p[5:])
+		case strings.HasPrefix(lower, "code:"):
+			result.Coupon = strings.TrimSpace(p[5:])
+		case strings.HasPrefix(lower, "c="):
+			result.Coupon = strings.TrimSpace(p[2:])
+		case strings.HasPrefix(lower, "c:"):
+			result.Coupon = strings.TrimSpace(p[2:])
+		case (lower == "coupon" || lower == "code" || lower == "优惠码") && i+1 < len(parts):
+			i++
+			result.Coupon = strings.TrimSpace(parts[i])
+		case strings.HasPrefix(p, "#") && len(p) > 1:
+			result.Coupon = strings.TrimSpace(p[1:])
 		case !qtySet && isPositiveInt(p):
 			n, _ := parsePositiveInt(p)
 			result.Quantity = clampQuantity(n)

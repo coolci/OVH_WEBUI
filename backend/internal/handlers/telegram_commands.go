@@ -218,7 +218,7 @@ func cmdBuyOrQueueInfo(state *app.State, mon *monitor.Monitor, info *telegram.Or
 		return "❌ " + resolved.Reason
 	}
 	acc := resolved.Account
-	result := telegram.ProcessOrder(state, acc.ID, info.PlanCode, info.Datacenter, info.Quantity, info.Options)
+	result := telegram.ProcessOrder(state, acc.ID, info.PlanCode, info.Datacenter, info.Quantity, info.Options, info.Coupon)
 	if result.Success {
 		dcText := "全区所有可用机房"
 		if info.Datacenter != "" {
@@ -237,8 +237,12 @@ func cmdBuyOrQueueInfo(state *app.State, mon *monitor.Monitor, info *telegram.Or
 		if accExplain != "" {
 			accLine = "👤 执行账户: " + accExplain + "\n"
 		}
-		return fmt.Sprintf("%s\n%s\n📦 目标型号: %s\n📍 目标机房: %s\n🔢 下单数量: %d 台\n⚙️ 硬件规格: %s\n%s⏱️ 轮询周期: %d 秒 / 轮 (极速引擎)\n%s\n🎯 状态: 后台挂机监听中，检测到上架即毫秒抢占并锁单支付！",
-			title, telegram.CardDivider, info.PlanCode, dcText, info.Quantity, optsText, accLine, state.Config.RetryInterval(), telegram.CardDivider)
+		couponLine := ""
+		if info.Coupon != "" {
+			couponLine = "🎫 优惠代码: " + info.Coupon + " (OVH 结账时自动抵扣)\n"
+		}
+		return fmt.Sprintf("%s\n%s\n📦 目标型号: %s\n📍 目标机房: %s\n🔢 下单数量: %d 台\n⚙️ 硬件规格: %s\n%s%s⏱️ 轮询周期: %d 秒 / 轮 (极速引擎)\n%s\n🎯 状态: 后台挂机监听中，检测到上架即毫秒抢占并锁单支付！",
+			title, telegram.CardDivider, info.PlanCode, dcText, info.Quantity, optsText, accLine, couponLine, state.Config.RetryInterval(), telegram.CardDivider)
 	}
 	return fmt.Sprintf("❌ 任务创建失败\n%s\n⚠️ 原因: %s", telegram.CardDivider, result.Message)
 }
@@ -790,7 +794,7 @@ func handleTelegramText(state *app.State, mon *monitor.Monitor, text string, cha
 		return
 	}
 	acc := resolved.Account
-	result := telegram.ProcessOrder(state, acc.ID, orderInfo.PlanCode, orderInfo.Datacenter, orderInfo.Quantity, orderInfo.Options)
+	result := telegram.ProcessOrder(state, acc.ID, orderInfo.PlanCode, orderInfo.Datacenter, orderInfo.Quantity, orderInfo.Options, orderInfo.Coupon)
 	var reply string
 	if result.Success {
 		dcText := "自动选择机房"
@@ -802,8 +806,12 @@ func handleTelegramText(state *app.State, mon *monitor.Monitor, text string, cha
 			optsText = strings.Join(orderInfo.Options, ", ")
 		}
 		accExplain := explainAccountChoice(resolved, orderInfo.PlanCode)
-		reply = fmt.Sprintf("📥 已成功创建 %d/%d 个抢购任务\n\n📦 型号: %s\n📍 机房: %s\n🔢 数量: %d\n⚙️ 配置: %s\n%s\n⏱ 重试间隔: %d 秒\n\n将按「设置 → 抢购参数」的间隔重试。锁单成功≠已付款。",
-			result.CreatedOrders, result.TotalOrders, orderInfo.PlanCode, dcText, telegram.ClampQuantity(orderInfo.Quantity), optsText, accExplain, state.Config.RetryInterval())
+		couponText := ""
+		if orderInfo.Coupon != "" {
+			couponText = fmt.Sprintf("\n🎫 优惠码: %s", orderInfo.Coupon)
+		}
+		reply = fmt.Sprintf("📥 已成功创建 %d/%d 个抢购任务\n\n📦 型号: %s\n📍 机房: %s\n🔢 数量: %d\n⚙️ 配置: %s%s\n%s\n⏱ 重试间隔: %d 秒\n\n将按「设置 → 抢购参数」的间隔重试。锁单成功≠已付款。",
+			result.CreatedOrders, result.TotalOrders, orderInfo.PlanCode, dcText, telegram.ClampQuantity(orderInfo.Quantity), optsText, couponText, accExplain, state.Config.RetryInterval())
 	} else {
 		reply = "❌ 任务创建失败\n\n" + result.Message
 	}

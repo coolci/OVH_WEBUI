@@ -80,6 +80,7 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
   }, [cfgDefault]);
   const [picked, setPicked] = useState<Partial<Record<OptionGroupKey, string>>>({});
   const [autoPay, setAutoPay] = useState(false);
+  const [coupon, setCoupon] = useState("");
 
   const servers = serversQ.data || [];
   const server = useMemo(
@@ -134,6 +135,7 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
     setRetryInterval(String(cfgDefault));
     setPicked({});
     setAutoPay(false);
+    setCoupon("");
     setAccountId(defaultAcc?.id || "");
   }, [open, initialPlanCode]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -201,9 +203,11 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
       options: selectedValues,
       autoPay,
       force: isCustomPlan,
+      coupon: coupon.trim() || undefined,
+      preorder: !!server?.prerelease,
     });
     if (result.success > 0) {
-      toast.success(`已创建 ${result.success}/${result.total} 个抢购任务`);
+      toast.success(`已创建 ${result.success}/${result.total} 个${server?.prerelease ? "预订" : "抢购"}任务`);
       onOpenChange(false);
     }
     // 有具体原因时 hook 已经 toast 过,这里只兜底没拿到原因的情况
@@ -353,6 +357,21 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
               </div>
             </div>
 
+            <div>
+              <label className="mb-1 block text-[11px] text-muted-foreground">优惠码（可选）</label>
+              <Input
+                value={coupon}
+                onChange={(e) => setCoupon(e.target.value.toUpperCase())}
+                placeholder="输入 OVH 优惠码（如 SAVE10），留空不使用"
+                autoCapitalize="none"
+                spellCheck={false}
+                className="font-mono uppercase text-xs"
+              />
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                展示价格未扣除此优惠码；实际优惠以 OVH 校验为准。优惠码被拒绝时取消使用该码继续下单，并在购买历史和通知中提示。
+              </p>
+            </div>
+
             <label className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-border px-3.5 py-2.5 transition-colors hover:bg-muted/40">
               <Checkbox checked={autoPay} onCheckedChange={(v) => setAutoPay(!!v)} />
               <div>
@@ -388,7 +407,9 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
                 ) : (
                   <ShoppingCart className="h-4 w-4" />
                 )}
-                {selectedDCs.length > 0 ? `创建 ${totalTasks} 个任务` : "创建抢购任务"}
+                {server?.prerelease
+                  ? (selectedDCs.length > 0 ? `创建预订任务（共 ${totalTasks} 个）` : "创建预订抢购任务")
+                  : (selectedDCs.length > 0 ? `创建 ${totalTasks} 个任务` : "创建抢购任务")}
               </Button>
             </DialogFooter>
           </div>

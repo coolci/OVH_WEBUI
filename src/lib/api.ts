@@ -244,6 +244,7 @@ export const api = {
     autoPay?: boolean;
     fromMonitor?: boolean;
     skipDuplicateCheck?: boolean;
+    coupon?: string;
   }) => {
     const payload = {
       ...order,

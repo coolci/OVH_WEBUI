@@ -62,9 +62,13 @@ func emptyAvailabilityReason(state *app.State, accountID, planCode string, acc t
 	return base + fmt.Sprintf("\n\n%s 的目录里有 %s,所以不是区域搞错了,而是这个机型当前在所有机房都没有可售配置。", sub, planCode)
 }
 
-func ProcessOrder(state *app.State, accountID, planCode, datacenter string, quantity int, options []string) OrderResult {
+func ProcessOrder(state *app.State, accountID, planCode, datacenter string, quantity int, options []string, coupon ...string) OrderResult {
 	if quantity < 1 {
 		quantity = 1
+	}
+	couponCode := ""
+	if len(coupon) > 0 {
+		couponCode = strings.TrimSpace(coupon[0])
 	}
 	acc, ok := state.FindAccount(accountID)
 	if !ok {
@@ -194,6 +198,7 @@ func ProcessOrder(state *app.State, accountID, planCode, datacenter string, quan
 					PlanCode:      planCode,
 					Datacenter:    dc,
 					Options:       append([]string{}, configOptions...),
+					Coupon:        couponCode,
 					Status:        "running",
 					CreatedAt:     now,
 					UpdatedAt:     now,
@@ -223,15 +228,19 @@ func ProcessOrder(state *app.State, accountID, planCode, datacenter string, quan
 		createdIDs = append(createdIDs, it.ID)
 	}
 	created := len(createdItems)
-	state.Logger.Info(fmt.Sprintf("订单创建完成: 成功加入队列 %d/%d 个任务", created, totalOrders), "telegram")
+	state.Logger.Info(fmt.Sprintf("订单创建完成: 成功加入队列 %d/%d 个任务 (coupon=%s)", created, totalOrders, couponCode), "telegram")
 
 	msgSuffix := "（当前有现货，系统将立即尝试结账）"
 	if !targetInStock {
 		msgSuffix = "（目标机房当前缺货，已加入抢购队列，将按设置的间隔重试）"
 	}
+	couponText := ""
+	if couponCode != "" {
+		couponText = fmt.Sprintf(" · 优惠码: %s", couponCode)
+	}
 	return OrderResult{
 		Success:       true,
-		Message:       fmt.Sprintf("已创建 %d/%d 个任务(账户 %s)%s", created, totalOrders, accLabel, msgSuffix),
+		Message:       fmt.Sprintf("已创建 %d/%d 个任务(账户 %s%s)%s", created, totalOrders, accLabel, couponText, msgSuffix),
 		TotalOrders:   totalOrders,
 		CreatedOrders: created,
 		ItemIDs:       createdIDs,

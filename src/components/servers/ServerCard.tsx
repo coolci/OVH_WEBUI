@@ -43,9 +43,16 @@ export function ServerCard({
       <CardContent className="p-4 sm:p-5 flex flex-col gap-4 h-full">
         {/* 头部：型号 + 当前可用标识 */}
         <div className="flex items-center justify-between gap-2.5">
-          <h3 className="font-mono text-[15px] font-bold tracking-tight text-foreground truncate">
-            {server.planCode}
-          </h3>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <h3 className="font-mono text-[15px] font-bold tracking-tight text-foreground truncate">
+              {server.planCode}
+            </h3>
+            {server.prerelease && (
+              <Chip tone="warning" className="h-4 px-1 text-[10px] shrink-0 font-medium">
+                预售
+              </Chip>
+            )}
+          </div>
           {okCount > 0 ? (
             <Chip tone="success" className="flex-shrink-0">
               <StatusDot tone="success" size="xs" pulse />

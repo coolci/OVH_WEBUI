@@ -136,15 +136,19 @@ func runOrder(state *app.State, o *telegram.OrderInfo, accs []types.OVHAccount) 
 		return "❌ 未找到可用下单账户"
 	}
 	if len(accs) == 1 {
-		res := telegram.ProcessOrder(state, accs[0].ID, o.PlanCode, o.Datacenter, o.Quantity, o.Options)
+		res := telegram.ProcessOrder(state, accs[0].ID, o.PlanCode, o.Datacenter, o.Quantity, o.Options, o.Coupon)
 		if res.Success {
 			optsText := ""
 			if len(o.Options) > 0 {
 				optsText = fmt.Sprintf("\n⚙️ 配置: %s", strings.Join(o.Options, ", "))
 			}
-			return fmt.Sprintf("📥 已创建 %d/%d 个抢购任务\n\n📦 型号: %s%s\n👤 账户: %s\n\n"+
+			couponText := ""
+			if o.Coupon != "" {
+				couponText = fmt.Sprintf("\n🎫 优惠码: %s", o.Coupon)
+			}
+			return fmt.Sprintf("📥 已创建 %d/%d 个抢购任务\n\n📦 型号: %s%s%s\n👤 账户: %s\n\n"+
 				"系统将自动重试排队到抢到为止（下单成功≠已付款）。\n查看任务 /tasks",
-				res.CreatedOrders, res.TotalOrders, o.PlanCode, optsText, telegram.AccountLabel(accs[0]))
+				res.CreatedOrders, res.TotalOrders, o.PlanCode, optsText, couponText, telegram.AccountLabel(accs[0]))
 		}
 		return "❌ 下单失败\n\n" + res.Message
 	}
@@ -153,7 +157,7 @@ func runOrder(state *app.State, o *telegram.OrderInfo, accs []types.OVHAccount) 
 	okCount, total := 0, 0
 	var fails []string
 	for _, a := range accs {
-		res := telegram.ProcessOrder(state, a.ID, o.PlanCode, o.Datacenter, o.Quantity, o.Options)
+		res := telegram.ProcessOrder(state, a.ID, o.PlanCode, o.Datacenter, o.Quantity, o.Options, o.Coupon)
 		if res.Success {
 			okCount++
 			total += res.CreatedOrders

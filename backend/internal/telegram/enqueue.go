@@ -12,8 +12,11 @@ import (
 
 // EnqueueSingle 受控入队：账户绑定 + 去重 + 可选询价 + 队列硬顶。
 // 用于按钮一键下单与 /buy 单配置路径。
-func EnqueueSingle(state *app.State, accountID, planCode, datacenter string, options []string, requirePrice bool) OrderResult {
+func EnqueueSingle(state *app.State, accountID, planCode, datacenter string, options []string, requirePrice bool, coupon ...string) OrderResult {
 	item := NewTelegramQueueItem(accountID, planCode, datacenter, options)
+	if len(coupon) > 0 {
+		item.Coupon = strings.TrimSpace(coupon[0])
+	}
 	return enqueuePrepared(state, item, requirePrice)
 }
 

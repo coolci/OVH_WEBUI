@@ -27,6 +27,7 @@ import {
 } from "@/hooks/use-availability";
 import { OVH_DATACENTERS } from "@/lib/datacenters";
 import { comparePrices } from "@/lib/money";
+import { mergeStockPlans } from "@/lib/stock-plans";
 import { cn } from "@/lib/utils";
 
 const SUB_LS_KEY = "ovh_sniper_price_subsidiary";
@@ -107,7 +108,7 @@ function ServersPage() {
     ? monitorList.data?.find((s) => s.planCode === monitorTarget.planCode)
     : undefined;
 
-  const list = useMemo(() => q.data || [], [q.data]);
+  const list = useMemo(() => mergeStockPlans(q.data || [], availQ.data), [q.data, availQ.data]);
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
     let out = list;

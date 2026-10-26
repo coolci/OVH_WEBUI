@@ -27,6 +27,7 @@ func TelegramQuickOrder(state *app.State, mon *monitor.Monitor) gin.HandlerFunc 
 			Quantity   int      `json:"quantity"`
 			Options    []string `json:"options"`
 			AccountRef string   `json:"accountRef"`
+			Coupon     string   `json:"coupon"`
 		}
 		if err := c.ShouldBindJSON(&body); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "无效的请求体"})
@@ -184,7 +185,7 @@ func TelegramQuickOrder(state *app.State, mon *monitor.Monitor) gin.HandlerFunc 
 			return
 		}
 
-		args, errMsg := buildTelegramCommandArgs(mode, planCode, dc, body.Quantity, body.Options, body.AccountRef)
+		args, errMsg := buildTelegramCommandArgs(mode, planCode, dc, body.Quantity, body.Options, body.AccountRef, strings.TrimSpace(body.Coupon))
 		if errMsg != "" {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": errMsg})
 			return
@@ -211,11 +212,15 @@ func TelegramQuickOrder(state *app.State, mon *monitor.Monitor) gin.HandlerFunc 
 	}
 }
 
-func buildTelegramCommandArgs(mode, planCode, dc string, quantity int, options []string, accountRef string) ([]string, string) {
+func buildTelegramCommandArgs(mode, planCode, dc string, quantity int, options []string, accountRef string, coupon ...string) ([]string, string) {
 	accountRef = strings.TrimSpace(accountRef)
 	var accArg string
 	if accountRef != "" {
 		accArg = "@" + strings.TrimPrefix(accountRef, "@")
+	}
+	couponCode := ""
+	if len(coupon) > 0 {
+		couponCode = strings.TrimSpace(coupon[0])
 	}
 
 	switch mode {
@@ -242,6 +247,9 @@ func buildTelegramCommandArgs(mode, planCode, dc string, quantity int, options [
 		}
 		if len(cleanOpts) > 0 {
 			args = append(args, strings.Join(cleanOpts, ","))
+		}
+		if couponCode != "" {
+			args = append(args, "coupon="+couponCode)
 		}
 		return args, ""
 	case "monitor":

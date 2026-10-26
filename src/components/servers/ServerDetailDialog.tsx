@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { AccountSelect } from "@/components/common/AccountSelect";
 import { Chip } from "@/components/common/Chip";
 import { DatacenterPicker } from "@/components/common/DatacenterPicker";
@@ -59,6 +60,8 @@ export function ServerDetailDialog({
 
   const [selectedDCs, setSelectedDCs] = useState<string[]>([]);
   const [quantity, setQuantity] = useState("1");
+  const [coupon, setCoupon] = useState("");
+  const [autoPay, setAutoPay] = useState(false);
   const settingsQ = useSettings();
   const cfgDefault = settingsQ.data?.defaultRetryInterval || RETRY_INTERVAL.defaultTask;
   const [retryInterval, setRetryInterval] = useState("");
@@ -141,6 +144,12 @@ export function ServerDetailDialog({
       </DialogHeader>
 
       <div className="overflow-y-auto -mx-6 px-6 space-y-6 flex-1">
+        {server.prerelease && (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200/90 flex items-start gap-2">
+            <span className="font-semibold text-amber-400 shrink-0">预售机型提示：</span>
+            <span>仅出现在库存流中，尚未进入当前账户销售目录。创建抢购将作为预订任务在后台挂机轮询，一旦销售目录上架该型号即刻自动下单，等待期间不计入失败重试。</span>
+          </div>
+        )}
         {/* 价格 Hero */}
         <div className="border border-border rounded-2xl p-4 bg-secondary/30 flex items-end justify-between gap-3 flex-wrap">
           <div>
@@ -200,6 +209,20 @@ export function ServerDetailDialog({
               <label className="block text-[11px] text-muted-foreground mb-1">OVH 账户 *</label>
               <AccountSelect value={accountId} onChange={setAccountId} />
             </div>
+            <div>
+              <label className="block text-[11px] text-muted-foreground mb-1">优惠码（可选）</label>
+              <Input
+                value={coupon}
+                onChange={(e) => setCoupon(e.target.value.toUpperCase())}
+                placeholder="输入 OVH 优惠码（如 SAVE10），留空不使用"
+                autoCapitalize="none"
+                spellCheck={false}
+                className="font-mono uppercase text-xs"
+              />
+              <p className="text-[11px] text-muted-foreground mt-1">
+                展示价格未扣除此优惠码；实际优惠以 OVH 校验为准。优惠码被拒绝时取消使用该码继续下单，并在购买历史和通知中提示。
+              </p>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-[11px] text-muted-foreground mb-1">每个数据中心数量</label>
@@ -225,6 +248,10 @@ export function ServerDetailDialog({
                 />
               </div>
             </div>
+            <label className="flex items-center gap-2 pt-1 cursor-pointer text-xs">
+              <Checkbox checked={autoPay} onCheckedChange={(v) => setAutoPay(!!v)} />
+              <span className="text-muted-foreground">抢到后自动付款（默认关闭；开启后使用 OVH 账户默认支付方式自动结算）</span>
+            </label>
           </div>
         </div>
       </div>
@@ -275,9 +302,12 @@ export function ServerDetailDialog({
                 quantity: qty,
                 retryInterval: Number(retryInterval) || cfgDefault,
                 options: selectedValues,
+                autoPay,
+                coupon: coupon.trim() || undefined,
+                preorder: !!server.prerelease,
               });
               if (result.success > 0) {
-                toast.success(`已创建 ${result.success}/${result.total} 个抢购任务`);
+                toast.success(`已创建 ${result.success}/${result.total} 个${server.prerelease ? "预订" : "抢购"}任务`);
                 onClose();
               }
               if (result.failed > 0) {
@@ -293,7 +323,9 @@ export function ServerDetailDialog({
             ) : (
               <>
                 <ShoppingCart className="w-3.5 h-3.5" />
-                {selectedDCs.length > 0 ? `创建 ${totalTasks} 个任务` : "创建抢购任务"}
+                {server.prerelease
+                  ? (selectedDCs.length > 0 ? `创建预订任务（共 ${totalTasks} 个）` : "创建预订抢购任务")
+                  : (selectedDCs.length > 0 ? `创建 ${totalTasks} 个任务` : "创建抢购任务")}
               </>
             )}
           </Button>

@@ -62,6 +62,41 @@ func TestParseOrderArgs(t *testing.T) {
 	}
 }
 
+func TestParseOrderCoupon(t *testing.T) {
+	cases := []struct {
+		input      string
+		wantCoupon string
+		wantPlan   string
+		wantDc     string
+		wantQty    int
+	}{
+		{"24ska01 gra 1 coupon=SAVE10", "SAVE10", "24ska01", "gra", 1},
+		{"24ska01 gra 2 #BF2026", "BF2026", "24ska01", "gra", 2},
+		{"24ska01 gra code:DISCOUNT20", "DISCOUNT20", "24ska01", "gra", 1},
+		{"24ska01 gra coupon PROMO50", "PROMO50", "24ska01", "gra", 1},
+		{"24ska01 gra 优惠码 666ABC", "666ABC", "24ska01", "gra", 1},
+		{"24ska01 gra c=SUPERDEAL", "SUPERDEAL", "24ska01", "gra", 1},
+	}
+	for _, tc := range cases {
+		info := ParseOrderMessage(tc.input)
+		if info == nil {
+			t.Fatalf("ParseOrderMessage(%q) returned nil", tc.input)
+		}
+		if info.Coupon != tc.wantCoupon {
+			t.Errorf("ParseOrderMessage(%q).Coupon = %q, want %q", tc.input, info.Coupon, tc.wantCoupon)
+		}
+		if info.PlanCode != tc.wantPlan {
+			t.Errorf("ParseOrderMessage(%q).PlanCode = %q, want %q", tc.input, info.PlanCode, tc.wantPlan)
+		}
+		if info.Datacenter != tc.wantDc {
+			t.Errorf("ParseOrderMessage(%q).Datacenter = %q, want %q", tc.input, info.Datacenter, tc.wantDc)
+		}
+		if info.Quantity != tc.wantQty {
+			t.Errorf("ParseOrderMessage(%q).Quantity = %d, want %d", tc.input, info.Quantity, tc.wantQty)
+		}
+	}
+}
+
 func TestIsKnownCommand(t *testing.T) {
 	if !IsKnownCommand("buy") || !IsKnownCommand("STOCK") {
 		t.Fatal("expected known")
