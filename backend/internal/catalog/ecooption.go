@@ -2,6 +2,21 @@ package catalog
 
 import "strings"
 
+// 预订硬件只接受原始规格加机型后缀,不按标准化结果替换成另一套配置。
+func MatchPreorderEcoOption(opts []map[string]interface{}, wanted string) (map[string]interface{}, string, string) {
+	w := strings.ToLower(strings.TrimSpace(wanted))
+	filtered := []map[string]interface{}{}
+	for _, opt := range opts {
+		code, _ := opt["planCode"].(string)
+		c := strings.ToLower(code)
+		suffix := strings.TrimPrefix(c, w+"-")
+		if c == w || (suffix != c && (ecoStockPlanCode.MatchString(suffix) || suffix == "rise" || suffix == "sys" || suffix == "sk")) {
+			filtered = append(filtered, opt)
+		}
+	}
+	return MatchEcoOption(filtered, wanted)
+}
+
 // MatchEcoOption 把用户/FQN 给的 addon 码匹配到 OVH /order/cart/{id}/eco/options
 // 返回的那批可选项上,返回命中的选项、它的完整 planCode、以及命中档次(日志用)。
 //

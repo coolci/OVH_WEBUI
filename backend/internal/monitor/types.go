@@ -87,7 +87,8 @@ type CachedMessage struct {
 type Subscription struct {
 	// mu 保护下面所有可变字段。加在结构体里而不是复用 subsMu:
 	// 检查是「每订阅一个 goroutine」并发跑的,用一把全局锁会让 30 个订阅的检查串行化。
-	mu sync.Mutex
+	mu       sync.Mutex
+	revision uint64
 
 	PlanCode           string            `json:"planCode"`
 	Datacenters        []string          `json:"datacenters"`
@@ -101,6 +102,9 @@ type Subscription struct {
 	Quantity           int               `json:"quantity,omitempty"`
 	AutoOrderAccountID string            `json:"autoOrderAccountId,omitempty"` // 空 = 触发时只通知不下单
 	AutoPay            bool              `json:"autoPay,omitempty"`            // 下单后自动付款(显式开关,默认关)
+	// Paused 暂停监控:检查循环跳过,订阅与历史保留,恢复即继续。
+	// 场景:暂时不想收通知但不想删掉重建(OVH US 已下线手动续费,删了重加门槛更高)
+	Paused bool `json:"paused,omitempty"`
 	// Options 只盯这套配置。空 = 全部配置(老行为)。
 	// 一个 planCode 底下常有好几套内存/存储组合,而通知和自动下单是按配置逐套触发的,
 	// "自动抢 1 台"在三套配置同时补货时会下三次单(再乘机房数)。
@@ -128,6 +132,8 @@ type Subscription struct {
 // 期间用户可能改订阅配置,半程换配置会让状态机前后不一致(比如前半程按"通知有货"、
 // 后半程按"不通知"走),而且每次读都要加锁。
 type subCheckConfig struct {
+	Revision           uint64
+	Paused             bool
 	Datacenters        []string
 	NotifyAvailable    bool
 	NotifyUnavailable  bool
@@ -147,6 +153,8 @@ func (s *Subscription) checkConfig() subCheckConfig {
 	opts := make([]string, len(s.Options))
 	copy(opts, s.Options)
 	return subCheckConfig{
+		Revision:           s.revision,
+		Paused:             s.Paused,
 		Datacenters:        dcs,
 		Options:            opts,
 		NotifyAvailable:    s.NotifyAvailable,
@@ -263,6 +271,7 @@ func (s *Subscription) snapshot() *Subscription {
 		Quantity:           s.Quantity,
 		AutoOrderAccountID: s.AutoOrderAccountID,
 		AutoPay:            s.AutoPay,
+		Paused:             s.Paused,
 
 		LastCheckAt:         s.LastCheckAt,
 		LastCheckAccountID:  s.LastCheckAccountID,

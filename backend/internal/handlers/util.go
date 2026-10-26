@@ -270,26 +270,94 @@ func idToString(v interface{}) string {
 	}
 }
 
-// putServiceRenew 发 renew 修改(独服 / VPS 的 PUT .../serviceInfos 共用)。
-//
-// OVH 正在分批下线 renew.manualPayment 参数(实测 2026-10 US 区 VPS 拒收:
-// 400 "manualPayment parameter isn't available anymore"),但官方 schema 三区
-// 都还保留着这个字段 —— 文档滞后于 live,没法按 schema 预判哪个服务收。
-// 所以按"先按现行契约发,命中参数废弃就自动去掉该字段重试"处理:
-// 手动续费在新契约里就是 automatic=false + deleteAtExpiration=false,
-// manualPayment 在新计费体系里已无语义,去掉不算改行为。
-func putServiceRenew(client *ovhsdk.Client, path string, next map[string]interface{}) error {
-	err := client.Put(path, map[string]interface{}{"renew": next}, nil)
-	if err == nil || !ovh.IsParamUnavailable(err, "manualPayment") {
-		return err
+// RenewRouteError 一条文档路由的拒绝留痕(路由名 + 原始错误)。
+type RenewRouteError struct {
+	Route string `json:"route"`
+	Error string `json:"error"`
+}
+
+// RenewDualError 两条文档路由都被拒。Attempts 按尝试顺序带回原始错误。
+type RenewDualError struct {
+	Attempts []RenewRouteError
+}
+
+func (e *RenewDualError) Error() string {
+	if len(e.Attempts) == 0 {
+		return "renew 修改被拒"
 	}
-	fallback := make(map[string]interface{}, len(next))
-	for k, v := range next {
-		if k != "manualPayment" {
-			fallback[k] = v
+	return e.Attempts[len(e.Attempts)-1].Error
+}
+
+// putServiceRenew 修改单服务续费方式:
+// 路由 = 文档的两条等价端点:先老的 PUT .../{sn}/serviceInfos(载荷 = 文档的
+// service.RenewType 原样),被 400 拒时换新的 PUT /services/{serviceId} ——
+// 该路由 live 不认 renew.automatic(schema 第四处滞后),载荷按 live 契约去掉
+// automatic、保留 manualPayment(手动续费的正确表达)。
+// 两条都被拒 = OVH live 与其文档冲突,两级原始错误全部带回。
+// 非 400(权限/不存在/状态)直接冒泡,不换路由。
+func putServiceRenew(client *ovhsdk.Client, legacyPath string, serviceId *int64, next map[string]interface{}) error {
+	routes := []struct {
+		name string
+		path string
+	}{
+		{"serviceInfos", legacyPath},
+	}
+	if serviceId != nil {
+		routes = append(routes, struct {
+			name string
+			path string
+		}{"services", fmt.Sprintf("/services/%d", *serviceId)})
+	}
+	dual := &RenewDualError{}
+	for _, r := range routes {
+		payload := next
+		if r.name == "services" {
+			// 实测(US 独服 2026-10-12,OVH 按字母序逐键报 Unknown parameter):
+			// automatic ❌ → deleteAtExpiration ❌ → forced ❌,只剩
+			// {manualPayment, period} 未被拒 —— 新契约:manualPayment=false=自动/true=手动;
+			// 到期终止走独立 terminationPolicy,不在这个载荷里。
+			payload = make(map[string]interface{}, len(next))
+			for k, v := range next {
+				if k == "manualPayment" || k == "period" {
+					payload[k] = v
+				}
+			}
 		}
+		err := client.Put(r.path, map[string]interface{}{"renew": payload}, nil)
+		if err == nil {
+			return nil
+		}
+		if !ovh.IsRenewPayloadRejected(err) {
+			return err
+		}
+		dual.Attempts = append(dual.Attempts, RenewRouteError{Route: r.name, Error: err.Error()})
 	}
-	return client.Put(path, map[string]interface{}{"renew": fallback}, nil)
+	if len(dual.Attempts) == 1 {
+		// 只有一条路由可用(没拿到 serviceId):直接回它的错误,别包一层
+		return &ovhRouteErr{dual.Attempts[0].Error}
+	}
+	return dual
+}
+
+// ovhRouteErr 让单路由场景也走 respondOVHError 的常规路径
+type ovhRouteErr struct{ msg string }
+
+func (e *ovhRouteErr) Error() string { return e.msg }
+
+// respondRenewError putServiceRenew 失败的统一出口:梯子全灭时把逐级组合与
+// 各级原始错误一并带回(前端提示仍用汇总文案),便于一次定位 OVH 校验的真实要求。
+func respondRenewError(c *gin.Context, state *app.State, svc string, err error) {
+	var dual *RenewDualError
+	if errors.As(err, &dual) {
+		state.Logger.Warn(fmt.Sprintf("renew 两条文档路由都被拒(%s): %+v", svc, dual.Attempts), "server_control")
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success":  false,
+			"error":    ovh.Explain(errors.New(dual.Error())),
+			"attempts": dual.Attempts,
+		})
+		return
+	}
+	respondOVHError(c, err)
 }
 
 // respondOVHError 统一的 OVH 写操作错误响应:

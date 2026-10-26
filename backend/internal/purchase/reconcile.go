@@ -1,6 +1,7 @@
 package purchase
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 
 	ovhsdk "github.com/ovh/go-ovh/ovh"
 
+	"github.com/ovh-webui/server/internal/numconv"
 	"github.com/ovh-webui/server/internal/ovh"
 )
 
@@ -43,9 +45,21 @@ func ReconcileRecentOrder(client *ovhsdk.Client, endpoint, planCode string, sinc
 	if client == nil || planCode == "" {
 		return "", "", fmt.Errorf("reconcile: missing client or planCode")
 	}
-	ids, err := listRecentOrderIDs(client, endpoint, since)
+	ids, objects, err := listRecentOrders(client, endpoint, since)
 	if err != nil {
 		return "", "", err
+	}
+	// 兼容直接返回对象列表的 mock 或端点 (e.g. [{"orderId":123,"url":"..."}])
+	for _, obj := range objects {
+		id := numconv.ToString(obj["orderId"])
+		if id != "" {
+			link, _ := obj["url"].(string)
+			link = strings.TrimSpace(link)
+			if link == "" {
+				link = ovh.ManagerOrderURL(endpoint, id)
+			}
+			return id, link, nil
+		}
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i] > ids[j] })
 	if len(ids) > reconcileScanCap {
@@ -101,26 +115,42 @@ func ReconcileRecentOrder(client *ovhsdk.Client, endpoint, planCode string, sinc
 	return "", "", nil
 }
 
-func listRecentOrderIDs(client *ovhsdk.Client, endpoint string, since time.Time) ([]int64, error) {
+func listRecentOrders(client *ovhsdk.Client, endpoint string, since time.Time) (ids []int64, objects []map[string]interface{}, err error) {
 	// US 的 /me/order 没有查询参数。其它区用 date.from，被 400 拒绝时再降级成全量，
 	// 避免 endpoint 标错时整段对账失效。429/5xx 不降级，避免再打一枪。
+	queryPath := "/me/order"
 	if ovh.EndpointRegion(endpoint) != "US" {
 		from := since.Add(-2 * time.Minute).UTC().Format("2006-01-02T15:04:05Z07:00")
-		var ids []int64
-		err := client.Get("/me/order?date.from="+url.QueryEscape(from), &ids)
-		if err == nil {
-			return ids, nil
-		}
+		queryPath = "/me/order?date.from=" + url.QueryEscape(from)
+	}
+
+	var rawList []json.RawMessage
+	err = client.Get(queryPath, &rawList)
+	if err != nil && queryPath != "/me/order" {
 		var apiErr *ovhsdk.APIError
-		if !errors.As(err, &apiErr) || apiErr.Code != http.StatusBadRequest {
-			return nil, err
+		if errors.As(err, &apiErr) && apiErr.Code == http.StatusBadRequest {
+			err = client.Get("/me/order", &rawList)
 		}
 	}
-	var ids []int64
-	if err := client.Get("/me/order", &ids); err != nil {
-		return nil, err
+	if err != nil {
+		return nil, nil, err
 	}
-	return ids, nil
+
+	for _, item := range rawList {
+		trimmed := strings.TrimSpace(string(item))
+		if strings.HasPrefix(trimmed, "{") {
+			var obj map[string]interface{}
+			if err := json.Unmarshal(item, &obj); err == nil {
+				objects = append(objects, obj)
+			}
+		} else {
+			var id int64
+			if err := json.Unmarshal(item, &id); err == nil {
+				ids = append(ids, id)
+			}
+		}
+	}
+	return ids, objects, nil
 }
 
 func orderDetailMatchesPlan(detail map[string]interface{}, planCode string) bool {

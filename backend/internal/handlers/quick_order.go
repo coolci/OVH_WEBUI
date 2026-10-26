@@ -15,10 +15,13 @@ func QuickOrder(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var params purchase.QuickOrderParams
 		if err := c.ShouldBindJSON(&params); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "请求参数解析失败: " + err.Error()})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "任务参数格式不正确"})
 			return
 		}
-		if params.AccountID == "" && params.AccountIDCamel == "" {
+		if params.AccountID == "" && params.AccountIDCamel != "" {
+			params.AccountID = params.AccountIDCamel
+		}
+		if params.AccountID == "" {
 			if acc := c.Query("account"); acc != "" {
 				params.AccountID = acc
 			} else if acc := c.Query("accountId"); acc != "" {

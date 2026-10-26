@@ -3,6 +3,8 @@ package catalog
 import (
 	"errors"
 	"fmt"
+	"regexp"
+	"time"
 
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/ovh"
@@ -27,7 +29,25 @@ const (
 	PlanVerdictCrossRegion                    // ① 真跨区:别的大区才有它的库存记录
 	PlanVerdictNotEco                         // ② 本区有它,但不属于 Eco 系列,本工具下不了
 	PlanVerdictNoSuchPlan                     // ③ 三区都查不到:planCode 拼错 / 已下架
+	PlanVerdictPrerelease                     // Eco 系列在本区库存中出现,尚未进入销售目录
 )
+
+// 只识别本工具支持的 Eco 系列候选;是否存在仍须由库存接口确认。
+var ecoStockPlanCode = regexp.MustCompile(`(?i)^[0-9]{2}(sk|sys|rise)[a-z0-9]*(-v[0-9]+)?(-[a-z]+)?$`)
+
+// PreorderReady 用短缓存等上架,避免普通目录两小时缓存错过开售;并发刷新仍合并。
+func PreorderReady(state *app.State, accountID, planCode string) (bool, error) {
+	acc, ok := state.FindAccount(accountID)
+	if !ok {
+		return false, fmt.Errorf("下单账户不存在")
+	}
+	cat, err := loadSubsidiaryCatalogWithTTL(state, SubsidiaryOfAccount(acc), 30*time.Second)
+	if err != nil {
+		return false, err
+	}
+	_, ready := cat.plans[planCode]
+	return ready, nil
+}
 
 // ClassifyPlan 判定 planCode 对这个账户属于哪种情况,并给出面向用户的说明。
 // 说明为空 = 无需提示(OK / Unknown),调用方必须保持原来的"无货,下轮再来"语义。
@@ -86,6 +106,9 @@ func ClassifyPlan(state *app.State, accountID, planCode, logSource string) (Plan
 			"机型 %s 属于 OVH 的 %s 区，而账户 %s 在 %s 区（%s）。三个站点的目录 / 库存 / 购物车互不相通"+
 				"（美区机型带 -us / -eu / -ca 后缀，欧区和加区不带），请改用本区的 planCode，或换一个 %s 区的账户下单。",
 			planCode, region, acc.Name, accRegion, acc.Endpoint, region)
+	}
+	if ecoStockPlanCode.MatchString(planCode) {
+		return PlanVerdictPrerelease, fmt.Sprintf("机型 %s 已出现在本区库存中，但尚未进入账户销售目录；请创建预订抢购任务等待上架。", planCode)
 	}
 
 	// ② 本区有货但不走 Eco 下单链路

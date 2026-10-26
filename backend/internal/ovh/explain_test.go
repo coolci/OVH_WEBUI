@@ -165,3 +165,55 @@ func TestIsParamUnavailableManualPayment(t *testing.T) {
 		t.Fatalf("参数废弃不应指向凭据问题: %s", got)
 	}
 }
+
+// 回归:续费三键冲突的另一种措辞(实测 US 独服:"Conflicting arguments: automatic,
+// deleteAtExpiration and manualPayment")—— 与参数废弃同族,必须同样触发
+// putServiceRenew 的去参降级;认不出 = 重试永远不启动,US 用户每次都报 400。
+func TestIsRenewConflictConflictingArguments(t *testing.T) {
+	err := &ovhsdk.APIError{
+		Code:    400,
+		Class:   "Client::BadRequest",
+		Message: "Conflicting arguments: automatic, deleteAtExpiration and manualPayment",
+	}
+	if !IsRenewConflict(err) {
+		t.Fatal("应认出三键冲突措辞")
+	}
+	// 旧措辞(参数废弃)也要继续认出
+	old := &ovhsdk.APIError{Code: 400, Message: "[renew] manualPayment parameter isn't available anymore"}
+	if !IsRenewConflict(old) {
+		t.Fatal("参数废弃措辞不应丢失")
+	}
+	// 无关错误不误报
+	if IsRenewConflict(&ovhsdk.APIError{Code: 400, Message: "Conflicting arguments: period and engagement"}) {
+		t.Fatal("与 manualPayment 无关的冲突不应命中")
+	}
+	got := Explain(err)
+	if !strings.Contains(got, "两级降级") {
+		t.Fatalf("缺兜底提示: %s", got)
+	}
+}
+
+// 回归:第三族措辞 —— schema 必填("'deleteAtExpiration' is a required property",
+// 实测 US 独服 2026-10-12)。IsRenewPayloadRejected 必须认出三族全部;
+// 与 renew 无关的 400 不得误触组合降级。
+func TestIsRenewPayloadRejectedRequiredProperty(t *testing.T) {
+	cases := []struct {
+		msg  string
+		want bool
+	}{
+		{"'deleteAtExpiration' is a required property (at field: renew)", true},
+		{"Conflicting arguments: automatic, deleteAtExpiration and manualPayment", true},
+		{"[renew] manualPayment parameter isn't available anymore", true},
+		{"Some other bad request", false},
+	}
+	for _, c := range cases {
+		err := &ovhsdk.APIError{Code: 400, Message: c.msg}
+		if got := IsRenewPayloadRejected(err); got != c.want {
+			t.Errorf("%q → %v, 期望 %v", c.msg, got, c.want)
+		}
+	}
+	// 非 400 不触发
+	if IsRenewPayloadRejected(&ovhsdk.APIError{Code: 403, Message: "'deleteAtExpiration' is a required property"}) {
+		t.Error("403 不应触发降级")
+	}
+}

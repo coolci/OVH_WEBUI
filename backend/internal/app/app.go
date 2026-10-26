@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -518,12 +519,7 @@ func (s *State) LoadFailures() map[string]string {
 	return out
 }
 
-// MarkTaskDeleted 标记任务已删除,并取消它正在进行的下单(如果有)。
-//
-// 所有删任务的入口(网页删单个 / 清空、TG /cancel、处理器复核)都必须走这里。
-// 只写 DeletedTaskIDs 不调 cancel 的话,PurchaseServer 会把这一轮跑完 —— 包括结账:
-// 用户在"有货"通知弹出后两秒内点了删除,单照样下出去。
-// EnqueueItems 入队并落库。失败时把这批从内存里撤回,再把错返回给调用方。
+// EnqueueItems 先落库再发布到运行队列,失败时不暴露可执行的任务。
 //
 // 四条入队路径(网页新建 / 快速下单 / TG 一键按钮 / TG 文本下单)以前各写各的,
 // 对"落库失败"的处理有四种:撤回+归还按钮、返回 warning 但内存保留、
@@ -539,7 +535,13 @@ func (s *State) EnqueueItems(items []types.QueueItem, prepend bool) error {
 	if len(items) == 0 {
 		return nil
 	}
+	if err := s.SaveBlocked("queue"); err != nil {
+		return err
+	}
+	s.saveQueueMu.Lock()
+	defer s.saveQueueMu.Unlock()
 	s.QueueMu.Lock()
+	defer s.QueueMu.Unlock()
 	// 队列总量闸门。放在这里是因为四条入队路径(网页新建 / 快速下单 / TG 文本下单 /
 	// 监控自动下单)全都汇到这个函数 —— 加一次就都受保护。
 	//
@@ -548,41 +550,66 @@ func (s *State) EnqueueItems(items []types.QueueItem, prepend bool) error {
 	// 正常用法离 MaxQueueItems 很远,撞上它基本可以断定是填错了。
 	if len(s.Queue)+len(items) > types.MaxQueueItems {
 		have, want := len(s.Queue), len(items)
-		s.QueueMu.Unlock()
 		return fmt.Errorf(
 			"队列里已有 %d 条任务,这次还要加 %d 条,会超过上限 %d。"+
 				"每条任务都是一次真实的下单尝试 —— 请先确认数量没填错,"+
 				"或到队列页清理掉不需要的任务",
 			have, want, types.MaxQueueItems)
 	}
+	next := make([]types.QueueItem, 0, len(s.Queue)+len(items))
 	if prepend {
-		s.Queue = append(append([]types.QueueItem{}, items...), s.Queue...)
+		next = append(append(next, items...), s.Queue...)
 	} else {
-		s.Queue = append(s.Queue, items...)
+		next = append(append(next, s.Queue...), items...)
 	}
-	s.QueueMu.Unlock()
+	// 与 SaveQueue 相同的锁顺序;提交前不让处理器读取待入队任务。
+	if s.DB != nil {
+		if err := s.DB.ReplaceQueue(next); err != nil {
+			return err
+		}
+	}
+	s.Queue = next
+	return nil
+}
 
-	if err := s.SaveQueue(); err != nil {
-		// 撤回:按 ID 精确删,不能按下标 —— 这中间别的 goroutine 可能也在增删
-		ids := make(map[string]struct{}, len(items))
-		for _, it := range items {
-			ids[it.ID] = struct{}{}
-		}
-		s.QueueMu.Lock()
-		kept := make([]types.QueueItem, 0, len(s.Queue))
-		for _, it := range s.Queue {
-			if _, bad := ids[it.ID]; !bad {
-				kept = append(kept, it)
-			}
-		}
-		s.Queue = kept
-		s.QueueMu.Unlock()
-		for _, it := range items {
-			s.MarkTaskDeleted(it.ID)
-		}
+var ErrQueueNotFound = errors.New("任务不存在")
+var ErrQueueNotEditable = errors.New("请先暂停任务再修改；已完成的任务不能修改")
+
+// UpdateQueueItem 仅编辑暂停/失败任务,落库成功后才发布新配置。
+func (s *State) UpdateQueueItem(id, datacenter string, options []string, retryInterval int, autoPay bool, coupon string) error {
+	if err := s.SaveBlocked("queue"); err != nil {
 		return err
 	}
-	return nil
+	s.saveQueueMu.Lock()
+	defer s.saveQueueMu.Unlock()
+	s.QueueMu.Lock()
+	defer s.QueueMu.Unlock()
+	next := append([]types.QueueItem(nil), s.Queue...)
+	for i := range next {
+		if next[i].ID != id {
+			continue
+		}
+		if next[i].Status != "paused" && next[i].Status != "failed" {
+			return ErrQueueNotEditable
+		}
+		next[i].Datacenter = datacenter
+		next[i].Options = append([]string(nil), options...)
+		next[i].RetryInterval = retryInterval
+		next[i].AutoPay = autoPay
+		next[i].Coupon = coupon
+		next[i].Status = "paused"
+		next[i].FailureCount = 0
+		next[i].LastCheckTime = 0
+		next[i].UpdatedAt = types.NowISO()
+		if s.DB != nil {
+			if err := s.DB.ReplaceQueue(next); err != nil {
+				return err
+			}
+		}
+		s.Queue = next
+		return nil
+	}
+	return ErrQueueNotFound
 }
 
 // CancelTask 取消一个任务当前正在进行的下单执行（如暂停任务时使用，不标记删除）。
@@ -613,7 +640,7 @@ func (s *State) IsTaskActiveInQueue(id string) bool {
 	}
 	return false
 }
-
+// MarkTaskDeleted 标记删除并中断本轮下单,所有删除入口统一调用。
 func (s *State) MarkTaskDeleted(id string) {
 	s.DeletedTaskIDsMu.Lock()
 	s.DeletedTaskIDs[id] = struct{}{}
@@ -649,7 +676,7 @@ func (s *State) RegisterTaskCancel(id string, cancel context.CancelFunc) {
 	s.taskCancelMu.Unlock()
 }
 
-// UnregisterTaskCancel 一轮下单结束后注销并释放 ctx。用 defer 调,成败都要走。
+// UnregisterTaskCancel 注销并取消本轮下单。轮末释放或用户暂停时调用。
 // 已被 MarkTaskDeleted 摘掉的话这里是空操作。
 func (s *State) UnregisterTaskCancel(id string) {
 	s.taskCancelMu.Lock()

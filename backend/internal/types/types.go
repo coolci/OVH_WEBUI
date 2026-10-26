@@ -172,6 +172,8 @@ type QueueItem struct {
 	// "order will be automatically paid with preferred payment method")。
 	// 默认 false:自动扣钱必须是用户显式打开的开关,不能是隐含行为。
 	AutoPay            bool   `json:"autoPay,omitempty"`
+	Coupon             string `json:"coupon,omitempty"`
+	Preorder           bool   `json:"preorder,omitempty"` // 本地预订:等账户销售目录上架后再尝试下单
 	ConfigSniperTaskID string `json:"configSniperTaskId,omitempty"`
 	TelegramChatID     string `json:"telegramChatId,omitempty"`
 	TelegramMessageID  int64  `json:"telegramMessageId,omitempty"`
@@ -199,6 +201,7 @@ type PurchaseHistoryEntry struct {
 	OrderID        string   `json:"orderId"`
 	OrderURL       string   `json:"orderUrl"`
 	ErrorMessage   *string  `json:"errorMessage"`
+	CouponWarning  string   `json:"couponWarning,omitempty"`
 	PurchaseTime   string   `json:"purchaseTime"`
 	AttemptCount   int      `json:"attemptCount"`
 	ExpirationTime string   `json:"expirationTime,omitempty"`
@@ -282,6 +285,8 @@ type Subscription struct {
 	AutoOrderAccountID string                     `json:"autoOrderAccountId,omitempty"` // 空 = 触发时只通知不下单
 	// AutoPay 下单成功后用默认支付方式自动付款(显式开关,默认关)
 	AutoPay bool `json:"autoPay,omitempty"`
+	// Paused 暂停监控:检查循环跳过,订阅与历史保留
+	Paused bool `json:"paused,omitempty"`
 	// Options 只盯这套配置(addon planCode 列表,如 ram-64g / softraid-2x480ssd)。
 	//
 	// 空 = 盯这个 planCode 的**全部**配置,也是一直以来的行为。

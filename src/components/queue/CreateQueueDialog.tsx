@@ -20,6 +20,9 @@ import { OptionGroupSection } from "@/components/common/OptionGroupSection";
 import { useServers } from "@/hooks/use-servers";
 import { useCreateQueueItem } from "@/hooks/use-queue";
 import { useSettings, RETRY_INTERVAL } from "@/hooks/use-settings";
+import { useAccounts, findAccountByID } from "@/hooks/use-accounts";
+import { useActiveServerControlAccount } from "@/hooks/use-active-account";
+import { mergeStockPlans } from "@/lib/stock-plans";
 import {
   useAvailability,
   buildAvailabilityMap,
@@ -42,19 +45,31 @@ export function CreateQueueDialog({
   initialPlanCode,
   initialOptions,
 }: CreateQueueDialogProps) {
-  const servers = useServers();
-  const availQ = useAvailability();
+  const [activeAccountId] = useActiveServerControlAccount();
+  const { data: accounts } = useAccounts();
+  const [accountId, setAccountId] = useState("");
+
+  useEffect(() => {
+    if (!accountId && accounts && accounts.length > 0) {
+      const hit = findAccountByID(accounts, activeAccountId) || accounts.find((a) => a.isDefault) || accounts[0];
+      if (hit) setAccountId(hit.id);
+    }
+  }, [accounts, activeAccountId, accountId]);
+
+  const activeAcc = findAccountByID(accounts, accountId);
+  const servers = useServers(true, accountId);
+  const availQ = useAvailability(activeAcc?.endpoint || undefined);
   const variantIndex = useMemo(() => buildVariantIndex(availQ.data), [availQ.data]);
   const availMap = useMemo(() => buildAvailabilityMap(availQ.data), [availQ.data]);
   const create = useCreateQueueItem();
   const settingsQ = useSettings();
   const cfgDefault = settingsQ.data?.defaultRetryInterval || RETRY_INTERVAL.defaultTask;
 
-  const [accountId, setAccountId] = useState("");
   const [planCode, setPlanCode] = useState(initialPlanCode || "");
   const [datacenters, setDatacenters] = useState<string[]>([]);
   const [quantity, setQuantity] = useState("1");
   const [retryInterval, setRetryInterval] = useState("");
+  const [coupon, setCoupon] = useState("");
   const intervalTouchedRef = useRef(false);
 
   useEffect(() => {
@@ -71,9 +86,14 @@ export function CreateQueueDialog({
     }
   }, [initialPlanCode, open]);
 
+  const searchServers = useMemo(
+    () => mergeStockPlans(servers.data || [], availQ.data),
+    [servers.data, availQ.data]
+  );
+
   const matchedServer = useMemo(
-    () => (servers.data || []).find((s) => s.planCode === planCode.trim()),
-    [servers.data, planCode]
+    () => searchServers.find((s) => s.planCode === planCode.trim()),
+    [searchServers, planCode]
   );
 
   const prevPlanCodeRef = useRef("");
@@ -150,6 +170,7 @@ export function CreateQueueDialog({
     setPicked({});
     setExtraInput("");
     setAutoPay(false);
+    setCoupon("");
     prevPlanCodeRef.current = "";
   };
 
@@ -173,7 +194,7 @@ export function CreateQueueDialog({
       return;
     }
     const isCustom = Boolean(
-      planCode.trim() && !servers.data?.some((s) => s.planCode.toLowerCase() === planCode.trim().toLowerCase())
+      planCode.trim() && !searchServers.some((s) => s.planCode.toLowerCase() === planCode.trim().toLowerCase())
     );
     const result = await create.mutateAsync({
       account_id: accountId,
@@ -183,6 +204,8 @@ export function CreateQueueDialog({
       retryInterval: Number(retryInterval) || cfgDefault,
       options: parsedOptions,
       autoPay,
+      coupon: coupon.trim() || undefined,
+      preorder: !!matchedServer?.prerelease,
       force: isCustom,
     });
     if (result.success > 0) {
@@ -198,7 +221,7 @@ export function CreateQueueDialog({
   };
 
   const isCustomPlan = Boolean(
-    planCode.trim() && !servers.data?.some((s) => s.planCode.toLowerCase() === planCode.trim().toLowerCase())
+    planCode.trim() && !searchServers.some((s) => s.planCode.toLowerCase() === planCode.trim().toLowerCase())
   );
 
   return (
@@ -223,15 +246,23 @@ export function CreateQueueDialog({
             <PlanCodeCombobox
               value={planCode}
               onChange={setPlanCode}
-              servers={servers.data || []}
+              servers={searchServers}
               placeholder="输入或搜索型号，例如 24sk102"
             />
-            {matchedServer && (
+            {matchedServer && !matchedServer.prerelease && (
               <p className="text-[11px] text-muted-foreground mt-1 truncate">
                 {matchedServer.cpu} · {matchedServer.memory} · {matchedServer.storage}
               </p>
             )}
-            {isCustomPlan && (
+            {matchedServer?.prerelease && (
+              <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-[12px] text-blue-200/90 flex items-start gap-2 mt-1.5">
+                <span className="text-blue-400 font-bold shrink-0">预上架:</span>
+                <span className="text-muted-foreground text-[11px] leading-relaxed">
+                  仅在库存接口中公开，尚未进入销售目录。将创建本地预订抢购任务，等待官方目录开放后自动下单。
+                </span>
+              </div>
+            )}
+            {isCustomPlan && !matchedServer?.prerelease && (
               <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-200/90 flex items-start gap-2 mt-1.5">
                 <span className="text-amber-400 font-bold shrink-0">自定义型号:</span>
                 <span className="text-muted-foreground text-[11px] leading-relaxed">
@@ -327,6 +358,18 @@ export function CreateQueueDialog({
             )}
           </div>
 
+          <div>
+            <label className="block text-[13px] font-medium mb-1.5">优惠码（可选）</label>
+            <Input
+              value={coupon}
+              onChange={(e) => setCoupon(e.target.value.toUpperCase())}
+              placeholder="输入 OVH 优惠码，留空不使用"
+            />
+            <p className="text-[11px] text-muted-foreground mt-1">
+              展示价格未扣除此优惠码；实际优惠以 OVH 校验为准。优惠码被拒绝时取消使用该码继续下单，并在购买历史和通知中提示。
+            </p>
+          </div>
+
           <label className="flex items-center gap-2.5 cursor-pointer rounded-xl border border-border px-3.5 py-2.5 hover:bg-muted/40 transition-colors">
             <Checkbox checked={autoPay} onCheckedChange={(v) => setAutoPay(!!v)} />
             <div>
@@ -357,7 +400,9 @@ export function CreateQueueDialog({
             ) : (
               <>
                 <Plus className="w-4 h-4" />
-                {datacenters.length > 0 ? `创建 ${totalTasks} 个任务` : "创建任务"}
+                {matchedServer?.prerelease
+                  ? (datacenters.length > 0 ? `创建 ${totalTasks} 个预订抢购任务` : "创建预订抢购任务")
+                  : (datacenters.length > 0 ? `创建 ${totalTasks} 个任务` : "创建任务")}
               </>
             )}
           </Button>

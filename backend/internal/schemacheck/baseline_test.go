@@ -231,6 +231,7 @@ var usedEndpoints = []string{
 	"DELETE /order/cart/{cartId}",
 	"POST /order/cart/{cartId}/assign",
 	"POST /order/cart/{cartId}/checkout",
+	"POST /order/cart/{cartId}/coupon",
 	"GET /order/cart/{cartId}/eco",
 	"POST /order/cart/{cartId}/eco",
 	"GET /order/cart/{cartId}/eco/options",

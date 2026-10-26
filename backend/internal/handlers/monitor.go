@@ -223,11 +223,47 @@ func BatchAddAll(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 	}
 }
 
+// PauseSubscription POST /api/monitor/subscriptions/:planCode/pause
+// body: { optionsKey?: string, paused: bool }
+// 暂停 = 检查循环跳过该订阅(通知/自动下单全部停),订阅与历史保留;恢复即继续。
+// ?optionsKey 与删除同参:同型号多条订阅时精确到某一条,不传默认第一条。
+func PauseSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		planCode := c.Param("planCode")
+		var body struct {
+			OptionsKey *string `json:"optionsKey"`
+			Paused     *bool   `json:"paused"`
+		}
+		if err := c.ShouldBindJSON(&body); err != nil || body.Paused == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "必须提供 paused 布尔值"})
+			return
+		}
+		paused := *body.Paused
+		if !mon.SetPaused(planCode, body.OptionsKey, paused) {
+			c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "订阅不存在", "code": "E5B2D91A4"})
+			return
+		}
+		if err := mon.SaveToDB(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "本次运行状态已改变，但未能保存到数据库: " + err.Error()})
+			return
+		}
+		key := ""
+		if body.OptionsKey != nil {
+			key = *body.OptionsKey
+		}
+		state.Logger.Info(fmt.Sprintf("订阅 %s(%s) 已%s监控", planCode, key, map[bool]string{true: "暂停", false: "恢复"}[paused]), "monitor")
+		c.JSON(http.StatusOK, gin.H{"status": "success", "paused": paused})
+	}
+}
+
 // RemoveSubscription DELETE /api/monitor/subscriptions/:planCode
 func RemoveSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		planCode := c.Param("planCode")
-		if mon.RemoveSubscription(planCode) {
+		// ?optionsKey= 传了就精确删该配置组合(前端卡片级删除);
+		// 不传 = 删该 planCode 第一条(TG 等老入口兼容)
+		optionsKey := c.Query("optionsKey")
+		if mon.RemoveSubscriptionExact(planCode, optionsKey) {
 			mon.SaveToDB()
 			state.Logger.Info("删除服务器订阅: "+planCode, "")
 			c.JSON(http.StatusOK, gin.H{"status": "success", "message": "已取消订阅 " + planCode})
@@ -362,8 +398,7 @@ func TestNotification(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		msg := "🔔 OVH 控制台通知测试\n\n时间: " + time.Now().Format("2006-01-02 15:04:05") +
 			"\n\n收到这条说明该通道可用。"
-		delivered := notify.Broadcast(state, msg, nil)
-		chans := notify.Status(state, false)
+		delivered, chans := notify.BroadcastWithStatus(state, msg, nil)
 		if delivered > 0 {
 			state.Logger.Info(fmt.Sprintf("测试通知已送达 %d 个通道", delivered), "monitor")
 			c.JSON(http.StatusOK, gin.H{

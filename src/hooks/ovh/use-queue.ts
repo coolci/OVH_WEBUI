@@ -31,6 +31,8 @@ export interface QueueItem {
   priority?: number;
   fromTelegram?: boolean;
   configSniperTaskId?: string;
+  coupon?: string;
+  preorder?: boolean;
 }
 
 /** 抢购队列列表 */
@@ -92,6 +94,8 @@ export function useCreateQueueItem() {
       autoPay?: boolean;
       /** 强制入队自定义 / 目录未收录型号(后端只放过「未收录」,跨区 / 非 Eco 照拦) */
       force?: boolean;
+      preorder?: boolean;
+      coupon?: string;
     }) => {
       const dcs = payload.datacenters;
       // 上界以前完全没有:填 9999 × 5 个机房 = 近 5 万次串行 POST。
@@ -125,6 +129,8 @@ export function useCreateQueueItem() {
               options: payload.options || [],
               autoPay: payload.autoPay ?? false,
               force: payload.force ?? false,
+              preorder: payload.preorder ?? false,
+              coupon: payload.coupon?.trim() || undefined,
             });
             success++;
           } catch (e: any) {
@@ -142,6 +148,21 @@ export function useCreateQueueItem() {
       qc.invalidateQueries({ queryKey: qk.stats() });
     },
     onError: (e: any) => toast.error(apiMessage(e) || i18n.t("hooksMsg.queue.addFailed")),
+  });
+}
+
+/** 修改暂停/失败任务的机房、选项、重试间隔、自动付款与优惠码 */
+export function useUpdateQueueItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ...patch }: { id: string; datacenter: string; options: string[]; retryInterval: number; autoPay: boolean; coupon: string }) =>
+      (await api.put(`/queue/${encodeURIComponent(id)}`, patch)).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.queue.list() });
+      qc.invalidateQueries({ queryKey: qk.stats() });
+      toast.success(i18n.t("queue.editSaved") || "修改已保存");
+    },
+    onError: (e: any) => toast.error(apiMessage(e) || i18n.t("queue.editFailed") || "修改失败"),
   });
 }
 

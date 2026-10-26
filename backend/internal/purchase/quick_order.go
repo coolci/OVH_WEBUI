@@ -29,6 +29,7 @@ type QuickOrderParams struct {
 	FromMonitor        bool     `json:"fromMonitor"`
 	SkipDuplicateCheck bool     `json:"skipDuplicateCheck"`
 	AutoPay            bool     `json:"autoPay"`
+	Coupon             string   `json:"coupon"`
 }
 
 // QuickOrderResult 快速下单执行结果
@@ -288,6 +289,7 @@ func EnqueueQuickOrder(state *app.State, params QuickOrderParams) *QuickOrderRes
 		Status:     "running",
 		RetryCount: 0,
 		AutoPay:    params.AutoPay,
+		Coupon:     strings.TrimSpace(params.Coupon),
 		// MaxRetries 封顶的是**真正提交并失败的次数**(FailureCount),无货轮次不计。
 		MaxRetries:    20,
 		RetryInterval: state.Config.QuickOrderRetryInterval(),

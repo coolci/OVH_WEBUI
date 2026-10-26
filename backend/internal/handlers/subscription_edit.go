@@ -29,7 +29,11 @@ import (
 func UpdateSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		planCode := c.Param("planCode")
-		sub := mon.FindSubscription(planCode)
+		var selector []string
+		if _, exists := c.Request.URL.Query()["optionsKey"]; exists {
+			selector = []string{c.Query("optionsKey")}
+		}
+		sub := mon.FindSubscription(planCode, selector...)
 		if sub == nil {
 			c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "订阅不存在: " + planCode})
 			return
@@ -52,7 +56,7 @@ func UpdateSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc 
 		}
 
 		// 先取当前值作为默认,再用 body 里给了的字段覆盖
-		cur := mon.SubscriptionConfig(planCode)
+		cur := mon.SubscriptionConfig(planCode, selector...)
 		datacenters := cur.Datacenters
 		notifyAvailable := cur.NotifyAvailable
 		notifyUnavailable := cur.NotifyUnavailable
@@ -96,6 +100,9 @@ func UpdateSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc 
 		if quantity < 1 {
 			quantity = 1
 		}
+		if quantity > types.MaxOrderQuantity {
+			quantity = types.MaxOrderQuantity
+		}
 
 		// 换了下单账户就重新做一次区域预检:欧区机型配美区账户,补货时会被 OVH 400 掉
 		var regionWarning, region, subsidiary string
@@ -103,13 +110,25 @@ func UpdateSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc 
 			region, subsidiary, regionWarning = mon.PreflightRegion(planCode, accountID)
 		}
 
-		// AddSubscription 对已存在的 planCode 是就地改配置,不会重置 LastStatus / History
-		mon.AddSubscription(planCode, datacenters, notifyAvailable, notifyUnavailable,
-			cur.ServerName, nil, nil, autoOrder, quantity, accountID, autoPay, options)
-		mon.SaveToDB()
+		var originalKey *string
+		if len(selector) > 0 {
+			originalKey = &selector[0]
+		}
+		if err := mon.UpdateSubscriptionFields(planCode, originalKey, datacenters, notifyAvailable, notifyUnavailable, autoOrder, quantity, accountID, autoPay, options); err != nil {
+			status := http.StatusConflict
+			if errors.Is(err, monitor.ErrSubscriptionNotFound) {
+				status = http.StatusNotFound
+			}
+			c.JSON(status, gin.H{"status": "error", "message": err.Error()})
+			return
+		}
+		if err := mon.SaveToDB(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "本次运行已修改，但未能保存到数据库: " + err.Error()})
+			return
+		}
 		state.Logger.Info("更新服务器订阅配置: "+planCode, "monitor")
 
-		resp := gin.H{"status": "success", "message": "已更新 " + planCode, "subscription": mon.FindSubscription(planCode)}
+		resp := gin.H{"status": "success", "message": "已更新 " + planCode, "subscription": mon.FindSubscription(planCode, monitor.OptionsKey(options))}
 		if region != "" {
 			resp["region"] = region
 			resp["subsidiary"] = subsidiary

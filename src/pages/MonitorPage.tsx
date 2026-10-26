@@ -11,6 +11,8 @@ import {
   ChevronUp,
   Plus,
   Pencil,
+  PauseCircle,
+  PlayCircle,
 } from "lucide-react";
 import { useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
@@ -37,6 +39,7 @@ import { toast } from "sonner";
 import {
   useMonitorList,
   useMonitorStatus,
+  usePauseMonitorSubscription,
   useRemoveMonitorSubscription,
   useClearMonitor,
   useMonitorHistory,
@@ -47,10 +50,11 @@ import {
 function MonitorPage() {
   const list = useMonitorList();
   const status = useMonitorStatus();
+  const pauseSub = usePauseMonitorSubscription();
   const remove = useRemoveMonitorSubscription();
   const clear = useClearMonitor();
   const [confirmClear, setConfirmClear] = useState(false);
-  const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState<{ planCode: string; optionsKey?: string } | null>(null);
   const [openAdd, setOpenAdd] = useState(false);
   const [editSub, setEditSub] = useState<MonitorSubscription | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -194,18 +198,29 @@ function MonitorPage() {
             </Button>
           </div>
 
-          {subs.map((s) => (
-            <SubRow
-              key={s.planCode}
-              sub={s}
-              expanded={expanded === s.planCode}
-              onToggleExpand={() =>
-                setExpanded((curr) => (curr === s.planCode ? null : s.planCode))
-              }
-              onEdit={() => setEditSub(s)}
-              onDelete={() => setConfirmRemove(s.planCode)}
-            />
-          ))}
+          {subs.map((s) => {
+            const optionsKey = s.options && s.options.length > 0 ? [...s.options].sort().join(",") : "";
+            const subKey = `${s.planCode}:${optionsKey}`;
+            return (
+              <SubRow
+                key={subKey}
+                sub={s}
+                expanded={expanded === subKey}
+                onToggleExpand={() =>
+                  setExpanded((curr) => (curr === subKey ? null : subKey))
+                }
+                onTogglePause={() =>
+                  pauseSub.mutate({
+                    planCode: s.planCode,
+                    optionsKey: optionsKey || undefined,
+                    paused: !s.paused,
+                  })
+                }
+                onEdit={() => setEditSub(s)}
+                onDelete={() => setConfirmRemove({ planCode: s.planCode, optionsKey: optionsKey || undefined })}
+              />
+            );
+          })}
         </div>
       )}
 
@@ -226,7 +241,7 @@ function MonitorPage() {
           <DialogHeader>
             <DialogTitle>取消订阅</DialogTitle>
             <DialogDescription>
-              确定要取消订阅 <span className="font-mono">{confirmRemove}</span> 吗？
+              确定要取消订阅 <span className="font-mono">{confirmRemove?.planCode}</span> 吗？
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -279,17 +294,19 @@ function SubRow({
   sub,
   expanded,
   onToggleExpand,
+  onTogglePause,
   onEdit,
   onDelete,
 }: {
   sub: MonitorSubscription;
   expanded: boolean;
   onToggleExpand: () => void;
+  onTogglePause: () => void;
   onEdit: () => void;
   onDelete: () => void;
 }) {
   return (
-    <Card className="surface-card rounded-xl border-border hover:border-border/80 transition-all duration-200 shadow-sm">
+    <Card className={cn("surface-card rounded-xl border-border hover:border-border/80 transition-all duration-200 shadow-sm", sub.paused && "opacity-60")}>
       <CardContent className="p-4 sm:p-5">
         <div className="flex flex-col sm:flex-row sm:items-center gap-3">
           <div className="flex-1 min-w-0">
@@ -305,6 +322,7 @@ function SubRow({
                 : "监控所有数据中心"}
             </p>
             <div className="flex gap-1.5 flex-wrap items-center">
+              {sub.paused && <Chip tone="warning">已暂停</Chip>}
               {sub.options && sub.options.length > 0 ? (
                 <Chip tone="default" title={sub.options.join("\n")}>
                   只盯 {describeOptionCodes(sub.options)}
@@ -329,12 +347,25 @@ function SubRow({
                 <Chip tone="warning">已勾自动下单但未选账户(只通知)</Chip>
               ) : null}
               {sub.autoPay && <Chip tone="success">自动付款</Chip>}
-              {!sub.notifyAvailable && !sub.notifyUnavailable && !sub.autoOrder && (
+              {!sub.notifyAvailable && !sub.notifyUnavailable && !sub.autoOrder && !sub.paused && (
                 <Chip tone="default">仅跟踪库存</Chip>
               )}
             </div>
           </div>
           <div className="flex items-center gap-1 flex-shrink-0">
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={sub.paused ? "恢复此订阅" : "暂停此订阅"}
+              title={sub.paused ? "恢复监控" : "暂停监控"}
+              onClick={onTogglePause}
+            >
+              {sub.paused ? (
+                <PlayCircle className="w-4 h-4 text-emerald-400" />
+              ) : (
+                <PauseCircle className="w-4 h-4 text-amber-400" />
+              )}
+            </Button>
             <Button variant="ghost" size="icon" aria-label="编辑订阅设置" onClick={onEdit}>
               <Pencil className="w-4 h-4" />
             </Button>

@@ -158,8 +158,13 @@ export function MonitorSubscribeDialog({
       return;
     }
 
+    const initialOptionsKey = initial?.options && initial.options.length > 0
+      ? [...initial.options].sort().join(",")
+      : undefined;
+
     const payload = {
       planCode: code,
+      optionsKey: mode === "edit" ? initialOptionsKey : undefined,
       datacenters,
       options: hwOptions,
       notifyAvailable: opts.notifyAvailable,

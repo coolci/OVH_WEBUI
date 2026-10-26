@@ -1,4 +1,4 @@
-import { Clock, PauseCircle, PlayCircle, X } from "lucide-react";
+import { Clock, PauseCircle, PlayCircle, X, Pencil } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/common/Chip";
@@ -12,9 +12,10 @@ interface QueueRowProps {
   item: QueueItem;
   onToggle: () => void;
   onDelete: () => void;
+  onEdit?: () => void;
 }
 
-export function QueueRow({ item, onToggle, onDelete }: QueueRowProps) {
+export function QueueRow({ item, onToggle, onDelete, onEdit }: QueueRowProps) {
   const chip = (() => {
     if (item.status === "running")
       return (
@@ -54,7 +55,12 @@ export function QueueRow({ item, onToggle, onDelete }: QueueRowProps) {
           <div className="flex items-center gap-2 mb-1.5 flex-wrap">
             <span className="font-mono font-semibold text-sm text-foreground tracking-tight">{item.planCode}</span>
             <AccountChip accountId={item.accountId} />
-            <Chip tone="default">DC {item.datacenter.toUpperCase()}</Chip>
+            {item.preorder && (
+              <Chip tone="warning" title="预订抢购：等待官方目录收录后自动下单">预订抢购</Chip>
+            )}
+            {item.coupon && (
+              <Chip tone="default" title={`优惠码: ${item.coupon}`}>优惠码 {item.coupon}</Chip>
+            )}
             {item.fromTelegram && (
               <Chip tone="default">TG 任务</Chip>
             )}
@@ -96,6 +102,18 @@ export function QueueRow({ item, onToggle, onDelete }: QueueRowProps) {
         <div className="flex items-center justify-between sm:justify-end gap-2 flex-shrink-0 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-border/40">
           {chip}
           <div className="flex items-center gap-1">
+            {onEdit && (item.status === "paused" || item.status === "failed") && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-secondary rounded-lg"
+                onClick={onEdit}
+                title="编辑任务"
+                aria-label="编辑任务"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </Button>
+            )}
             {item.status !== "completed" && item.status !== "failed" && (
               <Button
                 variant="ghost"

@@ -23,11 +23,13 @@ import {
 import { QueueFilterBar } from "@/components/queue/QueueFilterBar";
 import { QueueRow } from "@/components/queue/QueueRow";
 import { CreateQueueDialog } from "@/components/queue/CreateQueueDialog";
+import { EditQueueDialog } from "@/components/queue/EditQueueDialog";
 import {
   useQueueList,
   useToggleQueueItem,
   useRemoveQueueItem,
   useClearQueue,
+  type QueueItem,
 } from "@/hooks/use-queue";
 import { cn } from "@/lib/utils";
 
@@ -42,6 +44,7 @@ function QueuePage() {
   const createOptions = searchParams.get("options") || undefined;
   const [showClearDialog, setShowClearDialog] = useState(false);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [editingItem, setEditingItem] = useState<QueueItem | null>(null);
   const [prefillPlanCode, setPrefillPlanCode] = useState<string>("");
   const [prefillOptions, setPrefillOptions] = useState<string>("");
 
@@ -233,6 +236,7 @@ function QueuePage() {
                 })
               }
               onDelete={() => remove.mutate(q.id)}
+              onEdit={() => setEditingItem(q)}
             />
           ))}
         </div>
@@ -273,6 +277,12 @@ function QueuePage() {
         }}
         initialPlanCode={prefillPlanCode}
         initialOptions={prefillOptions}
+      />
+
+      <EditQueueDialog
+        open={!!editingItem}
+        onOpenChange={(v) => !v && setEditingItem(null)}
+        item={editingItem}
       />
     </div>
   );

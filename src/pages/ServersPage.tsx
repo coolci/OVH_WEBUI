@@ -26,6 +26,7 @@ import {
   type PriceInfo,
 } from "@/hooks/use-availability";
 import { OVH_DATACENTERS } from "@/lib/datacenters";
+import { comparePrices } from "@/lib/money";
 import { cn } from "@/lib/utils";
 
 const SUB_LS_KEY = "ovh_sniper_price_subsidiary";
@@ -88,6 +89,7 @@ function ServersPage() {
 
   const [search, setSearch] = useState("");
   const [onlyAvailable, setOnlyAvailable] = useState(false);
+  const [priceSort, setPriceSort] = useState<"default" | "asc" | "desc">("default");
   const [detailPlanCode, setDetailPlanCode] = useState<string | null>(null);
 
   const monitorList = useMonitorList();
@@ -123,8 +125,11 @@ function ServersPage() {
         return srv.datacenters?.some((dc) => dc.availability && dc.availability !== "unavailable" && dc.availability !== "unknown") ?? false;
       });
     }
+    if (priceSort !== "default") {
+      out = [...out].sort((a, b) => comparePrices(priceMap[a.planCode]?.total, priceMap[b.planCode]?.total, priceSort));
+    }
     return out;
-  }, [list, search, onlyAvailable, availMap]);
+  }, [list, search, onlyAvailable, availMap, priceSort, priceMap]);
 
   const detailServer = detailPlanCode ? list.find((s) => s.planCode === detailPlanCode) || null : null;
 
@@ -165,6 +170,8 @@ function ServersPage() {
         onSearchChange={setSearch}
         onlyAvailable={onlyAvailable}
         onToggleOnlyAvailable={() => setOnlyAvailable((v) => !v)}
+        priceSort={priceSort}
+        onPriceSortChange={() => setPriceSort((v) => (v === "default" ? "asc" : v === "asc" ? "desc" : "default"))}
         subsidiary={subsidiary}
         onSubsidiaryChange={changeSubsidiary}
         accountSub={accountSub}

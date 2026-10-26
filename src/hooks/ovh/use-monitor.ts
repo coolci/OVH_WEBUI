@@ -27,6 +27,7 @@ export interface MonitorSubscription {
   options?: string[];
   lastStatus: Record<string, string>;
   createdAt: string;
+  paused?: boolean;
 }
 
 export interface MonitorStatus {
@@ -113,9 +114,10 @@ export function useUpdateMonitorSubscription() {
   return useMutation({
     mutationFn: async ({
       planCode,
+      optionsKey,
       ...patch
-    }: Partial<MonitorSubscription> & { planCode: string }) =>
-      (await api.put(`/monitor/subscriptions/${encodeURIComponent(planCode)}`, patch)).data,
+    }: Partial<MonitorSubscription> & { planCode: string; optionsKey?: string }) =>
+      (await api.put(`/monitor/subscriptions/${encodeURIComponent(planCode)}`, patch, { params: optionsKey === undefined ? undefined : { optionsKey } })).data,
     onSuccess: (data: any) => {
       qc.invalidateQueries({ queryKey: qk.monitor.list() });
       qc.invalidateQueries({ queryKey: qk.monitor.status() });
@@ -130,12 +132,38 @@ export function useUpdateMonitorSubscription() {
 /** 创建新订阅（对外更语义化的别名） */
 export const useCreateMonitorSubscription = useUpsertMonitorSubscription;
 
+/** 暂停 / 恢复订阅 */
+export function usePauseMonitorSubscription() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (v: { planCode: string; optionsKey?: string; paused: boolean }) =>
+      (
+        await api.post(`/monitor/subscriptions/${encodeURIComponent(v.planCode)}/pause`, {
+          optionsKey: v.optionsKey,
+          paused: v.paused,
+        })
+      ).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.monitor.list() });
+      qc.invalidateQueries({ queryKey: qk.monitor.status() });
+    },
+    onError: (e: any) => toast.error(apiMessage(e) || i18n.t("hooksMsg.monitor.updateFailed")),
+  });
+}
+
 /** 移除订阅 */
 export function useRemoveMonitorSubscription() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (planCode: string) =>
-      (await api.delete(`/monitor/subscriptions/${planCode}`)).data,
+    mutationFn: async (v: string | { planCode: string; optionsKey?: string }) => {
+      const planCode = typeof v === "string" ? v : v.planCode;
+      const optionsKey = typeof v === "string" ? undefined : v.optionsKey;
+      return (
+        await api.delete(`/monitor/subscriptions/${encodeURIComponent(planCode)}`, {
+          params: optionsKey ? { optionsKey } : undefined,
+        })
+      ).data;
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.monitor.list() });
       qc.invalidateQueries({ queryKey: qk.monitor.status() });

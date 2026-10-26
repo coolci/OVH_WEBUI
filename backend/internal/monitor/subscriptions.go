@@ -1,7 +1,10 @@
 package monitor
 
 import (
+	"errors"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 )
 
@@ -16,14 +19,17 @@ func (m *Monitor) AddSubscription(planCode string, datacenters []string, notifyA
 	defer m.subsMu.Unlock()
 
 	for _, s := range m.subscriptions {
-		if s.PlanCode == planCode {
-			m.state.Logger.Warn(fmt.Sprintf("订阅已存在: %s，将更新配置（不会重置状态，避免重复通知）", planCode), "monitor")
+		// 同 planCode 的不同配置(options)是**不同的订阅** —— 用户抢同型号不同内存
+		// 就是两条。只有 planCode+配置组合都相同才算"已存在",就地更新。
+		if s.PlanCode == planCode && OptionsKey(s.Options) == OptionsKey(options) {
+			m.state.Logger.Warn(fmt.Sprintf("订阅已存在: %s(%s)，将更新配置（不会重置状态，避免重复通知）", planCode, OptionsKey(options)), "monitor")
 			if datacenters == nil {
 				datacenters = []string{}
 			}
 			// 必须持订阅自己的锁改:subsMu 只保护切片,而这条订阅此刻很可能
 			// 正被检查 goroutine 读着(它拿的是同一个指针)。
 			s.mu.Lock()
+			s.revision++
 			s.Datacenters = datacenters
 			s.NotifyAvailable = notifyAvailable
 			s.NotifyUnavailable = notifyUnavailable
@@ -100,6 +106,108 @@ func (m *Monitor) AddSubscription(planCode string, datacenters []string, notifyA
 	m.state.Logger.Info(fmt.Sprintf("添加订阅: %s, 数据中心: %s", displayName, dcsStr), "monitor")
 }
 
+// OptionsKey 把配置筛选规范化成可比较的键(排序后逗号连接;空 = 盯全部配置)。
+// 订阅的身份 = planCode + OptionsKey。
+func OptionsKey(options []string) string {
+	if len(options) == 0 {
+		return ""
+	}
+	c := append([]string(nil), options...)
+	sort.Strings(c)
+	return strings.Join(c, ",")
+}
+
+// HasSubscriptionWithOptions 该 planCode 下是否已存在「另一条」配置组合等于
+// targetKey 的订阅(ownKey = 当前这条自己的组合,相同则不算冲突)。
+func (m *Monitor) HasSubscriptionWithOptions(planCode, targetKey, ownKey string) bool {
+	m.subsMu.Lock()
+	defer m.subsMu.Unlock()
+	for _, s := range m.subscriptions {
+		if s.PlanCode == planCode && OptionsKey(s.Options) == targetKey && targetKey != ownKey {
+			return true
+		}
+	}
+	return false
+}
+
+var ErrSubscriptionNotFound = errors.New("订阅不存在")
+var ErrSubscriptionConflict = errors.New("已存在同型号同配置的订阅,无法改成重复配置")
+
+// UpdateSubscriptionFields 用原配置键定位,保留暂停状态、历史和库存基准。
+func (m *Monitor) UpdateSubscriptionFields(planCode string, originalKey *string, datacenters []string, notifyAvailable, notifyUnavailable bool,
+	autoOrder bool, quantity int, autoOrderAccountID string, autoPay bool, options []string) error {
+	m.subsMu.Lock()
+	defer m.subsMu.Unlock()
+	for _, s := range m.subscriptions {
+		if s.PlanCode != planCode || (originalKey != nil && OptionsKey(s.Options) != *originalKey) {
+			continue
+		}
+		for _, other := range m.subscriptions {
+			if other != s && other.PlanCode == planCode && OptionsKey(other.Options) == OptionsKey(options) {
+				return ErrSubscriptionConflict
+			}
+		}
+		s.mu.Lock()
+		s.revision++
+		s.Datacenters = append([]string(nil), datacenters...)
+		s.NotifyAvailable = notifyAvailable
+		s.NotifyUnavailable = notifyUnavailable
+		s.AutoOrder = autoOrder
+		s.Quantity = 0
+		if autoOrder {
+			if quantity < 1 {
+				quantity = 1
+			}
+			s.Quantity = quantity
+		}
+		s.AutoOrderAccountID = autoOrderAccountID
+		s.AutoPay = autoPay && autoOrder
+		s.Options = append([]string(nil), options...)
+		s.mu.Unlock()
+		return nil
+	}
+	return ErrSubscriptionNotFound
+}
+
+// SetPaused 设置暂停/恢复。nil 定位第一条;指向空串则精确定位全部配置订阅。
+// 返回 false = 没找到。
+func (m *Monitor) SetPaused(planCode string, optionsKey *string, paused bool) bool {
+	m.subsMu.Lock()
+	defer m.subsMu.Unlock()
+	for _, s := range m.subscriptions {
+		if s.PlanCode == planCode && (optionsKey == nil || OptionsKey(s.Options) == *optionsKey) {
+			s.mu.Lock()
+			s.revision++
+			s.Paused = paused
+			s.mu.Unlock()
+			return true
+		}
+	}
+	return false
+}
+
+// RemoveSubscriptionExact 按 planCode+配置组合精确删除(卡片级删除);
+// optionsKey 传空串 = 删除该 planCode 的第一条(兼容 TG 等按型号的老入口)。
+func (m *Monitor) RemoveSubscriptionExact(planCode, optionsKey string) bool {
+	m.subsMu.Lock()
+	defer m.subsMu.Unlock()
+	original := len(m.subscriptions)
+	kept := make([]*Subscription, 0, len(m.subscriptions))
+	removed := false
+	for _, s := range m.subscriptions {
+		if !removed && s.PlanCode == planCode && (optionsKey == "" || OptionsKey(s.Options) == optionsKey) {
+			removed = true
+			continue
+		}
+		kept = append(kept, s)
+	}
+	if removed {
+		m.subscriptions = kept
+		m.state.Logger.Info(fmt.Sprintf("已移除订阅: %s(%s)", planCode, optionsKey), "monitor")
+	}
+	return len(m.subscriptions) < original
+}
+
 func (m *Monitor) RemoveSubscription(planCode string) bool {
 	m.subsMu.Lock()
 	defer m.subsMu.Unlock()
@@ -131,11 +239,11 @@ func (m *Monitor) ClearSubscriptions() int {
 // 不返回真身:调用方(handler 读 History、SubscriptionAsJSON 做 Marshal)都在 HTTP goroutine 里,
 // 而检查 goroutine 正并发地往同一条订阅上 append History —— 直接把指针递出去就是数据竞争。
 // 需要改订阅请走 AddSubscription / RemoveSubscription。
-func (m *Monitor) FindSubscription(planCode string) *Subscription {
+func (m *Monitor) FindSubscription(planCode string, optionsKey ...string) *Subscription {
 	m.subsMu.Lock()
 	defer m.subsMu.Unlock()
 	for _, s := range m.subscriptions {
-		if s.PlanCode == planCode {
+		if s.PlanCode == planCode && (len(optionsKey) == 0 || OptionsKey(s.Options) == optionsKey[0]) {
 			return s.snapshot()
 		}
 	}
@@ -296,11 +404,11 @@ func (m *Monitor) AddMessageUUID(id, planCode, datacenter string, options []stri
 // 为什么不直接把 *Subscription 交出去让调用方读字段:那些字段被检查 goroutine
 // 并发改着,裸读是数据竞争。这里在订阅自己的锁里拷一份出去。
 // 只拷配置字段 —— LastStatus / History 是状态,编辑接口不该碰。
-func (m *Monitor) SubscriptionConfig(planCode string) SubscriptionConfig {
+func (m *Monitor) SubscriptionConfig(planCode string, optionsKey ...string) SubscriptionConfig {
 	m.subsMu.Lock()
 	defer m.subsMu.Unlock()
 	for _, s := range m.subscriptions {
-		if s.PlanCode != planCode {
+		if s.PlanCode != planCode || (len(optionsKey) > 0 && OptionsKey(s.Options) != optionsKey[0]) {
 			continue
 		}
 		s.mu.Lock()

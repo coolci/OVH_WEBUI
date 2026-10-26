@@ -31,6 +31,7 @@ export interface ServerPlan {
     availability: string;
     countryCode: string;
   }[];
+  prerelease?: boolean;
 }
 
 /** 服务器目录（带可用性）。
@@ -40,7 +41,7 @@ export interface ServerPlan {
  *                   走 react-query 自己的请求流程，data 一定通知订阅者重渲染
  *  - isRefreshing = q.isRefetching：只在 refetch 期间为 true，跟首次加载 isLoading 严格分开
  */
-export function useServers(showApiServers: boolean = true) {
+export function useServers(showApiServers: boolean = true, explicitAccountId?: string) {
   const qc = useQueryClient();
   // 目录跟着当前账户走:后端 /api/servers 支持 ?account=,按该账户的 zone(子公司)+ endpoint
   // 取目录并单独分桶缓存。不传的话永远是默认账户的视角 —— 切到美区账户后,页面上的机型集合、
@@ -49,7 +50,8 @@ export function useServers(showApiServers: boolean = true) {
   // 而 localStorage 里可能留着已删账户的 id,那会让整页变成一条红错。
   const [activeId] = useActiveServerControlAccount();
   const { data: accounts, isPending: accountsPending } = useAccounts();
-  const accountId = findAccountByID(accounts, activeId) ? activeId : "";
+  const resolvedId = explicitAccountId || activeId;
+  const accountId = findAccountByID(accounts, resolvedId) ? resolvedId : "";
   const key = qk.servers.list(showApiServers, accountId);
   const q = useQuery({
     queryKey: key,

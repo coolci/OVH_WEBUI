@@ -423,6 +423,10 @@ func normalizeDCCity(dc string) string {
 //  3. 负缓存 30 秒 + 过期正缓存兜底:拉不到时优先返回上一份(过期的)目录,
 //     因为一份两小时前的区域配置远好过没有 —— 后者会让下单退回静态兜底。
 func loadSubsidiaryCatalog(state *app.State, subsidiary string) (*subsidiaryCatalog, error) {
+	return loadSubsidiaryCatalogWithTTL(state, subsidiary, regionCacheTTL)
+}
+
+func loadSubsidiaryCatalogWithTTL(state *app.State, subsidiary string, ttl time.Duration) (*subsidiaryCatalog, error) {
 	// 缓存 key 统一大写:OVH 只认大写子公司,调用方要是传了小写,
 	// 既会多拉一份缓存,请求本身也会 400。
 	subsidiary = strings.ToUpper(strings.TrimSpace(subsidiary))
@@ -431,7 +435,7 @@ func loadSubsidiaryCatalog(state *app.State, subsidiary string) (*subsidiaryCata
 	}
 
 	regionCacheMu.Lock()
-	if c, ok := regionCache[subsidiary]; ok && time.Since(c.fetchedAt) < regionCacheTTL {
+	if c, ok := regionCache[subsidiary]; ok && time.Since(c.fetchedAt) < ttl {
 		regionCacheMu.Unlock()
 		return c, nil
 	}

@@ -33,11 +33,16 @@ func AddQueueItem(state *app.State) gin.HandlerFunc {
 			Options        []string `json:"options"`
 			RetryInterval  int      `json:"retryInterval"`
 			// AutoPay 下单成功后用默认支付方式自动付款(显式开关,默认关)
-			AutoPay bool `json:"autoPay"`
+			AutoPay  bool   `json:"autoPay"`
 			// Force 强制添加自定义或未在当前目录收录的型号入队
-			Force bool `json:"force"`
+			Force    bool   `json:"force"`
+			Preorder bool   `json:"preorder"`
+			Coupon   string `json:"coupon"`
 		}
-		_ = c.ShouldBindJSON(&body)
+		if err := c.ShouldBindJSON(&body); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "任务参数格式不正确"})
+			return
+		}
 		if body.AccountID == "" && body.AccountIDCamel != "" {
 			body.AccountID = body.AccountIDCamel
 		}
@@ -71,7 +76,7 @@ func AddQueueItem(state *app.State) gin.HandlerFunc {
 		// 探测失败(catalog.PlanVerdictUnknown)不拦 —— 一次网络瞬断不该让用户下不了单。
 		// 用户明确指定 Force(新品 / 自定义型号)时,只放过"目录没收录"这一类,记日志后入队;
 		// 跨区 / 非 Eco 仍然拦,Force 不能拿来绕过确定性买不到的组合。
-		if verdict, hint := catalog.ClassifyPlan(state, body.AccountID, body.PlanCode, "queue"); hint != "" {
+		if verdict, hint := catalog.ClassifyPlan(state, body.AccountID, body.PlanCode, "queue"); hint != "" && !(body.Preorder && verdict == catalog.PlanVerdictPrerelease) {
 			if body.Force && verdict == catalog.PlanVerdictNoSuchPlan {
 				state.Logger.Warn(fmt.Sprintf("[queue] 用户强制添加未收录型号(判定 %d): %s 在 %s: %s", verdict, body.PlanCode, body.Datacenter, hint), "queue")
 			} else {
@@ -97,6 +102,8 @@ func AddQueueItem(state *app.State) gin.HandlerFunc {
 			LastCheckTime: 0,
 			AutoPay:       body.AutoPay,
 			Force:         body.Force,
+			Preorder:      body.Preorder,
+			Coupon:        strings.TrimSpace(body.Coupon),
 		}
 		// 入队 + 落库由 OrderService 统一保证:失败时自动撤回,不存在半成功任务
 		if err := state.OrderService.Enqueue(item, false); err != nil {
@@ -131,6 +138,35 @@ func RemoveQueueItem(state *app.State) gin.HandlerFunc {
 		c.JSON(http.StatusOK, gin.H{"status": "success"})
 	}
 }
+
+// UpdateQueueItem PUT /api/queue/:id,一个任务仍对应一台服务器。
+func UpdateQueueItem(state *app.State) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var body struct {
+			Datacenter    string   `json:"datacenter"`
+			Options       []string `json:"options"`
+			RetryInterval int      `json:"retryInterval"`
+			AutoPay       bool     `json:"autoPay"`
+			Coupon        string   `json:"coupon"`
+		}
+		if err := c.ShouldBindJSON(&body); err != nil || strings.TrimSpace(body.Datacenter) == "" || body.RetryInterval < types.MinRetryInterval || body.RetryInterval > types.MaxRetryInterval {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "请填写机房及有效的重试间隔"})
+			return
+		}
+		if err := state.UpdateQueueItem(c.Param("id"), strings.TrimSpace(body.Datacenter), body.Options, body.RetryInterval, body.AutoPay, strings.TrimSpace(body.Coupon)); err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, app.ErrQueueNotFound) {
+				status = http.StatusNotFound
+			} else if errors.Is(err, app.ErrQueueNotEditable) {
+				status = http.StatusConflict
+			}
+			c.JSON(status, gin.H{"status": "error", "error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "success"})
+	}
+}
+
 
 // UpdateQueueInterval PUT /api/queue/:id/interval  body: { "retryInterval": 秒 }
 func UpdateQueueInterval(state *app.State) gin.HandlerFunc {
@@ -188,18 +224,37 @@ func UpdateQueueStatus(state *app.State) gin.HandlerFunc {
 		var body struct {
 			Status string `json:"status"`
 		}
-		_ = c.ShouldBindJSON(&body)
-
-		target, err := state.OrderService.UpdateQueueStatus(id, body.Status)
-		if err != nil {
-			if errors.Is(err, order.ErrItemNotFound) {
-				httperr.NotFound(c, "任务不存在", "ERR_QUEUE_NOT_FOUND")
-				return
+		if err := c.ShouldBindJSON(&body); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "任务状态参数格式不正确"})
+			return
+		}
+		switch body.Status {
+		case "pending", "running", "paused", "completed", "failed":
+		default:
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "无效的任务状态"})
+			return
+		}
+		found := false
+		var target types.QueueItem
+		state.QueueMu.Lock()
+		for i := range state.Queue {
+			if state.Queue[i].ID == id {
+				state.Queue[i].Status = body.Status
+				state.Queue[i].UpdatedAt = types.NowISO()
+				if body.Status != "running" {
+					state.UnregisterTaskCancel(id)
+				}
+				target = state.Queue[i]
+				found = true
+				break
 			}
-			if errors.Is(err, order.ErrInvalidStatus) {
-				httperr.BadRequest(c, err.Error(), "ERR_INVALID_STATUS")
-				return
-			}
+		}
+		state.QueueMu.Unlock()
+		if !found {
+			c.JSON(http.StatusNotFound, gin.H{"status": "error", "error": "任务不存在", "code": "E10FEEC40"})
+			return
+		}
+		if err := state.SaveQueue(); err != nil {
 			state.Logger.Error("改任务状态后保存队列失败: "+err.Error(), "queue")
 			httperr.InternalError(c, "状态已在本次运行中改掉，但没能写进数据库，重启后会回到原状态："+err.Error(), "ERR_DB_SAVE")
 			return

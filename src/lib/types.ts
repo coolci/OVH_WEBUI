@@ -24,6 +24,8 @@ export interface QueueItem {
   accountId?: string;
   autoPay?: boolean;
   failureCount?: number;
+  coupon?: string;
+  preorder?: boolean;
 }
 
 export interface LogEntry {
@@ -54,6 +56,7 @@ export interface HistoryEntry {
   expirationTime?: string | null;
   retractionTime?: string | null;
   errorMessage?: string | null;
+  couponWarning?: string | null;
   purchaseTime: string;
   attemptCount?: number;
   timing?: HistoryPhaseTiming[];

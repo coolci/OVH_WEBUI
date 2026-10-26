@@ -489,6 +489,11 @@ func GetServiceInfo(state *app.State) gin.HandlerFunc {
 			"renewalManualPayment":      manualPayment,
 			"possibleRenewPeriod":       possiblePeriods,
 		}
+		// OVH 已下线 US 区的手动续费(其 Manager 源码 isUSRegion 即移除 MANUAL 模式,
+		// API 对一切手动载荷回 400)。前端据此禁用该选项,与官方控制台行为一致。
+		if acc, ok := ovhAccountFor(state, c); ok && ovh.EndpointRegion(acc.Endpoint) == "US" {
+			si["renewalManualUnsupported"] = true
+		}
 		// 终止状态从 lifecycle.pendingActions 读(文档指定的读回路径);
 		// renew.deleteAtExpiration 会不会随 terminationPolicy 同步,文档没说,不能赌它
 		attachTerminationState(state, client, serviceIDForDedicated, svc, "server_control", si)
@@ -574,12 +579,18 @@ func UpdateServiceRenewal(state *app.State) gin.HandlerFunc {
 			next["period"] = pv
 		}
 
+		// GET 响应自带 serviceId:老路由被 US live 校验卡死时,
+		// 用文档同模型的新路由 PUT /services/{serviceId} 再走一遍
+		var sid *int64
+		if v, ok := numconv.ToInt64(info["serviceId"]); ok {
+			sid = &v
+		}
 		// services.Service 里只有 renew 可写,其余 12 个字段全是只读 ——
 		// 把 GET 回来的整个对象发回去会被 OVH 400
 		// "Try to alter read-only properties: status, creation, expiration"
-		if err := putServiceRenew(client, "/dedicated/server/"+svc+"/serviceInfos", next); err != nil {
+		if err := putServiceRenew(client, "/dedicated/server/"+svc+"/serviceInfos", sid, next); err != nil {
 			state.Logger.Error("修改服务器 "+svc+" 续费策略失败: "+err.Error(), "server_control")
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
+			respondRenewError(c, state, svc, err)
 			return
 		}
 		state.Logger.Info("服务器 "+svc+" 续费策略已更新: mode="+body.Mode, "server_control")

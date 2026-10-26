@@ -2,9 +2,11 @@ package purchase
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	ovhsdk "github.com/ovh/go-ovh/ovh"
@@ -16,7 +18,6 @@ import (
 	"github.com/ovh-webui/server/internal/ovh"
 	"github.com/ovh-webui/server/internal/telegram"
 	"github.com/ovh-webui/server/internal/types"
-	"time"
 )
 
 // Outcome 一次抢购尝试的结果。
@@ -26,7 +27,8 @@ import (
 // 会按 retryInterval 无限重试,而且每一轮都往 history 写一条失败记录 ——
 // 一个手滑选错区的任务能刷满整个抢购历史。Fatal 就是用来终止这类任务的。
 type Outcome struct {
-	Success bool
+	Success           bool
+	WaitingForCatalog bool
 	// Fatal:确定性失败,重试多少次结果都一样。队列处理器据此把任务直接置 failed。
 	// 只有"换个时间点重试也必然是同一个结果"才允许置 true ——
 	// 网络 / 429 / OVH 5xx / 无货 一律不是 Fatal。
@@ -69,6 +71,20 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 		state.Logger.Error("PurchaseServer: 取 OVH client 失败 ("+item.AccountID+"): "+err.Error(), "purchase")
 		recordFailure(state, item, errMsg)
 		return Outcome{Fatal: true, Reason: errMsg}
+	}
+
+	if item.Preorder {
+		ready, err := catalog.PreorderReady(state, item.AccountID, item.PlanCode)
+		if ctx.Err() != nil {
+			return cancelledOutcome(state, item, "等上架")
+		}
+		if err != nil || !ready {
+			state.Logger.Info(fmt.Sprintf("预订任务 %s 等待 %s 上架到下单账户的销售目录", item.ID, item.PlanCode), "purchase")
+			if err != nil {
+				state.Logger.Warn("预订任务查询销售目录失败，本轮继续等待: "+err.Error(), "purchase")
+			}
+			return Outcome{WaitingForCatalog: true}
+		}
 	}
 
 	cartID := ""
@@ -123,11 +139,20 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 	// "32G+HDD 有货" 不等于 "用户要的 64G+NVMe 有货"。用户指定了硬件选项时，
 	// 只在 FQN 段集合覆盖了这些选项的条目里判有货。
 	wantedHW := fqnRelevantOptions(availabilities, item.Options)
+	if item.Preorder {
+		// 预订保存的是原始 FQN 硬件段;参数消失也不能忽略它后改买其他配置。
+		wantedHW = item.Options
+	}
 	candidates := availabilities
 	if len(wantedHW) > 0 {
 		matchedAvs := []map[string]interface{}{}
 		for _, av := range availabilities {
-			if fqn, _ := av["fqn"].(string); fqnCoversOptions(fqn, wantedHW) {
+			fqn, _ := av["fqn"].(string)
+			matches := fqnCoversOptions(fqn, wantedHW)
+			if item.Preorder {
+				matches = preorderFQNCoversOptions(fqn, wantedHW)
+			}
+			if matches {
 				matchedAvs = append(matchedAvs, av)
 			}
 		}
@@ -499,6 +524,27 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 	}
 
 	tl.mark("加硬件选项")
+	couponWarning := ""
+	if coupon := strings.TrimSpace(item.Coupon); coupon != "" {
+		err := client.PostWithContext(ctx, "/order/cart/"+cartID+"/coupon", map[string]interface{}{"coupon": coupon}, nil)
+		if ctx.Err() != nil {
+			return cancelledOutcome(state, item, "应用优惠码")
+		}
+		tl.mark("应用优惠码")
+		if err != nil {
+			var apiErr *ovhsdk.APIError
+			if IsTransient(err) || !errors.As(err, &apiErr) || apiErr.Code < 400 || apiErr.Code >= 500 {
+				recordTiming(timingKey, tl, "failed")
+				recordFailure(state, item, "应用优惠码暂时失败: "+ovh.Explain(err))
+				return Outcome{}
+			}
+			// 明确被拒绝才回退;网络故障不能当作优惠码无效。
+			couponWarning = "优惠码被 OVH 拒绝，本次未使用优惠码，价格不包含该码优惠。原因: " + ovh.Explain(err)
+			state.Logger.Warn(couponWarning, "purchase")
+		} else {
+			state.Logger.Info("购物车优惠码已应用", "purchase")
+		}
+	}
 
 	// 直接结账 —— 跳过 /summary(它只是日志用的价格,2 秒开销),
 	// 价格 + 过期时间下面 checkout 成功后用 /me/order 异步补,不阻塞主流程。
@@ -506,7 +552,7 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 	// 最后一个点 —— 从这里往下,结账请求一旦发出就**不再接受取消**:
 	// 请求已经到了 OVH、我们这边却中途断开,订单可能已经生成而我们不知道,
 	// 既没 history 也没通知,那比"多下了一单"更糟。
-	if ctx.Err() != nil || state.IsTaskDeleted(item.ID) || !state.IsTaskActiveInQueue(item.ID) {
+	if ctx.Err() != nil || state.IsTaskDeleted(item.ID) {
 		return cancelledOutcome(state, item, "结账前复核")
 	}
 	state.Logger.Info("对购物车 "+cartID+" 执行结账", "purchase")
@@ -545,6 +591,10 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 		tl.mark("下单")
 		recordTiming(timingKey, tl, "failed")
 		state.Logger.Error(fmt.Sprintf("购买 %s 时发生 OVH API 错误: %s (%s)", item.PlanCode, errMsg, tl.String()), "purchase")
+		if couponWarning != "" {
+			errMsg += "；" + couponWarning
+		}
+		recordFailure(state, item, errMsg)
 
 		// checkout 超时/传输层失败 ≠ 下单失败:请求可能已经到达 OVH 且订单已建,
 		// 只是我方没等到响应。这时任务会重试 → 新车再 checkout → **买两台**
@@ -556,7 +606,7 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 				state.Logger.Warn("checkout 对账查询失败(按未建单处理): "+recErr.Error(), "purchase")
 			} else if oid != "" {
 				state.Logger.Warn(fmt.Sprintf("checkout 报 transient 失败但对账发现订单已建(#%s),按成功处理,不再重试", oid), "purchase")
-				return handleReconciledOrder(state, client, acc.Endpoint, item, oid, orderURL, tl, timingKey)
+				return handleReconciledOrder(state, client, acc.Endpoint, item, oid, orderURL, tl, timingKey, couponWarning)
 			}
 			recordFailure(state, item, ovh.Explain(err))
 			// 对账也失败(429/超时/明细读失败):OVH 侧订单状态未知。
@@ -586,7 +636,7 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 	success = true
 
 	// 立刻记成功 —— 价格和过期时间空着,后台异步补
-	recordSuccess(state, item, orderID, orderURL, "", nil)
+	recordSuccess(state, item, orderID, orderURL, "", nil, couponWarning)
 	recordTimingToHistory(state, item.ID, tl)
 	state.Logger.Info("[耗时] "+item.PlanCode+"@"+item.Datacenter+" 抢购成功 "+tl.String(), "purchase")
 
@@ -607,7 +657,11 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 		"orderId":  orderID,
 		"orderUrl": payURL,
 	})
-	if notify.Broadcast(state, BuildOrderSuccessMessage(item, orderID, payURL), nil) > 0 {
+	message := BuildOrderSuccessMessage(item, orderID, payURL)
+	if couponWarning != "" {
+		message += "\n\n⚠️ " + couponWarning
+	}
+	if notify.Broadcast(state, message, nil) > 0 {
 		state.Logger.Info("已为订单 "+orderID+" 发送订单成功通知。", "purchase")
 	} else {
 		state.Logger.Warn("订单 "+orderID+" 已创建,但成功通知未送达任何通道。", "purchase")
@@ -782,6 +836,26 @@ func fqnCoversOptions(fqn string, opts []string) bool {
 	return true
 }
 
+func preorderFQNCoversOptions(fqn string, opts []string) bool {
+	parts := strings.Split(fqn, ".")
+	if len(parts) < 2 {
+		return false
+	}
+	for _, wanted := range opts {
+		found := false
+		for _, part := range parts[1:] {
+			if strings.EqualFold(part, wanted) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
 // pickPricing 从 order.cart.GenericProductPricing[] 里挑一条计价填 duration / pricingMode。
 //
 // 优先级：duration 必须与主商品一致 > 同 duration 内优先 rental+renew（按周期续费那条）
@@ -881,7 +955,7 @@ func extract(v interface{}) *float64 {
 	return nil
 }
 
-func recordSuccess(state *app.State, item *types.QueueItem, orderID, orderURL, expirationTime string, priceInfo *types.PriceInfo) {
+func recordSuccess(state *app.State, item *types.QueueItem, orderID, orderURL, expirationTime string, priceInfo *types.PriceInfo, couponWarning ...string) {
 	// 锁内只改内存,SaveHistory 在锁外 —— 它自己会拿 HistoryMu(快照),
 	// Go mutex 不可重入,持锁同步调它(c419176 引入)首次下单成功即死锁全队列
 	state.HistoryMu.Lock()
@@ -890,6 +964,10 @@ func recordSuccess(state *app.State, item *types.QueueItem, orderID, orderURL, e
 		_ = state.SaveHistory()
 	}()
 	now := types.NowISO()
+	warn := ""
+	if len(couponWarning) > 0 {
+		warn = couponWarning[0]
+	}
 
 	for i := range state.History {
 		if state.History[i].TaskID == item.ID {
@@ -898,6 +976,7 @@ func recordSuccess(state *app.State, item *types.QueueItem, orderID, orderURL, e
 			state.History[i].OrderID = orderID
 			state.History[i].OrderURL = orderURL
 			state.History[i].ErrorMessage = nil
+			state.History[i].CouponWarning = warn
 			state.History[i].PurchaseTime = now
 			state.History[i].AttemptCount = item.RetryCount
 			state.History[i].Options = item.Options
@@ -913,17 +992,18 @@ func recordSuccess(state *app.State, item *types.QueueItem, orderID, orderURL, e
 	}
 
 	entry := types.PurchaseHistoryEntry{
-		ID:           uuid.NewString(),
-		TaskID:       item.ID,
-		AccountID:    item.AccountID,
-		PlanCode:     item.PlanCode,
-		Datacenter:   item.Datacenter,
-		Options:      item.Options,
-		Status:       "success",
-		OrderID:      orderID,
-		OrderURL:     orderURL,
-		PurchaseTime: now,
-		AttemptCount: item.RetryCount,
+		ID:            uuid.NewString(),
+		TaskID:        item.ID,
+		AccountID:     item.AccountID,
+		PlanCode:      item.PlanCode,
+		Datacenter:    item.Datacenter,
+		Options:       item.Options,
+		Status:        "success",
+		OrderID:       orderID,
+		OrderURL:      orderURL,
+		CouponWarning: warn,
+		PurchaseTime:  now,
+		AttemptCount:  item.RetryCount,
 	}
 	if expirationTime != "" {
 		entry.ExpirationTime = expirationTime
@@ -1140,8 +1220,12 @@ func BuildOrderSuccessMessage(item *types.QueueItem, orderID, managerURL string)
 // handleReconciledOrder 对账发现订单已建:按成功路径走完(记成功/异步补详情/通知)。
 // 以前这里只改 history,调用方注释写着会补 backfill,实际谁都没调;
 // 用户看不到“已经锁单”的通知,队列却显示完成。
-func handleReconciledOrder(state *app.State, client *ovhsdk.Client, endpoint string, item *types.QueueItem, orderID, orderURL string, tl *timeline, timingKey string) Outcome {
-	recordSuccess(state, item, orderID, orderURL, "", nil)
+func handleReconciledOrder(state *app.State, client *ovhsdk.Client, endpoint string, item *types.QueueItem, orderID, orderURL string, tl *timeline, timingKey string, couponWarning ...string) Outcome {
+	warn := ""
+	if len(couponWarning) > 0 {
+		warn = couponWarning[0]
+	}
+	recordSuccess(state, item, orderID, orderURL, "", nil, warn)
 	recordTimingToHistory(state, item.ID, tl)
 	state.Logger.Info("[耗时] "+item.PlanCode+"@"+item.Datacenter+" 对账确认成功 "+tl.String(), "purchase")
 	if orderID != "" && client != nil {
@@ -1152,7 +1236,11 @@ func handleReconciledOrder(state *app.State, client *ovhsdk.Client, endpoint str
 		"orderId":  orderID,
 		"orderUrl": payURL,
 	})
-	if notify.Broadcast(state, BuildOrderSuccessMessage(item, orderID, payURL), nil) > 0 {
+	msg := BuildOrderSuccessMessage(item, orderID, payURL)
+	if warn != "" {
+		msg += "\n\n⚠️ " + warn
+	}
+	if notify.Broadcast(state, msg, nil) > 0 {
 		state.Logger.Info("已为对账订单 "+orderID+" 发送成功通知。", "purchase")
 	} else {
 		state.Logger.Warn("对账订单 "+orderID+" 已确认,但成功通知未送达任何通道。", "purchase")

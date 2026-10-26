@@ -1,4 +1,5 @@
-import { Search, Filter, X } from "lucide-react";
+import { Search, Filter, X, ArrowUpDown, ArrowUpNarrowWide, ArrowDownWideNarrow } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +12,8 @@ interface ServerFilterBarProps {
   onSearchChange: (value: string) => void;
   onlyAvailable: boolean;
   onToggleOnlyAvailable: () => void;
+  priceSort: "default" | "asc" | "desc";
+  onPriceSortChange: () => void;
   subsidiary: string;
   onSubsidiaryChange: (value: string) => void;
   accountSub?: string;
@@ -24,6 +27,8 @@ export function ServerFilterBar({
   onSearchChange,
   onlyAvailable,
   onToggleOnlyAvailable,
+  priceSort,
+  onPriceSortChange,
   subsidiary,
   onSubsidiaryChange,
   accountSub,
@@ -31,6 +36,7 @@ export function ServerFilterBar({
   totalCount,
   isLoading,
 }: ServerFilterBarProps) {
+  const { t } = useTranslation();
   return (
     <Card className="surface-card rounded-xl border-border">
       <CardContent className="p-3.5 sm:p-4 flex flex-col gap-2.5">
@@ -71,6 +77,32 @@ export function ServerFilterBar({
             >
               <Filter className="w-3 h-3" />
               仅显示可用
+            </Button>
+
+            <Button
+              variant={priceSort === "default" ? "outline" : "default"}
+              size="sm"
+              className={cn(
+                "rounded-lg h-8 text-xs gap-1.5 transition-all font-medium flex-shrink-0",
+                priceSort === "default"
+                  ? "border-border/80 bg-secondary/30 hover:bg-secondary text-foreground"
+                  : ""
+              )}
+              onClick={onPriceSortChange}
+              title={t("servers.sortPriceTitle")}
+            >
+              {priceSort === "asc" ? (
+                <ArrowUpNarrowWide className="w-3.5 h-3.5" />
+              ) : priceSort === "desc" ? (
+                <ArrowDownWideNarrow className="w-3.5 h-3.5" />
+              ) : (
+                <ArrowUpDown className="w-3.5 h-3.5" />
+              )}
+              {priceSort === "default"
+                ? t("servers.sortPrice")
+                : priceSort === "asc"
+                ? t("servers.sortPriceAsc")
+                : t("servers.sortPriceDesc")}
             </Button>
 
             {/* 价格地区选择 */}
