@@ -26,17 +26,21 @@ func dispatchTelegramCommand(state *app.State, mon *monitor.Monitor, cmd *telegr
 	case "unwatch", "uw":
 		return unwatchText(state, mon, cmd.Args)
 	case "stock":
-		return cmdStock(state, cmd.Args)
+		return cmdStock(state, cmd.Args, mon)
 	case "queue", "buy":
 		return cmdBuyOrQueue(state, mon, cmd.Args, cmd.Name)
 	case "tasks":
-		return "📋 请在与 Bot 的私聊或群内发送 /tasks 即可直接交互管理抢购任务。"
+		return cmdTasksText(state)
 	case "accounts":
-		return "👤 请在与 Bot 的私聊或群内发送 /accounts 即可查看并切换下单账户。"
+		return cmdAccountsText(state)
+	case "subs", "subscriptions":
+		return cmdSubs(state, mon)
+	case "cancel", "c":
+		return cmdCancel(state, cmd.Args)
 	case "monitor":
 		return cmdMonitor(state, mon, cmd.Args)
 	case "price":
-		return cmdPrice(state, cmd.Args)
+		return cmdPrice(state, cmd.Args, mon)
 	case "interval", "iv":
 		return intervalText(state, cmd.Args)
 	default:
@@ -44,15 +48,36 @@ func dispatchTelegramCommand(state *app.State, mon *monitor.Monitor, cmd *telegr
 	}
 }
 
-func cmdStock(state *app.State, args []string) string {
+func cmdStock(state *app.State, args []string, monOpt ...*monitor.Monitor) string {
 	if len(args) < 1 || strings.TrimSpace(args[0]) == "" {
-		return "💡 查询库存格式: /stock <planCode>\n例: /stock 24ska01"
+		return "💡 查询库存格式: /stock <planCode> [@account]\n例: /stock 24ska01\n例: /stock 24ska01 @us"
 	}
 	planCode := strings.TrimSpace(args[0])
 	if !state.HasAnyAccount() {
 		return "❌ 尚未配置任何 OVH 账户，请先在 Web 控制台添加"
 	}
+	var mon *monitor.Monitor
+	if len(monOpt) > 0 {
+		mon = monOpt[0]
+	}
 	accountID := telegram.DefaultAccountID(state)
+	var explicitAccount *types.OVHAccount
+	for _, a := range args[1:] {
+		if strings.HasPrefix(a, "@") && len(a) > 1 {
+			accs, err := resolveAccountRef(state, mon, a[1:], planCode)
+			if err == "" && len(accs) > 0 {
+				accountID = accs[0].ID
+				explicitAccount = &accs[0]
+				break
+			}
+		}
+	}
+	if explicitAccount == nil && mon != nil {
+		ra := resolveOrderAccount(state, mon, planCode)
+		if ra.Account.ID != "" {
+			accountID = ra.Account.ID
+		}
+	}
 	avail := catalog.CheckServerAvailabilityWithConfigs(state, planCode, accountID)
 	if len(avail) == 0 {
 		return fmt.Sprintf("❌ 未查询到型号 %s 的库存信息（型号可能不存在或当前区域无上架）", planCode)
@@ -271,9 +296,9 @@ func cmdMonitor(state *app.State, mon *monitor.Monitor, args []string) string {
 		telegram.CardDivider, namePart, dcText, telegram.CardDivider)
 }
 
-func cmdPrice(state *app.State, args []string) string {
+func cmdPrice(state *app.State, args []string, monOpt ...*monitor.Monitor) string {
 	if len(args) < 2 {
-		return "用法: /price <planCode> <datacenter>\n例: /price 24ska01 gra"
+		return "用法: /price <planCode> <datacenter> [@account]\n例: /price 24ska01 gra"
 	}
 	planCode := strings.TrimSpace(args[0])
 	dc := strings.ToLower(strings.TrimSpace(args[1]))
@@ -283,7 +308,28 @@ func cmdPrice(state *app.State, args []string) string {
 	if !state.HasAnyAccount() {
 		return "❌ 未配置任何 OVH 账户"
 	}
+	var mon *monitor.Monitor
+	if len(monOpt) > 0 {
+		mon = monOpt[0]
+	}
 	accountID := telegram.DefaultAccountID(state)
+	var explicitAccount *types.OVHAccount
+	for _, a := range args[2:] {
+		if strings.HasPrefix(a, "@") && len(a) > 1 {
+			accs, err := resolveAccountRef(state, mon, a[1:], planCode)
+			if err == "" && len(accs) > 0 {
+				accountID = accs[0].ID
+				explicitAccount = &accs[0]
+				break
+			}
+		}
+	}
+	if explicitAccount == nil && mon != nil {
+		ra := resolveOrderAccount(state, mon, planCode)
+		if ra.Account.ID != "" {
+			accountID = ra.Account.ID
+		}
+	}
 
 	validDCs, _ := validAndInStockDCs(state, planCode, accountID)
 	if len(validDCs) > 0 {
@@ -402,6 +448,138 @@ func intervalText(state *app.State, args []string) string {
 	return fmt.Sprintf("✅ 默认重试间隔已更新！\n%s\n⏱️ 当前设定: %d 秒 / 轮 (原设定: %d 秒)\n💡 该设置将应用于后续所有新建的抢购任务。", telegram.CardDivider, n, cur)
 }
 
+func cmdTasksText(state *app.State) string {
+	snapshot := state.QueueSnapshot()
+	active := make([]types.QueueItem, 0)
+	for _, item := range snapshot {
+		if item.Status == "running" || item.Status == "pending" {
+			active = append(active, item)
+		}
+	}
+	if len(active) == 0 {
+		return "📋 当前抢购任务队列\n" + telegram.CardDivider + "\n当前没有任何进行中的抢购任务。\n\n💡 发送 /buy <型号> <机房> 即可快速入队抢购！"
+	}
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("📋 当前抢购任务队列 (共 %d 个活跃任务)\n", len(active)))
+	b.WriteString(telegram.CardDivider + "\n")
+	for i, it := range active {
+		shortID := it.ID
+		if len(shortID) > 8 {
+			shortID = shortID[:8]
+		}
+		accTag := it.AccountID
+		if acc, ok := state.FindAccount(it.AccountID); ok {
+			accTag = acc.Name
+			if acc.Zone != "" {
+				accTag += " (" + strings.ToUpper(acc.Zone) + ")"
+			}
+		}
+		dcText := telegram.DisplayDC(it.Datacenter)
+		statusDesc := "🟢 正在重试抢购"
+		if it.Status == "pending" {
+			statusDesc = "🟡 排队等待"
+		}
+		b.WriteString(fmt.Sprintf("%d. [%s] 📦 %s @ %s\n   %s | 👤 %s | 🔄 %d次 | ⏱️ %ds\n",
+			i+1, shortID, it.PlanCode, dcText, statusDesc, accTag, it.RetryCount, it.RetryInterval))
+	}
+	b.WriteString(telegram.CardDivider + "\n")
+	b.WriteString("💡 取消任务: /cancel <ID前缀> | 取消全部: /cancel all")
+	return b.String()
+}
+
+func cmdAccountsText(state *app.State) string {
+	all := listAccounts(state)
+	if len(all) == 0 {
+		return "❌ 尚未配置任何 OVH 账户，请先在 Web 控制台「设置 → OVH 账户」添加。"
+	}
+	active, _ := telegram.ActiveAccount(state)
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("👤 已配置的 OVH 账户矩阵 (共 %d 个)\n", len(all)))
+	b.WriteString(telegram.CardDivider + "\n")
+	for i, a := range all {
+		mark := ""
+		if a.ID == active.ID {
+			mark = " 🌟 [当前默认]"
+		}
+		zone := strings.ToUpper(strings.TrimSpace(a.Zone))
+		if zone == "" {
+			zone = "EU"
+		}
+		b.WriteString(fmt.Sprintf("%d. %s (%s) — %s%s\n   别名: @%d 或 @%s\n",
+			i+1, a.Name, zone, a.Endpoint, mark, i+1, strings.ToLower(zone)))
+	}
+	b.WriteString(telegram.CardDivider + "\n")
+	b.WriteString("💡 下单指定账户: /buy <型号> <机房> @<别名>\n   多账户齐开抢: /buy <型号> <机房> @all")
+	return b.String()
+}
+
+func cmdSubs(state *app.State, mon *monitor.Monitor) string {
+	if mon == nil {
+		return "❌ 监控模块不可用"
+	}
+	subs := mon.Snapshot()
+	if len(subs) == 0 {
+		return "📡 当前没有任何监控订阅。\n\n💡 发送 /watch <型号> [机房] 即可添加监控！"
+	}
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("📡 当前监控订阅列表 (共 %d 项)\n", len(subs)))
+	b.WriteString(telegram.CardDivider + "\n")
+	for i, s := range subs {
+		dcText := "全部机房"
+		if len(s.Datacenters) > 0 {
+			dcText = strings.ToUpper(strings.Join(s.Datacenters, ", "))
+		}
+		orderText := "只发通知"
+		if s.AutoOrder {
+			orderText = fmt.Sprintf("补货自动抢 %d 台", s.Quantity)
+		}
+		statusText := "🟢 运行中"
+		if s.Paused {
+			statusText = "⏸️ 已暂停"
+		}
+		b.WriteString(fmt.Sprintf("%d. 📦 %s [%s]\n   📍 机房: %s\n   ⚡ 模式: %s\n",
+			i+1, s.PlanCode, statusText, dcText, orderText))
+	}
+	b.WriteString(telegram.CardDivider + "\n")
+	b.WriteString("💡 取消监控: /unwatch <型号>")
+	return b.String()
+}
+
+func cmdCancel(state *app.State, args []string) string {
+	if len(args) == 0 {
+		return "用法: /cancel <任务ID前缀 或 all>\n例: /cancel all (取消全部任务)\n例: /cancel a1b2c3d4"
+	}
+	target := strings.TrimSpace(args[0])
+	state.QueueMu.Lock()
+	defer state.QueueMu.Unlock()
+	if strings.EqualFold(target, "all") {
+		count := 0
+		for i := range state.Queue {
+			if state.Queue[i].Status == "running" || state.Queue[i].Status == "pending" {
+				state.Queue[i].Status = "cancelled"
+				count++
+			}
+		}
+		if count == 0 {
+			return "当前没有任何运行中或排队中的任务可取消。"
+		}
+		_ = state.SaveQueue()
+		return fmt.Sprintf("🛑 已成功取消全部活跃抢购任务 (共 %d 个)。", count)
+	}
+	count := 0
+	for i := range state.Queue {
+		if strings.HasPrefix(state.Queue[i].ID, target) && (state.Queue[i].Status == "running" || state.Queue[i].Status == "pending") {
+			state.Queue[i].Status = "cancelled"
+			count++
+		}
+	}
+	if count == 0 {
+		return fmt.Sprintf("未找到前缀为 %s 的活跃抢购任务。发 /tasks 查看当前任务列表。", target)
+	}
+	_ = state.SaveQueue()
+	return fmt.Sprintf("🛑 已成功取消匹配的抢购任务 (%d 个)。", count)
+}
+
 // handleTelegramText 统一处理 webhook 普通文本：斜杠命令 / free-form 下单 / 帮助。
 func handleTelegramText(state *app.State, mon *monitor.Monitor, text string, chatID, userID interface{}, messageID float64) {
 	text = strings.TrimSpace(text)
@@ -427,6 +605,15 @@ func handleTelegramText(state *app.State, mon *monitor.Monitor, text string, cha
 			cmd = &telegram.BotCommand{Name: "tasks"}
 		} else if lower == "账户" || lower == "账号" || lower == "切换账户" {
 			cmd = &telegram.BotCommand{Name: "accounts"}
+		} else if lower == "订阅" || lower == "订阅列表" {
+			cmd = &telegram.BotCommand{Name: "subs"}
+		} else if lower == "取消" || strings.HasPrefix(lower, "取消 ") {
+			fields := strings.Fields(trimmed)
+			if len(fields) > 1 {
+				cmd = &telegram.BotCommand{Name: "cancel", Args: fields[1:]}
+			} else {
+				cmd = &telegram.BotCommand{Name: "cancel"}
+			}
 		} else if lower == "买" || lower == "抢" || lower == "下单" {
 			cmd = &telegram.BotCommand{Name: "buy"}
 		} else if strings.HasPrefix(lower, "查库存 ") || strings.HasPrefix(lower, "库存 ") || strings.HasPrefix(lower, "查 ") {

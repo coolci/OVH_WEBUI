@@ -332,13 +332,20 @@ func ParseOrderMessage(text string) *OrderInfo {
 	return result
 }
 
-// isDatacenterCode 长得像机房码:3~4 个 ASCII 字母,不区分大小写。
+// isDatacenterCode 长得像机房码:3~4 个 ASCII 字母,或 par-a/b/c 等子机房代码,不区分大小写。
 func isDatacenterCode(s string) bool {
-	if len(s) < 3 || len(s) > 4 {
+	lower := strings.ToLower(strings.TrimSpace(s))
+	if lower == "par-a" || lower == "par-b" || lower == "par-c" {
+		return true
+	}
+	if strings.HasPrefix(lower, "eu-west-") || strings.HasPrefix(lower, "ca-east-") {
+		return true
+	}
+	if len(lower) < 3 || len(lower) > 4 {
 		return false
 	}
-	for i := 0; i < len(s); i++ {
-		c := s[i]
+	for i := 0; i < len(lower); i++ {
+		c := lower[i]
 		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') {
 			return false
 		}
@@ -444,11 +451,13 @@ func SetMyCommands(state *app.State) string {
 	commands := []botCmd{
 		{Command: "start", Description: "显示帮助与可用操作"},
 		{Command: "help", Description: "命令帮助"},
-		{Command: "buy", Description: "快速下单或抢购 [planCode] [dc]"},
+		{Command: "buy", Description: "快速下单或抢购 [planCode] [dc] [@account]"},
 		{Command: "watch", Description: "盯补货并抢购: /watch <planCode> [dc] [x数量]"},
 		{Command: "stock", Description: "查询库存并开抢: /stock <planCode>"},
 		{Command: "tasks", Description: "查看当前抢购任务队列"},
 		{Command: "accounts", Description: "查看与切换 OVH 账号"},
+		{Command: "subs", Description: "查看当前监控订阅列表"},
+		{Command: "cancel", Description: "取消抢购任务: /cancel <ID或all>"},
 		{Command: "queue", Description: "加入排队队列: /queue <planCode> [dc]"},
 		{Command: "monitor", Description: "添加库存监控: /monitor <planCode>"},
 		{Command: "price", Description: "查询价格: /price <planCode> <dc>"},

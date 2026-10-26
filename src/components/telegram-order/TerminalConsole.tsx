@@ -1,5 +1,8 @@
-import { MessageSquare, CheckCircle2, Info } from "lucide-react";
+import { useState } from "react";
+import { MessageSquare, CheckCircle2, Info, Copy, Check } from "lucide-react";
+import { toast } from "sonner";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 interface TerminalConsoleProps {
@@ -9,6 +12,17 @@ interface TerminalConsoleProps {
 }
 
 export function TerminalConsole({ selectedMode, lastResult, currentCommand }: TerminalConsoleProps) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    const textToCopy = lastResult?.message || lastResult?.error || "";
+    if (!textToCopy) return;
+    navigator.clipboard.writeText(textToCopy);
+    setCopied(true);
+    toast.success("响应内容已复制");
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
     <Card className="surface-card rounded-2xl border-border flex flex-col overflow-hidden shadow-sm">
       <CardHeader className="p-3 sm:p-4 pb-2.5 border-b border-border/40 flex flex-row items-center justify-between bg-secondary/30">
@@ -18,11 +32,24 @@ export function TerminalConsole({ selectedMode, lastResult, currentCommand }: Te
             <span className="w-2.5 h-2.5 rounded-full bg-amber-500/60" />
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/60" />
           </div>
-          <span className="text-xs font-mono font-medium text-foreground/80">tg-console</span>
+          <span className="text-xs font-mono font-medium text-foreground/80">tg-cloud-console</span>
         </div>
-        <span className="text-[10px] font-mono text-muted-foreground uppercase bg-secondary px-2 py-0.5 rounded border border-border/60">
-          {selectedMode}
-        </span>
+        <div className="flex items-center gap-2">
+          {lastResult && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleCopy}
+              className="h-6 px-2 text-[10px] text-muted-foreground hover:text-foreground gap-1"
+            >
+              {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+              <span>{copied ? "已复制" : "复制"}</span>
+            </Button>
+          )}
+          <span className="text-[10px] font-mono text-muted-foreground uppercase bg-secondary px-2 py-0.5 rounded border border-border/60">
+            {selectedMode}
+          </span>
+        </div>
       </CardHeader>
       <CardContent className="p-4 sm:p-5 flex-1 flex flex-col justify-start">
         {lastResult ? (
@@ -47,7 +74,7 @@ export function TerminalConsole({ selectedMode, lastResult, currentCommand }: Te
                 )}
                 <span>{lastResult.success ? "Bot 响应正常" : "执行异常"}</span>
               </div>
-              <p className="whitespace-pre-wrap leading-relaxed text-[11px] sm:text-xs">
+              <p className="whitespace-pre-wrap leading-relaxed text-[11px] sm:text-xs select-text">
                 {lastResult.message || lastResult.error}
               </p>
             </div>
@@ -84,3 +111,4 @@ export function TerminalConsole({ selectedMode, lastResult, currentCommand }: Te
     </Card>
   );
 }
+

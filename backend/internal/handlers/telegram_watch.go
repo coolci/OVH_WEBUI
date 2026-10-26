@@ -47,6 +47,7 @@ func watchText(state *app.State, mon *monitor.Monitor, args []string) string {
 	dcs := []string{}
 	quantity := 0
 	autoOrder := false
+	targetAccountRef := ""
 
 	for _, a := range args[1:] {
 		a = strings.TrimSpace(strings.ToLower(a))
@@ -61,13 +62,17 @@ func watchText(state *app.State, mon *monitor.Monitor, args []string) string {
 				continue
 			}
 		}
-		// 机房代码:3-4 位字母。写死长度是为了不把打错的参数当成机房
-		// 静默吞掉 —— 那会变成"盯了一个不存在的机房,永远等不到货"。
-		if len(a) >= 3 && len(a) <= 4 && isLowerAlpha(a) {
+		// @us / @1 = 指定下单账户
+		if strings.HasPrefix(a, "@") && len(a) > 1 {
+			targetAccountRef = a[1:]
+			continue
+		}
+		// 机房代码:3-4 位字母 或 par-a, tor 等
+		if isLowerAlpha(a) {
 			dcs = append(dcs, a)
 			continue
 		}
-		return fmt.Sprintf("看不懂参数 %q。机房是 3-4 位字母（gra / rbx / bhs…），数量写成 x2。\n\n发 /watch 看用法。", a)
+		return fmt.Sprintf("看不懂参数 %q。机房如 gra / rbx，数量如 x2，指定账户如 @us。\n\n发 /watch 看用法。", a)
 	}
 
 	// 自动下单必须落到一个具体账户。
@@ -78,22 +83,31 @@ func watchText(state *app.State, mon *monitor.Monitor, args []string) string {
 	accountID := ""
 	accLabel := ""
 	if autoOrder {
-		// 账户按 planCode 反推,不用"上次切到哪个" ——
-		// 订阅是要挂着长期跑的,落错区的表现是"永远等不到货",
-		// 而那和"这机器一直没补货"在界面上一模一样。
-		ra := resolveOrderAccount(state, mon, planCode)
-		if ra.Account.ID == "" {
-			return "要自动下单得先配置 OVH 账户。请到控制台「设置 → OVH 账户」添加，或者去掉 x<数量> 只接收通知。"
-		}
-		accountID = ra.Account.ID
-		accLabel = telegram.AccountLabel(ra.Account)
-		if ra.Confident {
-			accLabel += fmt.Sprintf("（%s 在它的目录里，已自动选定）", planCode)
+		if targetAccountRef != "" {
+			accs, err := resolveAccountRef(state, mon, targetAccountRef, planCode)
+			if err != "" {
+				return "❌ " + err
+			}
+			accountID = accs[0].ID
+			accLabel = fmt.Sprintf("%s (@%s 已指定)", telegram.AccountLabel(accs[0]), targetAccountRef)
 		} else {
-			// 判不出来不拒绝,但必须说 —— 订阅是挂着长期跑的,
-			// 落错区的表现是"永远等不到货",和"这机器一直没补货"在界面上一模一样。
-			accLabel += "\n⚠️ 没能确认 " + planCode + " 属于哪个区，用的是当前账户。" +
-				"\n   用错区的账户不会报错，只会一直抢不到。换账户发 /accounts。"
+			// 账户按 planCode 反推,不用"上次切到哪个" ——
+			// 订阅是要挂着长期跑的,落错区的表现是"永远等不到货",
+			// 而那和"这机器一直没补货"在界面上一模一样。
+			ra := resolveOrderAccount(state, mon, planCode)
+			if ra.Account.ID == "" {
+				return "要自动下单得先配置 OVH 账户。请到控制台「设置 → OVH 账户」添加，或者去掉 x<数量> 只接收通知。"
+			}
+			accountID = ra.Account.ID
+			accLabel = telegram.AccountLabel(ra.Account)
+			if ra.Confident {
+				accLabel += fmt.Sprintf("（%s 在它的目录里，已自动选定）", planCode)
+			} else {
+				// 判不出来不拒绝,但必须说 —— 订阅是挂着长期跑的,
+				// 落错区的表现是"永远等不到货",和"这机器一直没补货"在界面上一模一样。
+				accLabel += "\n⚠️ 没能确认 " + planCode + " 属于哪个区，用的是当前账户。" +
+					"\n   用错区的账户不会报错，只会一直抢不到。换账户发 /accounts。"
+			}
 		}
 	}
 
@@ -176,10 +190,18 @@ func unwatchText(state *app.State, mon *monitor.Monitor, args []string) string {
 }
 
 func isLowerAlpha(s string) bool {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if s == "par-a" || s == "par-b" || s == "par-c" {
+		return true
+	}
+	if strings.HasPrefix(s, "eu-west-") || strings.HasPrefix(s, "ca-east-") {
+		return true
+	}
 	for _, r := range s {
-		if r < 'a' || r > 'z' {
+		if (r < 'a' || r > 'z') && r != '-' {
 			return false
 		}
 	}
-	return len(s) > 0
+	return len(s) >= 3 && len(s) <= 15
 }
+

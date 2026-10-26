@@ -133,16 +133,20 @@ export function CommandReferenceCard() {
             </div>
             <ul className="text-muted-foreground space-y-1.5 text-[11px] leading-relaxed list-disc list-inside">
               <li>
-                <span className="text-foreground/90 font-medium">鉴权安全：</span>
-                仅在【系统设置】中授权的 <code className="font-mono text-primary bg-secondary/50 px-1 py-0.5 rounded">Chat ID</code> 可下单。
+                <span className="text-foreground/90 font-medium">多账户路由：</span>
+                支持在命令中指定 <code className="font-mono text-primary bg-secondary/50 px-1 py-0.5 rounded">@all</code>（全账户齐开抢）、<code className="font-mono text-primary bg-secondary/50 px-1 py-0.5 rounded">@us</code> / <code className="font-mono text-primary bg-secondary/50 px-1 py-0.5 rounded">@ie</code>（指定大区）或 <code className="font-mono text-primary bg-secondary/50 px-1 py-0.5 rounded">@1</code> / <code className="font-mono text-primary bg-secondary/50 px-1 py-0.5 rounded">@2</code>（指定序号）。
+              </li>
+              <li>
+                <span className="text-foreground/90 font-medium">智能大区推导：</span>
+                未指定账户时，系统会自动将型号在各账户目录中穿透检索，智能锁定对应的可用账户。
               </li>
               <li>
                 <span className="text-foreground/90 font-medium">机房代码：</span>
-                支持常用缩写如 <code className="font-mono text-primary bg-secondary/50 px-1 py-0.5 rounded">gra</code> / <code className="font-mono text-primary bg-secondary/50 px-1 py-0.5 rounded">rbx</code> / <code className="font-mono text-primary bg-secondary/50 px-1 py-0.5 rounded">bhs</code> / <code className="font-mono text-primary bg-secondary/50 px-1 py-0.5 rounded">sbg</code> / <code className="font-mono text-primary bg-secondary/50 px-1 py-0.5 rounded">waw</code>（不区分大小写）。
+                支持常用缩写如 <code className="font-mono text-primary bg-secondary/50 px-1 py-0.5 rounded">gra</code> / <code className="font-mono text-primary bg-secondary/50 px-1 py-0.5 rounded">rbx</code> / <code className="font-mono text-primary bg-secondary/50 px-1 py-0.5 rounded">bhs</code> / <code className="font-mono text-primary bg-secondary/50 px-1 py-0.5 rounded">par-a</code>（自动转换为官方 API 格式）。
               </li>
               <li>
-                <span className="text-foreground/90 font-medium">交互点选：</span>
-                在 Telegram 中发送 <code className="font-mono text-primary bg-secondary/50 px-1 py-0.5 rounded">/start</code> 或 <code className="font-mono text-primary bg-secondary/50 px-1 py-0.5 rounded">/buy</code> 亦可展开多级菜单点选。
+                <span className="text-foreground/90 font-medium">鉴权安全：</span>
+                仅在【系统设置】中授权的 <code className="font-mono text-primary bg-secondary/50 px-1 py-0.5 rounded">Chat ID</code> 可下单。
               </li>
             </ul>
           </div>

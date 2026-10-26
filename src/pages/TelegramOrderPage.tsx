@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Helmet } from "react-helmet-async";
 import {
   CloudLightning, Loader2, Wifi, WifiOff, RefreshCw, Settings2,
-  Info, Copy, CheckCircle2, Send,
+  Info, Copy, CheckCircle2, Send, Terminal, Play, Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -23,6 +23,7 @@ import {
 } from "@/components/telegram-order/types";
 import { api } from "@/lib/api";
 import { useServers } from "@/hooks/use-servers";
+import { useAccounts } from "@/hooks/use-accounts";
 import { useAvailability, buildAvailabilityMap } from "@/hooks/use-availability";
 import { useTelegramPollerStatus } from "@/hooks/use-settings";
 import { mergeDcAvailability } from "@/lib/datacenters";
@@ -30,12 +31,20 @@ import { cn } from "@/lib/utils";
 
 const TelegramOrderPage = () => {
   const { data: servers } = useServers();
+  const { data: accounts } = useAccounts();
   const availQ = useAvailability();
   const availMap = useMemo(() => buildAvailabilityMap(availQ.data), [availQ.data]);
-  const [selectedMode, setSelectedMode] = useState<OrderMode['mode']>('stock');
+
+  const [selectedMode, setSelectedMode] = useState<OrderMode['mode']>('buy');
   const [planCode, setPlanCode] = useState('');
   const [datacenter, setDatacenter] = useState('');
   const [quantity, setQuantity] = useState(1);
+  const [accountRef, setAccountRef] = useState<string>('');
+
+  // 命令行直接输入
+  const [rawInput, setRawInput] = useState<string>('');
+  const [isExecutingRaw, setIsExecutingRaw] = useState(false);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [lastResult, setLastResult] = useState<any>(null);
   const [copied, setCopied] = useState(false);
@@ -73,7 +82,7 @@ const TelegramOrderPage = () => {
     try {
       const result = await api.registerTelegramCommands();
       if (result.success) {
-        toast.success("Bot 命令菜单已注册（/buy /stock 等）");
+        toast.success("Bot 命令菜单已注册（/buy /stock /tasks /accounts /subs 等）");
       } else {
         toast.error(result.error || "注册失败");
       }
@@ -107,13 +116,19 @@ const TelegramOrderPage = () => {
   };
 
   const repeatCommand = (item: CommandHistory) => {
+    if (item.command?.startsWith("/")) {
+      setRawInput(item.command);
+    }
     setSelectedMode(item.mode as OrderMode['mode']);
-    setPlanCode(item.planCode);
-    setDatacenter(item.datacenter || '');
+    if (item.planCode) setPlanCode(item.planCode);
+    if (item.datacenter) setDatacenter(item.datacenter);
     toast.success("已加载历史命令配置");
   };
 
   const generateCommand = () => {
+    if (selectedMode === 'tasks' || selectedMode === 'accounts' || selectedMode === 'subs') {
+      return `/${selectedMode}`;
+    }
     let cmd = `/${selectedMode} ${planCode}`;
     if (datacenter && (selectedMode === 'queue' || selectedMode === 'price' || selectedMode === 'buy' || selectedMode === 'watch')) {
       cmd += ` ${datacenter}`;
@@ -122,6 +137,9 @@ const TelegramOrderPage = () => {
       cmd += ` ${quantity}`;
     } else if (selectedMode === 'watch' && quantity > 0) {
       cmd += ` x${quantity}`;
+    }
+    if (accountRef) {
+      cmd += ` @${accountRef.replace(/^@/, '')}`;
     }
     return cmd;
   };
@@ -133,8 +151,39 @@ const TelegramOrderPage = () => {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // 1) 交互命令行直接执行
+  const handleExecuteRaw = async (cmdToRun?: string) => {
+    const targetCmd = (cmdToRun || rawInput).trim();
+    if (!targetCmd) {
+      toast.error("请输入要执行的指令");
+      return;
+    }
+    setIsExecutingRaw(true);
+    try {
+      const result = await api.telegramQuickOrder({
+        rawCommand: targetCmd,
+      });
+      setLastResult(result);
+      addToHistory(targetCmd, result.mode || 'cli', '', undefined, result.success);
+
+      if (result.success) {
+        toast.success(result.message?.split('\n')[0] || "指令执行成功");
+      } else {
+        toast.error(result.error || "指令执行失败");
+      }
+    } catch (error: any) {
+      toast.error(`请求失败: ${error.message}`);
+      setLastResult({ success: false, error: error.message, command: targetCmd });
+      addToHistory(targetCmd, 'cli', '', undefined, false);
+    } finally {
+      setIsExecutingRaw(false);
+    }
+  };
+
+  // 2) 结构化表单提交
   const handleSubmit = async () => {
-    if (!planCode) {
+    const isGlobalQuery = selectedMode === 'tasks' || selectedMode === 'accounts' || selectedMode === 'subs';
+    if (!isGlobalQuery && !planCode) {
       toast.error("请选择服务器型号");
       return;
     }
@@ -149,28 +198,30 @@ const TelegramOrderPage = () => {
     try {
       const result = await api.telegramQuickOrder({
         mode: selectedMode,
-        planCode,
+        planCode: isGlobalQuery ? undefined : planCode,
         datacenter: datacenter || undefined,
         quantity: selectedMode === 'buy' || selectedMode === 'watch' ? quantity : undefined,
+        accountRef: accountRef || undefined,
       });
 
       setLastResult(result);
       addToHistory(command, selectedMode, planCode, datacenter || undefined, result.success);
 
       if (result.success) {
-        toast.success(result.message || "操作成功");
+        toast.success(result.message?.split('\n')[0] || "操作成功");
       } else {
         toast.error(result.error || "操作失败");
       }
     } catch (error: any) {
       toast.error(`请求失败: ${error.message}`);
-      setLastResult({ success: false, error: error.message });
+      setLastResult({ success: false, error: error.message, command });
       addToHistory(command, selectedMode, planCode, datacenter || undefined, false);
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  const isGlobalMode = selectedMode === 'tasks' || selectedMode === 'accounts' || selectedMode === 'subs';
   const allowDatacenter = selectedMode === 'queue' || selectedMode === 'price' || selectedMode === 'buy' || selectedMode === 'watch';
   const needsDatacenter = selectedMode === 'queue' || selectedMode === 'price' || selectedMode === 'buy';
   const isPollerConnected = !!(
@@ -183,19 +234,29 @@ const TelegramOrderPage = () => {
     poller.data?.polling?.botUsername ||
     poller.data?.poller?.botUsername;
 
+  const quickShortcuts = [
+    { label: "⚡ /buy @all 全开抢", cmd: "/buy 24sk102 gra 1 @all" },
+    { label: "📦 /stock 查库存", cmd: "/stock 24ska01" },
+    { label: "📋 /tasks 抢购队列", cmd: "/tasks" },
+    { label: "👤 /accounts 账号矩阵", cmd: "/accounts" },
+    { label: "📡 /subs 监控列表", cmd: "/subs" },
+    { label: "⏱️ /interval 查看间隔", cmd: "/interval" },
+    { label: "🛑 /cancel all 停止全部", cmd: "/cancel all" },
+  ];
+
   return (
     <>
       <Helmet>
-        <title>云下单 | OVH Sniper</title>
-        <meta name="description" content="云端快捷指令下单" />
+        <title>云下单 (Telegram Bot 交互) | OVH Sniper</title>
+        <meta name="description" content="云端交互式快捷指令下单与多账户调度" />
       </Helmet>
 
       <AppLayout>
         <div className="space-y-4 sm:space-y-6">
           <PageHeader
             icon={CloudLightning}
-            title="云下单"
-            description="网页演练云端与 Bot 相同的快捷命令 · 设置填写 Token 和 Chat ID"
+            title="云下单 (Telegram Bot 交互中心)"
+            description="全功能云端与 Bot 相同的快捷交互指令 · 多账户调度 (@all / @zone) · 毫秒级任务入队"
             action={
               <div className="flex items-center gap-2">
                 {poller.isFetching && !poller.data ? (
@@ -247,6 +308,66 @@ const TelegramOrderPage = () => {
             }
           />
 
+          {/* 交互命令行直接输入卡片 */}
+          <Card className="surface-card rounded-xl border-border bg-gradient-to-r from-secondary/40 via-secondary/20 to-secondary/40 shadow-sm overflow-hidden">
+            <CardContent className="p-3 sm:p-4 space-y-2.5">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <div className="flex items-center gap-2 flex-1 relative">
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-primary pointer-events-none">
+                    <Terminal className="h-4 w-4" />
+                    <span className="font-mono text-xs font-bold text-muted-foreground">›</span>
+                  </div>
+                  <Input
+                    value={rawInput}
+                    onChange={(e) => setRawInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        void handleExecuteRaw();
+                      }
+                    }}
+                    placeholder="键入任意指令，如 /buy 24sk102 gra 1 @all 或 /tasks 或 /accounts 或 24sk102 gra 1..."
+                    className="h-9 pl-9 pr-3 text-xs sm:text-sm font-mono bg-background/80 border-border/80 focus-visible:ring-1 focus-visible:ring-primary rounded-lg"
+                  />
+                </div>
+                <Button
+                  size="sm"
+                  onClick={() => void handleExecuteRaw()}
+                  disabled={isExecutingRaw || !rawInput.trim()}
+                  className="h-9 px-4 text-xs font-medium gap-1.5 rounded-lg flex-shrink-0 shadow-sm"
+                >
+                  {isExecutingRaw ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Play className="h-3.5 w-3.5 fill-current" />
+                  )}
+                  <span>执行指令</span>
+                </Button>
+              </div>
+
+              {/* 快捷预设指令 Chips */}
+              <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                <span className="text-[10px] text-muted-foreground flex items-center gap-1 mr-1">
+                  <Sparkles className="h-3 w-3 text-primary" />
+                  <span>快捷预设:</span>
+                </span>
+                {quickShortcuts.map((sc) => (
+                  <button
+                    key={sc.cmd}
+                    type="button"
+                    onClick={() => {
+                      setRawInput(sc.cmd);
+                      void handleExecuteRaw(sc.cmd);
+                    }}
+                    className="px-2 py-0.5 rounded-md text-[11px] font-mono border border-border/80 bg-background/60 hover:bg-secondary hover:text-foreground text-muted-foreground transition-colors"
+                  >
+                    {sc.label}
+                  </button>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
           {/* 模式选择网格 */}
           <OrderModeGrid selectedMode={selectedMode} onSelectMode={setSelectedMode} />
 
@@ -272,96 +393,136 @@ const TelegramOrderPage = () => {
                   </div>
                 </div>
 
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs font-medium">服务器型号 *</Label>
-                    <div className="flex items-center gap-1 flex-wrap">
-                      <span className="text-[10px] text-muted-foreground mr-0.5">常用:</span>
-                      {["24sk102", "24sk202", "24sk40-v1", "24sk602"].map((code) => (
-                        <button
-                          key={code}
-                          type="button"
-                          onClick={() => setPlanCode(code)}
-                          className={cn(
-                            "px-1.5 py-0.5 rounded text-[10px] font-mono border transition-colors",
-                            planCode === code
-                              ? "bg-primary text-primary-foreground border-primary font-bold shadow-sm"
-                              : "bg-secondary/60 hover:bg-secondary border-border text-muted-foreground hover:text-foreground"
+                {isGlobalMode ? (
+                  <div className="p-4 rounded-xl border border-dashed border-border/80 bg-secondary/20 text-center space-y-2 py-8">
+                    <div className="mx-auto w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                      {currentMode.icon}
+                    </div>
+                    <p className="text-xs font-medium text-foreground">全局状态透视指令</p>
+                    <p className="text-[11px] text-muted-foreground max-w-xs mx-auto">
+                      此模式直接从系统实时获取运行状态，无需指定服务器型号或机房。
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs font-medium">服务器型号 *</Label>
+                        <div className="flex items-center gap-1 flex-wrap">
+                          <span className="text-[10px] text-muted-foreground mr-0.5">常用:</span>
+                          {["24sk102", "24sk202", "24sk40-v1", "24sk602"].map((code) => (
+                            <button
+                              key={code}
+                              type="button"
+                              onClick={() => setPlanCode(code)}
+                              className={cn(
+                                "px-1.5 py-0.5 rounded text-[10px] font-mono border transition-colors",
+                                planCode === code
+                                  ? "bg-primary text-primary-foreground border-primary font-bold shadow-sm"
+                                  : "bg-secondary/60 hover:bg-secondary border-border text-muted-foreground hover:text-foreground"
+                              )}
+                            >
+                              {code}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <PlanCodeCombobox
+                        value={planCode}
+                        onChange={setPlanCode}
+                        servers={servers || []}
+                        placeholder="输入或搜索型号，例如 24sk102"
+                      />
+                    </div>
+
+                    {allowDatacenter && (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs font-medium">
+                            选择机房 {needsDatacenter ? "*" : "（可选，不选则盯所有机房）"}
+                          </Label>
+                          {selectedMode === 'watch' && datacenter && (
+                            <button
+                              type="button"
+                              onClick={() => setDatacenter('')}
+                              className="text-[11px] text-muted-foreground hover:text-primary transition-colors"
+                            >
+                              清除机房限制
+                            </button>
                           )}
-                        >
-                          {code}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <PlanCodeCombobox
-                    value={planCode}
-                    onChange={setPlanCode}
-                    servers={servers || []}
-                    placeholder="输入或搜索型号，例如 24sk102"
-                  />
-                </div>
+                        </div>
+                        <DatacenterPicker
+                          multiple={false}
+                          value={datacenter ? [datacenter] : []}
+                          onChange={(codes) => setDatacenter(codes[0] || "")}
+                          availability={dcAvailability}
+                          disabled={!planCode.trim()}
+                          placeholder={selectedMode === 'watch' ? "默认盯全部机房，也可点选指定机房。" : "请先选择服务器型号，再点选机房。"}
+                        />
+                      </div>
+                    )}
 
-                {allowDatacenter && (
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-xs font-medium">
-                        选择机房 {needsDatacenter ? "*" : "（可选，不选则盯所有机房）"}
-                      </Label>
-                      {selectedMode === 'watch' && datacenter && (
-                        <button
-                          type="button"
-                          onClick={() => setDatacenter('')}
-                          className="text-[11px] text-muted-foreground hover:text-primary transition-colors"
-                        >
-                          清除机房限制
-                        </button>
-                      )}
+                    {/* 下单账户与多账户路由 */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs font-medium">下单账户 / 路由策略</Label>
+                        <span className="text-[10px] text-muted-foreground font-mono">
+                          {accountRef ? (accountRef === "all" ? "@all 全账户" : `@${accountRef}`) : "智能大区推导"}
+                        </span>
+                      </div>
+                      <select
+                        value={accountRef}
+                        onChange={(e) => setAccountRef(e.target.value)}
+                        className="w-full h-8 px-2.5 rounded-lg text-xs bg-background/50 border border-border/80 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                      >
+                        <option value="">✨ 智能大区推导（自动识别型号所属大区账号）</option>
+                        <option value="all">🚀 全账户并发开抢（@all - 全部可用账户同时抢购）</option>
+                        {(accounts || []).map((acc, idx) => {
+                          const zone = (acc.zone || "EU").toUpperCase();
+                          return (
+                            <option key={acc.id} value={`${idx + 1}`}>
+                              👤 {acc.name}（@{idx + 1} · {zone}区 {acc.isDefault ? "★默认" : ""}）
+                            </option>
+                          );
+                        })}
+                      </select>
                     </div>
-                    <DatacenterPicker
-                      multiple={false}
-                      value={datacenter ? [datacenter] : []}
-                      onChange={(codes) => setDatacenter(codes[0] || "")}
-                      availability={dcAvailability}
-                      disabled={!planCode.trim()}
-                      placeholder={selectedMode === 'watch' ? "默认盯全部机房，也可点选指定机房。" : "请先选择服务器型号，再点选机房。"}
-                    />
-                  </div>
+
+                    {selectedMode === 'buy' && (
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-medium">购买数量</Label>
+                        <Input
+                          type="number"
+                          min={1}
+                          max={10}
+                          value={quantity}
+                          onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
+                          className="h-8 rounded-lg text-xs bg-background/50 border-border/80"
+                        />
+                      </div>
+                    )}
+
+                    {selectedMode === 'watch' && (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs font-medium">自动抢购数量（可选）</Label>
+                          <span className="text-[11px] text-muted-foreground">0 为仅通知，≥1 补货自动下单</span>
+                        </div>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={10}
+                          value={quantity}
+                          onChange={(e) => setQuantity(Math.max(0, parseInt(e.target.value) || 0))}
+                          placeholder="0 = 仅发通知，1 = 自动抢 1 台"
+                          className="h-8 rounded-lg text-xs bg-background/50 border-border/80"
+                        />
+                      </div>
+                    )}
+                  </>
                 )}
 
-                {selectedMode === 'buy' && (
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-medium">购买数量</Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={10}
-                      value={quantity}
-                      onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
-                      className="h-8 rounded-lg text-xs bg-background/50 border-border/80"
-                    />
-                  </div>
-                )}
-
-                {selectedMode === 'watch' && (
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-xs font-medium">自动抢购数量（可选）</Label>
-                      <span className="text-[11px] text-muted-foreground">0 为仅通知，≥1 补货自动下单</span>
-                    </div>
-                    <Input
-                      type="number"
-                      min={0}
-                      max={10}
-                      value={quantity}
-                      onChange={(e) => setQuantity(Math.max(0, parseInt(e.target.value) || 0))}
-                      placeholder="0 = 仅发通知，1 = 自动抢 1 台"
-                      className="h-8 rounded-lg text-xs bg-background/50 border-border/80"
-                    />
-                  </div>
-                )}
-
-                {planCode && (
+                {(planCode || isGlobalMode) && (
                   <div className="space-y-1.5">
                     <Label className="text-xs font-medium">生成的快捷命令</Label>
                     <div className="flex items-center gap-2">
@@ -388,7 +549,7 @@ const TelegramOrderPage = () => {
                 <Button
                   className="w-full h-9 rounded-lg font-medium text-xs gap-1.5 mt-2"
                   onClick={handleSubmit}
-                  disabled={isSubmitting || !planCode}
+                  disabled={isSubmitting || (!isGlobalMode && !planCode)}
                 >
                   {isSubmitting ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />

@@ -170,3 +170,68 @@ func addTestAccount(t *testing.T, st *app.State) {
 		t.Fatalf("重载账户失败: %v", err)
 	}
 }
+
+func TestWatchWithAccountAndParADatacenter(t *testing.T) {
+	st, mon := newWatchTestMonitor(t)
+	addTestAccount(t, st)
+
+	out := watchText(st, mon, []string{"24sk602", "par-a", "@ie", "x1"})
+	if !strings.Contains(out, "PAR-A") {
+		t.Fatalf("par-a 应被成功解析为数据中心：\n%s", out)
+	}
+	if !strings.Contains(out, "@ie") && !strings.Contains(out, "测试账户") {
+		t.Fatalf("指定账户 @ie 应当被解析生效：\n%s", out)
+	}
+	subs := mon.Snapshot()
+	if len(subs) != 1 || len(subs[0].Datacenters) != 1 || subs[0].Datacenters[0] != "par-a" {
+		t.Fatalf("订阅机房应该是 par-a: %+v", subs)
+	}
+	if subs[0].AutoOrderAccountID != "acc-test" {
+		t.Fatalf("自动下单账户应当落到 acc-test: %s", subs[0].AutoOrderAccountID)
+	}
+}
+
+func TestDispatchTelegramExtendedCommands(t *testing.T) {
+	st, mon := newWatchTestMonitor(t)
+	addTestAccount(t, st)
+
+	// 1) /accounts
+	cmdAcc := telegram.ParseBotCommand("/accounts")
+	replyAcc := dispatchTelegramCommand(st, mon, cmdAcc)
+	if !strings.Contains(replyAcc, "测试账户") || !strings.Contains(replyAcc, "@ie") {
+		t.Fatalf("/accounts 回复未正确列出账户矩阵：\n%s", replyAcc)
+	}
+
+	// 2) /tasks
+	cmdTasks := telegram.ParseBotCommand("/tasks")
+	replyTasks := dispatchTelegramCommand(st, mon, cmdTasks)
+	if !strings.Contains(replyTasks, "当前没有任何进行中的抢购任务") {
+		t.Fatalf("/tasks 空队列回复不正确：\n%s", replyTasks)
+	}
+
+	// 3) /subs
+	cmdSubs := telegram.ParseBotCommand("/subs")
+	replySubs := dispatchTelegramCommand(st, mon, cmdSubs)
+	if !strings.Contains(replySubs, "当前没有任何监控订阅") {
+		t.Fatalf("/subs 空订阅回复不正确：\n%s", replySubs)
+	}
+
+	// 4) /cancel
+	cmdCancel := telegram.ParseBotCommand("/cancel all")
+	replyCancel := dispatchTelegramCommand(st, mon, cmdCancel)
+	if !strings.Contains(replyCancel, "没有任何运行中或排队中的任务") {
+		t.Fatalf("/cancel all 空任务回复不正确：\n%s", replyCancel)
+	}
+}
+
+func TestBuildTelegramCommandArgsAccountAndDC(t *testing.T) {
+	args, err := buildTelegramCommandArgs("buy", "24sk102", "par-a", 2, []string{"ram-64g", "softraid-2x960ssd"}, "ie")
+	if err != "" {
+		t.Fatalf("unexpected error: %s", err)
+	}
+	joined := strings.Join(args, " ")
+	if !strings.Contains(joined, "24sk102") || !strings.Contains(joined, "par-a") || !strings.Contains(joined, "2") || !strings.Contains(joined, "@ie") {
+		t.Fatalf("args missing components: %v", args)
+	}
+}
+
