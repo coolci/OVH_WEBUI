@@ -155,18 +155,11 @@ func Middleware(cfg Config) gin.HandlerFunc {
 	}
 }
 
+// resolveClientIP 失败限流的计数键。
+//
+// 必须用 gin 的 ClientIP():它只在请求来自 TRUSTED_PROXIES 声明的代理时才读
+// X-Forwarded-For / X-Real-IP。以前这里直接信任这两个头 —— 任何人每次请求换一个
+// 伪造的 X-Real-IP,就能绕过"连续猜错锁定",无限次爆破 API 密钥。
 func resolveClientIP(c *gin.Context) string {
-	if xrip := strings.TrimSpace(c.GetHeader("X-Real-IP")); xrip != "" {
-		return xrip
-	}
-	if xff := strings.TrimSpace(c.GetHeader("X-Forwarded-For")); xff != "" {
-		parts := strings.Split(xff, ",")
-		if len(parts) > 0 {
-			ip := strings.TrimSpace(parts[0])
-			if ip != "" {
-				return ip
-			}
-		}
-	}
 	return c.ClientIP()
 }

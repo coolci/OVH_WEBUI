@@ -81,7 +81,7 @@ export function QueueRow({ item, onToggle, onDelete, onEdit }: QueueRowProps) {
             {item.status === "failed" ? (
               <span>已停止重试（原因见抢购历史）</span>
             ) : item.status === "completed" ? (
-              <span>已完成</span>
+              <span>已下单{item.orderId ? `（订单 #${item.orderId}）` : ""}</span>
             ) : (
               <span className="inline-flex items-center gap-1">
                 下次尝试

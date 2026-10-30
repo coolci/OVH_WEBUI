@@ -64,7 +64,8 @@ func (s *Supervisor) Start() {
 	})
 
 	// 5. 自动启动监控（按需）
-	if mon != nil && len(mon.Snapshot()) > 0 {
+	// 用户手动停止过监控的话,重启后保持停止(AutoStartAllowed 读库失败时也不自动恢复)
+	if mon != nil && len(mon.Snapshot()) > 0 && mon.AutoStartAllowed() {
 		mon.Start()
 		state.Logger.Info("自动启动服务器监控", "system")
 	}

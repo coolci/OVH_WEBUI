@@ -471,8 +471,9 @@ type CredentialVerificationResult struct {
 
 // verifyAccountCreds 用账户凭据调 OVH /me 验证有效。
 // PRD D-01: 精确提取错误码并输出 remediation 与证据。
+// 用隔离 client:go-ovh 共享实例并发调用会写 http.Client.Timeout,存在数据竞争。
 func verifyAccountCreds(state *app.State, accountID string) CredentialVerificationResult {
-	cli, err := state.OVH.ClientFor(accountID)
+	cli, err := state.OVH.IsolatedClientFor(accountID)
 	if err != nil {
 		detail := err.Error()
 		_ = state.AccountService.UpdateCredState(accountID, "invalid", types.NowISO(), detail)

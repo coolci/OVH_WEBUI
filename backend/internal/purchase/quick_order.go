@@ -300,8 +300,13 @@ func EnqueueQuickOrder(state *app.State, params QuickOrderParams) *QuickOrderRes
 		Priority:      100,
 	}
 
-	// 落库与入队
-	if err := state.EnqueueItems([]types.QueueItem{item}, true); err != nil {
+	// 落库与入队。监控触发的走 EnqueueAutomaticItems:用户暂停/删除过的同账户/型号/机房、
+	// 已暂停的订阅或全局停止的监控,都不允许被监控重新建单。
+	enqueue := state.EnqueueItems
+	if params.FromMonitor {
+		enqueue = state.EnqueueAutomaticItems
+	}
+	if err := enqueue([]types.QueueItem{item}, true); err != nil {
 		state.Logger.Error("自动下单任务落库失败,已撤回: "+err.Error(), "queue")
 		return &QuickOrderResult{
 			Success:    false,

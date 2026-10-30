@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/http";
 import { qk } from "@/lib/query";
 
@@ -33,6 +33,14 @@ export interface EmailHistoryEntry {
 }
 
 import { useActiveAccount } from "./use-active-account";
+import { useDefaultAccount } from "./use-accounts";
+
+/** 当前账户的实际 ID:"跟随默认账户"也解析成具体 ID,付款/聊天必须钉在真实账户上。 */
+export function useAccountScope(): string {
+  const [selected] = useActiveAccount();
+  const fallback = useDefaultAccount();
+  return selected || fallback?.id || "";
+}
 
 /** OVH 账户信息（后端直接返回 OVH /me 字段） */
 export function useAccountInfo() {
@@ -62,7 +70,12 @@ export function useEmails() {
 }
 
 export interface OrderRecord {
+  /** 后端固定的实际下单账户(不随查询期间默认账户变化) */
+  accountId?: string;
   orderId?: number | string;
+  /** OVH /me/order/{id}/status;notPaid 时可发起付款 */
+  orderStatus?: string;
+  paymentStatusError?: string;
   date?: string;
   expirationDate?: string;
   password?: string;
@@ -90,6 +103,54 @@ export function useOrders(limit = 30) {
         return (data as any).orders as OrderRecord[];
       }
       return [] as OrderRecord[];
+    },
+  });
+}
+
+export interface OrderPaymentInfo {
+  accountId: string;
+  accountName: string;
+  orderId: number;
+  status: string;
+  amount: number | null;
+  currency: string;
+  priceText: string;
+  attempted: boolean;
+  methods: { id: number; type: string; label: string; default: boolean }[];
+}
+
+/** 打开付款窗口时只读取可用方式,不产生付款请求。 */
+export function useOrderPaymentInfo(accountId: string, orderId: number, open: boolean) {
+  return useQuery({
+    queryKey: qk.account.orderPayment(accountId, orderId),
+    queryFn: async () =>
+      (await api.get<OrderPaymentInfo>(`/ovh/account/orders/${orderId}/payment`, { params: { account: accountId } })).data,
+    enabled: open && !!accountId,
+    staleTime: 0,
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+}
+
+/** 手动付款不自动重试(重试可能重复扣款);任何结果都刷新订单和付款登记。 */
+export function usePayAccountOrder(orderId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: {
+      accountId: string;
+      paymentMethodId: number;
+      paymentType: string;
+      amount: number;
+      currency: string;
+      confirm: true;
+    }) => {
+      const { accountId: pinnedAccount, ...payload } = body;
+      return (await api.post(`/ovh/account/orders/${orderId}/pay`, payload, { params: { account: pinnedAccount } })).data;
+    },
+    retry: false,
+    onSettled: () => {
+      // 订单列表的 key 用的是"选中账户"(可能为空=默认),这里直接刷新整个 account 域
+      qc.invalidateQueries({ queryKey: ["account"] });
     },
   });
 }

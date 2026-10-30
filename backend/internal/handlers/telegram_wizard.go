@@ -466,34 +466,30 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 			if taskID == "" {
 				taskID = short
 			}
-			state.QueueMu.Lock()
 			var cancelledItem *types.QueueItem
-			var remaining []types.QueueItem
-			newQueue := make([]types.QueueItem, 0, len(state.Queue))
-			for _, it := range state.Queue {
-				if it.ID == taskID || strings.HasPrefix(it.ID, taskID) {
-					cp := it
-					cancelledItem = &cp
-					continue
+			var removeErr error
+			if id, ok := state.ResolveQueueID(taskID); ok {
+				removed, err := state.RemoveQueueItemsWhere(func(it types.QueueItem) bool { return it.ID == id })
+				removeErr = err
+				if len(removed) > 0 {
+					cancelledItem = &removed[0]
 				}
-				newQueue = append(newQueue, it)
 			}
-			state.Queue = newQueue
-			if cancelledItem != nil {
-				for _, it := range state.Queue {
+			if cancelledItem == nil {
+				telegram.AnswerCallback(state, cbID, "该任务已不存在或已结束", true)
+				return true
+			}
+			if removeErr != nil {
+				state.Logger.Error("Telegram 取消任务后保存队列失败: "+removeErr.Error(), "telegram")
+			}
+			var remaining []types.QueueItem
+			if cancelledItem.TelegramMessageID != 0 {
+				for _, it := range state.QueueSnapshot() {
 					if it.TelegramMessageID == cancelledItem.TelegramMessageID && (it.Status == "running" || it.Status == "pending" || it.Status == "paused") {
 						remaining = append(remaining, it)
 					}
 				}
 			}
-			state.QueueMu.Unlock()
-
-			if cancelledItem == nil {
-				telegram.AnswerCallback(state, cbID, "该任务已不存在或已结束", true)
-				return true
-			}
-			state.MarkTaskDeleted(cancelledItem.ID)
-			_ = state.SaveQueue()
 			dcName := telegram.DisplayDC(cancelledItem.Datacenter)
 
 			if len(remaining) > 0 {
@@ -542,27 +538,13 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 			if targetMsgID == 0 {
 				targetMsgID = messageID
 			}
-			state.QueueMu.Lock()
-			count := 0
-			var planCode string
-			newQueue := make([]types.QueueItem, 0, len(state.Queue))
-			var deletedIDs []string
-			for _, it := range state.Queue {
-				if it.TelegramMessageID == targetMsgID {
-					count++
-					planCode = it.PlanCode
-					deletedIDs = append(deletedIDs, it.ID)
-					continue
-				}
-				newQueue = append(newQueue, it)
+			removed, err := state.RemoveQueueItemsWhere(func(it types.QueueItem) bool { return it.TelegramMessageID == targetMsgID })
+			if err != nil {
+				state.Logger.Error("Telegram 取消任务后保存队列失败: "+err.Error(), "telegram")
 			}
-			state.Queue = newQueue
-			state.QueueMu.Unlock()
-			for _, id := range deletedIDs {
-				state.MarkTaskDeleted(id)
-			}
+			count := len(removed)
 			if count > 0 {
-				_ = state.SaveQueue()
+				planCode := removed[0].PlanCode
 				telegram.AnswerCallback(state, cbID, fmt.Sprintf("已取消本次全部 %d 个任务", count), false)
 				text := fmt.Sprintf("🛑 抢购任务已全部取消\n\n📦 型号: %s\n📊 状态: 本次创建的 %d 个抢购任务已全部终止", planCode, count)
 				_ = telegram.EditMessage(state, chatID, messageID, text, telegram.EmptyInlineKeyboard())
@@ -574,27 +556,14 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 		}
 
 		if subAct == "all" {
-			state.QueueMu.Lock()
-			count := 0
-			newQueue := make([]types.QueueItem, 0, len(state.Queue))
-			var deletedIDs []string
 			chatStr := telegram.ChatIDString(chatID)
-			for _, it := range state.Queue {
-				if it.TelegramMessageID == messageID || (chatStr != "" && it.TelegramChatID == chatStr) {
-					count++
-					deletedIDs = append(deletedIDs, it.ID)
-					continue
-				}
-				newQueue = append(newQueue, it)
+			removed, err := state.RemoveQueueItemsWhere(func(it types.QueueItem) bool {
+				return it.TelegramMessageID == messageID || (chatStr != "" && it.TelegramChatID == chatStr)
+			})
+			if err != nil {
+				state.Logger.Error("Telegram 取消任务后保存队列失败: "+err.Error(), "telegram")
 			}
-			state.Queue = newQueue
-			state.QueueMu.Unlock()
-			for _, id := range deletedIDs {
-				state.MarkTaskDeleted(id)
-			}
-			if count > 0 {
-				_ = state.SaveQueue()
-			}
+			count := len(removed)
 			telegram.AnswerCallback(state, cbID, fmt.Sprintf("已终止 %d 个抢购任务", count), false)
 			_ = telegram.EditMessage(state, chatID, messageID, fmt.Sprintf("🛑 已终止并取消当前会话的 %d 个抢购任务。", count), telegram.EmptyInlineKeyboard())
 			return true
@@ -604,22 +573,17 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 		if taskID == "" {
 			taskID = subAct
 		}
-		state.QueueMu.Lock()
 		var foundItem *types.QueueItem
-		newQueue := make([]types.QueueItem, 0, len(state.Queue))
-		for _, it := range state.Queue {
-			if it.ID == taskID || strings.HasPrefix(it.ID, taskID) {
-				cp := it
-				foundItem = &cp
-				continue
+		if id, ok := state.ResolveQueueID(taskID); ok {
+			removed, err := state.RemoveQueueItemsWhere(func(it types.QueueItem) bool { return it.ID == id })
+			if err != nil {
+				state.Logger.Error("Telegram 取消任务后保存队列失败: "+err.Error(), "telegram")
 			}
-			newQueue = append(newQueue, it)
+			if len(removed) > 0 {
+				foundItem = &removed[0]
+			}
 		}
-		state.Queue = newQueue
-		state.QueueMu.Unlock()
 		if foundItem != nil {
-			state.MarkTaskDeleted(foundItem.ID)
-			_ = state.SaveQueue()
 			telegram.AnswerCallback(state, cbID, "抢购任务已取消", false)
 			text := fmt.Sprintf("🛑 抢购任务已取消\n\n📦 型号: %s\n📍 机房: %s\nℹ️ 说明: 用户已在 Telegram 中取消了此任务",
 				foundItem.PlanCode, telegram.DisplayDCFull(foundItem.Datacenter))
@@ -641,17 +605,9 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 			return true
 		}
 		if target == "all" {
-			state.QueueMu.Lock()
-			ids := make([]string, 0, len(state.Queue))
-			for _, it := range state.Queue {
-				ids = append(ids, it.ID)
+			if _, err := state.ClearQueueItems(); err != nil {
+				state.Logger.Error("Telegram 清空队列后保存失败: "+err.Error(), "telegram")
 			}
-			state.Queue = nil
-			state.QueueMu.Unlock()
-			for _, id := range ids {
-				state.MarkTaskDeleted(id)
-			}
-			_ = state.SaveQueue()
 			telegram.AnswerCallback(state, cbID, "已清空队列", false)
 			showTasks(state, chatID, messageID, true)
 			return true
@@ -660,25 +616,15 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 		if taskID == "" {
 			taskID = target
 		}
-		state.QueueMu.Lock()
 		found := false
-		var deletedID string
-		newQueue := make([]types.QueueItem, 0, len(state.Queue))
-		for _, it := range state.Queue {
-			if it.ID == taskID || strings.HasPrefix(it.ID, taskID) {
-				found = true
-				deletedID = it.ID
-				continue
+		if id, ok := state.ResolveQueueID(taskID); ok {
+			removed, err := state.RemoveQueueItemsWhere(func(it types.QueueItem) bool { return it.ID == id })
+			if err != nil {
+				state.Logger.Error("Telegram 取消任务后保存队列失败: "+err.Error(), "telegram")
 			}
-			newQueue = append(newQueue, it)
+			found = len(removed) > 0
 		}
-		state.Queue = newQueue
-		state.QueueMu.Unlock()
 		if found {
-			if deletedID != "" {
-				state.MarkTaskDeleted(deletedID)
-			}
-			_ = state.SaveQueue()
 			telegram.AnswerCallback(state, cbID, "任务已停止", false)
 			showTasks(state, chatID, messageID, true)
 		} else {

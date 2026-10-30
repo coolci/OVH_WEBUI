@@ -105,6 +105,11 @@ func featureParallelACLDetails(client *ovhsdk.Client, svc string, blocks []strin
 			defer wg.Done()
 			defer func() { <-sem }()
 			var d map[string]interface{}
+			client, err := ovh.IsolateClient(client)
+			if err != nil {
+				errs[idx] = err
+				return
+			}
 			if err := client.Get(featureBackupFTPACLPath(svc, block), &d); err != nil {
 				errs[idx] = err
 				return

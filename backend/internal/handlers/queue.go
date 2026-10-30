@@ -33,7 +33,7 @@ func AddQueueItem(state *app.State) gin.HandlerFunc {
 			Options        []string `json:"options"`
 			RetryInterval  int      `json:"retryInterval"`
 			// AutoPay 下单成功后用默认支付方式自动付款(显式开关,默认关)
-			AutoPay  bool   `json:"autoPay"`
+			AutoPay bool `json:"autoPay"`
 			// Force 强制添加自定义或未在当前目录收录的型号入队
 			Force    bool   `json:"force"`
 			Preorder bool   `json:"preorder"`
@@ -167,7 +167,6 @@ func UpdateQueueItem(state *app.State) gin.HandlerFunc {
 	}
 }
 
-
 // UpdateQueueInterval PUT /api/queue/:id/interval  body: { "retryInterval": 秒 }
 func UpdateQueueInterval(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -236,9 +235,22 @@ func UpdateQueueStatus(state *app.State) gin.HandlerFunc {
 		}
 		found := false
 		var target types.QueueItem
+		var blockErr error
 		state.QueueMu.Lock()
 		for i := range state.Queue {
 			if state.Queue[i].ID == id {
+				if state.Queue[i].Status == "completed" && body.Status != "completed" {
+					state.QueueMu.Unlock()
+					c.JSON(http.StatusConflict, gin.H{"error": "该任务已下单,不能再次启动。如需再买,请新建任务。", "code": "QUEUE_ALREADY_ORDERED"})
+					return
+				}
+				blockErr = state.SetAutomaticOrderBlockedLocked(state.Queue[i], body.Status != "running" && body.Status != "pending")
+				// 恢复必须先成功写入许可,失败时保持停止。
+				if blockErr != nil && (body.Status == "running" || body.Status == "pending") {
+					state.QueueMu.Unlock()
+					c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "error": blockErr.Error()})
+					return
+				}
 				state.Queue[i].Status = body.Status
 				state.Queue[i].UpdatedAt = types.NowISO()
 				if body.Status != "running" {
@@ -254,7 +266,7 @@ func UpdateQueueStatus(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusNotFound, gin.H{"status": "error", "error": "任务不存在", "code": "E10FEEC40"})
 			return
 		}
-		if err := state.SaveQueue(); err != nil {
+		if err := errors.Join(blockErr, state.SaveQueue()); err != nil {
 			state.Logger.Error("改任务状态后保存队列失败: "+err.Error(), "queue")
 			httperr.InternalError(c, "状态已在本次运行中改掉，但没能写进数据库，重启后会回到原状态："+err.Error(), "ERR_DB_SAVE")
 			return

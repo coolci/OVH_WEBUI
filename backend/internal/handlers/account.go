@@ -80,8 +80,13 @@ func parallelGetPaths(client *ovhsdk.Client, paths []string, concurrency int) ([
 		go func(idx int, path string) {
 			defer wg.Done()
 			defer func() { <-sem }()
+			isolated, err := ovh.IsolateClient(client)
+			if err != nil {
+				errs[idx] = err
+				return
+			}
 			var d map[string]interface{}
-			if err := ovhGetWithRetry(client, path, &d); err != nil {
+			if err := ovhGetWithRetry(isolated, path, &d); err != nil {
 				errs[idx] = err
 				return
 			}
@@ -692,12 +697,17 @@ func GetAccountBills(state *app.State) gin.HandlerFunc {
 // GetAccountOrders GET /api/ovh/account/orders
 func GetAccountOrders(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		client, err := ovhClientFor(state, c)
+		acc, ok := ovhAccountFor(state, c)
+		if !ok {
+			noOVHRespAccount(c)
+			return
+		}
+		// 整次列表固定实际账户,不能在等待详情后重新读取默认账户。
+		client, err := state.OVH.IsolatedClientFor(acc.ID)
 		if err != nil {
 			noOVHRespAccount(c)
 			return
 		}
-		acc, _ := ovhAccountFor(state, c)
 
 		limit := 30
 		if q := c.Query("limit"); q != "" {
@@ -730,9 +740,11 @@ func GetAccountOrders(state *app.State) gin.HandlerFunc {
 		}, 10)
 		list := collectDetails(state, c, details, failed, firstErr, "订单", "account_management")
 
+		accountOrderStatuses(c.Request.Context(), state, acc.ID, list)
 		// billing.Order.password 是订单口令,页面用不到,不透传。
 		// url 缺失时用控制台深链补齐。官方三区 schema 与上游 v0.2.5 同一口径。
 		for _, item := range list {
+			item["accountId"] = acc.ID
 			delete(item, "password")
 			if u, _ := item["url"].(string); strings.TrimSpace(u) == "" {
 				if orderIDStr := idToString(item["orderId"]); orderIDStr != "" && acc.Endpoint != "" {

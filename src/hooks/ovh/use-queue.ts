@@ -33,6 +33,8 @@ export interface QueueItem {
   configSniperTaskId?: string;
   coupon?: string;
   preorder?: boolean;
+  /** 已下单(completed)任务对应的 OVH 订单号,由 GET /api/queue 从购买历史补上 */
+  orderId?: string;
 }
 
 /** 抢购队列列表 */

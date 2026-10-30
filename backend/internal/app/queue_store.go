@@ -1,6 +1,11 @@
 package app
 
-import "github.com/ovh-webui/server/internal/types"
+import (
+	"errors"
+	"strings"
+
+	"github.com/ovh-webui/server/internal/types"
+)
 
 // 队列 / 历史的"内存 + 落库"存储操作。
 //
@@ -20,42 +25,76 @@ func (s *State) QueueSnapshot() []types.QueueItem {
 
 // RemoveQueueItem 删除一条任务并落库。
 //
-// 先 MarkTaskDeleted(打标记 + 取消正在进行的下单),再从内存移除 —— 顺序与原 handler 一致:
-// 即使这条任务已经不在队列里,也要确保正在跑的那一轮被取消。
+// 即使这条任务已经不在队列里,也要 MarkTaskDeleted,确保正在跑的那一轮被取消。
 // 返回被删的副本;不存在时返回 nil。err 非 nil 表示内存已删但落库失败。
 func (s *State) RemoveQueueItem(id string) (*types.QueueItem, error) {
 	s.MarkTaskDeleted(id)
+	removed, err := s.RemoveQueueItemsWhere(func(it types.QueueItem) bool { return it.ID == id })
+	if len(removed) == 0 {
+		return nil, err
+	}
+	return &removed[0], err
+}
 
+// ClearQueueItems 清空队列并落库,返回被清掉的任务副本。
+func (s *State) ClearQueueItems() ([]types.QueueItem, error) {
+	return s.RemoveQueueItemsWhere(func(types.QueueItem) bool { return true })
+}
+
+// RemoveQueueItemsWhere 删除所有满足 match 的任务,所有删除入口(网页/Telegram)统一走这里:
+//   - MarkTaskDeleted:打删除标记并取消正在进行的下单;
+//   - 写入"自动建单停止"记录:否则监控下一次看到有货会把刚删掉的任务原样建回来;
+//   - 落库:不落库的话重启后任务原地复活继续抢。
+//
+// 返回被删任务副本(没有匹配时为空且不落库)。err 非 nil 表示内存已删但停止记录或落库失败,
+// 调用方必须把它告诉用户。
+func (s *State) RemoveQueueItemsWhere(match func(types.QueueItem) bool) ([]types.QueueItem, error) {
 	s.QueueMu.Lock()
-	var removed *types.QueueItem
+	var removed []types.QueueItem
+	var blockErr error
 	// 重新分配新 slice,避免与原 backing array 共享导致快照读到已被覆盖的元素
 	kept := make([]types.QueueItem, 0, len(s.Queue))
-	for i := range s.Queue {
-		if s.Queue[i].ID == id {
-			cp := s.Queue[i]
-			removed = &cp
+	for _, it := range s.Queue {
+		if !match(it) {
+			kept = append(kept, it)
 			continue
 		}
-		kept = append(kept, s.Queue[i])
+		removed = append(removed, it)
+		blockErr = errors.Join(blockErr, s.SetAutomaticOrderBlockedLocked(it, true))
+		s.MarkTaskDeleted(it.ID)
+	}
+	if len(removed) == 0 {
+		s.QueueMu.Unlock()
+		return nil, nil
 	}
 	s.Queue = kept
 	s.QueueMu.Unlock()
 
-	return removed, s.SaveQueue()
+	return removed, errors.Join(blockErr, s.SaveQueue())
 }
 
-// ClearQueueItems 清空队列并落库,返回被清掉的任务副本。
-// 每条都会 MarkTaskDeleted,取消正在进行的下单。
-func (s *State) ClearQueueItems() ([]types.QueueItem, error) {
-	s.QueueMu.Lock()
-	old := append([]types.QueueItem{}, s.Queue...)
-	for _, it := range s.Queue {
-		s.MarkTaskDeleted(it.ID)
+// ResolveQueueID 把完整 ID 或 ID 前缀解析成唯一的任务 ID。
+// 精确匹配优先;前缀只在唯一命中时才算数 —— 以前按 HasPrefix 逐条删,
+// 一个过短的前缀会把多条不相干的任务一起取消。
+func (s *State) ResolveQueueID(ref string) (string, bool) {
+	if ref == "" {
+		return "", false
 	}
-	s.Queue = []types.QueueItem{}
-	s.QueueMu.Unlock()
-
-	return old, s.SaveQueue()
+	s.QueueMu.Lock()
+	defer s.QueueMu.Unlock()
+	match := ""
+	for _, it := range s.Queue {
+		if it.ID == ref {
+			return it.ID, true
+		}
+		if strings.HasPrefix(it.ID, ref) {
+			if match != "" {
+				return "", false
+			}
+			match = it.ID
+		}
+	}
+	return match, match != ""
 }
 
 // MutateQueueItem 在队列锁内对指定任务执行 fn,然后落库。

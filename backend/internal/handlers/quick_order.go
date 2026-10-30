@@ -18,6 +18,10 @@ func QuickOrder(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "任务参数格式不正确"})
 			return
 		}
+		// 监控已在进程内直接调用 purchase.EnqueueQuickOrder;HTTP 入口不能声称自己来自监控,
+		// 否则任意调用方都能跳过重复下单检查和自动建单停止闸门。
+		params.FromMonitor = false
+		params.SkipDuplicateCheck = false
 		if params.AccountID == "" && params.AccountIDCamel != "" {
 			params.AccountID = params.AccountIDCamel
 		}

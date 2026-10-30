@@ -64,6 +64,8 @@ export interface ServiceInfo {
   terminationDate?: string;
   renewalForced: boolean;
   renewalManualPayment: boolean;
+  /** 服务级续费能力(automatic / manual);缺省 = 没读到,由 OVH 在提交时校验 */
+  renewalModes?: string[] | null;
   possibleRenewPeriod: number[];
 }
 

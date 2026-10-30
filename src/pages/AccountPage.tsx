@@ -11,11 +11,14 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Chip } from "@/components/common/Chip";
 import { Skeleton } from "@/components/common/Skeleton";
 import { EmptyState } from "@/components/common/EmptyState";
+import { OrderPaymentButton } from "@/components/account/OrderPaymentButton";
+import { OfficialChat } from "@/components/support/OfficialChat";
 import {
   useAccountInfo,
   useRefunds,
   useEmails,
   useOrders,
+  useAccountScope,
   type EmailHistoryEntry,
 } from "@/hooks/use-account";
 
@@ -69,16 +72,20 @@ function AccountPage() {
       </div>
 
       <Tabs defaultValue="emails">
-        <TabsList className="grid grid-cols-3 sm:flex h-auto gap-1 p-1 bg-muted/50 rounded-lg border border-border/60">
+        <TabsList className="grid grid-cols-4 sm:flex h-auto gap-1 p-1 bg-muted/50 rounded-lg border border-border/60">
           <TabsTrigger value="emails" className="text-[12px] sm:text-xs px-2.5 sm:px-3.5 py-1.5 rounded-md data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm font-medium">邮件历史</TabsTrigger>
           <TabsTrigger value="orders" className="text-[12px] sm:text-xs px-2.5 sm:px-3.5 py-1.5 rounded-md data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm font-medium">订单记录</TabsTrigger>
           <TabsTrigger value="refunds" className="text-[12px] sm:text-xs px-2.5 sm:px-3.5 py-1.5 rounded-md data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm font-medium">退款记录</TabsTrigger>
+          <TabsTrigger value="chat" className="text-[12px] sm:text-xs px-2.5 sm:px-3.5 py-1.5 rounded-md data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm font-medium">在线客服</TabsTrigger>
         </TabsList>
         <TabsContent value="emails">
           <EmailsTab />
         </TabsContent>
         <TabsContent value="orders">
           <OrdersTab />
+        </TabsContent>
+        <TabsContent value="chat">
+          <OfficialChat />
         </TabsContent>
         <TabsContent value="refunds">
           <RefundsTab />
@@ -199,6 +206,7 @@ function EmailsTab() {
 
 function OrdersTab() {
   const orders = useOrders(30);
+  const accountId = useAccountScope();
   return (
     <Card className="surface-card rounded-xl border-border shadow-sm">
       <CardContent className="p-4 sm:p-5">
@@ -259,8 +267,20 @@ function OrdersTab() {
                     </div>
                     <p className="text-[11px] text-muted-foreground font-mono">{dateStr}</p>
                   </div>
-                  <div className="flex items-center gap-3 sm:text-right flex-shrink-0">
+                  <div className="flex flex-wrap items-center gap-3 sm:text-right flex-shrink-0">
                     <p className="text-base sm:text-lg font-bold font-mono text-foreground">{priceText}</p>
+                    {o.orderStatus === "notPaid" && typeof o.orderId === "number" && (
+                      <OrderPaymentButton
+                        accountId={o.accountId || accountId}
+                        orderId={o.orderId}
+                        managerUrl={typeof o.url === "string" ? o.url : undefined}
+                      />
+                    )}
+                    {o.paymentStatusError && (
+                      <span className="text-[11px] text-warning" title={o.paymentStatusError}>
+                        付款状态未能读取，请刷新核对
+                      </span>
+                    )}
                     {o.url && (
                       <a
                         href={String(o.url)}

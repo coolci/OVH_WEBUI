@@ -120,8 +120,26 @@ func buildTaskFailedMessage(item *types.QueueItem, reason string, fatal bool) st
 	return b.String()
 }
 
+// ProcessQueueLoop 持续执行未完成任务,已下单任务保留为只读记录。
 func ProcessQueueLoop(state *app.State) {
-	for {
+	processQueueLoop(context.Background(), state, PurchaseServer)
+}
+
+// processQueueLoop 支持停止后台循环,购买入口可用离线替身验证恰好执行一次。
+func processQueueLoop(loopCtx context.Context, state *app.State, purchase func(context.Context, *app.State, *types.QueueItem) Outcome) {
+	for loopCtx.Err() == nil {
+		// 历史未读出时不能确认是否已下单,停止调度以免重复购买。
+		if state.SaveBlocked("history") != nil || state.SaveBlocked("queue") != nil {
+			select {
+			case <-loopCtx.Done():
+				return
+			case <-time.After(time.Second):
+			}
+			continue
+		}
+		if err := state.RestoreCompletedQueue(); err != nil {
+			state.Logger.Error("修复已下单任务状态失败: "+err.Error(), "queue")
+		}
 		state.QueueMu.Lock()
 		queueEmpty := len(state.Queue) == 0
 		state.QueueMu.Unlock()
@@ -133,7 +151,11 @@ func ProcessQueueLoop(state *app.State) {
 				state.Logger.Debug("队列为空，清理删除标记集合", "queue")
 			}
 			state.DeletedTaskIDsMu.Unlock()
-			time.Sleep(time.Second)
+			select {
+			case <-loopCtx.Done():
+				return
+			case <-time.After(time.Second):
+			}
 			continue
 		}
 
@@ -222,8 +244,6 @@ func ProcessQueueLoop(state *app.State) {
 
 		if len(ready) > 0 {
 			state.Logger.Debug(fmt.Sprintf("准备并发处理 %d 个订单", len(ready)), "queue")
-			processedIDs := []string{}
-			var procMu sync.Mutex
 
 			processSingle := func(it types.QueueItem) {
 				if state.IsTaskDeleted(it.ID) {
@@ -260,7 +280,7 @@ func ProcessQueueLoop(state *app.State) {
 				finalRetry := current.RetryCount
 				snapshot := *current
 				// 与暂停操作共用 QueueMu,避免状态检查后、登记取消函数前被暂停。
-				ctx, cancel := context.WithCancel(context.Background())
+				ctx, cancel := context.WithCancel(loopCtx)
 				state.RegisterTaskCancel(it.ID, cancel)
 				state.QueueMu.Unlock()
 				defer state.UnregisterTaskCancel(it.ID)
@@ -279,7 +299,7 @@ func ProcessQueueLoop(state *app.State) {
 					return
 				}
 
-				outcome := PurchaseServer(ctx, state, &snapshot)
+				outcome := purchase(ctx, state, &snapshot)
 				if outcome.PauseTask {
 					// 结账不确定:暂停而不是重试(重试可能买两台)。不计失败次数
 					state.QueueMu.Lock()
@@ -291,7 +311,9 @@ func ProcessQueueLoop(state *app.State) {
 						}
 					}
 					state.QueueMu.Unlock()
-					_ = state.SaveQueue()
+					if err := state.SaveQueue(); err != nil {
+						state.Logger.Error("暂停任务后保存队列失败(重启后可能恢复运行,请人工核对订单): "+err.Error(), "queue")
+					}
 					state.Logger.Info("任务已暂停(结账结果不确定,等人工确认): "+it.PlanCode, "queue")
 					return
 				}
@@ -313,11 +335,11 @@ func ProcessQueueLoop(state *app.State) {
 					}
 					state.QueueMu.Unlock()
 					// 成功即落库,不等轮末:checkout 成功到 SaveQueue 之间崩溃的话,
-					// 重启后任务复活再买一台(真金白银)。失败轮不落 —— 高频且可重建
-					_ = state.SaveQueue()
-					procMu.Lock()
-					processedIDs = append(processedIDs, it.ID)
-					procMu.Unlock()
+					// 重启后任务复活再买一台(真金白银)。失败轮不落 —— 高频且可重建。
+					// 落库失败时启动/每轮的 RestoreCompletedQueue 会按成功历史补回 completed。
+					if err := state.SaveQueue(); err != nil {
+						state.Logger.Error("下单成功后保存队列失败,将由购买历史兜底恢复: "+err.Error(), "queue")
+					}
 					if finalRetry == 1 {
 						state.Logger.Info("首次尝试购买成功: "+it.PlanCode, "queue")
 					} else {
@@ -421,27 +443,15 @@ func ProcessQueueLoop(state *app.State) {
 				state.Logger.Debug("批次完成", "queue")
 			}
 
-			// 从队列移除已完成
-			if len(processedIDs) > 0 {
-				procSet := map[string]struct{}{}
-				for _, id := range processedIDs {
-					procSet[id] = struct{}{}
-				}
-				state.QueueMu.Lock()
-				kept := make([]types.QueueItem, 0, len(state.Queue))
-				for _, it := range state.Queue {
-					if _, ok := procSet[it.ID]; !ok {
-						kept = append(kept, it)
-					}
-				}
-				state.Queue = kept
-				state.QueueMu.Unlock()
-				state.Logger.Info(fmt.Sprintf("已从队列移除 %d 个已完成的订单", len(processedIDs)), "queue")
-			}
+			// 已下单任务留在队列,处理入口只调度 running 状态,不会重复下单。
 
 			_ = state.SaveQueue()
 		}
 
-		time.Sleep(time.Second)
+		select {
+		case <-loopCtx.Done():
+			return
+		case <-time.After(time.Second):
+		}
 	}
 }

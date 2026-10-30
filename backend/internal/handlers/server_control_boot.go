@@ -49,6 +49,11 @@ func GetBootConfig(state *app.State) gin.HandlerFunc {
 				defer wg.Done()
 				defer func() { <-sem }()
 				var d map[string]interface{}
+				client, err := ovh.IsolateClient(client)
+				if err != nil {
+					detailErrs[idx] = err
+					return
+				}
 				if err := client.Get(fmt.Sprintf("/dedicated/server/%s/boot/%d", svc, b), &d); err != nil {
 					detailErrs[idx] = err
 					return
@@ -251,6 +256,11 @@ func GetBootModes(state *app.State) gin.HandlerFunc {
 				defer bWg.Done()
 				defer func() { <-bSem }()
 				var bi map[string]interface{}
+				client, err := ovh.IsolateClient(client)
+				if err != nil {
+					biErrs[idx] = err
+					return
+				}
 				if err := client.Get(fmt.Sprintf("/dedicated/server/%s/boot/%d", svc, b), &bi); err != nil {
 					biErrs[idx] = err
 					return

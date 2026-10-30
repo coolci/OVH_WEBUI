@@ -12,6 +12,7 @@ interface QueueFilterBarProps {
   runningCount: number;
   pausedCount: number;
   failedCount: number;
+  completedCount: number;
 }
 
 export function QueueFilterBar({
@@ -23,6 +24,7 @@ export function QueueFilterBar({
   runningCount,
   pausedCount,
   failedCount,
+  completedCount,
 }: QueueFilterBarProps) {
   return (
     <Card className="surface-card rounded-xl border-border">
@@ -46,12 +48,13 @@ export function QueueFilterBar({
             </button>
           )}
         </div>
-        <div className="grid grid-cols-4 sm:flex items-center gap-1 w-full sm:w-auto p-1 bg-muted/50 rounded-lg border border-border/60">
+        <div className="grid grid-cols-5 sm:flex items-center gap-1 w-full sm:w-auto p-1 bg-muted/50 rounded-lg border border-border/60">
           {[
             { id: "all", label: "全部", count: totalCount },
             { id: "running", label: "运行中", count: runningCount },
             { id: "paused", label: "已暂停", count: pausedCount },
             { id: "failed", label: "失败", count: failedCount },
+            { id: "completed", label: "已下单", count: completedCount },
           ].map((tab) => (
             <button
               key={tab.id}

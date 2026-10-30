@@ -42,3 +42,9 @@ Thumbs.db
 # coverage
 coverage/
 *.coverprofile
+
+# 编译产物(曾误提交,约 57 MB)
+*.exe~
+scratch/ovh-webui
+scratch/deploy-payload/ovh-webui
+*.tsbuildinfo

@@ -70,8 +70,16 @@ export function useRescueStatus(serviceName: string | null, enabled = true) {
 export function useEnterRescue(serviceName: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (v: { email?: string; sshKey?: string; bootId?: number }) =>
-      (await api.post(`/server-control/${serviceName}/rescue`, { ...v, confirm: true })).data,
+    // expectedBoot = 打开窗口时看到的启动项;期间被别处改过的话后端返回 409,不会按过期页面重启。
+    // 邮箱留空时必须显式声明 useDefaultEmail,否则后端拒绝(省略 rescueMail 会沿用旧地址)。
+    mutationFn: async (v: { email?: string; sshKey?: string; bootId?: number; expectedBoot?: number }) =>
+      (
+        await api.post(`/server-control/${serviceName}/rescue`, {
+          ...v,
+          useDefaultEmail: !v.email && !v.sshKey,
+          confirm: true,
+        })
+      ).data,
     onSuccess: (d: any) => {
       qc.invalidateQueries({ queryKey: qk.serverControl.bootModes(serviceName) });
       toast.success(bodyMessage(d) || i18n.t("hooksMsg.server.rescueEntered"));
@@ -84,8 +92,8 @@ export function useEnterRescue(serviceName: string) {
 export function useExitRescue(serviceName: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async () =>
-      (await api.post(`/server-control/${serviceName}/rescue/exit`, { confirm: true })).data,
+    mutationFn: async (expectedBoot?: number) =>
+      (await api.post(`/server-control/${serviceName}/rescue/exit`, { confirm: true, expectedBoot })).data,
     onSuccess: (d: any) => {
       qc.invalidateQueries({ queryKey: qk.serverControl.bootModes(serviceName) });
       toast.success(bodyMessage(d) || i18n.t("hooksMsg.server.rescueExited"));

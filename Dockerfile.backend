@@ -2,7 +2,7 @@
 # OVH_WEBUI backend — Linux 生产镜像（静态二进制 + purego SQLite，无 CGO）
 # 构建: docker build -f Dockerfile.backend -t ovh-webui-backend .
 
-ARG GO_VERSION=1.25
+ARG GO_VERSION=1.26
 
 FROM golang:${GO_VERSION}-bookworm AS build
 WORKDIR /src

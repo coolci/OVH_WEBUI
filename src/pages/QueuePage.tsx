@@ -64,6 +64,8 @@ function QueuePage() {
   const runningCount = items.filter((it) => it.status === "running").length;
   const pausedCount = items.filter((it) => it.status === "paused").length;
   const failedCount = items.filter((it) => it.status === "failed").length;
+  // 已下单任务现在保留在队列里作为只读记录(后端不会再调度它们)
+  const completedCount = items.filter((it) => it.status === "completed").length;
 
   const handlePauseAll = async () => {
     const runningItems = items.filter((it) => it.status === "running");
@@ -140,6 +142,7 @@ function QueuePage() {
           runningCount={runningCount}
           pausedCount={pausedCount}
           failedCount={failedCount}
+          completedCount={completedCount}
         />
       )}
 

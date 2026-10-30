@@ -43,6 +43,8 @@ export function RescueDialog({
   }, [open, status.data?.rescueMail]);
 
   const inRescue = status.data?.inRescue === true;
+  // 0 = 状态没读出来,不带 expectedBoot(后端按兼容模式处理)
+  const expectedBoot = status.data?.currentBoot || undefined;
   const busy = enter.isPending || exit.isPending;
   // 邮箱可以留空(用账户默认联系邮箱),填了就得像个邮箱 —— 填错等于收不到密码
   const emailBad = email.trim() !== "" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
@@ -139,7 +141,7 @@ export function RescueDialog({
             <Button
               variant="destructive"
               disabled={busy}
-              onClick={() => exit.mutate(undefined, { onSuccess: () => onOpenChange(false) })}
+              onClick={() => exit.mutate(expectedBoot, { onSuccess: () => onOpenChange(false) })}
             >
               {exit.isPending && <Loader2 className="w-4 h-4 animate-spin mr-1.5" />}
               {t("ctrl.rescue.exitBtn")}
@@ -150,7 +152,7 @@ export function RescueDialog({
               onClick={() => {
                 if (!confirming) { setConfirming(true); return; }
                 enter.mutate(
-                  { email: email.trim() || undefined },
+                  { email: email.trim() || undefined, expectedBoot },
                   { onSuccess: () => onOpenChange(false) }
                 );
               }}

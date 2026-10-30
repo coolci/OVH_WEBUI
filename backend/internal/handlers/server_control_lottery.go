@@ -12,6 +12,7 @@ import (
 	ovhsdk "github.com/ovh/go-ovh/ovh"
 
 	"github.com/ovh-webui/server/internal/numconv"
+	"github.com/ovh-webui/server/internal/ovh"
 )
 
 // ============================================================================
@@ -147,9 +148,13 @@ func fetchOrderedSpec(client *ovhsdk.Client, svc string) (*orderedSpec, error) {
 		mErr, oErr error
 		wg         sync.WaitGroup
 	)
+	optionsClient, err := ovh.IsolateClient(client)
+	if err != nil {
+		return nil, err
+	}
 	wg.Add(2)
 	go func() { defer wg.Done(); mErr = client.Get(fmt.Sprintf("/services/%d", sid), &main) }()
-	go func() { defer wg.Done(); oErr = client.Get(fmt.Sprintf("/services/%d/options", sid), &opts) }()
+	go func() { defer wg.Done(); oErr = optionsClient.Get(fmt.Sprintf("/services/%d/options", sid), &opts) }()
 	wg.Wait()
 	if mErr != nil {
 		return nil, mErr

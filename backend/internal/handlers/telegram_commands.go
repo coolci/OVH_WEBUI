@@ -550,38 +550,47 @@ func cmdSubs(state *app.State, mon *monitor.Monitor) string {
 }
 
 func cmdCancel(state *app.State, args []string) string {
+	return cancelText(state, args)
+}
+
+// cancelText /cancel <ID前缀|all>:真正删除任务(取消进行中的下单 + 自动建单停止记录 + 落库)。
+//
+// 以前这里持有 QueueMu 再调 SaveQueue(内部又锁 QueueMu)—— 第一次成功取消就把整条队列死锁;
+// 而且只是把状态改成队列处理器不认识的 "cancelled",进行中的下单不会被中断,监控还会重新建单。
+func cancelText(state *app.State, args []string) string {
 	if len(args) == 0 {
 		return "用法: /cancel <任务ID前缀 或 all>\n例: /cancel all (取消全部任务)\n例: /cancel a1b2c3d4"
 	}
 	target := strings.TrimSpace(args[0])
-	state.QueueMu.Lock()
-	defer state.QueueMu.Unlock()
+	active := func(it types.QueueItem) bool { return it.Status == "running" || it.Status == "pending" }
+
+	var match func(types.QueueItem) bool
 	if strings.EqualFold(target, "all") {
-		count := 0
-		for i := range state.Queue {
-			if state.Queue[i].Status == "running" || state.Queue[i].Status == "pending" {
-				state.Queue[i].Status = "cancelled"
-				count++
-			}
+		match = active
+	} else {
+		id, ok := state.ResolveQueueID(target)
+		if !ok {
+			return fmt.Sprintf("未找到前缀为 %s 的唯一抢购任务(前缀不存在或匹配到多个)。发 /tasks 查看当前任务列表。", target)
 		}
-		if count == 0 {
+		match = func(it types.QueueItem) bool { return it.ID == id && active(it) }
+	}
+
+	removed, err := state.RemoveQueueItemsWhere(match)
+	if len(removed) == 0 {
+		if strings.EqualFold(target, "all") {
 			return "当前没有任何运行中或排队中的任务可取消。"
 		}
-		_ = state.SaveQueue()
-		return fmt.Sprintf("🛑 已成功取消全部活跃抢购任务 (共 %d 个)。", count)
+		return fmt.Sprintf("任务 %s 当前不在运行或排队中，无需取消。", target)
 	}
-	count := 0
-	for i := range state.Queue {
-		if strings.HasPrefix(state.Queue[i].ID, target) && (state.Queue[i].Status == "running" || state.Queue[i].Status == "pending") {
-			state.Queue[i].Status = "cancelled"
-			count++
-		}
+	for i := range removed {
+		telegram.NotifyTaskProgress(state, &removed[i], "cancelled", map[string]string{"reason": "已在 Telegram 中取消此任务"})
 	}
-	if count == 0 {
-		return fmt.Sprintf("未找到前缀为 %s 的活跃抢购任务。发 /tasks 查看当前任务列表。", target)
+	if err != nil {
+		state.Logger.Error("Telegram 取消任务后保存队列失败: "+err.Error(), "telegram")
+		return fmt.Sprintf("⚠️ 已从运行中的队列移除 %d 个任务，但没能写进数据库，重启后会重新出现：\n%s", len(removed), err.Error())
 	}
-	_ = state.SaveQueue()
-	return fmt.Sprintf("🛑 已成功取消匹配的抢购任务 (%d 个)。", count)
+	state.Logger.Info(fmt.Sprintf("Telegram 取消了 %d 个抢购任务", len(removed)), "telegram")
+	return fmt.Sprintf("🛑 已成功取消 %d 个抢购任务。", len(removed))
 }
 
 // handleTelegramText 统一处理 webhook 普通文本：斜杠命令 / free-form 下单 / 帮助。

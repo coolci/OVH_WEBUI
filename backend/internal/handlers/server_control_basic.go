@@ -96,6 +96,11 @@ func ListMyServers(state *app.State) gin.HandlerFunc {
 				defer wg.Done()
 				defer func() { <-sem }()
 				var info map[string]interface{}
+				client, err := ovh.IsolateClient(client)
+				if err != nil {
+					results[idx].detailError = err
+					return
+				}
 				if err := client.Get("/dedicated/server/"+nm, &info); err != nil {
 					results[idx].detailError = err
 					return
@@ -261,6 +266,16 @@ func GetOSTemplates(state *app.State) gin.HandlerFunc {
 				defer wg.Done()
 				defer func() { <-sem }()
 				var detail map[string]interface{}
+				client, err := ovh.IsolateClient(client)
+				if err != nil {
+					details[idx] = gin.H{
+						"templateName": name,
+						"distribution": name,
+						"family":       "unknown",
+						"bitFormat":    64,
+					}
+					return
+				}
 				if err := client.Get("/dedicated/installationTemplate/"+name, &detail); err != nil {
 					details[idx] = gin.H{
 						"templateName": name,
@@ -1179,6 +1194,11 @@ func GetServerTasks(state *app.State) gin.HandlerFunc {
 				defer wg.Done()
 				defer func() { <-sem }()
 				var d map[string]interface{}
+				client, err := ovh.IsolateClient(client)
+				if err != nil {
+					detailErrs[idx] = err
+					return
+				}
 				if err := client.Get("/dedicated/server/"+svc+"/task/"+idToString(id), &d); err != nil {
 					detailErrs[idx] = err
 					return

@@ -193,13 +193,13 @@ export function RetractionDialog({
           {isEligible && (
             <Button
               variant="destructive"
-              disabled={!reason || request.isPending}
+              disabled={!reason || !info?.orderId || request.isPending}
               onClick={() => {
                 if (!confirming) {
                   setConfirming(true);
                   return;
                 }
-                request.mutate({ reason, comment }, { onSuccess: () => onOpenChange(false) });
+                request.mutate({ orderId: Number(info?.orderId), reason, comment }, { onSuccess: () => onOpenChange(false) });
               }}
             >
               {request.isPending

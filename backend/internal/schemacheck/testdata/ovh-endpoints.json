@@ -1823,6 +1823,15 @@
       ]
     }
   },
+  "GET /me/order/{orderId}/availablePaymentMethod": {
+    "US": {
+      "params": [
+        "path:orderId:long:true"
+      ],
+      "response": "billing.order.AvailablePaymentMethod[]",
+      "status": "PRODUCTION"
+    }
+  },
   "GET /me/order/{orderId}/details": {
     "CA": {
       "status": "PRODUCTION",
@@ -1864,6 +1873,29 @@
       ]
     }
   },
+  "GET /me/order/{orderId}/paymentMethods": {
+    "CA": {
+      "params": [
+        "path:orderId:long:true"
+      ],
+      "response": "billing.order.PaymentMethods",
+      "status": "BETA"
+    },
+    "EU": {
+      "params": [
+        "path:orderId:long:true"
+      ],
+      "response": "billing.order.PaymentMethods",
+      "status": "BETA"
+    },
+    "US": {
+      "params": [
+        "path:orderId:long:true"
+      ],
+      "response": "billing.order.PaymentMethods",
+      "status": "BETA"
+    }
+  },
   "GET /me/order/{orderId}/status": {
     "CA": {
       "status": "PRODUCTION",
@@ -1885,6 +1917,29 @@
       "params": [
         "path:orderId:long:true"
       ]
+    }
+  },
+  "GET /me/payment/method/{paymentMethodId}": {
+    "CA": {
+      "params": [
+        "path:paymentMethodId:long:true"
+      ],
+      "response": "me.payment.PaymentMethod",
+      "status": "PRODUCTION"
+    },
+    "EU": {
+      "params": [
+        "path:paymentMethodId:long:true"
+      ],
+      "response": "me.payment.PaymentMethod",
+      "status": "PRODUCTION"
+    },
+    "US": {
+      "params": [
+        "path:paymentMethodId:long:true"
+      ],
+      "response": "me.payment.PaymentMethod",
+      "status": "PRODUCTION"
     }
   },
   "GET /me/subAccount": {
@@ -2220,7 +2275,7 @@
     }
   },
   "GET /support/tickets": {
-    "CA": {
+    "EU": {
       "status": "PRODUCTION",
       "response": "long[]",
       "params": [
@@ -2239,7 +2294,7 @@
         "query:ticketNumber:string:false"
       ]
     },
-    "EU": {
+    "CA": {
       "status": "PRODUCTION",
       "response": "long[]",
       "params": [
@@ -2279,14 +2334,14 @@
     }
   },
   "GET /support/tickets/{ticketId}": {
-    "CA": {
+    "EU": {
       "status": "PRODUCTION",
       "response": "support.Ticket",
       "params": [
         "path:ticketId:long:true"
       ]
     },
-    "EU": {
+    "CA": {
       "status": "PRODUCTION",
       "response": "support.Ticket",
       "params": [
@@ -2302,14 +2357,14 @@
     }
   },
   "GET /support/tickets/{ticketId}/messages": {
-    "CA": {
+    "EU": {
       "status": "PRODUCTION",
       "response": "support.Message[]",
       "params": [
         "path:ticketId:long:true"
       ]
     },
-    "EU": {
+    "CA": {
       "status": "PRODUCTION",
       "response": "support.Message[]",
       "params": [
@@ -2659,6 +2714,23 @@
         "path:id:long:true",
         "path:serviceName:string:true"
       ]
+    }
+  },
+  "POST /auth/token": {
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "auth.Token",
+      "params": null
+    },
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "auth.Token",
+      "params": null
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "auth.Token",
+      "params": null
     }
   },
   "POST /dedicated/server/{serviceName}/changeContact": {
@@ -3310,6 +3382,32 @@
       ]
     }
   },
+  "POST /me/order/{orderId}/pay": {
+    "CA": {
+      "params": [
+        "body:paymentMethod:billing.order.PayWithPaymentMethod:true",
+        "path:orderId:long:true"
+      ],
+      "response": "void",
+      "status": "BETA"
+    },
+    "EU": {
+      "params": [
+        "body:paymentMethod:billing.order.PayWithPaymentMethod:true",
+        "path:orderId:long:true"
+      ],
+      "response": "void",
+      "status": "BETA"
+    },
+    "US": {
+      "params": [
+        "body::billing.order.PayWithPaymentMethod:true",
+        "path:orderId:long:true"
+      ],
+      "response": "void",
+      "status": "PRODUCTION"
+    }
+  },
   "POST /me/order/{orderId}/retraction": {
     "CA": {
       "status": "PRODUCTION",
@@ -3614,7 +3712,7 @@
     }
   },
   "POST /support/tickets/create": {
-    "CA": {
+    "EU": {
       "status": "PRODUCTION",
       "response": "support.NewMessageInfo",
       "params": [
@@ -3630,7 +3728,7 @@
         "body:watchers:string[]:false"
       ]
     },
-    "EU": {
+    "CA": {
       "status": "PRODUCTION",
       "response": "support.NewMessageInfo",
       "params": [
@@ -3664,14 +3762,14 @@
     }
   },
   "POST /support/tickets/{ticketId}/close": {
-    "CA": {
+    "EU": {
       "status": "PRODUCTION",
       "response": "void",
       "params": [
         "path:ticketId:long:true"
       ]
     },
-    "EU": {
+    "CA": {
       "status": "PRODUCTION",
       "response": "void",
       "params": [
@@ -3687,7 +3785,7 @@
     }
   },
   "POST /support/tickets/{ticketId}/reopen": {
-    "CA": {
+    "EU": {
       "status": "PRODUCTION",
       "response": "void",
       "params": [
@@ -3695,7 +3793,7 @@
         "path:ticketId:long:true"
       ]
     },
-    "EU": {
+    "CA": {
       "status": "PRODUCTION",
       "response": "void",
       "params": [
@@ -3713,7 +3811,7 @@
     }
   },
   "POST /support/tickets/{ticketId}/reply": {
-    "CA": {
+    "EU": {
       "status": "PRODUCTION",
       "response": "void",
       "params": [
@@ -3721,7 +3819,7 @@
         "path:ticketId:long:true"
       ]
     },
-    "EU": {
+    "CA": {
       "status": "PRODUCTION",
       "response": "void",
       "params": [

@@ -208,7 +208,8 @@ export function useRequestRetraction(serviceName: string, isVps = false) {
   const domain = isVps ? "vps-control" : "server-control";
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (p: { reason: string; comment: string }) =>
+    // orderId 必传:后端只撤销用户在窗口里确认过的那张订单,不在提交时重新猜订单
+    mutationFn: async (p: { orderId: number; reason: string; comment: string }) =>
       (
         await api.post(`${prefix}/${encodeURIComponent(serviceName)}/retraction`, {
           ...p,

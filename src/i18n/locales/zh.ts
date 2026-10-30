@@ -11,6 +11,8 @@ import { watchPagesZh } from "./modules/watch-pages.zh";
 import { maintDialogsZh } from "./modules/maint-dialogs.zh";
 import { vpsDialogsZh } from "./modules/vps-dialogs.zh";
 import { commonLayerZh } from "./modules/common-layer.zh";
+import { liveChatZh, liveChatApiZh } from "./modules/live-chat.zh";
+import { serverSafetyApiZh } from "./modules/server-safety.zh";
 
 export const zh = {
   nav: {
@@ -69,7 +71,14 @@ export const zh = {
     toggle: "切换语言,当前{{name}}",
   },
   // 后端错误码 → 中文(由脚本生成,与 Go 端 message 默认值一致)
-  api: apiZh,
+  api: {
+    ...apiZh,
+    ...liveChatApiZh,
+    ...serverSafetyApiZh,
+    RENEWAL_INVALID_REQUEST: "请填写有效的续费方式与周期。",
+    RENEWAL_MODE_UNAVAILABLE: "OVH 当前未允许该服务使用所选续费方式，请刷新后重试。",
+    QUEUE_ALREADY_ORDERED: "该任务已下单,不能再次启动。如需再买,请新建任务。",
+  },
   ...snipePagesZh,
   ...settingsPagesZh,
   ...ctrlDialogsZh,
@@ -77,4 +86,5 @@ export const zh = {
   ...maintDialogsZh,
   ...vpsDialogsZh,
   ...commonLayerZh,
+  ...liveChatZh,
 };

@@ -14,6 +14,8 @@ import { watchPagesEn } from "./modules/watch-pages.en";
 import { maintDialogsEn } from "./modules/maint-dialogs.en";
 import { vpsDialogsEn } from "./modules/vps-dialogs.en";
 import { commonLayerEn } from "./modules/common-layer.en";
+import { liveChatEn, liveChatApiEn } from "./modules/live-chat.en";
+import { serverSafetyApiEn } from "./modules/server-safety.en";
 
 export type LangPack = typeof zh;
 
@@ -74,7 +76,14 @@ const pack: LangPack = {
     toggle: "Switch language, currently {{name}}",
   },
   // Backend error codes → English (mirrors api.* keys in zh.ts)
-  api: apiEn as unknown as typeof apiZh,
+  api: {
+    ...(apiEn as unknown as typeof apiZh),
+    ...liveChatApiEn,
+    ...serverSafetyApiEn,
+    RENEWAL_INVALID_REQUEST: "Enter a valid renewal mode and period.",
+    RENEWAL_MODE_UNAVAILABLE: "OVH does not currently allow the selected renewal mode for this service. Refresh and retry.",
+    QUEUE_ALREADY_ORDERED: "This task has already been ordered and cannot be restarted. Create a new task to buy again.",
+  },
   ...snipePagesEn,
   ...settingsPagesEn,
   ...ctrlDialogsEn,
@@ -82,6 +91,7 @@ const pack: LangPack = {
   ...maintDialogsEn,
   ...vpsDialogsEn,
   ...commonLayerEn,
+  ...liveChatEn,
 };
 
 export const en = pack;
