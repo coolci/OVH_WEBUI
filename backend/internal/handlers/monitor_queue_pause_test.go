@@ -86,8 +86,8 @@ func TestMonitorPauseAlsoPausesMatchingQueue(t *testing.T) {
 	}
 	// 暂停的 RAM32 不应阻断另一个配置的自动入队。
 	different := matching
-	different.ID = "new-64g"
-	different.Options = []string{"ram-64g", "bandwidth-1000"}
+	different.ID = "new-128g"
+	different.Options = []string{"ram-128g", "bandwidth-1000"}
 	if err := st.EnqueueAutomaticItems([]types.QueueItem{different}, true); err != nil {
 		t.Fatal("unrelated config blocked", err)
 	}

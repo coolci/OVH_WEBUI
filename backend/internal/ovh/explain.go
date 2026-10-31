@@ -93,6 +93,8 @@ func hintFor(e *ovhsdk.APIError) string {
 			"(最省事的是 GET/POST/PUT/DELETE 各给一条 /*),改完要重新授权"
 	case strings.Contains(lower, "customizationinvalidformat") || (strings.Contains(lower, "missing mandatory") && strings.Contains(lower, "metadata")):
 		return "所选系统模板缺少必填的定制参数(如预装应用、自定义配置等),请在重装弹窗中完成定制配置后再试"
+	case strings.Contains(lower, "backupftp does not exist") || (strings.Contains(lower, "backupftp") && strings.Contains(lower, "does not exist")):
+		return "该服务器未开通或未激活备份FTP服务"
 	case strings.Contains(lower, "expired"):
 		return "凭据或令牌已过期,需要重新生成"
 	}

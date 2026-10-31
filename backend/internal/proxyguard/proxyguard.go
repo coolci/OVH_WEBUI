@@ -227,6 +227,7 @@ func (g *Guard) trip(accountID string, cause error) {
 func (g *Guard) pauseQueue(accountID string) int {
 	g.state.QueueMu.Lock()
 	n := 0
+	var pausedIDs []string
 	for i := range g.state.Queue {
 		it := &g.state.Queue[i]
 		if it.AccountID != accountID {
@@ -237,9 +238,13 @@ func (g *Guard) pauseQueue(accountID string) int {
 		}
 		it.Status = "paused"
 		it.UpdatedAt = types.NowISO()
+		pausedIDs = append(pausedIDs, it.ID)
 		n++
 	}
 	g.state.QueueMu.Unlock()
+	for _, id := range pausedIDs {
+		g.state.UnregisterTaskCancel(id)
+	}
 	if n > 0 {
 		if err := g.state.SaveQueue(); err != nil {
 			// 落库失败必须说：不说的话重启后任务会带着 running 状态复活，

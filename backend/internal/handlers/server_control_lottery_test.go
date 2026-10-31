@@ -147,3 +147,42 @@ func TestLotteryTierAndGains(t *testing.T) {
 		t.Errorf("单项介质升级应 tier 1,实际 %d", lot3.Tier)
 	}
 }
+
+// 用户实测场景: 套餐名/订购 CPU 为 "Xeon-D 1540", 硬件接口报 "XeonD1541"
+// 内存 32GB、两块 450GB NVMe 均无升级, 不应被误判为中奖 (Tier 0 / Won=false)
+func TestHardwareLottery_XeonD1540_XeonD1541_NotLottery(t *testing.T) {
+	if !cpuSame("Xeon-D 1540", "XeonD1541") {
+		t.Fatalf("Xeon-D 1540 与 XeonD1541 属同级步进，cpuSame 应返回 true")
+	}
+	if !cpuSame("Intel Xeon-D 1540", "XeonD1541") {
+		t.Fatalf("Intel Xeon-D 1540 与 XeonD1541 cpuSame 应返回 true")
+	}
+	if !cpuSame("Intel(R) Xeon(R) CPU D-1541 @ 2.10GHz", "Xeon-D 1540") {
+		t.Fatalf("带主频与标志的 D-1541 与 Xeon-D 1540 cpuSame 应返回 true")
+	}
+	if !cpuSame("Xeon-D 1520", "XeonD1521") {
+		t.Fatalf("Xeon-D 1520 与 XeonD1521 cpuSame 应返回 true")
+	}
+
+	spec := parseOrderedSpec(
+		mkSvc("24sk202", "SYS-1 | Intel Xeon-D 1540", "24sk202", "Intel Xeon-D 1540"),
+		[]svcLite{
+			mkSvc("ram-32g-ecc-2133-24sk202", "32GB DDR4 ECC 2133MHz", "ram-32g-ecc-2133", ""),
+			mkSvc("softraid-2x450nvme-24sk202", "2x SSD NVMe 450GB Soft RAID", "softraid-2x450nvme", ""),
+		},
+	)
+
+	hw := map[string]interface{}{
+		"processorName": "XeonD1541",
+		"memorySize":    map[string]interface{}{"value": float64(32768), "unit": "MB"},
+		"diskGroups":    []interface{}{disk(2, 450, "GB", "NVME")},
+	}
+
+	lot := computeHardwareLottery(spec, hw)
+	if lot.Won {
+		t.Fatalf("XeonD1541 + 32GB + 2x450GB NVMe 不应判定为中奖, got: won=%v tier=%d items=%+v", lot.Won, lot.Tier, lot.Items)
+	}
+	if len(lot.Items) != 0 {
+		t.Fatalf("Items 应该为空, got %+v", lot.Items)
+	}
+}

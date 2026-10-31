@@ -175,3 +175,70 @@ func TestReconcileRecentOrderNoMatch(t *testing.T) {
 		t.Fatalf("不同型号不应被当成这轮的订单, got %q", id)
 	}
 }
+
+func TestReconcileRecentOrderEx_ExcludesClaimedAndDC(t *testing.T) {
+	plan := "24sk202"
+	now := time.Now().UTC().Truncate(time.Second)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/auth/time":
+			_, _ = w.Write([]byte("1700000000"))
+		case "/me/order":
+			_ = json.NewEncoder(w).Encode([]int64{201, 202})
+		case "/me/order/201":
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"orderId": 201,
+				"date":    now.Format(time.RFC3339),
+			})
+		case "/me/order/201/details":
+			_ = json.NewEncoder(w).Encode([]int64{10})
+		case "/me/order/201/details/10":
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"description": "RISE-1 | " + plan + " - gra",
+			})
+		case "/me/order/202":
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"orderId": 202,
+				"date":    now.Format(time.RFC3339),
+			})
+		case "/me/order/202/details":
+			_ = json.NewEncoder(w).Encode([]int64{11})
+		case "/me/order/202/details/11":
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"description": "RISE-1 | " + plan + " - bhs",
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	swapEndpoint(t, "ovh-eu", srv.URL)
+	client, err := ovhsdk.NewClient("ovh-eu", "ak", "as", "ck")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Excluded order ID 201 should be skipped, so it matches 202
+	id, _, err := ReconcileRecentOrderEx(client, "ovh-eu", plan, now.Add(-time.Minute), ReconcileOptions{
+		ExcludedOrderIDs: map[string]bool{"201": true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id != "202" {
+		t.Fatalf("expected 202 after excluding 201, got %q", id)
+	}
+
+	// 2. DC conflict: target GRA should not match 202 (which is BHS)
+	idGRA, _, err := ReconcileRecentOrderEx(client, "ovh-eu", plan, now.Add(-time.Minute), ReconcileOptions{
+		Datacenter:       "gra",
+		ExcludedOrderIDs: map[string]bool{"201": true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if idGRA != "" {
+		t.Fatalf("expected empty due to DC contradiction, got %q", idGRA)
+	}
+}

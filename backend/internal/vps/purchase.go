@@ -191,7 +191,17 @@ func purchaseVPSInternal(state *app.State, sub types.VPSSubscription, dcCode str
 		// checkout 超时/传输层失败 ≠ 下单失败:请求可能已经到达 OVH 且订单已建,
 		// 只是我方没等到响应。这时尝试下一个机房或下一轮重试会导致买多台(扣多次款)。
 		if purchase.IsTransient(err) {
-			oid, u, recErr := purchase.ReconcileRecentOrder(client, acc.Endpoint, sub.PlanCode, attemptStart)
+			claimed := make(map[string]bool)
+			state.HistoryMu.Lock()
+			for _, h := range state.History {
+				if h.OrderID != "" {
+					claimed[h.OrderID] = true
+				}
+			}
+			state.HistoryMu.Unlock()
+			oid, u, recErr := purchase.ReconcileRecentOrderEx(client, acc.Endpoint, sub.PlanCode, attemptStart, purchase.ReconcileOptions{
+				ExcludedOrderIDs: claimed,
+			})
 			if recErr != nil {
 				state.Logger.Warn("[VPS下单] 对账查询失败(按未建单处理): "+recErr.Error(), "vps_purchase")
 			} else if oid != "" {

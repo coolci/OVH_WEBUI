@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -17,6 +18,13 @@ import (
 	"github.com/ovh-webui/server/internal/storage"
 	"github.com/ovh-webui/server/internal/types"
 )
+
+func TestMain(m *testing.M) {
+	AllowLocalWebhookForTesting = true
+	code := m.Run()
+	AllowLocalWebhookForTesting = false
+	os.Exit(code)
+}
 
 func testState(t *testing.T) *app.State {
 	t.Helper()
@@ -217,5 +225,32 @@ func TestWebhookBusinessErrorNotCountedAsDelivered(t *testing.T) {
 	}
 	if ok, reason := AnyAvailable(state, true); ok || !strings.Contains(reason, "19002") {
 		t.Fatalf("false healthy: %v %s", ok, reason)
+	}
+}
+
+func TestSSRF_Protection(t *testing.T) {
+	// 强制关闭测试豁免，验证真实拦截逻辑
+	AllowLocalWebhookForTesting = false
+	t.Cleanup(func() { AllowLocalWebhookForTesting = true })
+
+	badURLs := []string{
+		"http://127.0.0.1:8080/hook",
+		"http://127.0.0.2/hook",
+		"http://localhost:8080/hook",
+		"http://10.0.0.1/hook",
+		"http://172.16.0.1/hook",
+		"http://172.31.255.255/hook",
+		"http://192.168.1.1/hook",
+		"http://169.254.169.254/latest/meta-data/",
+		"http://0.0.0.0:8080/hook",
+	}
+
+	for _, u := range badURLs {
+		if err := ValidateWebhookURL(u); err == nil {
+			t.Errorf("expected ValidateWebhookURL to reject %q, but got nil", u)
+		}
+		if err := sendWebhook(u, "test"); err == nil {
+			t.Errorf("expected sendWebhook to reject %q, but got nil", u)
+		}
 	}
 }

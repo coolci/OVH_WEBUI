@@ -16,7 +16,7 @@ import { useMonitorList } from "@/hooks/use-monitor";
 import { MonitorSubscribeDialog } from "@/components/monitor/MonitorSubscribeDialog";
 import { useCreateQueueItem } from "@/hooks/use-queue";
 import { useSettings, RETRY_INTERVAL } from "@/hooks/use-settings";
-import { useDefaultAccount, useAccounts } from "@/hooks/use-accounts";
+import { useDefaultAccount, useAccounts, findAccountByID } from "@/hooks/use-accounts";
 import {
   useAvailability,
   buildAvailabilityMap,
@@ -59,15 +59,16 @@ const OPTION_GROUP_ORDER: OptionGroupKey[] = [
 
 /** 侧栏快速下单：与服务器列表「抢购 / 监控」同一套机房、选配、入队逻辑。 */
 export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickOrderDialogProps) {
-  const serversQ = useServers();
-  const availQ = useAvailability();
-  const create = useCreateQueueItem();
-  const monitorList = useMonitorList();
   const defaultAcc = useDefaultAccount();
   const { data: accounts } = useAccounts();
-  const [monitorOpen, setMonitorOpen] = useState(false);
-
   const [accountId, setAccountId] = useState("");
+  const activeAcc = findAccountByID(accounts, accountId) || defaultAcc;
+
+  const serversQ = useServers(true, accountId || defaultAcc?.id);
+  const availQ = useAvailability(activeAcc?.endpoint || undefined);
+  const create = useCreateQueueItem();
+  const monitorList = useMonitorList();
+  const [monitorOpen, setMonitorOpen] = useState(false);
   const [planCode, setPlanCode] = useState("");
   const [selectedDCs, setSelectedDCs] = useState<string[]>([]);
   const [quantity, setQuantity] = useState("1");

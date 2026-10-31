@@ -87,11 +87,6 @@ export function useReinstallServer() {
         }
         const DEFAULT_GID = "default";
         const gidKey = (v?: number) => (v && v > 0 ? String(v) : DEFAULT_GID);
-        if (args.useSoftwareRaid && args.softwareRaidDisks && args.softwareRaidDisks > 0) {
-          const dgid = groups.has(DEFAULT_GID) ? DEFAULT_GID : groups.keys().next().value as string;
-          const g0 = groups.get(dgid);
-          if (g0 && g0.partitioning) g0.partitioning.disks = args.softwareRaidDisks;
-        }
         partitions.forEach((p) => {
           const gid = gidKey(p.diskGroupId);
           if (!groups.has(gid)) {
@@ -111,6 +106,12 @@ export function useReinstallServer() {
           }
           g.partitioning.layout.push(ovhP);
         });
+
+        if (args.useSoftwareRaid && args.softwareRaidDisks && args.softwareRaidDisks > 0) {
+          const dgid = groups.has(DEFAULT_GID) ? DEFAULT_GID : groups.keys().next().value as string;
+          const g0 = groups.get(dgid);
+          if (g0 && g0.partitioning) g0.partitioning.disks = args.softwareRaidDisks;
+        }
 
         if (args.hardwareRaid) {
           Object.entries(args.hardwareRaid).forEach(([gidStr, raidMode]) => {

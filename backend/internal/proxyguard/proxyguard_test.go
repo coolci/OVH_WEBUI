@@ -75,9 +75,14 @@ func TestConsecutiveFailuresPauseTasks(t *testing.T) {
 		{ID: "q4", AccountID: "us", PlanCode: "24sk605", Status: "running"},   // 别的账户不该动
 	}
 	st.QueueMu.Unlock()
+	cancelled := false
+	st.RegisterTaskCancel("q1", func() { cancelled = true })
 
 	for i := 0; i < failThreshold; i++ {
 		g.Report("eu", proxyErr())
+	}
+	if !cancelled {
+		t.Fatal("pauseQueue 应当取消进行中任务的 context")
 	}
 	if !Tripped("eu") {
 		t.Fatal("连续失败到阈值应当跳闸")
@@ -120,9 +125,14 @@ func TestRecoveryClearsButDoesNotResume(t *testing.T) {
 	st.QueueMu.Lock()
 	st.Queue = []types.QueueItem{{ID: "q1", AccountID: "eu", PlanCode: "24sk602", Status: "running"}}
 	st.QueueMu.Unlock()
+	cancelled := false
+	st.RegisterTaskCancel("q1", func() { cancelled = true })
 
 	for i := 0; i < failThreshold; i++ {
 		g.Report("eu", proxyErr())
+	}
+	if !cancelled {
+		t.Fatal("pauseQueue 应当取消进行中任务的 context")
 	}
 	if !Tripped("eu") {
 		t.Fatal("应当跳闸")

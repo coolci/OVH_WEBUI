@@ -322,6 +322,44 @@ func (s *State) ServerCacheKey(accountID string) string {
 	return strings.ToLower(acc.Endpoint) + "|" + strings.ToUpper(acc.Zone)
 }
 
+// SyncDefaultAccountConfig 将当前默认账户的区域、IAM、Endpoint 与凭据同步到 Config,
+// 确保全局设置 (GET /api/settings) 以及未传 ?account= 的默认路径与默认账户保持一致。
+func (s *State) SyncDefaultAccountConfig() {
+	if s.Config == nil {
+		return
+	}
+	defAcc, ok := s.FindAccount("")
+	if !ok {
+		return
+	}
+	cfg := s.Config.Get()
+	changed := false
+	if defAcc.Zone != "" && cfg.Zone != defAcc.Zone {
+		cfg.Zone = defAcc.Zone
+		changed = true
+	}
+	if defAcc.IAM != "" && cfg.IAM != defAcc.IAM {
+		cfg.IAM = defAcc.IAM
+		changed = true
+	}
+	if defAcc.Endpoint != "" && cfg.Endpoint != defAcc.Endpoint {
+		cfg.Endpoint = defAcc.Endpoint
+		changed = true
+	}
+	if defAcc.AppKey != "" && cfg.AppKey == "" {
+		cfg.AppKey = defAcc.AppKey
+		cfg.AppSecret = defAcc.AppSecret
+		cfg.ConsumerKey = defAcc.ConsumerKey
+		changed = true
+	}
+	if changed {
+		_ = s.Config.Set(cfg)
+		if s.Logger != nil {
+			s.Logger.Info(fmt.Sprintf("全局运行时设置已同步默认账户 %s: Zone=%s, IAM=%s, Endpoint=%s", defAcc.Name, cfg.Zone, cfg.IAM, cfg.Endpoint), "system")
+		}
+	}
+}
+
 // ReloadAccounts 从 SQLite 重新加载账户到内存,并把整个 OVH client 缓存清掉,
 // 强制下次 ClientFor() 用最新凭据重建。
 // 账户 CRUD 操作完成后调一次。
@@ -337,6 +375,7 @@ func (s *State) ReloadAccounts() error {
 	s.Accounts = accs
 	s.AccountsMu.Unlock()
 	s.OVH.InvalidateAll()
+	s.SyncDefaultAccountConfig()
 	return nil
 }
 
@@ -352,6 +391,7 @@ func (s *State) LoadAll() {
 		s.AccountsMu.Lock()
 		s.Accounts = accs
 		s.AccountsMu.Unlock()
+		s.SyncDefaultAccountConfig()
 		s.Logger.Info("已加载 OVH 账户: "+intStr(len(accs))+" 个", "system")
 	} else {
 		s.MarkLoadFailed("ovh_accounts", err)
@@ -666,7 +706,22 @@ func (s *State) IsTaskActiveInQueue(id string) bool {
 	defer s.QueueMu.Unlock()
 	for i := range s.Queue {
 		if s.Queue[i].ID == id {
-			return s.Queue[i].Status != "paused"
+			return s.Queue[i].Status == "running" || s.Queue[i].Status == "pending"
+		}
+	}
+	return false
+}
+
+// IsTaskPaused 检查任务是否在队列中被置为 paused
+func (s *State) IsTaskPaused(id string) bool {
+	if id == "" {
+		return false
+	}
+	s.QueueMu.Lock()
+	defer s.QueueMu.Unlock()
+	for i := range s.Queue {
+		if s.Queue[i].ID == id {
+			return s.Queue[i].Status == "paused"
 		}
 	}
 	return false

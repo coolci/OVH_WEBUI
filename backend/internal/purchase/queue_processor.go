@@ -122,7 +122,12 @@ func buildTaskFailedMessage(item *types.QueueItem, reason string, fatal bool) st
 
 // ProcessQueueLoop 持续执行未完成任务,已下单任务保留为只读记录。
 func ProcessQueueLoop(state *app.State) {
-	processQueueLoop(context.Background(), state, PurchaseServer)
+	ProcessQueueLoopWithContext(context.Background(), state)
+}
+
+// ProcessQueueLoopWithContext 支持通过 context 优雅停止队列处理循环
+func ProcessQueueLoopWithContext(ctx context.Context, state *app.State) {
+	processQueueLoop(ctx, state, PurchaseServer)
 }
 
 // processQueueLoop 支持停止后台循环,购买入口可用离线替身验证恰好执行一次。
@@ -306,6 +311,8 @@ func processQueueLoop(loopCtx context.Context, state *app.State, purchase func(c
 					for i := range state.Queue {
 						if state.Queue[i].ID == it.ID {
 							state.Queue[i].Status = "paused"
+							state.Queue[i].UncertainCheckout = true
+							state.Queue[i].UncertainTime = types.NowISO()
 							state.Queue[i].UpdatedAt = types.NowISO()
 							break
 						}

@@ -195,6 +195,7 @@ func enqueueFromNotifyButton(state *app.State, mon *monitor.Monitor, cbID string
 	var opts []string
 	if !claimed {
 		if cached := mon.MessageUUIDCacheLookup(buttonID); cached != nil {
+			mon.MessageUUIDCacheDelete(buttonID)
 			planCode, datacenter = cached.PlanCode, cached.Datacenter
 			opts = cached.Options
 			if cached.ConfigInfo != nil {

@@ -1,6 +1,7 @@
 package purchase
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -128,12 +129,26 @@ func applyOrderStatus(state *app.State, entryID, status string) bool {
 // OrderStatusLoop 后台定时刷新。用户付款发生在下单之后的任意时刻,
 // 只在下单那一刻查一次是不够的。
 func OrderStatusLoop(state *app.State) {
-	// 启动先等一会,别和开机时的一堆 OVH 请求挤在一起
-	time.Sleep(90 * time.Second)
+	OrderStatusLoopWithContext(context.Background(), state)
+}
+
+// OrderStatusLoopWithContext 支持通过 context 优雅停止
+func OrderStatusLoopWithContext(ctx context.Context, state *app.State) {
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(90 * time.Second):
+	}
+	ticker := time.NewTicker(10 * time.Minute)
+	defer ticker.Stop()
 	for {
 		if n := RefreshOrderStatuses(state, false); n > 0 {
 			state.Logger.Info(fmt.Sprintf("后台刷新订单状态:%d 条有变化", n), "purchase")
 		}
-		time.Sleep(10 * time.Minute)
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
 	}
 }

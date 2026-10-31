@@ -10,9 +10,11 @@ package notify
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -21,6 +23,86 @@ import (
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/telegram"
 )
+
+// AllowLocalWebhookForTesting 仅在单元测试中临时允许回环地址
+var AllowLocalWebhookForTesting = false
+
+// IsPrivateOrLocalIP 检查 IP 是否为本地回环、RFC1918 私网、链路本地、云元数据地址
+func IsPrivateOrLocalIP(ip net.IP) bool {
+	if ip == nil {
+		return true
+	}
+	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+		return true
+	}
+	if ip4 := ip.To4(); ip4 != nil {
+		if ip4[0] == 127 { // 127.0.0.0/8
+			return true
+		}
+		if ip4[0] == 10 { // 10.0.0.0/8
+			return true
+		}
+		if ip4[0] == 172 && ip4[1] >= 16 && ip4[1] <= 31 { // 172.16.0.0/12
+			return true
+		}
+		if ip4[0] == 192 && ip4[1] == 168 { // 192.168.0.0/16
+			return true
+		}
+		if ip4[0] == 169 && ip4[1] == 254 { // 169.254.0.0/16 (链路本地 / 云厂商元数据 169.254.169.254)
+			return true
+		}
+		if ip4[0] == 0 { // 0.0.0.0
+			return true
+		}
+	} else {
+		// IPv6 fc00::/7 (unique local)
+		if len(ip) == 16 && (ip[0]&0xfe) == 0xfc {
+			return true
+		}
+	}
+	return false
+}
+
+// ValidateWebhookURL 校验 URL 是否合法且不属于内网 SSRF 风险目标
+func ValidateWebhookURL(rawURL string) error {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return nil
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return fmt.Errorf("通知 Webhook 地址不合法,必须是完整的 http:// 或 https:// 地址")
+	}
+	host := u.Hostname()
+	if strings.EqualFold(host, "localhost") {
+		if AllowLocalWebhookForTesting {
+			return nil
+		}
+		return fmt.Errorf("通知 Webhook 地址禁止指向本地或内网地址 (localhost)")
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		if IsPrivateOrLocalIP(ip) {
+			if AllowLocalWebhookForTesting && (ip.IsLoopback() || ip.Equal(net.IPv4(127, 0, 0, 1))) {
+				return nil
+			}
+			return fmt.Errorf("通知 Webhook 地址禁止指向私有或内网 IP (%s)", host)
+		}
+		return nil
+	}
+	// 尝试域名解析预检
+	ips, err := net.LookupIP(host)
+	if err == nil {
+		for _, ip := range ips {
+			if IsPrivateOrLocalIP(ip) {
+				if AllowLocalWebhookForTesting && (ip.IsLoopback() || ip.Equal(net.IPv4(127, 0, 0, 1))) {
+					continue
+				}
+				return fmt.Errorf("通知 Webhook 域名解析为私有或内网 IP (%s -> %s)", host, ip.String())
+			}
+		}
+	}
+	return nil
+}
 
 // Channel 一条通知通道的状态
 type Channel struct {
@@ -86,6 +168,9 @@ func BroadcastWithStatus(state *app.State, message string, replyMarkup map[strin
 
 // sendWebhook 发文本消息,同时检查 HTTP 状态和常见的业务状态码。
 func sendWebhook(webhookURL, message string) error {
+	if err := ValidateWebhookURL(webhookURL); err != nil {
+		return err
+	}
 	target, err := url.Parse(webhookURL)
 	if err != nil {
 		return err
@@ -114,7 +199,41 @@ func sendWebhook(webhookURL, message string) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+
+	transport := http.DefaultTransport
+	if tr, ok := transport.(*http.Transport); ok {
+		cloned := tr.Clone()
+		origDial := cloned.DialContext
+		if origDial == nil {
+			origDial = (&net.Dialer{Timeout: 5 * time.Second}).DialContext
+		}
+		cloned.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			h, _, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, err
+			}
+			ips, err := net.DefaultResolver.LookupIP(ctx, "ip", h)
+			if err != nil {
+				return nil, err
+			}
+			for _, ip := range ips {
+				if IsPrivateOrLocalIP(ip) {
+					if AllowLocalWebhookForTesting && (ip.IsLoopback() || ip.Equal(net.IPv4(127, 0, 0, 1))) {
+						continue
+					}
+					return nil, fmt.Errorf("SSRF 拦截: 目标 IP %s 属于私有或本地网络", ip.String())
+				}
+			}
+			return origDial(ctx, network, addr)
+		}
+		transport = cloned
+	}
+
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   10 * time.Second,
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}

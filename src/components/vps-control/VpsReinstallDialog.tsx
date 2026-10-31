@@ -11,7 +11,7 @@ import { PartialNotice } from "@/components/common/PartialNotice";
 import { errorMessage } from "@/components/common/LoadFailed";
 import { useVpsTemplates, useReinstallVps, useVpsCurrentOS, type VpsTemplate } from "@/hooks/use-vps-control";
 import { useAccountSshKeys } from "@/hooks/use-account";
-import { useActiveAccount } from "@/hooks/use-active-account";
+import { useActiveVpsControlAccount } from "@/hooks/use-active-account";
 import { toast } from "sonner";
 import { splitList } from "@/lib/split-list";
 import { Trans, useTranslation } from "react-i18next";
@@ -21,18 +21,21 @@ export function VpsReinstallDialog({
   serviceName,
   open,
   onOpenChange,
+  accountId,
 }: {
   serviceName: string;
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  accountId?: string;
 }) {
   const templates = useVpsTemplates(open ? serviceName : null);
   const currentOS = useVpsCurrentOS(open ? serviceName : null);
   const reinstall = useReinstallVps(serviceName);
   const { t } = useTranslation();
 
-  const [activeAccount] = useActiveAccount();
-  const sshKeysQ = useAccountSshKeys(activeAccount);
+  const [activeVpsAccount] = useActiveVpsControlAccount();
+  const effectiveAccount = accountId || activeVpsAccount;
+  const sshKeysQ = useAccountSshKeys(effectiveAccount);
   const registeredKeys = sshKeysQ.data || [];
 
   const [templateId, setTemplateId] = useState<number | string | null>(null);

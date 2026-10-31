@@ -158,6 +158,10 @@ func BatchAddAll(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 			AutoOrderAccountID string `json:"autoOrderAccountId"`
 		}
 		_ = c.ShouldBindJSON(&body)
+		if body.AutoOrder {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "全目录批量订阅禁止开启自动下单，请针对特定机型单独配置自动下单以防意外扣款", "code": "E_BATCH_AUTO_ORDER_FORBIDDEN"})
+			return
+		}
 		if body.AutoOrderAccountID != "" {
 			if _, ok := state.FindAccount(body.AutoOrderAccountID); !ok {
 				c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "autoOrderAccountId 不存在", "code": "EB5C2D1BB"})

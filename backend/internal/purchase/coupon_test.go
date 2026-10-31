@@ -174,3 +174,81 @@ func TestPurchaseCouponBeforeCheckout(t *testing.T) {
 		})
 	}
 }
+
+func TestPurchaseCoupon_RejectedWithAutoPay_PausesTask(t *testing.T) {
+	original := http.DefaultTransport
+	t.Cleanup(func() { http.DefaultTransport = original })
+
+	dir := t.TempDir()
+	database, err := db.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	lg := logger.New(filepath.Join(dir, "test.log"), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	st := app.NewState(storage.Paths{DataDir: dir}, config.New(database), lg, database)
+	st.Accounts = []types.OVHAccount{{ID: "eu", Endpoint: "ovh-eu", Zone: "PT", AppKey: "test", AppSecret: "test", ConsumerKey: "test"}}
+
+	ctx := context.Background()
+	checkoutCalled := false
+	couponCalled := false
+
+	transport := preorderTransport(func(r *http.Request) (*http.Response, error) {
+		body, status := "{}", http.StatusOK
+		path := r.URL.Path
+		switch {
+		case strings.HasSuffix(path, "/auth/time"):
+			body = fmt.Sprint(time.Now().Unix())
+		case strings.Contains(path, "/order/catalog/public/eco"):
+			body = `{"plans":[{"planCode":"24sk202"}]}`
+		case strings.Contains(path, "/dedicated/server/datacenter/availabilities"):
+			body = `[{"fqn":"24sk202","datacenters":[{"datacenter":"gra","availability":"1H-low"}]}]`
+		case strings.HasSuffix(path, "/order/cart") && r.Method == "POST":
+			body = `{"cartId":"coupon-cart"}`
+		case strings.HasSuffix(path, "/coupon-cart/assign"):
+		case strings.HasSuffix(path, "/coupon-cart/eco") && r.Method == "POST":
+			body = `{"itemId":1}`
+		case strings.HasSuffix(path, "/item/1/configuration"):
+		case strings.HasSuffix(path, "/coupon-cart/coupon") && r.Method == "POST":
+			couponCalled = true
+			status = http.StatusBadRequest
+			body = `{"message":"coupon is invalid or expired"}`
+		case strings.HasSuffix(path, "/coupon-cart/checkout") && r.Method == "POST":
+			checkoutCalled = true
+		case strings.HasSuffix(path, "/order/cart/coupon-cart") && r.Method == "DELETE":
+		default:
+			return nil, fmt.Errorf("unexpected fixture request: %s %s", r.Method, r.URL)
+		}
+		return &http.Response{StatusCode: status, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+	})
+	http.DefaultTransport = transport
+	client, err := st.OVH.ClientFor("eu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.Client = &http.Client{Transport: transport}
+
+	item := &types.QueueItem{
+		ID:         "autopay-coupon-task",
+		AccountID:  "eu",
+		PlanCode:   "24sk202",
+		Datacenter: "gra",
+		Coupon:     "EXPIREDCODE",
+		AutoPay:    true,
+	}
+
+	outcome := PurchaseServer(ctx, st, item)
+
+	if !couponCalled {
+		t.Fatal("expected coupon to be called")
+	}
+	if checkoutCalled {
+		t.Fatal("checkout should NOT be called when coupon is rejected and autoPay is true")
+	}
+	if !outcome.PauseTask {
+		t.Fatalf("expected outcome.PauseTask=true, got %+v", outcome)
+	}
+	if outcome.Attempted {
+		t.Fatalf("expected outcome.Attempted=false, got %+v", outcome)
+	}
+}

@@ -85,6 +85,14 @@ func (s *Server) GracefulRestart(exe string) {
 		s.state.Logger.Flush()
 	}
 
+	if s.supervisor != nil {
+		s.supervisor.Stop()
+		if s.state != nil && s.state.Logger != nil {
+			s.state.Logger.Info("[更新] 后台循环已全部停止(抢购/监控/轮询)", "version")
+			s.state.Logger.Flush()
+		}
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := s.httpServer.Shutdown(ctx); err != nil && s.console != nil {

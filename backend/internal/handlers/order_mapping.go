@@ -27,6 +27,7 @@ func managerOrderURL(endpoint string, orderID int64) string {
 type orderMappingEntry struct {
 	mapping map[string]interface{}
 	at      time.Time
+	ttl     time.Duration
 }
 
 // orderMappingCache 简单内存缓存。
@@ -38,10 +39,11 @@ var (
 	orderMappingDuration = 10 * time.Minute
 )
 
-// usOrderScanLimit US 的 /me/order 不支持任何服务端过滤,只能拉全量 id 再本地筛。
-// 老账户可能有上千订单,每个订单还要打 status/details/order 三次 API,
-// 所以按订单号倒序(OVH 订单号递增,号大的更新)只回扫最近这么多个。
-const usOrderScanLimit = 200
+// defaultOrderScanLimit 单次订单扫描的最大订单上限(防配额打爆与超长阻塞)
+const defaultOrderScanLimit = 50
+
+// usOrderScanLimit 保留常量
+const usOrderScanLimit = 100
 
 // invalidateOrderMappingCache 清掉指定账户的订单映射缓存(删账户时调)
 func invalidateOrderMappingCache(accountID string) {
@@ -66,7 +68,11 @@ func orderMappingFor(state *app.State, c *gin.Context) (map[string]interface{}, 
 	orderMappingMu.Lock()
 	defer orderMappingMu.Unlock()
 	entry, hit := orderMappingCache[acc.ID]
-	if !hit || time.Since(entry.at) >= orderMappingDuration {
+	ttl := entry.ttl
+	if ttl <= 0 {
+		ttl = orderMappingDuration
+	}
+	if !hit || time.Since(entry.at) >= ttl {
 		return nil, fmt.Errorf("订单映射尚未同步或已过期,请先在服务器控制页点「同步订单」")
 	}
 	return entry.mapping, nil
@@ -90,7 +96,12 @@ func GetOrderMapping(state *app.State) gin.HandlerFunc {
 		forceRefresh := strings.EqualFold(c.Query("forceRefresh"), "true")
 
 		orderMappingMu.Lock()
-		if entry, hit := orderMappingCache[cacheKey]; !forceRefresh && hit && time.Since(entry.at) < orderMappingDuration {
+		entry, hit := orderMappingCache[cacheKey]
+		ttl := entry.ttl
+		if ttl <= 0 {
+			ttl = orderMappingDuration
+		}
+		if !forceRefresh && hit && time.Since(entry.at) < ttl {
 			cached := entry.mapping
 			orderMappingMu.Unlock()
 			state.Logger.Info(fmt.Sprintf("返回账户 %s 缓存的订单映射数据（共 %d 条）", acc.Name, len(cached)), "server_control")
@@ -106,8 +117,7 @@ func GetOrderMapping(state *app.State) gin.HandlerFunc {
 
 		state.Logger.Info("开始同步订单映射数据...", "server_control")
 
-		// degraded 标记本次结果是否不完整。不完整的结果不写缓存,
-		// 否则一次 OVH 抖动会让残缺映射粘住 10 分钟,用户再点同步还是同样的残缺数据。
+		// degraded 标记本次结果是否不完整。
 		degraded := false
 		// truncated 只表示"扫描范围被上限截断",它是稳定的、可复现的结果,
 		// 和 OVH 抖动导致的残缺不是一回事,所以不影响缓存。
@@ -122,6 +132,28 @@ func GetOrderMapping(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "获取服务器列表失败: " + ovh.Explain(err)})
 			return
 		}
+		if len(serverList) == 0 {
+			state.Logger.Info("当前账户下无专用服务器,无需扫描订单", "server_control")
+			c.JSON(http.StatusOK, gin.H{
+				"success":         true,
+				"mapping":         map[string]interface{}{},
+				"total":           0,
+				"processedOrders": 0,
+				"cached":          false,
+			})
+			return
+		}
+
+		orderScanLimit := defaultOrderScanLimit
+		if lStr := c.Query("limit"); lStr != "" {
+			if l, err := strconv.Atoi(lStr); err == nil && l > 0 {
+				if l > 200 {
+					l = 200
+				}
+				orderScanLimit = l
+			}
+		}
+
 		svcDetails, svcFailed, svcErr := parallelGetStringsCounted(client, serverList, func(sn string) string {
 			return "/dedicated/server/" + sn + "/serviceInfos"
 		}, 10)
@@ -181,7 +213,6 @@ func GetOrderMapping(state *app.State) gin.HandlerFunc {
 		isUS := ovh.EndpointRegion(acc.Endpoint) == "US"
 		var allOrderIDs []int64
 		orderDates := map[int64]string{}
-		orderDateFailedIDs := map[int64]bool{}
 		// scanHint 给用户解释"为什么映射是空的",空字符串表示没什么好解释的
 		scanHint := ""
 		if isUS {
@@ -200,7 +231,7 @@ func GetOrderMapping(state *app.State) gin.HandlerFunc {
 				truncated = true
 			}
 			// 本地按时间窗口过滤:date 是可空字段,取不到就保留(宁可多查一单也不要漏)
-			orderDates, orderDateFailedIDs = fetchOrderDates(client, allOrderIDs, 10)
+			orderDates, _ = fetchOrderDates(client, allOrderIDs, 10)
 			inWindow := []int64{}
 			var oldest, newest time.Time
 			for _, id := range allOrderIDs {
@@ -239,200 +270,216 @@ func GetOrderMapping(state *app.State) gin.HandlerFunc {
 				c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "获取订单列表失败: " + ovh.Explain(err)})
 				return
 			}
+			sort.Slice(allOrderIDs, func(i, j int) bool { return allOrderIDs[i] > allOrderIDs[j] })
+			if len(allOrderIDs) > orderScanLimit {
+				state.Logger.Warn(fmt.Sprintf("EU/CA 账户时间范围内共有 %d 个订单,本次只回扫最近 %d 个", len(allOrderIDs), orderScanLimit), "server_control")
+				allOrderIDs = allOrderIDs[:orderScanLimit]
+				truncated = true
+			}
 		}
 		state.Logger.Info(fmt.Sprintf("时间范围内获取到 %d 个订单", len(allOrderIDs)), "server_control")
 
-		// 3. 过滤已取消订单（5 并发）
-		// billing.order.OrderStatusEnum 的合法值只有
-		// cancelled / cancelling / checking / delivered / delivering / documentsRequested / notPaid / unknown,
-		// 取消态就 cancelled 和 cancelling 两个(旧代码比的 cancelledByCustomer* 是不存在的死条件)。
-		validIDs := []int64{}
-		statuses := map[int64]string{}
-		skippedCancelled := 0
-		statusFailed := 0
-		statusCounts := map[string]int{}
-		var muVal sync.Mutex
-		var wg sync.WaitGroup
-		sem := make(chan struct{}, 5)
-		for _, oid := range allOrderIDs {
-			wg.Add(1)
-			sem <- struct{}{}
-			go func(id int64) {
-				defer wg.Done()
-				defer func() { <-sem }()
-				var status string
-				client, err := ovh.IsolateClient(client)
-				if err != nil {
-					muVal.Lock()
-					statusFailed++
-					muVal.Unlock()
-					return
-				}
-				if err := ovhGetWithRetry(client, fmt.Sprintf("/me/order/%d/status", id), &status); err != nil {
-					muVal.Lock()
-					statusFailed++
-					muVal.Unlock()
-					return
-				}
-				lower := strings.ToLower(status)
-				muVal.Lock()
-				statusCounts[status]++
-				if lower == "cancelled" || lower == "cancelling" {
-					skippedCancelled++
-				} else {
-					statuses[id] = status
-					validIDs = append(validIDs, id)
-				}
-				muVal.Unlock()
-			}(oid)
-		}
-		wg.Wait()
-		if statusFailed > 0 {
-			degraded = true
-			state.Logger.Warn(fmt.Sprintf("%d 个订单的状态拉取失败,这些订单本次不会出现在映射里", statusFailed), "server_control")
-		}
-		if len(statusCounts) > 0 {
-			parts := []string{}
-			for k, v := range statusCounts {
-				parts = append(parts, fmt.Sprintf("%s: %d", k, v))
-			}
-			state.Logger.Info("订单状态统计: "+strings.Join(parts, ", "), "server_control")
-		}
-		state.Logger.Info(fmt.Sprintf("过滤后得到 %d 个有效订单（跳过 %d 个已取消/取消中订单,%d 个状态获取失败）",
-			len(validIDs), skippedCancelled, statusFailed), "server_control")
-
-		// 4. 取订单日期。US 分支上面已经拉过一遍了,别再打一次。
-		if !isUS {
-			orderDates, orderDateFailedIDs = fetchOrderDates(client, validIDs, 10)
-		}
-		// orderInfoFailed 只统计"真正会参与映射"的订单:US 分支要对最多 usOrderScanLimit 个订单
-		// 拉日期,其中大量订单随后会被取消状态/时间窗过滤掉,把它们的失败也算进来会导致
-		// 「账户越大越容易 degraded → 越不缓存 → 下次又全量重扫」的放大效应。
-		orderInfoFailed := 0
-		for _, id := range validIDs {
-			if orderDateFailedIDs[id] {
-				orderInfoFailed++
-			}
-		}
-		if orderInfoFailed > 0 {
-			degraded = true
-			// 日期缺失会让"同一服务器保留哪张订单"的比较失真,必须报出来
-			state.Logger.Warn(fmt.Sprintf("%d 个订单的详情(/me/order/{id})拉取失败,这些订单的下单日期会是空的", orderInfoFailed), "server_control")
+		targetServers := make(map[string]bool, len(serverList))
+		for _, sn := range serverList {
+			targetServers[sn] = true
 		}
 
-		// 5. 处理订单明细（10 并发）
 		mapping := map[string]map[string]interface{}{}
 		var muMap sync.Mutex
-		var wg2 sync.WaitGroup
-		sem2 := make(chan struct{}, 10)
 		processed := 0
 		errorCount := 0
-		// detailItemFailed 明细项级(/me/order/{id}/details/{did})的失败。
-		// 以前是裸 continue:一条明细拉不到,那台服务器就整条从 mapping 里消失,
-		// 而 degraded 不置位、残缺结果照样进缓存,粘住 10 分钟。
 		detailItemFailed := 0
-		for _, oid := range validIDs {
-			wg2.Add(1)
-			sem2 <- struct{}{}
-			go func(id int64) {
-				defer wg2.Done()
-				defer func() { <-sem2 }()
-				var detailIDs []int64
-				client, err := ovh.IsolateClient(client)
-				if err != nil {
-					muMap.Lock()
-					errorCount++
-					muMap.Unlock()
-					return
-				}
-				if err := ovhGetWithRetry(client, fmt.Sprintf("/me/order/%d/details", id), &detailIDs); err != nil {
-					muMap.Lock()
-					errorCount++
-					muMap.Unlock()
-					return
-				}
-				muMap.Lock()
-				orderDate := orderDates[id]
-				orderStatus := statuses[id]
-				muMap.Unlock()
-				if orderStatus == "" {
-					orderStatus = "unknown"
-				}
-				orderURL := managerOrderURL(acc.Endpoint, id)
+		skippedCancelled := 0
+		statusFailed := 0
+		orderInfoFailed := 0
+		statusCounts := map[string]int{}
+		validOrdersCount := 0
 
-				for _, did := range detailIDs {
-					var d map[string]interface{}
-					if err := ovhGetWithRetry(client, fmt.Sprintf("/me/order/%d/details/%d", id, did), &d); err != nil {
-						muMap.Lock()
-						detailItemFailed++
-						muMap.Unlock()
-						continue
+		const batchSize = 10
+		for batchStart := 0; batchStart < len(allOrderIDs); batchStart += batchSize {
+			batchEnd := batchStart + batchSize
+			if batchEnd > len(allOrderIDs) {
+				batchEnd = len(allOrderIDs)
+			}
+			batchIDs := allOrderIDs[batchStart:batchEnd]
+
+			// 3. 过滤已取消订单（5 并发）
+			validIDs := []int64{}
+			statuses := map[int64]string{}
+			var muVal sync.Mutex
+			var wg sync.WaitGroup
+			sem := make(chan struct{}, 5)
+			for _, oid := range batchIDs {
+				wg.Add(1)
+				sem <- struct{}{}
+				go func(id int64) {
+					defer wg.Done()
+					defer func() { <-sem }()
+					var status string
+					isoClient, err := ovh.IsolateClient(client)
+					if err != nil {
+						muVal.Lock()
+						statusFailed++
+						muVal.Unlock()
+						return
 					}
-					// billing.OrderDetail.cancelled 是必填 boolean:整单没取消但某条明细被取消是常态,
-					// 这种明细不能算作有效的服务器订单映射
-					if cancelled, _ := d["cancelled"].(bool); cancelled {
-						continue
+					if err := ovhGetWithRetry(isoClient, fmt.Sprintf("/me/order/%d/status", id), &status); err != nil {
+						muVal.Lock()
+						statusFailed++
+						muVal.Unlock()
+						return
 					}
-					serviceName, _ := d["domain"].(string)
-					description, _ := d["description"].(string)
-					if serviceName == "" {
-						continue
-					}
-					isDedicated := strings.Contains(strings.ToLower(description), "dedicated") ||
-						strings.Contains(strings.ToLower(description), "server") ||
-						strings.Contains(serviceName, ".ip-") ||
-						strings.HasPrefix(serviceName, "ns")
-					if !isDedicated {
-						continue
-					}
-					info := map[string]interface{}{
-						"orderId":     id,
-						"orderDate":   orderDate,
-						"orderStatus": orderStatus,
-						"orderUrl":    orderURL,
-						"detailId":    did,
-						"price":       d["totalPrice"],
-						"description": description,
-					}
-					muMap.Lock()
-					existing, exists := mapping[serviceName]
-					if !exists {
-						mapping[serviceName] = info
-						processed++
-						state.Logger.Info(fmt.Sprintf("✅ 找到服务器映射: %s -> 订单 %d", serviceName, id), "server_control")
+					lower := strings.ToLower(status)
+					muVal.Lock()
+					statusCounts[status]++
+					if lower == "cancelled" || lower == "cancelling" {
+						skippedCancelled++
 					} else {
-						existingDate, _ := existing["orderDate"].(string)
-						existingID, _ := existing["orderId"].(int64)
-						if orderIsNewer(orderDate, id, existingDate, existingID) {
-							mapping[serviceName] = info
-							state.Logger.Info(fmt.Sprintf("🔄 更新服务器映射: %s -> 订单 %d (更新)", serviceName, id), "server_control")
-						}
+						statuses[id] = status
+						validIDs = append(validIDs, id)
 					}
-					muMap.Unlock()
+					muVal.Unlock()
+				}(oid)
+			}
+			wg.Wait()
+
+			if len(validIDs) == 0 {
+				continue
+			}
+			validOrdersCount += len(validIDs)
+
+			// 4. 取订单日期
+			batchDates := map[int64]string{}
+			if isUS {
+				for _, vid := range validIDs {
+					batchDates[vid] = orderDates[vid]
 				}
-			}(oid)
+			} else {
+				var failedIDs map[int64]bool
+				batchDates, failedIDs = fetchOrderDates(client, validIDs, 10)
+				for _, vid := range validIDs {
+					if failedIDs[vid] {
+						orderInfoFailed++
+					}
+				}
+			}
+
+			// 5. 处理订单明细（10 并发）
+			var wg2 sync.WaitGroup
+			sem2 := make(chan struct{}, 10)
+			for _, oid := range validIDs {
+				wg2.Add(1)
+				sem2 <- struct{}{}
+				go func(id int64) {
+					defer wg2.Done()
+					defer func() { <-sem2 }()
+					var detailIDs []int64
+					isoClient, err := ovh.IsolateClient(client)
+					if err != nil {
+						muMap.Lock()
+						errorCount++
+						muMap.Unlock()
+						return
+					}
+					if err := ovhGetWithRetry(isoClient, fmt.Sprintf("/me/order/%d/details", id), &detailIDs); err != nil {
+						muMap.Lock()
+						errorCount++
+						muMap.Unlock()
+						return
+					}
+					orderDate := batchDates[id]
+					orderStatus := statuses[id]
+					if orderStatus == "" {
+						orderStatus = "unknown"
+					}
+					orderURL := managerOrderURL(acc.Endpoint, id)
+
+					for _, did := range detailIDs {
+						var d map[string]interface{}
+						if err := ovhGetWithRetry(isoClient, fmt.Sprintf("/me/order/%d/details/%d", id, did), &d); err != nil {
+							muMap.Lock()
+							detailItemFailed++
+							muMap.Unlock()
+							continue
+						}
+						if cancelled, _ := d["cancelled"].(bool); cancelled {
+							continue
+						}
+						serviceName, _ := d["domain"].(string)
+						description, _ := d["description"].(string)
+						if serviceName == "" {
+							continue
+						}
+						isDedicated := strings.Contains(strings.ToLower(description), "dedicated") ||
+							strings.Contains(strings.ToLower(description), "server") ||
+							strings.Contains(serviceName, ".ip-") ||
+							strings.HasPrefix(serviceName, "ns")
+						if !isDedicated {
+							continue
+						}
+						info := map[string]interface{}{
+							"orderId":     id,
+							"orderDate":   orderDate,
+							"orderStatus": orderStatus,
+							"orderUrl":    orderURL,
+							"detailId":    did,
+							"price":       d["totalPrice"],
+							"description": description,
+						}
+						muMap.Lock()
+						existing, exists := mapping[serviceName]
+						if !exists {
+							mapping[serviceName] = info
+							processed++
+							state.Logger.Info(fmt.Sprintf("✅ 找到服务器映射: %s -> 订单 %d", serviceName, id), "server_control")
+						} else {
+							existingDate, _ := existing["orderDate"].(string)
+							existingID, _ := existing["orderId"].(int64)
+							if orderIsNewer(orderDate, id, existingDate, existingID) {
+								mapping[serviceName] = info
+								state.Logger.Info(fmt.Sprintf("🔄 更新服务器映射: %s -> 订单 %d (更新)", serviceName, id), "server_control")
+							}
+						}
+						muMap.Unlock()
+					}
+				}(oid)
+			}
+			wg2.Wait()
+
+			// 检查早停条件：如果账户下所有目标服务器都已找到对应订单，提前退出
+			muMap.Lock()
+			allFound := len(targetServers) > 0
+			for sn := range targetServers {
+				if _, ok := mapping[sn]; !ok {
+					allFound = false
+					break
+				}
+			}
+			muMap.Unlock()
+
+			if allFound {
+				state.Logger.Info("🎯 账户下全部服务器均已成功匹配最新订单，早停退出扫描", "server_control")
+				break
+			}
 		}
-		wg2.Wait()
-		if errorCount > 0 {
+
+		if statusFailed > 0 || orderInfoFailed > 0 || errorCount > 0 || detailItemFailed > 0 {
 			degraded = true
-		}
-		if detailItemFailed > 0 {
-			degraded = true
-			state.Logger.Warn(fmt.Sprintf("%d 条订单明细(details/{id})拉取失败,相关服务器可能没出现在映射里", detailItemFailed), "server_control")
 		}
 
 		final := map[string]interface{}{}
 		for k, v := range mapping {
 			final[k] = v
 		}
-		// 只有完整的结果才进缓存
+
+		orderMappingMu.Lock()
+		ttl = orderMappingDuration
 		if degraded {
-			state.Logger.Warn("本次订单映射结果不完整,跳过缓存,下次请求会重新同步", "server_control")
-		} else {
-			orderMappingMu.Lock()
-			orderMappingCache[cacheKey] = orderMappingEntry{mapping: final, at: time.Now()}
-			orderMappingMu.Unlock()
+			ttl = 2 * time.Minute
+			state.Logger.Warn("本次订单映射结果不完整,写入 2 分钟短效缓存以防重复高频请求打爆配额", "server_control")
 		}
+		orderMappingCache[cacheKey] = orderMappingEntry{mapping: final, at: time.Now(), ttl: ttl}
+		orderMappingMu.Unlock()
 
 		state.Logger.Info(fmt.Sprintf("订单映射同步完成: 成功处理 %d 个服务器映射，%d 个订单明细获取失败", processed, errorCount), "server_control")
 		state.Logger.Info(fmt.Sprintf("返回订单映射数据: 共 %d 个映射", len(final)), "server_control")
@@ -440,7 +487,7 @@ func GetOrderMapping(state *app.State) gin.HandlerFunc {
 			"success":           true,
 			"mapping":           final,
 			"total":             len(final),
-			"processedOrders":   len(validIDs),
+			"processedOrders":   validOrdersCount,
 			"cached":            false,
 			"degraded":          degraded,
 			"truncated":         truncated,

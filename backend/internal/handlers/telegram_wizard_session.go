@@ -339,5 +339,6 @@ func getCfgOffer(tok string) (*cfgOffer, bool) {
 		delete(cfgOffers, tok)
 		return nil, false
 	}
+	delete(cfgOffers, tok)
 	return o, true
 }

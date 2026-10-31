@@ -25,22 +25,20 @@ const reconcileScanCap = 25
 // 封顶是为了在异常大单上不会把对账拖成一次目录级拉取。
 const reconcileDetailCap = 12
 
-// ReconcileRecentOrder 在 checkout 超时/5xx 之后查官方订单，确认这轮有没有已经建成。
-//
-// 官方 GET /me/order（eu.api.ovh.com / ca.api.ovh.com / api.us.ovhcloud.com 的 /me.json，
-// 以及本仓库 schemacheck 基线）:
-//   - 响应是 long[]（订单号），不是带 orderId/url 的对象数组
-//   - EU/CA 的查询参数是 date.from / date.to（datetime）；没有 dateFrom，也没有 planCode
-//   - US 不声明任何查询参数，带了参数可能直接 400
-//
-// 旧实现对着 []map 解 long[]，再附上并不存在的 dateFrom 和 planCode。
-// 解不开或被 400 时一律当成“没建单”。调用方随后暂停任务，用户如果恢复重试，
-// 已经建成的那一笔会被再买一次。
-//
-// 命中条件：订单 date 不早于 since 前 2 分钟（盖住时钟差），且任一明细的
-// description 或 domain 包含 planCode。返回的 url 优先用订单自带的付款链接
-// （只进本地历史，通知另走控制台深链）；没有时回退到控制台深链。
+// ReconcileOptions 对账增强选项
+type ReconcileOptions struct {
+	Datacenter       string
+	ExcludedOrderIDs map[string]bool
+}
+
+// ReconcileRecentOrder 兼容旧调用入口
 func ReconcileRecentOrder(client *ovhsdk.Client, endpoint, planCode string, since time.Time) (orderID, orderURL string, err error) {
+	return ReconcileRecentOrderEx(client, endpoint, planCode, since, ReconcileOptions{})
+}
+
+// ReconcileRecentOrderEx 在 checkout 超时/5xx 之后查官方订单，确认这轮有没有已经建成。
+// 增加 ExcludedOrderIDs 排除历史已认领订单，以及 Datacenter 冲突检测。
+func ReconcileRecentOrderEx(client *ovhsdk.Client, endpoint, planCode string, since time.Time, opts ReconcileOptions) (orderID, orderURL string, err error) {
 	planCode = strings.TrimSpace(planCode)
 	if client == nil || planCode == "" {
 		return "", "", fmt.Errorf("reconcile: missing client or planCode")
@@ -53,6 +51,9 @@ func ReconcileRecentOrder(client *ovhsdk.Client, endpoint, planCode string, sinc
 	for _, obj := range objects {
 		id := numconv.ToString(obj["orderId"])
 		if id != "" {
+			if opts.ExcludedOrderIDs != nil && opts.ExcludedOrderIDs[id] {
+				continue
+			}
 			link, _ := obj["url"].(string)
 			link = strings.TrimSpace(link)
 			if link == "" {
@@ -68,6 +69,10 @@ func ReconcileRecentOrder(client *ovhsdk.Client, endpoint, planCode string, sinc
 	cutoff := since.Add(-2 * time.Minute)
 	uncertain := false
 	for _, id := range ids {
+		idStr := strconv.FormatInt(id, 10)
+		if opts.ExcludedOrderIDs != nil && opts.ExcludedOrderIDs[idStr] {
+			continue
+		}
 		var order map[string]interface{}
 		if err := client.Get(fmt.Sprintf("/me/order/%d", id), &order); err != nil {
 			uncertain = true
@@ -94,6 +99,9 @@ func ReconcileRecentOrder(client *ovhsdk.Client, endpoint, planCode string, sinc
 				continue
 			}
 			if orderDetailMatchesPlan(detail, planCode) {
+				if opts.Datacenter != "" && orderDetailContradictsDC(detail, opts.Datacenter) {
+					continue
+				}
 				matched = true
 				break
 			}
@@ -101,7 +109,6 @@ func ReconcileRecentOrder(client *ovhsdk.Client, endpoint, planCode string, sinc
 		if !matched {
 			continue
 		}
-		idStr := strconv.FormatInt(id, 10)
 		link, _ := order["url"].(string)
 		link = strings.TrimSpace(link)
 		if link == "" {
@@ -113,6 +120,26 @@ func ReconcileRecentOrder(client *ovhsdk.Client, endpoint, planCode string, sinc
 		return "", "", fmt.Errorf("reconcile: order list fetched but detail lookup failed")
 	}
 	return "", "", nil
+}
+
+func orderDetailContradictsDC(detail map[string]interface{}, targetDC string) bool {
+	target := strings.ToLower(strings.TrimSpace(targetDC))
+	if target == "" {
+		return false
+	}
+	desc, _ := detail["description"].(string)
+	domain, _ := detail["domain"].(string)
+	blob := strings.ToLower(desc + "\n" + domain)
+
+	knownDCs := []string{"rbx", "gra", "sbg", "bhs", "waw", "fra", "lon", "syd", "sgp", "vin", "hil"}
+	for _, dc := range knownDCs {
+		if dc != target && strings.Contains(blob, dc) {
+			if !strings.Contains(blob, target) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func listRecentOrders(client *ovhsdk.Client, endpoint string, since time.Time) (ids []int64, objects []map[string]interface{}, err error) {

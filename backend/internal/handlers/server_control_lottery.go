@@ -311,9 +311,24 @@ func computeHardwareLottery(spec *orderedSpec, hardware map[string]interface{}) 
 	return res
 }
 
+// CPU 频次噪点 (@ 2.10GHz 等)
+var reCPUFreq = regexp.MustCompile(`(?i)@?\s*\d+(\.\d+)?\s*(ghz|mhz)`)
+
+// Xeon D-1500 架构步进同级型号 (如 D-1540 与 D-1541、D-1520 与 D-1521),
+// 架构、核心数完全相同,仅为 B0 步进小刷新,OVH 混合交付不算中奖
+var reXeonDStepping = regexp.MustCompile(`^d15(\d)[01]$`)
+
 func normCPU(s string) string {
+	s = reCPUFreq.ReplaceAllString(s, "")
 	s = reCPUNoise.ReplaceAllString(strings.ToLower(s), "")
 	return reNonAlnum.ReplaceAllString(s, "")
+}
+
+func canonicalCPU(s string) string {
+	if m := reXeonDStepping.FindStringSubmatch(s); m != nil {
+		return "d15" + m[1] + "0"
+	}
+	return s
 }
 
 func cpuSame(a, b string) bool {
@@ -321,7 +336,11 @@ func cpuSame(a, b string) bool {
 	if na == "" || nb == "" {
 		return true // 解析不出型号就不下结论,宁可漏报也不误报
 	}
-	return na == nb || strings.Contains(na, nb) || strings.Contains(nb, na)
+	if na == nb || strings.Contains(na, nb) || strings.Contains(nb, na) {
+		return true
+	}
+	ca, cb := canonicalCPU(na), canonicalCPU(nb)
+	return ca == cb || strings.Contains(ca, cb) || strings.Contains(cb, ca)
 }
 
 // memoryGB {value, unit} → GB

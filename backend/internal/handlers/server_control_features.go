@@ -355,6 +355,13 @@ func GetBackupFTPAccess(state *app.State) gin.HandlerFunc {
 		}
 		var blocks []string
 		if err := client.Get("/dedicated/server/"+svc+"/features/backupFTP/access", &blocks); err != nil {
+			code, msg := featureOVHErr(err)
+			if code == http.StatusNotFound || strings.Contains(strings.ToLower(msg), "backupftp does not exist") || (code == http.StatusNotFound && strings.Contains(strings.ToLower(msg), "does not exist")) {
+				if featureIsFeatureMissing(client, svc) {
+					c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "备份FTP未激活", "code": "E9C2BD021", "notActivated": true})
+					return
+				}
+			}
 			state.Logger.Error("获取服务器 "+svc+" 备份FTP授权IP列表失败: "+err.Error(), "server_control")
 			respondOVHError(c, err)
 			return
@@ -511,6 +518,13 @@ func GetBackupFTPAuthorizableBlocks(state *app.State) gin.HandlerFunc {
 		}
 		var blocks []string
 		if err := client.Get("/dedicated/server/"+svc+"/features/backupFTP/authorizableBlocks", &blocks); err != nil {
+			code, msg := featureOVHErr(err)
+			if code == http.StatusNotFound || strings.Contains(strings.ToLower(msg), "backupftp does not exist") || (code == http.StatusNotFound && strings.Contains(strings.ToLower(msg), "does not exist")) {
+				if featureIsFeatureMissing(client, svc) {
+					c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "备份FTP未激活", "code": "E9C2BD021", "notActivated": true})
+					return
+				}
+			}
 			state.Logger.Error("获取服务器 "+svc+" 备份FTP可授权IP段失败: "+err.Error(), "server_control")
 			respondOVHError(c, err)
 			return

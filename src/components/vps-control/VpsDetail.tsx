@@ -477,6 +477,7 @@ export function VpsDetail({
         serviceName={server.serviceName}
         open={reinstallOpen}
         onOpenChange={setReinstallOpen}
+        accountId={activeAccount}
       />
 
       {info.data && (

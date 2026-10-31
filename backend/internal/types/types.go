@@ -177,6 +177,9 @@ type QueueItem struct {
 	ConfigSniperTaskID string `json:"configSniperTaskId,omitempty"`
 	TelegramChatID     string `json:"telegramChatId,omitempty"`
 	TelegramMessageID  int64  `json:"telegramMessageId,omitempty"`
+	// UncertainCheckout 结账曾出现超时未决，恢复运行时先对账确认上一单是否已建
+	UncertainCheckout  bool   `json:"uncertainCheckout,omitempty"`
+	UncertainTime      string `json:"uncertainTime,omitempty"`
 	// Force 用户强制允许自定义或未收录型号入队(只放过 PlanVerdictNoSuchPlan,不绕过跨区/非 Eco)
 	Force bool `json:"force,omitempty"`
 }

@@ -217,3 +217,16 @@ func TestIsRenewPayloadRejectedRequiredProperty(t *testing.T) {
 		t.Error("403 不应触发降级")
 	}
 }
+
+// 独服备份 FTP 未开通时 404 返回 "backupFTP does not exist"，
+// 不得误报为"选错了账户"，应明确提示未开通或未激活。
+func TestExplainBackupFTPDoesNotExist(t *testing.T) {
+	err := &ovhsdk.APIError{Code: 404, Message: "backupFTP does not exist"}
+	got := Explain(err)
+	if strings.Contains(got, "选错了账户") {
+		t.Fatalf("不应包含'选错了账户': %s", got)
+	}
+	if !strings.Contains(got, "未开通或未激活备份FTP") {
+		t.Fatalf("应包含未开通提示: %s", got)
+	}
+}

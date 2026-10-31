@@ -76,6 +76,9 @@ func (s *State) checkAutomaticOrderLocked(item types.QueueItem) error {
 		return fmt.Errorf("该账户/型号/机房已停止抢购,请手动恢复或新建任务后再自动下单")
 	}
 	for _, existing := range s.Queue {
+		if (existing.Status == "running" || existing.Status == "pending") && s.automaticOrderKey(existing) == key && s.matchesMonitorScope(item, MonitorQueueScope{PlanCode: existing.PlanCode, Options: existing.Options}) {
+			return fmt.Errorf("该型号已有正在进行的抢购任务,禁止监控重复建单")
+		}
 		if existing.Status == "paused" && s.automaticOrderKey(existing) == key && s.matchesMonitorScope(item, MonitorQueueScope{PlanCode: existing.PlanCode, Options: existing.Options}) {
 			return fmt.Errorf("该型号有已暂停的抢购任务,禁止监控重新建单")
 		}

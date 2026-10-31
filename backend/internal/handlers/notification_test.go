@@ -24,6 +24,8 @@ func TestNotificationUsesActualDeliveryWithoutSecondWebhook(t *testing.T) {
 		{"business rejected", `{"code":19002,"msg":"msg_type need"}`, 500, 0, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			notify.AllowLocalWebhookForTesting = true
+			t.Cleanup(func() { notify.AllowLocalWebhookForTesting = false })
 			var requests atomic.Int32
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { requests.Add(1); io.WriteString(w, tc.body) }))
 			defer srv.Close()

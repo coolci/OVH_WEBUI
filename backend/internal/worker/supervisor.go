@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -20,14 +21,19 @@ type Supervisor struct {
 	state   *app.State
 	monitor *monitor.Monitor
 	stopCh  chan struct{}
+	ctx     context.Context
+	cancel  context.CancelFunc
 }
 
 // NewSupervisor 创建后台任务编排器
 func NewSupervisor(state *app.State, mon *monitor.Monitor) *Supervisor {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Supervisor{
 		state:   state,
 		monitor: mon,
 		stopCh:  make(chan struct{}),
+		ctx:     ctx,
+		cancel:  cancel,
 	}
 }
 
@@ -37,8 +43,8 @@ func (s *Supervisor) Start() {
 	mon := s.monitor
 
 	// 1. 启动订单队列处理与状态刷新轮询
-	go purchase.ProcessQueueLoop(state)
-	go purchase.OrderStatusLoop(state)
+	go purchase.ProcessQueueLoopWithContext(s.ctx, state)
+	go purchase.OrderStatusLoopWithContext(s.ctx, state)
 
 	// 2. 预热各账户子公司的区域配置
 	go catalog.WarmRegionCache(state)
@@ -99,6 +105,10 @@ func (s *Supervisor) Stop() {
 		// already closed
 	default:
 		close(s.stopCh)
+	}
+
+	if s.cancel != nil {
+		s.cancel()
 	}
 
 	handlers.StopPoller()

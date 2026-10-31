@@ -47,7 +47,12 @@ export function useAccountInfo() {
   const [accountId] = useActiveAccount();
   return useQuery({
     queryKey: qk.account.info(accountId),
-    queryFn: async () => (await api.get<AccountInfo>("/ovh/account/info")).data,
+    queryFn: async () =>
+      (
+        await api.get<AccountInfo>("/ovh/account/info", {
+          params: accountId ? { account: accountId } : undefined,
+        })
+      ).data,
   });
 }
 
@@ -56,7 +61,12 @@ export function useRefunds() {
   const [accountId] = useActiveAccount();
   return useQuery({
     queryKey: qk.account.refunds(accountId),
-    queryFn: async () => (await api.get<RefundRecord[]>("/ovh/account/refunds")).data,
+    queryFn: async () =>
+      (
+        await api.get<RefundRecord[]>("/ovh/account/refunds", {
+          params: accountId ? { account: accountId } : undefined,
+        })
+      ).data,
   });
 }
 
@@ -65,7 +75,12 @@ export function useEmails() {
   const [accountId] = useActiveAccount();
   return useQuery({
     queryKey: qk.account.emails(accountId),
-    queryFn: async () => (await api.get<EmailHistoryEntry[]>("/ovh/account/email-history")).data,
+    queryFn: async () =>
+      (
+        await api.get<EmailHistoryEntry[]>("/ovh/account/email-history", {
+          params: accountId ? { account: accountId } : undefined,
+        })
+      ).data,
   });
 }
 
@@ -95,7 +110,7 @@ export function useOrders(limit = 30) {
     queryFn: async () => {
       const res = await api.get<OrderRecord[] | { orders?: OrderRecord[] }>(
         "/ovh/account/orders",
-        { params: { limit } }
+        { params: { limit, ...(accountId ? { account: accountId } : {}) } }
       );
       const data = res.data;
       if (Array.isArray(data)) return data;

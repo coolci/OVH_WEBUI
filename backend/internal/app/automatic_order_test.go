@@ -39,6 +39,9 @@ func TestAutomaticOrderStopPersistsAfterTaskDeletion(t *testing.T) {
 	if err := s.EnqueueItems([]types.QueueItem{item}, false); err != nil {
 		t.Fatal(err)
 	}
+	s.QueueMu.Lock()
+	s.Queue = nil
+	s.QueueMu.Unlock()
 	item.ID = "automatic-after-manual"
 	if err := s.EnqueueAutomaticItems([]types.QueueItem{item}, true); err != nil {
 		t.Fatal("explicit manual restart did not unlock", err)
@@ -64,5 +67,17 @@ func TestGlobalMonitorStopBlocksLateAutomaticRequest(t *testing.T) {
 	}
 	if err := s.EnqueueAutomaticItems([]types.QueueItem{{ID: "late-request", PlanCode: "plan", Status: "running"}}, true); err == nil {
 		t.Fatal("stopped monitor's late HTTP request enqueued")
+	}
+}
+
+func TestAutomaticOrderCannotDuplicateRunningTask(t *testing.T) {
+	s := enqueueTestState(t)
+	s.Queue = []types.QueueItem{{ID: "in-flight", PlanCode: "plan", Datacenter: "gra", Status: "running"}}
+	if err := s.EnqueueAutomaticItems([]types.QueueItem{{ID: "new", PlanCode: "plan", Datacenter: "GRA", Status: "running"}}, true); err == nil {
+		t.Fatal("running task allowed duplicate automatic order")
+	}
+	s.Queue[0].Status = "pending"
+	if err := s.EnqueueAutomaticItems([]types.QueueItem{{ID: "new-pending", PlanCode: "plan", Datacenter: "GRA", Status: "running"}}, true); err == nil {
+		t.Fatal("pending task allowed duplicate automatic order")
 	}
 }

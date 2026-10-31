@@ -94,6 +94,32 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 	tl := newTimeline()
 	timingKey := TimingKey(item.PlanCode, item.Datacenter)
 
+	if item.UncertainCheckout {
+		accCheck, _ := state.FindAccount(item.AccountID)
+		attemptStart := time.Now().Add(-10 * time.Minute)
+		if tParse, ok := types.ParseTS(item.UncertainTime); ok {
+			attemptStart = tParse.Add(-2 * time.Minute)
+		}
+		claimedMap := make(map[string]bool)
+		state.HistoryMu.Lock()
+		for _, h := range state.History {
+			if h.OrderID != "" {
+				claimedMap[h.OrderID] = true
+			}
+		}
+		state.HistoryMu.Unlock()
+		oidCheck, orderURLCheck, _ := ReconcileRecentOrderEx(client, accCheck.Endpoint, item.PlanCode, attemptStart, ReconcileOptions{
+			Datacenter:       item.Datacenter,
+			ExcludedOrderIDs: claimedMap,
+		})
+		if oidCheck != "" {
+			state.Logger.Warn(fmt.Sprintf("抢购前对账发现上一轮未决结账已在 OVH 成功建单(#%s),按成功处理,不再重复下单", oidCheck), "purchase")
+			item.UncertainCheckout = false
+			return handleReconciledOrder(state, client, accCheck.Endpoint, item, oidCheck, orderURLCheck, tl, timingKey, "")
+		}
+		item.UncertainCheckout = false
+	}
+
 	state.Logger.Info(fmt.Sprintf("开始为 %s 在 %s 的购买流程，选项: %v",
 		item.PlanCode, item.Datacenter, item.Options), "purchase")
 
@@ -539,6 +565,13 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 				return Outcome{}
 			}
 			// 明确被拒绝才回退;网络故障不能当作优惠码无效。
+			if item.AutoPay {
+				errMsg := fmt.Sprintf("优惠码被 OVH 拒绝，为防止按原价扣款已暂停下单。原因: %s", ovh.Explain(err))
+				state.Logger.Warn(errMsg, "purchase")
+				recordFailure(state, item, errMsg)
+				notify.Broadcast(state, fmt.Sprintf("⚠️ 抢购 %s@%s 优惠码被拒绝\n\n为防自动按原价扣款，任务已暂停。\n原因：%s", item.PlanCode, item.Datacenter, ovh.Explain(err)), nil)
+				return Outcome{Attempted: false, PauseTask: true}
+			}
 			couponWarning = "优惠码被 OVH 拒绝，本次未使用优惠码，价格不包含该码优惠。原因: " + ovh.Explain(err)
 			state.Logger.Warn(couponWarning, "purchase")
 		} else {
@@ -552,7 +585,7 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 	// 最后一个点 —— 从这里往下,结账请求一旦发出就**不再接受取消**:
 	// 请求已经到了 OVH、我们这边却中途断开,订单可能已经生成而我们不知道,
 	// 既没 history 也没通知,那比"多下了一单"更糟。
-	if ctx.Err() != nil || state.IsTaskDeleted(item.ID) {
+	if ctx.Err() != nil || state.IsTaskDeleted(item.ID) || state.IsTaskPaused(item.ID) {
 		return cancelledOutcome(state, item, "结账前复核")
 	}
 	state.Logger.Info("对购物车 "+cartID+" 执行结账", "purchase")
@@ -594,25 +627,33 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 		if couponWarning != "" {
 			errMsg += "；" + couponWarning
 		}
-		recordFailure(state, item, errMsg)
 
 		// checkout 超时/传输层失败 ≠ 下单失败:请求可能已经到达 OVH 且订单已建,
 		// 只是我方没等到响应。这时任务会重试 → 新车再 checkout → **买两台**
 		// (autoPay 开着就是重复扣款)。所以 transient 失败先按官方 GET /me/order 对账
 		// (long[] + date.from,见 ReconcileRecentOrder),命中就按成功处理。
 		if IsTransient(err) {
-			oid, orderURL, recErr := ReconcileRecentOrder(client, acc.Endpoint, item.PlanCode, attemptStart)
+			claimed := make(map[string]bool)
+			state.HistoryMu.Lock()
+			for _, h := range state.History {
+				if h.OrderID != "" {
+					claimed[h.OrderID] = true
+				}
+			}
+			state.HistoryMu.Unlock()
+			oid, orderURL, recErr := ReconcileRecentOrderEx(client, acc.Endpoint, item.PlanCode, attemptStart, ReconcileOptions{
+				Datacenter:       item.Datacenter,
+				ExcludedOrderIDs: claimed,
+			})
 			if recErr != nil {
 				state.Logger.Warn("checkout 对账查询失败(按未建单处理): "+recErr.Error(), "purchase")
 			} else if oid != "" {
 				state.Logger.Warn(fmt.Sprintf("checkout 报 transient 失败但对账发现订单已建(#%s),按成功处理,不再重试", oid), "purchase")
 				return handleReconciledOrder(state, client, acc.Endpoint, item, oid, orderURL, tl, timingKey, couponWarning)
 			}
-			recordFailure(state, item, ovh.Explain(err))
-			// 对账也失败(429/超时/明细读失败):OVH 侧订单状态未知。
-			// 直接重试 = 可能买两台(第一单已建但 history 没记,120s 闸门也不认识它)。
-			// 暂停任务 + 通知用户去 OVH 订单页人工确认 —— 比自动重试安全:
-			// 最多错过一台,不会多买一台
+			// 对账也未果(429/超时/明细读失败):OVH 侧订单状态未知。
+			// 此处不调用 recordFailure(避免在未决状态下写入假失败记录烧掉重试预算),
+			// 而是标记暂停任务并记录 UncertainCheckout, 等待人工确认或在下次恢复运行时优先对账。
 			state.Logger.Warn("checkout transient 失败且对账未能确认,暂停任务等待人工确认(防重复下单)", "purchase")
 			notify.Broadcast(state, fmt.Sprintf(
 				"⚠️ 抢购 %s@%s 结账超时,无法确认订单是否已创建\n\n"+
@@ -621,7 +662,7 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 					"- 没有:在队列页把任务恢复运行", item.PlanCode, item.Datacenter), nil)
 			return Outcome{Attempted: false, PauseTask: true}
 		}
-		recordFailure(state, item, ovh.Explain(err))
+		recordFailure(state, item, errMsg)
 		// checkout 这一步最要紧:补货瞬间大家都在下单,429 是常态。
 		// 把它记成一次"真正的失败尝试"会让任务在唯一有货的那一分钟里自己判死。
 		return attemptOutcome(err)

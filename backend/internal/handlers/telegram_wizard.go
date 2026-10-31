@@ -408,13 +408,13 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 			return true
 		}
 		mode, plan := parts[2], parts[3]
-		telegram.AnswerCallback(state, cbID, "全部机房", false)
 		validDCs, _ := validAndInStockDCs(state, plan, "")
-		targetDCs := validDCs
-		if len(targetDCs) == 0 {
-			targetDCs = append([]string{}, telegram.StandardDCs...)
+		if len(validDCs) == 0 {
+			telegram.AnswerCallback(state, cbID, "该机型当前无可用机房，请稍后重试", true)
+			return true
 		}
-		enqueueWizardDCs(state, chatID, messageID, mode, plan, targetDCs, "", nil, "", false)
+		telegram.AnswerCallback(state, cbID, "全部机房", false)
+		enqueueWizardDCs(state, chatID, messageID, mode, plan, validDCs, "", nil, "", false)
 	case "C":
 		if len(parts) < 4 {
 			telegram.AnswerCallback(state, cbID, "按钮无效", true)

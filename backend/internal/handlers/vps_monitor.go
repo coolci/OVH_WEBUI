@@ -357,6 +357,10 @@ func BatchAddAllVPS(state *app.State) gin.HandlerFunc {
 			AutoPay            bool   `json:"autoPay"`
 		}
 		_ = c.ShouldBindJSON(&body)
+		if body.AutoOrder {
+			httperr.BadRequest(c, "全目录批量订阅禁止开启自动下单，请针对特定机型单独配置自动下单以防意外扣款", "")
+			return
+		}
 		sub := vps.NormalizeSubsidiary(body.OvhSubsidiary)
 		if sub == "" {
 			sub = vps.DefaultSubsidiary(state, body.AutoOrderAccountID)

@@ -2,12 +2,12 @@ package handlers
 
 import (
 	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/ovh-webui/server/internal/app"
+	"github.com/ovh-webui/server/internal/notify"
 	"github.com/ovh-webui/server/internal/ovh"
 	"github.com/ovh-webui/server/internal/telegram"
 	"github.com/ovh-webui/server/internal/types"
@@ -16,8 +16,32 @@ import (
 // GetSettings GET /api/settings
 func GetSettings(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, state.Config.Get())
+		cfg := state.Config.Get()
+		if defAcc, ok := state.FindAccount(""); ok {
+			if defAcc.Zone != "" {
+				cfg.Zone = defAcc.Zone
+			}
+			if defAcc.IAM != "" {
+				cfg.IAM = defAcc.IAM
+			}
+			if defAcc.Endpoint != "" {
+				cfg.Endpoint = defAcc.Endpoint
+			}
+			if defAcc.AppKey != "" && cfg.AppKey == "" {
+				cfg.AppKey = defAcc.AppKey
+				cfg.AppSecret = defAcc.AppSecret
+				cfg.ConsumerKey = defAcc.ConsumerKey
+			}
+		}
+		cfg.AppSecret = maskCred(cfg.AppSecret)
+		cfg.ConsumerKey = maskCred(cfg.ConsumerKey)
+		cfg.TgToken = maskCred(cfg.TgToken)
+		c.JSON(http.StatusOK, cfg)
 	}
+}
+
+func isMasked(v string) bool {
+	return strings.Contains(v, "••") || strings.Contains(v, "...") || strings.Contains(v, "***")
 }
 
 // SaveSettings POST /api/settings
@@ -36,21 +60,41 @@ func SaveSettings(state *app.State) gin.HandlerFunc {
 		newCfg.AppSecret = strings.TrimSpace(newCfg.AppSecret)
 		newCfg.ConsumerKey = strings.TrimSpace(newCfg.ConsumerKey)
 		newCfg.TgToken = strings.TrimSpace(newCfg.TgToken)
+
+		// 若提交的是脱敏掩码，保留原配置中的实际凭据
+		if isMasked(newCfg.AppSecret) {
+			newCfg.AppSecret = prev.AppSecret
+		}
+		if isMasked(newCfg.ConsumerKey) {
+			newCfg.ConsumerKey = prev.ConsumerKey
+		}
+		if isMasked(newCfg.TgToken) {
+			newCfg.TgToken = prev.TgToken
+		}
 		newCfg.TgChatID = strings.TrimSpace(newCfg.TgChatID)
 		// 同样去空白:webhook 地址末尾带个换行,POST 出去就是 DNS 解析失败
 		newCfg.NotifyWebhookURL = strings.TrimSpace(newCfg.NotifyWebhookURL)
-		// 在保存这一步就把地址挡下来。放过去的话,用户要等到真有货那一刻
-		// 才会发现通知发不出去 —— 而那正是唯一不能出错的时刻。
+		// 在保存这一步就把地址挡下来。校验完整 URL 以及内网 SSRF 风险目标。
 		if newCfg.NotifyWebhookURL != "" {
-			u, err := url.Parse(newCfg.NotifyWebhookURL)
-			if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+			if err := notify.ValidateWebhookURL(newCfg.NotifyWebhookURL); err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"status": "error",
-					"message": "通知 Webhook 地址不合法,必须是完整的 http:// 或 https:// 地址", "code": "E3CAC8031"})
+					"message": err.Error(), "code": "E3CAC8031"})
 				return
 			}
 		}
 
-		// 默认值兜底
+		// 默认值兜底：优先以默认账户区域为基准，避免被硬编码的 IE 覆盖
+		if defAcc, ok := state.FindAccount(""); ok {
+			if newCfg.Zone == "" && defAcc.Zone != "" {
+				newCfg.Zone = defAcc.Zone
+			}
+			if newCfg.Endpoint == "" && defAcc.Endpoint != "" {
+				newCfg.Endpoint = defAcc.Endpoint
+			}
+			if newCfg.IAM == "" && defAcc.IAM != "" {
+				newCfg.IAM = defAcc.IAM
+			}
+		}
 		if newCfg.Endpoint == "" {
 			newCfg.Endpoint = "ovh-eu"
 		}
