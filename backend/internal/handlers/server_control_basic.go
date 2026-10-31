@@ -299,10 +299,59 @@ func GetOSTemplates(state *app.State) gin.HandlerFunc {
 				// 官方 partitioning-ovh 文档的 OS 兼容元数据(详情拉不到的字段不编造):
 				// filesystems 过滤文件系统下拉;lvmReady/noPartitioning/softRaidOnlyMirroring
 				// 控制存储配置可用性;customizeQuestions 驱动 OS 特定定制表单(sshKey/语言/LACP 等)
-				for _, k := range []string{"filesystems", "lvmReady", "noPartitioning", "softRaidOnlyMirroring", "customizeQuestions"} {
+				for _, k := range []string{"filesystems", "lvmReady", "noPartitioning", "softRaidOnlyMirroring"} {
 					if v, ok := detail[k]; ok && v != nil {
 						entry[k] = v
 					}
+				}
+				// 官方 /dedicated/installationTemplate/{name} 返回 inputs (dedicated.TemplateOsInput[])
+				// 转换为 customizeQuestions: name, description, type, required (mandatory), enum, default
+				if inputsRaw, ok := detail["inputs"].([]interface{}); ok && len(inputsRaw) > 0 {
+					var questions []gin.H
+					for _, inRaw := range inputsRaw {
+						if inMap, ok := inRaw.(map[string]interface{}); ok {
+							qName, _ := inMap["name"].(string)
+							if qName == "" || qName == "hostname" {
+								// hostname 在控制台重装弹窗有独立专用的输入框与格式校验，不在此重复渲染
+								continue
+							}
+							qDesc, _ := inMap["description"].(string)
+							if qDesc == "" {
+								qDesc = qName
+							}
+							qType, _ := inMap["type"].(string)
+							if qType == "" {
+								qType = "string"
+							}
+							mandatory, _ := inMap["mandatory"].(bool)
+							q := gin.H{
+								"name":        qName,
+								"description": qDesc,
+								"type":        qType,
+								"required":    mandatory,
+							}
+							if defVal, ok := inMap["default"].(string); ok && defVal != "" {
+								q["default"] = defVal
+							}
+							if enumRaw, ok := inMap["enum"].([]interface{}); ok && len(enumRaw) > 0 {
+								var enumList []string
+								for _, ev := range enumRaw {
+									if es, ok := ev.(string); ok && es != "" {
+										enumList = append(enumList, es)
+									}
+								}
+								if len(enumList) > 0 {
+									q["enum"] = enumList
+								}
+							}
+							questions = append(questions, q)
+						}
+					}
+					if len(questions) > 0 {
+						entry["customizeQuestions"] = questions
+					}
+				} else if v, ok := detail["customizeQuestions"]; ok && v != nil {
+					entry["customizeQuestions"] = v
 				}
 				details[idx] = entry
 			}(i, tn)

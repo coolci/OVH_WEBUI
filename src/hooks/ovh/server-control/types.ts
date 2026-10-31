@@ -148,6 +148,15 @@ export interface ServerTask {
   error?: string;
 }
 
+export interface CustomizeQuestion {
+  name: string;
+  type?: string;
+  description?: string;
+  required?: boolean;
+  enum?: string[];
+  default?: string;
+}
+
 export interface OSTemplate {
   templateName: string;
   distribution: string;
@@ -157,12 +166,7 @@ export interface OSTemplate {
   lvmReady?: boolean;
   noPartitioning?: boolean;
   softRaidOnlyMirroring?: boolean;
-  customizeQuestions?: Array<{
-    name: string;
-    description?: string;
-    required?: boolean;
-    type?: string;
-  }>;
+  customizeQuestions?: CustomizeQuestion[];
 }
 
 export interface DiskGroupDisk {

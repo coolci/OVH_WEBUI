@@ -2,14 +2,17 @@ import React from "react";
 import { Terminal } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useTranslation } from "react-i18next";
+import type { CustomizeQuestion } from "@/hooks/ovh/server-control/types";
 
-export interface CustomizeQuestion {
-  name: string;
-  type?: string;
-  description?: string;
-  required?: boolean;
-}
+export type { CustomizeQuestion };
 
 export interface PostInstallSectionProps {
   hostname: string;
@@ -40,7 +43,7 @@ export function PostInstallSection({
         />
       </div>
 
-      {/* 官方 customizeQuestions:OS 特定定制(sshKey / 安装后脚本 / 语言 / LACP…),
+      {/* 官方 customizeQuestions: OS 特定定制(sshKey / 安装后脚本 / 语言 / 预装应用等),
           键名与取值由 OVH 模板定义,这里动态渲染、原样回传 —— 与官方 Manager 同源 */}
       {customizeQuestions.length > 0 && (
         <div className="space-y-3">
@@ -50,6 +53,7 @@ export function PostInstallSection({
           </h4>
           {customizeQuestions.map((q) => {
             const isBool = q.type === "boolean";
+            const isEnum = q.type === "enum" || (Array.isArray(q.enum) && q.enum.length > 0);
             const val = customizationAnswers[q.name];
             return (
               <div key={q.name}>
@@ -69,6 +73,37 @@ export function PostInstallSection({
                     />
                     {t("ctrl.reinstall.customize.enable")}
                   </label>
+                ) : isEnum ? (
+                  <Select
+                    value={typeof val === "string" && val ? val : ""}
+                    onValueChange={(newVal) =>
+                      setCustomizationAnswers((a) => {
+                        const copy = { ...a };
+                        if (newVal === "__clear__" || !newVal) {
+                          delete copy[q.name];
+                        } else {
+                          copy[q.name] = newVal;
+                        }
+                        return copy;
+                      })
+                    }
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder={t("ctrl.reinstall.customize.selectPlaceholder")} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {!q.required && (
+                        <SelectItem value="__clear__">
+                          {t("ctrl.reinstall.customize.optionalNone")}
+                        </SelectItem>
+                      )}
+                      {(q.enum || []).map((opt) => (
+                        <SelectItem key={opt} value={opt}>
+                          {opt}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 ) : q.name === "postInstallationScript" ? (
                   <Textarea
                     value={typeof val === "string" ? val : ""}
@@ -78,6 +113,7 @@ export function PostInstallSection({
                   />
                 ) : (
                   <Input
+                    type={q.type === "number" ? "number" : q.type === "email" ? "email" : "text"}
                     value={typeof val === "string" ? val : ""}
                     onChange={(e) => setCustomizationAnswers((a) => ({ ...a, [q.name]: e.target.value }))}
                     placeholder={q.name === "sshKey" ? t("ctrl.reinstall.customize.sshKeyHint") : q.type || ""}

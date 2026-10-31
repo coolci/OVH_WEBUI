@@ -91,6 +91,8 @@ func hintFor(e *ovhsdk.APIError) string {
 	case strings.Contains(lower, "not been granted"), strings.Contains(lower, "not granted"):
 		return "这个 consumer key 没有调用该接口的权限。生成 key 时的权限规则要覆盖用到的路径" +
 			"(最省事的是 GET/POST/PUT/DELETE 各给一条 /*),改完要重新授权"
+	case strings.Contains(lower, "customizationinvalidformat") || (strings.Contains(lower, "missing mandatory") && strings.Contains(lower, "metadata")):
+		return "所选系统模板缺少必填的定制参数(如预装应用、自定义配置等),请在重装弹窗中完成定制配置后再试"
 	case strings.Contains(lower, "expired"):
 		return "凭据或令牌已过期,需要重新生成"
 	}

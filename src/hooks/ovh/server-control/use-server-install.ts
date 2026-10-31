@@ -8,7 +8,7 @@ import type {
   InstallStatus,
 } from "./types";
 
-const TEMPLATES_LS_PREFIX = "ovh_sniper_templates_";
+const TEMPLATES_LS_PREFIX = "ovh_sniper_templates_v2_";
 
 export function useServerTemplates(serviceName: string | null, enabled = true) {
   const lsKey = serviceName ? TEMPLATES_LS_PREFIX + serviceName : "";
@@ -44,7 +44,7 @@ export function useServerTemplates(serviceName: string | null, enabled = true) {
       }
     },
     enabled: !!serviceName && enabled,
-    staleTime: Infinity,
+    staleTime: 1000 * 60 * 60,
     gcTime: Infinity,
     refetchOnMount: false,
     refetchOnWindowFocus: false,
