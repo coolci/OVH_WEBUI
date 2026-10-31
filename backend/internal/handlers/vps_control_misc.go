@@ -162,8 +162,13 @@ func AddVpsSecondaryDns(state *app.State) gin.HandlerFunc {
 			IP     string `json:"ip"`
 		}
 		_ = c.ShouldBindJSON(&body)
+		body.Domain = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(body.Domain), "."))
 		if body.Domain == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "domain 必填", "code": "E19126073"})
+			return
+		}
+		if !strings.Contains(body.Domain, ".") || len(body.Domain) > 255 {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "域名格式不正确", "code": "E_INVALID_DOMAIN"})
 			return
 		}
 		params := map[string]interface{}{"domain": body.Domain}

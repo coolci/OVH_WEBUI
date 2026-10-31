@@ -8,7 +8,7 @@ function maskBlockValue(v: string, hidden: boolean): string {
 }
 import {
   Zap, Shield, FolderArchive, Globe, Wifi, Network, ShoppingBag, Settings, MapPin,
-  Power, AlertCircle, Plus, Trash2, KeyRound, Cloud,
+  Power, AlertCircle, Plus, Trash2, KeyRound, Cloud, Loader2,
 } from "lucide-react";
 import type { OwnedServer } from "@/hooks/use-server-control";
 import {
@@ -18,6 +18,8 @@ import {
   useBackupFtpAuthorizableBlocks, useAddBackupFtpAccess, useDeleteBackupFtpAccess,
   useServerBackupCloud, useActivateBackupCloud, useDeleteBackupCloud, useChangeBackupCloudPassword,
   useServerSecondaryDns,
+  useAddServerSecondaryDns,
+  useDeleteServerSecondaryDns,
   useServerVirtualMac,
   useServerVrack,
   useServerOrderable,
@@ -25,6 +27,7 @@ import {
   useServerIpSpecs,
 } from "@/hooks/use-server-control";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Chip } from "@/components/common/Chip";
@@ -510,25 +513,118 @@ function BackupCloudPane({ serviceName }: { serviceName: string }) {
 function SecondaryDnsPane({ serviceName }: { serviceName: string }) {
   const { t } = useTranslation();
   const q = useServerSecondaryDns(serviceName);
+  const addDns = useAddServerSecondaryDns(serviceName);
+  const delDns = useDeleteServerSecondaryDns(serviceName);
+
+  const [addOpen, setAddOpen] = useState(false);
+  const [domain, setDomain] = useState("");
+
   if (q.isPending) return <PaneSkeleton />;
   // 后端全挂时返 500 —— 显示错误而不是空列表，否则用户会以为「确实没配过」
   if (q.isError) return <LoadFailed icon={Globe} title={t("maint.advanced.dns.loadFailed")} error={q.error} onRetry={() => q.refetch()} />;
   const { items, failedCount } = q.data || { items: [], partial: false, failedCount: 0 };
-  if (items.length === 0) return <EmptyState icon={Globe} title={t("maint.advanced.dns.empty")} />;
+
+  const handleAdd = async () => {
+    const d = domain.trim().toLowerCase().replace(/\.+$/, "");
+    if (!d || !d.includes(".")) {
+      toast.error("请输入有效的域名（例如 example.com）");
+      return;
+    }
+    try {
+      await addDns.mutateAsync(d);
+      toast.success(`二级 DNS 域名 ${d} 添加成功`);
+      setAddOpen(false);
+      setDomain("");
+    } catch (e: any) {
+      toast.error(errorMessage(e));
+    }
+  };
+
+  const handleDelete = async (domainName: string) => {
+    if (!window.confirm(`确定要移除二级 DNS 域名 ${domainName} 吗？`)) return;
+    try {
+      await delDns.mutateAsync(domainName);
+      toast.success(`二级 DNS 域名 ${domainName} 已删除`);
+    } catch (e: any) {
+      toast.error(errorMessage(e));
+    }
+  };
+
   return (
-    <Pane title={t("maint.advanced.dns.title")} icon={Globe}>
+    <Pane
+      title={t("maint.advanced.dns.title")}
+      icon={Globe}
+      action={
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setAddOpen(true)}
+          className="h-7 text-xs px-2.5 gap-1 shrink-0"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          添加从DNS
+        </Button>
+      }
+    >
       <PartialNotice failedCount={failedCount} what={t("maint.advanced.dns.partialWhat")} className="mb-2" />
-      <div className="border border-border rounded-2xl divide-y divide-border">
-        {items.map((d, idx) => (
-          <div key={d.domain || idx} className="px-4 py-3 flex items-center justify-between gap-2 text-[13px]">
-            <code className="font-mono">{d.domain || "—"}</code>
-            <div className="flex items-center gap-2">
-              {d.dns && <code className="font-mono text-muted-foreground text-[12px]">{d.dns}</code>}
-              <DetailErrorTag message={d._detailError} />
+      {items.length === 0 ? (
+        <EmptyState icon={Globe} title={t("maint.advanced.dns.empty")} />
+      ) : (
+        <div className="border border-border rounded-2xl divide-y divide-border overflow-hidden">
+          {items.map((d, idx) => (
+            <div key={d.domain || idx} className="px-4 py-3 flex items-center justify-between gap-2 text-[13px]">
+              <div className="space-y-0.5">
+                <code className="font-mono">{d.domain || "—"}</code>
+                {d.dns && <div className="font-mono text-muted-foreground text-[11px]">{d.dns}</div>}
+              </div>
+              <div className="flex items-center gap-2">
+                <DetailErrorTag message={d._detailError} />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                  onClick={() => d.domain && handleDelete(d.domain)}
+                  disabled={delDns.isPending}
+                  title="删除"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </Button>
+              </div>
             </div>
+          ))}
+        </div>
+      )}
+
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent className="w-[95vw] sm:w-full sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>添加二级 DNS 域名</DialogTitle>
+            <DialogDescription>
+              配置 OVH Secondary DNS 服务器作为主域名的权威从服务器。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2 space-y-2">
+            <Input
+              value={domain}
+              onChange={(e) => setDomain(e.target.value)}
+              placeholder="例如: example.com"
+              className="font-mono text-xs h-9"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              添加后，请在您的主域名注册商处将 OVH secondary DNS 添加为 NS 记录，并在主 DNS 配置允许 AXFR 区域传送。
+            </p>
           </div>
-        ))}
-      </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" size="sm" onClick={() => setAddOpen(false)}>
+              取消
+            </Button>
+            <Button size="sm" onClick={handleAdd} disabled={addDns.isPending} className="gap-1">
+              {addDns.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              添加
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Pane>
   );
 }
@@ -807,18 +903,22 @@ function IpSpecsPane({ serviceName }: { serviceName: string }) {
 // ─────────────────────────────── 通用小件 ───────────────────────────────
 
 function Pane({
-  title, icon: Icon, children, compact,
+  title, icon: Icon, children, compact, action,
 }: {
   title: string;
   icon: React.ComponentType<{ className?: string }>;
   children: React.ReactNode;
   compact?: boolean;
+  action?: React.ReactNode;
 }) {
   return (
     <div className={`border border-border rounded-2xl ${compact ? "p-4" : "p-5"}`}>
-      <div className="flex items-center gap-2 mb-3">
-        <Icon className="w-4 h-4 text-muted-foreground" />
-        <h3 className="text-[13px] font-semibold">{title}</h3>
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <div className="flex items-center gap-2">
+          <Icon className="w-4 h-4 text-muted-foreground" />
+          <h3 className="text-[13px] font-semibold">{title}</h3>
+        </div>
+        {action}
       </div>
       <div className="space-y-1.5">{children}</div>
     </div>

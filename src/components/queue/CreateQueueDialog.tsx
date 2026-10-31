@@ -210,13 +210,35 @@ export function CreateQueueDialog({
     });
     if (result.success > 0) {
       toast.success(`已创建 ${result.success}/${result.total} 个抢购任务`);
+      reset();
+      onOpenChange(false);
+      return;
+    }
+    if (result.canForce) {
+      const ok = window.confirm(`型号【${planCode.trim()}】未在当前账户所在区域目录收录（${result.firstError || "可能为新品/特价/跨区型号"}）。\n\n是否以强制模式（force=true）继续添加任务？`);
+      if (ok) {
+        const forceResult = await create.mutateAsync({
+          account_id: accountId,
+          planCode: planCode.trim(),
+          datacenters,
+          quantity: qty,
+          retryInterval: Number(retryInterval) || cfgDefault,
+          options: parsedOptions,
+          autoPay,
+          coupon: coupon.trim() || undefined,
+          preorder: !!matchedServer?.prerelease,
+          force: true,
+        });
+        if (forceResult.success > 0) {
+          toast.success(`已强制创建 ${forceResult.success}/${forceResult.total} 个抢购任务`);
+          reset();
+          onOpenChange(false);
+          return;
+        }
+      }
     }
     if (result.failed > 0 && !result.firstError) {
       toast.error(`${result.failed} 个任务创建失败`);
-    }
-    if (result.success > 0) {
-      reset();
-      onOpenChange(false);
     }
   };
 

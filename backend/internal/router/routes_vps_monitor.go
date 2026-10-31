@@ -35,6 +35,7 @@ func registerVPSMonitorAndSupportRoutes(api *gin.RouterGroup, cfg Config) {
 
 	// Account
 	api.GET("/ovh/account/info", handlers.GetAccountInfo(state))
+	api.GET("/ovh/account/ssh-keys", handlers.GetAccountSSHKeys(state))
 	api.GET("/ovh/account/refunds", handlers.GetAccountRefunds(state))
 	api.GET("/ovh/account/credit-balance", handlers.GetCreditBalance(state))
 	api.GET("/ovh/account/email-history", handlers.GetEmailHistory(state))

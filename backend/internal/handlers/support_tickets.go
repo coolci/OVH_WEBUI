@@ -333,8 +333,9 @@ func supportTicketListQuery(status, q, archived, pageRaw, pageSizeRaw string) (u
 	values.Set("pageSize", strconv.Itoa(pageSize))
 	q = strings.TrimSpace(q)
 	if q != "" {
-		if supportAllDigits(q) {
-			values.Set("ticketNumber", q)
+		cleanQ := strings.TrimPrefix(q, "#")
+		if supportAllDigits(cleanQ) || (len(cleanQ) >= 3 && strings.HasPrefix(strings.ToUpper(cleanQ), "CS")) {
+			values.Set("ticketNumber", cleanQ)
 		} else {
 			values.Set("subject", q)
 		}
@@ -426,7 +427,7 @@ func validateSupportServiceName(svc string) error {
 }
 
 func parseSupportTicketID(raw string) (string, error) {
-	raw = strings.TrimSpace(raw)
+	raw = strings.TrimPrefix(strings.TrimSpace(raw), "#")
 	if raw == "" || len(raw) > 18 || raw[0] == '0' || !supportAllDigits(raw) {
 		return "", fmt.Errorf("工单号不正确")
 	}

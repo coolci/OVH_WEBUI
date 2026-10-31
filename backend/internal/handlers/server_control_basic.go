@@ -664,6 +664,9 @@ func normalizeStorageConfig(raw interface{}) ([]map[string]interface{}, error) {
 			if !er && (entry["partitioning"] != nil || entry["hardwareRaid"] != nil) {
 				return nil, serr("ERASE_FALSE_ON_INSTALL_GROUP", map[string]interface{}{"gid": g["diskGroupId"]}, "磁盘组 {{gid}} 同时带了存储配置和 erase:false —— 安装盘组必须擦除,erase:false 只能用于非安装盘组")
 			}
+			if !er && entry["diskGroupId"] == nil {
+				return nil, serr("ERASE_FALSE_MISSING_GID", nil, "保留数据的磁盘组必须指定具体的磁盘组编号（diskGroupId > 0）")
+			}
 		}
 		if len(entry) == 0 || (entry["partitioning"] == nil && entry["hardwareRaid"] == nil && entry["erase"] == nil) {
 			return nil, serr("STORAGE_GROUP_EMPTY", nil, "自定义存储配置里有磁盘组既没有分区也没有硬件 RAID")

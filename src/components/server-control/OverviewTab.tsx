@@ -1,6 +1,9 @@
-import { Cpu, HardDrive, MemoryStick, MapPin, Globe, Wifi, AlertTriangle, Sparkles, ArrowRight, PartyPopper } from "lucide-react";
+import { useState, useMemo } from "react";
+import { Cpu, HardDrive, MemoryStick, MapPin, Globe, Wifi, AlertTriangle, Sparkles, ArrowRight, PartyPopper, Edit2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { ReverseDnsDialog } from "./ReverseDnsDialog";
 import type { OwnedServer, HardwareLotteryItem } from "@/hooks/use-server-control";
-import { useServerHardware, useServerIps, useServerNetworkInterfaces } from "@/hooks/use-server-control";
+import { useServerHardware, useServerIps, useServerNetworkInterfaces, useServerReverseDns } from "@/hooks/use-server-control";
 import { useHideIp, maskSensitive } from "@/hooks/use-hide-ip";
 import { Skeleton } from "@/components/common/Skeleton";
 import { PartialNotice, DetailErrorTag } from "@/components/common/PartialNotice";
@@ -14,7 +17,18 @@ export function OverviewTab({ server }: { server: OwnedServer }) {
   const hw = useServerHardware(server.serviceName);
   const ips = useServerIps(server.serviceName);
   const interfaces = useServerNetworkInterfaces(server.serviceName);
+  const reverseQ = useServerReverseDns(server.serviceName);
   const { hidden } = useHideIp();
+  const [reverseOpen, setReverseOpen] = useState(false);
+  const [selectedIp, setSelectedIp] = useState<string>("");
+
+  const revMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const r of reverseQ.data || []) {
+      if (r.ipReverse && r.reverse) map.set(r.ipReverse, r.reverse);
+    }
+    return map;
+  }, [reverseQ.data]);
 
   // 内存字段是 { value, unit } 对象
   const memText = hw.data?.memorySize
@@ -123,9 +137,23 @@ export function OverviewTab({ server }: { server: OwnedServer }) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
         {/* IP 列表 */}
         <div className="border border-border rounded-2xl overflow-hidden">
-          <div className="px-4 py-3 border-b border-border flex items-center gap-2">
-            <Globe className="w-4 h-4 text-muted-foreground" />
-            <h3 className="text-sm font-semibold">{t("maint.overview.ipTitle")}</h3>
+          <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Globe className="w-4 h-4 text-muted-foreground" />
+              <h3 className="text-sm font-semibold">{t("maint.overview.ipTitle")}</h3>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setSelectedIp(server.ip || "");
+                setReverseOpen(true);
+              }}
+              className="h-7 text-xs px-2.5 gap-1"
+            >
+              <Globe className="w-3 h-3 text-primary" />
+              反向 DNS
+            </Button>
           </div>
           {ips.isPending ? (
             <div className="p-4">
@@ -134,9 +162,30 @@ export function OverviewTab({ server }: { server: OwnedServer }) {
           ) : (
             <div className="divide-y divide-border">
               {(ips.data && ips.data.length > 0 ? ips.data : [{ ip: server.ip, type: "IPv4" }]).map((entry) => (
-                <div key={entry.ip} className="px-4 py-3 flex items-center justify-between text-[13px]">
-                  <code className="font-mono">{maskSensitive(entry.ip, hidden)}</code>
-                  <span className="text-[11px] text-muted-foreground">{entry.type}</span>
+                <div key={entry.ip} className="px-4 py-3 flex items-center justify-between text-[13px] gap-2">
+                  <div className="space-y-0.5 min-w-0">
+                    <code className="font-mono">{maskSensitive(entry.ip, hidden)}</code>
+                    {revMap.get(entry.ip) && (
+                      <div className="text-[11px] text-muted-foreground font-mono truncate max-w-[280px]" title={revMap.get(entry.ip)}>
+                        ↩ {revMap.get(entry.ip)}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-[11px] text-muted-foreground">{entry.type}</span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                      title="配置反向 DNS"
+                      onClick={() => {
+                        setSelectedIp(entry.ip);
+                        setReverseOpen(true);
+                      }}
+                    >
+                      <Edit2 className="w-3 h-3" />
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -183,6 +232,11 @@ export function OverviewTab({ server }: { server: OwnedServer }) {
 
       {/* MRTG 流量监控 */}
       <MrtgTrafficChart serviceName={server.serviceName} />
+      <ReverseDnsDialog open={reverseOpen}
+        onOpenChange={setReverseOpen}
+        serviceName={server.serviceName}
+        defaultIp={selectedIp}
+      />
     </div>
   );
 }

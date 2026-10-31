@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/gin-gonic/gin"
@@ -430,6 +431,7 @@ func SetVpsIpReverse(state *app.State) gin.HandlerFunc {
 			Reverse string `json:"reverse"`
 		}
 		_ = c.ShouldBindJSON(&body)
+		body.Reverse = strings.TrimSuffix(strings.TrimSpace(body.Reverse), ".")
 		// vps.Ip 里只有 reverse 可写(ipAddress / type / version / gateway /
 		// geolocation / macAddress 都是只读),所以不需要先 GET 再 merge ——
 		// 那样反而会把只读字段一起发回去,被 OVH 400 掉

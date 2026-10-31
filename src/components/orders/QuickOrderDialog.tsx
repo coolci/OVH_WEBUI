@@ -209,6 +209,29 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
     if (result.success > 0) {
       toast.success(`已创建 ${result.success}/${result.total} 个${server?.prerelease ? "预订" : "抢购"}任务`);
       onOpenChange(false);
+      return;
+    }
+    if (result.canForce) {
+      const ok = window.confirm(`型号【${planCode.trim()}】未在当前账户所在区域目录收录（${result.firstError || "可能为新品/特价/跨区型号"}）。\n\n是否以强制模式（force=true）继续添加任务？`);
+      if (ok) {
+        const forceResult = await create.mutateAsync({
+          account_id: accountId,
+          planCode: planCode.trim(),
+          datacenters: selectedDCs,
+          quantity: qty,
+          retryInterval: Number(retryInterval) || cfgDefault,
+          options: selectedValues,
+          autoPay,
+          force: true,
+          coupon: coupon.trim() || undefined,
+          preorder: !!server?.prerelease,
+        });
+        if (forceResult.success > 0) {
+          toast.success(`已强制创建 ${forceResult.success}/${forceResult.total} 个${server?.prerelease ? "预订" : "抢购"}任务`);
+          onOpenChange(false);
+          return;
+        }
+      }
     }
     // 有具体原因时 hook 已经 toast 过,这里只兜底没拿到原因的情况
     if (result.failed > 0 && !result.firstError) {

@@ -154,3 +154,20 @@ export function usePayAccountOrder(orderId: number) {
     },
   });
 }
+
+/** OVH 账户 SSH Key 列表 GET /me/sshKey */
+export function useAccountSshKeys(accountIdOverride?: string | null) {
+  const [activeAccount] = useActiveAccount();
+  const accountId = accountIdOverride !== undefined ? accountIdOverride : activeAccount;
+  return useQuery({
+    queryKey: ["ovh", "account", "ssh-keys", accountId],
+    queryFn: async () => {
+      const res = await api.get<{ success: boolean; keys: string[] }>(
+        "/ovh/account/ssh-keys",
+        { params: accountId ? { account: accountId } : undefined }
+      );
+      return res.data?.keys || [];
+    },
+    enabled: Boolean(accountId),
+  });
+}

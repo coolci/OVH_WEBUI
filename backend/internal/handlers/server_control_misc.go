@@ -147,8 +147,13 @@ func AddSecondaryDNS(state *app.State) gin.HandlerFunc {
 			Domain string `json:"domain"`
 		}
 		_ = c.ShouldBindJSON(&body)
+		body.Domain = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(body.Domain), "."))
 		if body.Domain == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少domain参数", "code": "E5BE84C8C"})
+			return
+		}
+		if !strings.Contains(body.Domain, ".") || len(body.Domain) > 255 {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "域名格式不正确", "code": "E_INVALID_DOMAIN"})
 			return
 		}
 		if err := client.Post("/dedicated/server/"+svc+"/secondaryDnsDomains", map[string]interface{}{"domain": body.Domain}, nil); err != nil {

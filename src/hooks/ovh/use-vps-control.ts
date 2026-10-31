@@ -434,7 +434,7 @@ export function useVpsSecondaryDns(svc: string | null) {
 export function useAddVpsSecondaryDns(svc: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (vars: { domain: string; ip: string }) =>
+    mutationFn: async (vars: { domain: string; ip?: string }) =>
       (await api.post(`/vps-control/${svc}/secondary-dns`, vars)).data,
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.vpsControl.secondaryDns(svc) }),
   });
@@ -444,7 +444,7 @@ export function useDeleteVpsSecondaryDns(svc: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (domain: string) =>
-      (await api.delete(`/vps-control/${svc}/secondary-dns/${domain}`)).data,
+      (await api.delete(`/vps-control/${svc}/secondary-dns/${encodeURIComponent(domain)}`)).data,
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.vpsControl.secondaryDns(svc) }),
   });
 }

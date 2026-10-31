@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   Power, PowerOff, RefreshCw, Monitor, HardDrive, Cpu, MemoryStick,
-  MapPin, Globe, CalendarPlus, Repeat, AlertTriangle, ListTodo, Undo2,
+  MapPin, Globe, CalendarPlus, Repeat, AlertTriangle, ListTodo, Undo2, Edit2,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,8 @@ import { DeviceMetaCapsules } from "@/components/common/DeviceMetaCapsules";
 import { InfoCard } from "@/components/common/InfoCard";
 import { VpsSnapshotPane } from "@/components/vps-control/VpsSnapshotPane";
 import { VpsReinstallDialog } from "@/components/vps-control/VpsReinstallDialog";
+import { VpsSecondaryDnsPane } from "@/components/vps-control/VpsSecondaryDnsPane";
+import { VpsReverseDnsDialog } from "@/components/vps-control/VpsReverseDnsDialog";
 import { VpsMitigationPane } from "@/components/vps-control/VpsMitigationPane";
 import { VpsTasksDialog } from "@/components/vps-control/VpsTasksDialog";
 import { VpsOptionsPanel } from "@/components/vps-control/VpsOptionsPanel";
@@ -73,6 +75,8 @@ export function VpsDetail({
   const [terminateOpen, setTerminateOpen] = useState(false);
   const [termToken, setTermToken] = useState("");
   const [renewalOpen, setRenewalOpen] = useState(false);
+  const [reverseDialogOpen, setReverseDialogOpen] = useState(false);
+  const [editingReverseIp, setEditingReverseIp] = useState<{ ip: string; reverse?: string }>({ ip: "" });
   const [contactOpen, setContactOpen] = useState(false);
   const [engagementOpen, setEngagementOpen] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false);
@@ -354,10 +358,22 @@ export function VpsDetail({
                     {ip.type && <span className="text-[10px] text-muted-foreground">{ip.type}</span>}
                     {ip.geolocation && <span className="text-[10px] text-muted-foreground">{ip.geolocation}</span>}
                     {ip.reverse && (
-                      <span className="ml-auto text-[11px] text-muted-foreground font-mono truncate" title={ip.reverse}>
+                      <span className="ml-auto text-[11px] text-muted-foreground font-mono truncate max-w-[200px]" title={ip.reverse}>
                         ↩ {maskSensitive(ip.reverse, hidden)}
                       </span>
                     )}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-muted-foreground hover:text-foreground shrink-0 ml-auto"
+                      title="配置反向 DNS"
+                      onClick={() => {
+                        setEditingReverseIp({ ip: ip.ipAddress, reverse: ip.reverse || "" });
+                        setReverseDialogOpen(true);
+                      }}
+                    >
+                      <Edit2 className="w-3 h-3" />
+                    </Button>
                   </div>
                 ))}
               </div>
@@ -388,6 +404,8 @@ export function VpsDetail({
             <p className="text-[12px] text-muted-foreground">本地别名,不影响 OVH 真实名(`{maskSensitive(server.serviceName, hidden)}`)</p>
             <AliasEditor serviceName={server.serviceName} aliases={aliases} onSetAlias={onSetAlias} accountId={activeAccount} />
           </div>
+
+          <VpsSecondaryDnsPane serviceName={server.serviceName} />
 
           {!isUS ? (
             <div className="border border-border rounded-2xl p-4 space-y-3">
@@ -500,6 +518,15 @@ export function VpsDetail({
         serviceName={server.serviceName}
         open={tasksOpen}
         onOpenChange={setTasksOpen}
+      />
+
+      
+      <VpsReverseDnsDialog
+        serviceName={server.serviceName}
+        ip={editingReverseIp.ip}
+        currentReverse={editingReverseIp.reverse}
+        open={reverseDialogOpen}
+        onOpenChange={setReverseDialogOpen}
       />
 
       <VpsPowerDialogs

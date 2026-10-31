@@ -33,6 +33,7 @@ func registerVPSControlRoutes(api *gin.RouterGroup, cfg Config) {
 		// 重装系统（支持标准 /rebuild 与历史兼容 /reinstall）
 		vc.GET("/:service_name/current-os", handlers.GetVpsCurrentOS(state))
 		vc.GET("/:service_name/templates", handlers.GetVpsTemplates(state))
+		vc.GET("/:service_name/ssh-keys", handlers.GetAccountSSHKeys(state))
 		vc.POST("/:service_name/rebuild", handlers.ReinstallVps(state))
 		vc.POST("/:service_name/reinstall", handlers.ReinstallVps(state))
 

@@ -10,6 +10,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { PartialNotice } from "@/components/common/PartialNotice";
 import { errorMessage } from "@/components/common/LoadFailed";
 import { useVpsTemplates, useReinstallVps, useVpsCurrentOS, type VpsTemplate } from "@/hooks/use-vps-control";
+import { useAccountSshKeys } from "@/hooks/use-account";
+import { useActiveAccount } from "@/hooks/use-active-account";
 import { toast } from "sonner";
 import { splitList } from "@/lib/split-list";
 import { Trans, useTranslation } from "react-i18next";
@@ -29,9 +31,14 @@ export function VpsReinstallDialog({
   const reinstall = useReinstallVps(serviceName);
   const { t } = useTranslation();
 
+  const [activeAccount] = useActiveAccount();
+  const sshKeysQ = useAccountSshKeys(activeAccount);
+  const registeredKeys = sshKeysQ.data || [];
+
   const [templateId, setTemplateId] = useState<number | string | null>(null);
   const [doNotSendPassword, setDoNotSendPassword] = useState(false);
-  const [sshKeyNames, setSshKeyNames] = useState<string>(""); // 逗号分隔
+  const [selectedSshKey, setSelectedSshKey] = useState<string>("__none__");
+  const [customSshKey, setCustomSshKey] = useState<string>("");
   const [confirmName, setConfirmName] = useState("");
 
   const tplItems: VpsTemplate[] = templates.data?.items || [];
@@ -58,18 +65,31 @@ export function VpsReinstallDialog({
       toast.error(t("vps.reinstall.toast.nameMismatch"));
       return;
     }
-    const sshKey = splitList(sshKeyNames);
+    const effectiveSshKey = selectedSshKey === "__custom__"
+      ? customSshKey.trim()
+      : (selectedSshKey === "__none__" ? "" : selectedSshKey.trim());
+
+    if (effectiveSshKey.startsWith("ssh-") || effectiveSshKey.startsWith("ecdsa-")) {
+      toast.error(t("vps.reinstall.sshRawKeyError", { defaultValue: "VPS 重建要求填入已在 OVH 登记的密钥名称（如 id_rsa），不能填入公钥内容" }));
+      return;
+    }
+    if (effectiveSshKey.includes(",")) {
+      toast.error(t("vps.reinstall.sshMultiKeyError", { defaultValue: "VPS 重建仅支持单个密钥名称，请勿指定多个密钥" }));
+      return;
+    }
+
     try {
       await reinstall.mutateAsync({
         templateId,
-        sshKey: sshKey.length > 0 ? sshKey : undefined,
+        sshKey: effectiveSshKey ? [effectiveSshKey] : undefined,
         doNotSendPassword,
       });
       toast.success(t("vps.reinstall.toast.submitted"));
       onOpenChange(false);
       setTemplateId(null);
       setConfirmName("");
-      setSshKeyNames("");
+      setSelectedSshKey("__none__");
+      setCustomSshKey("");
     } catch (e: any) {
       toast.error(errorMessage(e));
     }
@@ -169,14 +189,55 @@ export function VpsReinstallDialog({
 
 
           {/* SSH key */}
-          <div>
-            <label className="text-[12px] font-semibold block mb-1.5">{t("vps.reinstall.sshLabel")}</label>
-            <Input
-              value={sshKeyNames}
-              onChange={(e) => setSshKeyNames(e.target.value)}
-              placeholder={t("vps.reinstall.sshPlaceholder")}
-            />
-            <p className="text-[11px] text-muted-foreground mt-1">
+          <div className="space-y-1.5">
+            <label className="text-[12px] font-semibold block">{t("vps.reinstall.sshLabel")}</label>
+            {registeredKeys.length > 0 ? (
+              <div className="space-y-2">
+                <Select value={selectedSshKey} onValueChange={setSelectedSshKey}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder={t("vps.reinstall.sshSelectPlaceholder", { defaultValue: "选择 OVH 账户密钥..." })} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">{t("vps.reinstall.sshOptionNone", { defaultValue: "不注入 SSH Key（使用初始随机密码）" })}</SelectItem>
+                    {registeredKeys.map((k) => (
+                      <SelectItem key={k} value={k}>
+                        {k}
+                      </SelectItem>
+                    ))}
+                    <SelectItem value="__custom__">{t("vps.reinstall.sshOptionCustom", { defaultValue: "手动输入密钥别名..." })}</SelectItem>
+                  </SelectContent>
+                </Select>
+                {selectedSshKey === "__custom__" && (
+                  <Input
+                    value={customSshKey}
+                    onChange={(e) => setCustomSshKey(e.target.value)}
+                    placeholder={t("vps.reinstall.sshPlaceholder", { defaultValue: "输入已在 OVH 登记的单个密钥别名（如 id_rsa）" })}
+                    className="font-mono text-xs"
+                  />
+                )}
+              </div>
+            ) : (
+              <Input
+                value={customSshKey}
+                onChange={(e) => {
+                  setSelectedSshKey("__custom__");
+                  setCustomSshKey(e.target.value);
+                }}
+                placeholder={t("vps.reinstall.sshPlaceholder", { defaultValue: "输入已在 OVH 登记的单个密钥别名（如 id_rsa）" })}
+                className="font-mono text-xs"
+              />
+            )}
+            {(selectedSshKey === "__custom__" ? customSshKey.trim() : (selectedSshKey !== "__none__" ? selectedSshKey : "")).startsWith("ssh-") && (
+              <p className="text-[11px] text-destructive font-medium">
+                ⚠️ 检测到公钥内容！VPS 重建仅支持填入已在 OVH 登记的密钥别名（如 id_rsa），请勿直接粘贴公钥。
+              </p>
+            )}
+            {(selectedSshKey === "__custom__" ? customSshKey : "").includes(",") && (
+              <p className="text-[11px] text-destructive font-medium">
+                ⚠️ 检测到逗号！VPS 重建仅支持注入单个密钥，不支持多个。
+              </p>
+            )}
+            <p className="text-[11px] text-muted-foreground">
               {t("vps.reinstall.sshHint")}
             </p>
           </div>

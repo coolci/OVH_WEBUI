@@ -163,6 +163,16 @@ func TestNormalizeStorage_eraseRules(t *testing.T) {
 	if err == nil {
 		t.Fatal("安装组 + erase:false 必须被拒(官方禁止)")
 	}
+
+	// 保留盘组未指定 diskGroupId 必须被拒
+	_, err = normalizeStorageConfig([]interface{}{
+		map[string]interface{}{
+			"erase": false,
+		},
+	})
+	if err == nil {
+		t.Fatal("保留数据的磁盘组缺少 diskGroupId 必须被拒")
+	}
 }
 
 // customizations 动态透传:OS 特定问题(sshKey/脚本/语言)原样进 installParams

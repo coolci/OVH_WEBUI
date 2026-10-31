@@ -309,8 +309,31 @@ export function ServerDetailDialog({
               if (result.success > 0) {
                 toast.success(`已创建 ${result.success}/${result.total} 个${server.prerelease ? "预订" : "抢购"}任务`);
                 onClose();
+                return;
               }
-              if (result.failed > 0) {
+              if (result.canForce) {
+                const ok = window.confirm(`型号【${server.planCode}】未在当前账户所在区域目录收录（${result.firstError || "可能为新品/跨区机型"}）。\n\n是否以强制模式（force=true）继续添加任务？`);
+                if (ok) {
+                  const forceResult = await create.mutateAsync({
+                    account_id: accountId,
+                    planCode: server.planCode,
+                    datacenters: selectedDCs,
+                    quantity: qty,
+                    retryInterval: Number(retryInterval) || cfgDefault,
+                    options: selectedValues,
+                    autoPay,
+                    coupon: coupon.trim() || undefined,
+                    preorder: !!server.prerelease,
+                    force: true,
+                  });
+                  if (forceResult.success > 0) {
+                    toast.success(`已强制创建 ${forceResult.success}/${forceResult.total} 个${server.prerelease ? "预订" : "抢购"}任务`);
+                    onClose();
+                    return;
+                  }
+                }
+              }
+              if (result.failed > 0 && !result.firstError) {
                 toast.error(`${result.failed} 个任务创建失败`);
               }
             }}

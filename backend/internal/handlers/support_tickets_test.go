@@ -24,6 +24,15 @@ func TestSupportTicketListQuery(t *testing.T) {
 		t.Fatal("数字搜索不该同时当作标题")
 	}
 
+	q, err = supportTicketListQuery("", "CS123456", "", "", "")
+	if err != nil || q.Get("ticketNumber") != "CS123456" {
+		t.Fatalf("CS123456 应作为 ticketNumber, got %s", q.Encode())
+	}
+	q, err = supportTicketListQuery("", "#998877", "", "", "")
+	if err != nil || q.Get("ticketNumber") != "998877" {
+		t.Fatalf("#998877 应剥离 # 并作为 ticketNumber, got %s", q.Encode())
+	}
+
 	q, err = supportTicketListQuery("all", "refund two servers", "", "", "")
 	if err != nil {
 		t.Fatal(err)
@@ -73,6 +82,10 @@ func TestParseSupportTicketID(t *testing.T) {
 	id, err := parseSupportTicketID("16893164")
 	if err != nil || id != "16893164" {
 		t.Fatalf("id=%s err=%v", id, err)
+	}
+	id, err = parseSupportTicketID("#16893164")
+	if err != nil || id != "16893164" {
+		t.Fatalf("#16893164 id=%s err=%v", id, err)
 	}
 	for _, raw := range []string{"", "0", "01", "12a", "  "} {
 		if _, err := parseSupportTicketID(raw); err == nil {

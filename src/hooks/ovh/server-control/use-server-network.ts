@@ -99,6 +99,32 @@ export function useServerSecondaryDns(serviceName: string | null) {
   });
 }
 
+export function useAddServerSecondaryDns(serviceName: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (domain: string) => {
+      const res = await api.post(`/server-control/${serviceName}/secondary-dns`, { domain });
+      return res.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.serverControl.secondaryDns(serviceName) });
+    },
+  });
+}
+
+export function useDeleteServerSecondaryDns(serviceName: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (domain: string) => {
+      const res = await api.delete(`/server-control/${serviceName}/secondary-dns/${encodeURIComponent(domain)}`);
+      return res.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.serverControl.secondaryDns(serviceName) });
+    },
+  });
+}
+
 export function useServerVirtualMac(serviceName: string | null) {
   return useQuery({
     queryKey: qk.serverControl.virtualMac(serviceName || ""),
@@ -140,5 +166,49 @@ export function useServerNetworkSpecs(serviceName: string | null, enabled = true
       return (res.data?.network || null) as any;
     },
     enabled: !!serviceName && enabled,
+  });
+}
+
+export interface ReverseDnsRecord {
+  ipReverse: string;
+  reverse: string;
+}
+
+export function useServerReverseDns(serviceName: string | null) {
+  return useQuery({
+    queryKey: ["server-control", "reverse-dns", serviceName],
+    queryFn: async () => {
+      const res = await api.get(`/server-control/${serviceName}/reverse`);
+      return (res.data?.reverses || []) as ReverseDnsRecord[];
+    },
+    enabled: Boolean(serviceName),
+  });
+}
+
+export function useSetServerReverseDns(serviceName: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { ip: string; reverse: string }) => {
+      const res = await api.post(`/server-control/${serviceName}/reverse`, vars);
+      return res.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["server-control", "reverse-dns", serviceName] });
+      qc.invalidateQueries({ queryKey: qk.serverControl.ips(serviceName) });
+    },
+  });
+}
+
+export function useDeleteServerReverseDns(serviceName: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (ip: string) => {
+      const res = await api.delete(`/server-control/${serviceName}/reverse/${encodeURIComponent(ip)}`);
+      return res.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["server-control", "reverse-dns", serviceName] });
+      qc.invalidateQueries({ queryKey: qk.serverControl.ips(serviceName) });
+    },
   });
 }

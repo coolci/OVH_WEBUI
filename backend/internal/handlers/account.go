@@ -770,3 +770,28 @@ func GetAccountOrders(state *app.State) gin.HandlerFunc {
 		})
 	}
 }
+
+
+// GetAccountSSHKeys GET /api/ovh/account/ssh-keys
+// 拉取当前账户在 OVH 登记的全部 SSH 密钥名称列表（GET /me/sshKey）
+func GetAccountSSHKeys(state *app.State) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		client, err := ovhClientFor(state, c)
+		if err != nil {
+			noOVHRespAccount(c)
+			return
+		}
+		var keys []string
+		if err := client.Get("/me/sshKey", &keys); err != nil {
+			respondOVHError(c, err)
+			return
+		}
+		if keys == nil {
+			keys = []string{}
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"keys":    keys,
+		})
+	}
+}

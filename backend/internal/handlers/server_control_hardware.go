@@ -360,6 +360,8 @@ func SetReverseDNS(state *app.State) gin.HandlerFunc {
 			Reverse string `json:"reverse"`
 		}
 		_ = c.ShouldBindJSON(&body)
+		body.IP = strings.TrimSpace(body.IP)
+		body.Reverse = strings.TrimSuffix(strings.TrimSpace(body.Reverse), ".")
 		if body.IP == "" || body.Reverse == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "IP地址和反向DNS不能为空", "code": "E907CF2B8"})
 			return

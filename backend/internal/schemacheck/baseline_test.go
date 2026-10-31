@@ -262,6 +262,7 @@ var usedEndpoints = []string{
 
 	// —— 账户 ——
 	"GET /me",
+	"GET /me/sshKey",
 	"GET /me/bill",
 	"GET /me/credit/balance",
 	"GET /me/notification/email/history",

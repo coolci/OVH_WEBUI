@@ -28,10 +28,10 @@ const pack: VpsDialogsPack = {
       tplId: "Template ID: {{id}}",
       tplLocale: "default language: {{locale}}",
       tplLangs: "supports {{n}} languages",
-      sshLabel: "SSH public keys (optional)",
-      sshPlaceholder: "OVH SSH key names, comma-separated (taken from /me/sshKey)",
+      sshLabel: "SSH key (single, optional)",
+      sshPlaceholder: "OVH SSH key name registered in /me/sshKey (e.g. id_rsa)",
       sshHint:
-        "With SSH keys filled in, you can tick \"don't email the password\" below and log in with the key right after installation",
+        "Must be a single registered SSH key name in your OVH account. With an SSH key filled in, you can tick \"don't email the password\".",
       noPwdMail: "Don't email the initial password (log in with an SSH key)",
       confirmNameLabel: "Type the VPS name <code>{{name}}</code> to confirm:",
       submitting: "Submitting…",

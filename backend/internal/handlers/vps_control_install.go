@@ -316,8 +316,27 @@ func ReinstallVps(state *app.State) gin.HandlerFunc {
 			"doNotSendPassword": body.DoNotSendPassword,
 			"installRTM":        false,
 		}
-		if len(body.SSHKey) > 0 {
-			params["sshKey"] = body.SSHKey[0]
+		if len(body.SSHKey) > 1 {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"success": false,
+				"error":   "VPS 系统重建仅支持配置单个已在 OVH 登记的 SSH 密钥，请勿指定多个密钥",
+				"code":    "EVPS_MULTI_SSH_KEY",
+			})
+			return
+		}
+		if len(body.SSHKey) == 1 {
+			key := strings.TrimSpace(body.SSHKey[0])
+			if strings.HasPrefix(key, "ssh-") || strings.HasPrefix(key, "ecdsa-") {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"success": false,
+					"error":   "VPS 系统重建要求填入已在 OVH 登记的密钥名称（如 id_rsa），不能直接填入公钥文本",
+					"code":    "EVPS_RAW_PUBKEY_NOT_ALLOWED",
+				})
+				return
+			}
+			if key != "" {
+				params["sshKey"] = key
+			}
 		}
 		// 与独服 InstallOS 同款 per-service 锁:重装连点在 OVH 侧撞任务冲突,
 		// 第二发显示"失败"而重装其实已开跑 —— 用户极易再点第三次

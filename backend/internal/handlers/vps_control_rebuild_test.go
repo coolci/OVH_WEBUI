@@ -149,4 +149,38 @@ func TestVpsRebuildEndpoints(t *testing.T) {
 			t.Fatalf("expected HTTP 400 for missing imageId, got %d. Body: %s", w.Code, w.Body.String())
 		}
 	}
+
+	// Case 4: Multiple SSH keys returns 400 Bad Request (EVPS_MULTI_SSH_KEY)
+	{
+		payload := map[string]interface{}{
+			"templateId": "debian12",
+			"sshKey":     []string{"key1", "key2"},
+		}
+		payloadBytes, _ := json.Marshal(payload)
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("POST", "/api/vps-control/vps-test-rebuild/rebuild", bytes.NewReader(payloadBytes))
+		req.Header.Set("Content-Type", "application/json")
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("expected HTTP 400 for multiple ssh keys, got %d. Body: %s", w.Code, w.Body.String())
+		}
+	}
+
+	// Case 5: Raw public key string returns 400 Bad Request (EVPS_RAW_PUBKEY_NOT_ALLOWED)
+	{
+		payload := map[string]interface{}{
+			"templateId": "debian12",
+			"sshKey":     []string{"ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC..."},
+		}
+		payloadBytes, _ := json.Marshal(payload)
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("POST", "/api/vps-control/vps-test-rebuild/rebuild", bytes.NewReader(payloadBytes))
+		req.Header.Set("Content-Type", "application/json")
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("expected HTTP 400 for raw public key, got %d. Body: %s", w.Code, w.Body.String())
+		}
+	}
 }
