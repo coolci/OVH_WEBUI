@@ -1,5 +1,5 @@
-import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/lib/http";
+import { useMutation, useQueries, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { api, setActiveServerControlAccount, setActiveVpsControlAccount } from "@/lib/http";
 import { qk } from "@/lib/query";
 import { toast } from "sonner";
 import { zoneStyle } from "@/lib/zone-color";
@@ -52,6 +52,31 @@ export interface AccountInput {
 const ACCOUNTS_KEY = ["accounts", "list"] as const;
 
 /**
+ * 默认账户变更后,让各页面的「当前账户」跟着切过去。
+ *
+ * 独服控制 / 账户页 / VPS 控制用的是 localStorage 里持久化的活跃账户 ID,
+ * ActiveAccountSync 只在该 ID 失效(账户被删)时才回落到默认账户。
+ * 所以只改默认、不同步活跃 ID 的话,旧账户依然存在 → /account 等页面纹丝不动,
+ * 用户以为切换没生效。setActive* 会派发事件,所有 useActive*Account 实例同步更新。
+ */
+function followDefaultAccount(qc: QueryClient, id: string) {
+  if (!id) return;
+  setActiveServerControlAccount(id);
+  setActiveVpsControlAccount(id);
+  // 后端会把默认账户的 zone / iam / endpoint 同步进全局设置
+  qc.invalidateQueries({ queryKey: qk.settings.config() });
+  // 依赖账户的查询按新账户重拉
+  qc.invalidateQueries({ queryKey: ["server-control"] });
+  qc.invalidateQueries({ queryKey: ["account"] });
+  qc.invalidateQueries({ queryKey: ["ips"] });
+  qc.invalidateQueries({ queryKey: ["ssh-keys"] });
+  qc.invalidateQueries({ queryKey: ["payment-methods"] });
+  qc.invalidateQueries({ queryKey: ["support-tickets"] });
+  qc.invalidateQueries({ queryKey: ["vps-control"] });
+  qc.invalidateQueries({ queryKey: ["vps-monitor"] });
+}
+
+/**
  * 创建 / 更新 / 验证账户时后端带回来的子公司错配说明(空 = 没问题)。
  *
  * 后端(handlers.SubsidiaryMismatchNote)拿账户里存的 zone 跟 OVH /me 返回的 ovhSubsidiary 比:
@@ -98,10 +123,14 @@ export function useCreateAccount() {
         throw err;
       }
     },
-    onSuccess: (data) => {
+    onSuccess: (data, input) => {
       qc.invalidateQueries({ queryKey: ACCOUNTS_KEY });
       // 新账户的出站配置要出现在代理健康面板里
       qc.invalidateQueries({ queryKey: qk.accounts.proxyStatus() });
+      // 勾了「设为默认」时当前账户跟过去(首个账户由 ActiveAccountSync 兜底)
+      if (input.setDefault && data.account?.id) {
+        followDefaultAccount(qc, data.account.id);
+      }
       if (data.valid) {
         toast.success(i18n.t("hooksMsg.account.created", { name: data.account.name }));
       } else {
@@ -134,6 +163,9 @@ export function useUpdateAccount() {
     onSuccess: (data, vars) => {
       qc.invalidateQueries({ queryKey: ACCOUNTS_KEY });
       qc.invalidateQueries({ queryKey: qk.accounts.proxyStatus() });
+      if (vars.input.setDefault) {
+        followDefaultAccount(qc, vars.id);
+      }
       // 出站配置可能刚改过,上一次测到的出口 IP 就不再对应现在生效的配置了。
       // 留着它等于拿旧 IP 冒充新配置的结果 —— 而这个 IP 正是用户用来判断
       // "隔离到底生没生效"的唯一依据,宁可空着让他重测一次。
@@ -180,8 +212,9 @@ export function useSetDefaultAccount() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => (await api.post(`/accounts/${id}/set-default`)).data,
-    onSuccess: () => {
+    onSuccess: (_d, id) => {
       qc.invalidateQueries({ queryKey: ACCOUNTS_KEY });
+      followDefaultAccount(qc, id);
       toast.success(i18n.t("hooksMsg.account.setDefault"));
     },
     onError: (e: any) => toast.error(apiMessage(e)),
