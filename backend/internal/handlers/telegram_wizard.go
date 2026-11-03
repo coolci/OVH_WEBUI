@@ -1,14 +1,17 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/catalog"
 	"github.com/ovh-webui/server/internal/monitor"
+	"github.com/ovh-webui/server/internal/purchase"
 	"github.com/ovh-webui/server/internal/telegram"
 	"github.com/ovh-webui/server/internal/types"
 )
@@ -174,6 +177,15 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 			dcLabel := telegram.DisplayDC(dc)
 			if sess.Selected[dc] {
 				telegram.AnswerCallback(state, cbID, "已勾选 "+dcLabel, false)
+				// 选型向导前置预热：用户在 TG 勾选目标机房时，后台静默准备预热车，按下确认抢购即 0ms 直出！
+				if mode == "b" {
+					accID := telegram.ActiveAccountID(state)
+					go func(a, p, d string, opts []string) {
+						ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+						defer cancel()
+						_, _ = purchase.AssemblePrewarmedCart(ctx, state, a, p, d, opts, "")
+					}(accID, plan, dc, sess.Options)
+				}
 			} else {
 				telegram.AnswerCallback(state, cbID, "已取消 "+dcLabel, false)
 			}
@@ -193,6 +205,14 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 			}
 			for _, d := range stock {
 				sess.Selected[d] = true
+				if mode == "b" {
+					accID := telegram.ActiveAccountID(state)
+					go func(a, p, dcCode string, opts []string) {
+						ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+						defer cancel()
+						_, _ = purchase.AssemblePrewarmedCart(ctx, state, a, p, dcCode, opts, "")
+					}(accID, plan, d, sess.Options)
+				}
 			}
 			telegram.AnswerCallback(state, cbID, fmt.Sprintf("已勾选 %d 个有货机房", len(stock)), false)
 			showDCPicker(state, chatID, messageID, mode, plan, true)

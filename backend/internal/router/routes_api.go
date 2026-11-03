@@ -110,6 +110,7 @@ func registerAPIRoutes(api *gin.RouterGroup, cfg Config) {
 	api.POST("/accounts/:id/set-default", handlers.SetDefaultAccountByID(state))
 	api.POST("/accounts/:id/verify", handlers.VerifyAccount(state))
 
-	// Quick order
+	// Quick order & Intent prewarm
 	api.POST("/queue/quick-order", handlers.QuickOrder(state))
+	api.POST("/purchase/prewarm", handlers.PrewarmOrder(state))
 }

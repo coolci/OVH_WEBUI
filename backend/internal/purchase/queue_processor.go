@@ -186,6 +186,9 @@ func processQueueLoop(loopCtx context.Context, state *app.State, purchase func(c
 			state.Logger.Debug(fmt.Sprintf("清理 %d 个已从队列移除的删除标记", removed), "queue")
 		}
 
+		// 为队列中处于 running 状态的活跃挂机任务维持预热车待命
+		ensureQueuePrewarmedCarts(loopCtx, state)
+
 		// 按优先级排序：quickOrder 优先，其次按创建时间倒序
 		state.QueueMu.Lock()
 		sorted := make([]types.QueueItem, len(state.Queue))
@@ -463,5 +466,120 @@ func processQueueLoop(loopCtx context.Context, state *app.State, purchase func(c
 		case <-state.QueueWakeCh():
 		case <-time.After(time.Second):
 		}
+	}
+}
+
+type queuePrewarmCoord struct {
+	mu           sync.Mutex
+	inFlight     map[string]bool
+	lastAttempt  map[string]time.Time
+	failedCounts map[string]int
+}
+
+var globalQueuePrewarmCoord = &queuePrewarmCoord{
+	inFlight:     map[string]bool{},
+	lastAttempt:  map[string]time.Time{},
+	failedCounts: map[string]int{},
+}
+
+// ResetQueuePrewarmCoord 重置队列预热协调器（供测试使用）
+func ResetQueuePrewarmCoord() {
+	globalQueuePrewarmCoord.mu.Lock()
+	defer globalQueuePrewarmCoord.mu.Unlock()
+	globalQueuePrewarmCoord.inFlight = map[string]bool{}
+	globalQueuePrewarmCoord.lastAttempt = map[string]time.Time{}
+	globalQueuePrewarmCoord.failedCounts = map[string]int{}
+}
+
+// TriggerPrewarmForQueueItem 为处于运行中（待抢购）的队列任务触发后台预热装车
+func TriggerPrewarmForQueueItem(ctx context.Context, state *app.State, item *types.QueueItem) {
+	if item == nil || item.Status != "running" || item.PlanCode == "" || item.Datacenter == "" {
+		return
+	}
+	if state == nil || state.OVH == nil {
+		return
+	}
+	acc, ok := state.FindAccount(item.AccountID)
+	if !ok {
+		return
+	}
+	accountID := acc.ID
+
+	key := prewarmKey(accountID, item.PlanCode, item.Datacenter, item.Options, item.Coupon)
+
+	globalQueuePrewarmCoord.mu.Lock()
+	if globalQueuePrewarmCoord.inFlight[key] {
+		globalQueuePrewarmCoord.mu.Unlock()
+		return
+	}
+	if last, ok := globalQueuePrewarmCoord.lastAttempt[key]; ok {
+		failCount := globalQueuePrewarmCoord.failedCounts[key]
+		if failCount > 0 {
+			shift := failCount
+			if shift > 5 {
+				shift = 5
+			}
+			cooldown := time.Duration(1<<shift) * 30 * time.Second
+			if time.Since(last) < cooldown {
+				globalQueuePrewarmCoord.mu.Unlock()
+				return
+			}
+		}
+	}
+	if HasPrewarmedCart(accountID, item.PlanCode, item.Datacenter, item.Options, item.Coupon) {
+		globalQueuePrewarmCoord.mu.Unlock()
+		return
+	}
+
+	globalQueuePrewarmCoord.inFlight[key] = true
+	globalQueuePrewarmCoord.lastAttempt[key] = time.Now()
+	globalQueuePrewarmCoord.mu.Unlock()
+
+	go func() {
+		defer func() {
+			globalQueuePrewarmCoord.mu.Lock()
+			delete(globalQueuePrewarmCoord.inFlight, key)
+			globalQueuePrewarmCoord.mu.Unlock()
+		}()
+
+		state.Logger.Info(fmt.Sprintf("[queue/prewarm] 开始为队列任务 %s (%s@%s) 预热购物车...",
+			item.ID, item.PlanCode, item.Datacenter), "purchase")
+
+		pwCtx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+		defer cancel()
+
+		cart, err := AssemblePrewarmedCart(pwCtx, state, accountID, item.PlanCode, item.Datacenter, item.Options, item.Coupon)
+		if err != nil {
+			globalQueuePrewarmCoord.mu.Lock()
+			globalQueuePrewarmCoord.failedCounts[key]++
+			globalQueuePrewarmCoord.mu.Unlock()
+			state.Logger.Warn(fmt.Sprintf("[queue/prewarm] 队列任务 %s 预热装车失败: %v", item.ID, err), "purchase")
+			return
+		}
+
+		globalQueuePrewarmCoord.mu.Lock()
+		globalQueuePrewarmCoord.failedCounts[key] = 0
+		globalQueuePrewarmCoord.mu.Unlock()
+
+		state.Logger.Info(fmt.Sprintf("[queue/prewarm] ✅ 队列任务预热装车成功就绪！CartID: %s (%s@%s)",
+			cart.CartID, item.PlanCode, item.Datacenter), "purchase")
+	}()
+}
+
+func ensureQueuePrewarmedCarts(ctx context.Context, state *app.State) {
+	if state == nil {
+		return
+	}
+	state.QueueMu.Lock()
+	runningItems := make([]types.QueueItem, 0, len(state.Queue))
+	for _, it := range state.Queue {
+		if it.Status == "running" && it.PlanCode != "" && it.Datacenter != "" {
+			runningItems = append(runningItems, it)
+		}
+	}
+	state.QueueMu.Unlock()
+
+	for i := range runningItems {
+		TriggerPrewarmForQueueItem(ctx, state, &runningItems[i])
 	}
 }

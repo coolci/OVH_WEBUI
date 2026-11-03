@@ -548,6 +548,26 @@ func (m *Monitor) SendAvailabilityAlertGrouped(planCode string, availableDCs []m
 	msgText, replyMarkup := m.buildAvailabilityAlert(planCode, availableDCs, configInfo,
 		serverName, priceErrorMessage, traceID, configTraceID, accountID...)
 
+	// 上架通知按钮预热：探针发现有货并在 Telegram/Webhook 广播通知的同时，
+	// 为默认下单账户顺带预热就绪车。用户看到群通知/手机弹窗点击按钮时，直接消费现车 0 秒秒出！
+	targetAcc := ""
+	if len(accountID) > 0 && accountID[0] != "" {
+		targetAcc = accountID[0]
+	}
+	if targetAcc == "" && m.state != nil {
+		if acc, ok := m.state.FindAccount(""); ok {
+			targetAcc = acc.ID
+		}
+	}
+	if targetAcc != "" {
+		options := optionsFromConfig(configInfo)
+		for _, item := range availableDCs {
+			if dcCode, ok := item["datacenter"].(string); ok && dcCode != "" {
+				go m.assemblePrewarmedCartAsync(targetAcc, planCode, dcCode, options)
+			}
+		}
+	}
+
 	configDesc := ""
 	if configInfo != nil {
 		if d, ok := configInfo["display"].(string); ok {

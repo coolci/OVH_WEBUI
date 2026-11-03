@@ -15,6 +15,7 @@ import { useServers } from "@/hooks/use-servers";
 import { useMonitorList } from "@/hooks/use-monitor";
 import { MonitorSubscribeDialog } from "@/components/monitor/MonitorSubscribeDialog";
 import { useCreateQueueItem } from "@/hooks/use-queue";
+import { usePrewarmOrder } from "@/hooks/use-prewarm";
 import { useSettings, RETRY_INTERVAL } from "@/hooks/use-settings";
 import { useDefaultAccount, useAccounts, findAccountByID } from "@/hooks/use-accounts";
 import {
@@ -126,6 +127,16 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
     if (!server) return null;
     return computePriceFromOptions(server.planCode, selectedValues, catalogIdx);
   }, [server, selectedValues, catalogIdx]);
+
+  const targetAccountId = accountId || defaultAcc?.id || "";
+  const prewarm = usePrewarmOrder({
+    account_id: targetAccountId,
+    planCode: planCode,
+    datacenter: selectedDCs[0],
+    options: selectedValues,
+    coupon: coupon.trim() || undefined,
+    enabled: open && selectedDCs.length > 0 && !!targetAccountId && !!planCode,
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -406,11 +417,25 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
           </div>
 
           <div className="relative z-10 shrink-0 space-y-2 border-t border-border/60 bg-card px-4 py-3 sm:px-6">
-            <div className="text-[12px] text-muted-foreground">
-              {selectedDCs.length > 0
-                ? `将创建 ${totalTasks} 个任务（${selectedDCs.length} DC × ${qty}）${selectedValues.length > 0 ? ` · ${selectedValues.length} 项选配` : ""
-                }`
-                : "请选数据中心后再创建抢购任务"}
+            <div className="flex flex-wrap items-center gap-2 text-[12px] text-muted-foreground">
+              <span>
+                {selectedDCs.length > 0
+                  ? `将创建 ${totalTasks} 个任务（${selectedDCs.length} DC × ${qty}）${selectedValues.length > 0 ? ` · ${selectedValues.length} 项选配` : ""
+                  }`
+                  : "请选数据中心后再创建抢购任务"}
+              </span>
+              {prewarm.isReady && (
+                <span className="inline-flex items-center gap-1 text-[11px] text-emerald-500 font-medium bg-emerald-500/10 px-2 py-0.5 rounded">
+                  <Zap className="w-3 h-3 fill-emerald-500 text-emerald-500" />
+                  预热就绪 (0ms秒杀)
+                </span>
+              )}
+              {prewarm.isPrewarming && !prewarm.isReady && (
+                <span className="inline-flex items-center gap-1 text-[11px] text-amber-500 font-medium bg-amber-500/10 px-2 py-0.5 rounded">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  预热装车中...
+                </span>
+              )}
             </div>
             <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <Button type="button" variant="outline" onClick={() => handleClose(false)} disabled={busy}>

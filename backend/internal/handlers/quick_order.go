@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -55,5 +57,56 @@ func QuickOrder(state *app.State) gin.HandlerFunc {
 			resp["price"] = res.Price
 		}
 		c.JSON(http.StatusOK, resp)
+	}
+}
+
+// PrewarmOrder POST /api/purchase/prewarm
+// 接收前端选型/抢购意图前置预热信号，在 OVH 侧后台异步组装购物车待命
+func PrewarmOrder(state *app.State) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req struct {
+			AccountID  string   `json:"account_id"`
+			PlanCode   string   `json:"planCode"`
+			Datacenter string   `json:"datacenter"`
+			Options    []string `json:"options"`
+			Coupon     string   `json:"coupon"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "无效的预热参数: " + err.Error()})
+			return
+		}
+		if req.PlanCode == "" || req.Datacenter == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "planCode 和 datacenter 必填"})
+			return
+		}
+		acc, ok := state.FindAccount(req.AccountID)
+		if !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "未找到有效下单账户"})
+			return
+		}
+		accountID := acc.ID
+
+		// 若池中已就绪，直接返回
+		if purchase.HasPrewarmedCart(accountID, req.PlanCode, req.Datacenter, req.Options, req.Coupon) {
+			c.JSON(http.StatusOK, gin.H{
+				"success": true,
+				"ready":   true,
+				"message": "预热购物车已就绪待命",
+			})
+			return
+		}
+
+		// 异步在 OVH 侧组装预热车
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+			defer cancel()
+			_, _ = purchase.AssemblePrewarmedCart(ctx, state, accountID, req.PlanCode, req.Datacenter, req.Options, req.Coupon)
+		}()
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"ready":   false,
+			"message": "已在后台启动预热装车",
+		})
 	}
 }

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import {
-  Cpu, MemoryStick, HardDrive, Wifi, ShoppingCart, Bell, Loader2,
+  Cpu, MemoryStick, HardDrive, Wifi, ShoppingCart, Bell, Loader2, Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import { DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -16,6 +16,7 @@ import { type ServerPlan } from "@/hooks/use-servers";
 import { useCreateQueueItem } from "@/hooks/use-queue";
 import { useDefaultAccount } from "@/hooks/use-accounts";
 import { useSettings, RETRY_INTERVAL } from "@/hooks/use-settings";
+import { usePrewarmOrder } from "@/hooks/use-prewarm";
 import {
   type AvailabilityItem,
   type CatalogIndex,
@@ -115,6 +116,15 @@ export function ServerDetailDialog({
     if (selectedValues.length === 0) return defaultPrice;
     return computePriceFromOptions(server.planCode, selectedValues, catalogIdx) || defaultPrice;
   }, [server.planCode, selectedValues, catalogIdx, defaultPrice]);
+
+  const prewarm = usePrewarmOrder({
+    account_id: accountId,
+    planCode: server.planCode,
+    datacenter: selectedDCs[0],
+    options: selectedValues,
+    coupon: coupon.trim() || undefined,
+    enabled: selectedDCs.length > 0 && !!accountId,
+  });
 
   return (
     <>
@@ -257,10 +267,24 @@ export function ServerDetailDialog({
       </div>
 
       <DialogFooter className="flex flex-col-reverse sm:flex-row sm:items-center justify-between gap-2.5 pt-3 border-t border-border">
-        <div className="text-xs text-muted-foreground">
-          {selectedDCs.length > 0
-            ? `已选 ${selectedDCs.length} 个机房 · 共计 ${totalTasks} 个任务`
-            : "请选择至少一个数据中心"}
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <span>
+            {selectedDCs.length > 0
+              ? `已选 ${selectedDCs.length} 个机房 · 共计 ${totalTasks} 个任务`
+              : "请选择至少一个数据中心"}
+          </span>
+          {prewarm.isReady && (
+            <span className="inline-flex items-center gap-1 text-[11px] text-emerald-500 font-medium bg-emerald-500/10 px-2 py-0.5 rounded">
+              <Zap className="w-3 h-3 fill-emerald-500 text-emerald-500" />
+              预热就绪 (0ms秒杀)
+            </span>
+          )}
+          {prewarm.isPrewarming && !prewarm.isReady && (
+            <span className="inline-flex items-center gap-1 text-[11px] text-amber-500 font-medium bg-amber-500/10 px-2 py-0.5 rounded">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              预热装车中...
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2 w-full sm:w-auto">
           <Button

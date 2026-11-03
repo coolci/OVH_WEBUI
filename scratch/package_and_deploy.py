@@ -11,7 +11,7 @@ SERVER_USER = "root"
 SERVER_PASS = "fjCoet1L"
 LOCAL_BIND_IP = "192.168.3.61"
 PKG_PATH = "deploy_package.tar.gz"
-RELEASE_TAG = "20261104-prewarmed-monitor-sniper"
+RELEASE_TAG = "20261104-full-prewarm-omnipresent"
 
 def log(msg):
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
