@@ -121,6 +121,9 @@ func (m *Monitor) monitorLoopGen(gen int64) {
 		m.subsMu.Unlock()
 
 		if count > 0 {
+			// 确保处于激活状态的自动下单订阅在后台保持预热车待命
+			m.EnsureAllPrewarmedCarts()
+
 			m.state.Logger.Info(fmt.Sprintf("开始检查 %d 个订阅...", count), "monitor")
 			workers := m.maxWorkers
 			if count < workers {

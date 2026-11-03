@@ -8,6 +8,7 @@ import (
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/catalog"
 	"github.com/ovh-webui/server/internal/monitor"
+	"github.com/ovh-webui/server/internal/ovh"
 	"github.com/ovh-webui/server/internal/price"
 	"github.com/ovh-webui/server/internal/telegram"
 	"github.com/ovh-webui/server/internal/types"
@@ -43,6 +44,8 @@ func dispatchTelegramCommand(state *app.State, mon *monitor.Monitor, cmd *telegr
 		return cmdPrice(state, cmd.Args, mon)
 	case "interval", "iv":
 		return intervalText(state, cmd.Args)
+	case "coupon", "cp":
+		return cmdCoupon(state, cmd.Args)
 	default:
 		return "❌ 未知命令: /" + cmd.Name + "\n\n" + telegram.HelpMessage()
 	}
@@ -155,29 +158,14 @@ func startTelegramOrder(state *app.State, mon *monitor.Monitor, chatID interface
 	if cmdName == "queue" {
 		mode = "q"
 	}
-	qty := info.Quantity
-	if qty < 1 {
-		qty = 1
-	}
 	if len(info.Options) > 0 {
 		return false
 	}
-	configs := enumerateWizardConfigs(state, info.PlanCode, "")
-	if len(configs) > 1 {
-		var tdc []string
-		if info.Datacenter != "" {
-			tdc = []string{strings.ToLower(info.Datacenter)}
-		}
-		showConfigPicker(state, mon, chatID, 0, mode, info.PlanCode, false, tdc, qty)
-		return true
-	}
-	if len(configs) == 1 {
-		info.Options = append([]string{}, configs[0].Options...)
-	}
 	if info.Datacenter == "" {
 		sess := getPickerSession(chatID, 0, mode, info.PlanCode)
-		sess.Options = append([]string{}, info.Options...)
+		configs := enumerateWizardConfigs(state, info.PlanCode, "")
 		if len(configs) == 1 {
+			sess.Options = append([]string{}, configs[0].Options...)
 			sess.ConfigLabel = configs[0].Label
 		}
 		showDCPicker(state, chatID, 0, mode, info.PlanCode, false)
@@ -608,52 +596,72 @@ func handleTelegramText(state *app.State, mon *monitor.Monitor, text string, cha
 	if cmd == nil {
 		trimmed := strings.TrimSpace(text)
 		lower := strings.ToLower(trimmed)
-		if lower == "监控" || lower == "监控列表" {
-			cmd = &telegram.BotCommand{Name: "monitor"}
-		} else if lower == "库存" || lower == "查库存" {
-			cmd = &telegram.BotCommand{Name: "stock"}
-		} else if lower == "价格" || lower == "查价格" {
-			cmd = &telegram.BotCommand{Name: "price"}
-		} else if lower == "任务" || lower == "队列" || lower == "任务列表" {
+		switch {
+		case lower == "⚡ 快速下单" || lower == "快速下单" || lower == "买" || lower == "抢" || lower == "下单":
+			cmd = &telegram.BotCommand{Name: "buy"}
+		case lower == "📋 抢购任务" || lower == "抢购任务" || lower == "任务" || lower == "队列" || lower == "任务列表":
 			cmd = &telegram.BotCommand{Name: "tasks"}
-		} else if lower == "账户" || lower == "账号" || lower == "切换账户" {
+		case lower == "🎫 优惠码" || lower == "优惠码" || lower == "coupon":
+			cmd = &telegram.BotCommand{Name: "coupon"}
+		case lower == "👤 账户矩阵" || lower == "账户矩阵" || lower == "账户" || lower == "账号" || lower == "切换账户":
 			cmd = &telegram.BotCommand{Name: "accounts"}
-		} else if lower == "订阅" || lower == "订阅列表" {
+		case lower == "📦 查询库存" || lower == "查询库存" || lower == "库存" || lower == "查库存":
+			cmd = &telegram.BotCommand{Name: "stock"}
+		case lower == "🎛️ 控制中心" || lower == "控制中心" || lower == "控制台" || lower == "主菜单" || lower == "中枢":
+			cmd = &telegram.BotCommand{Name: "start"}
+		case lower == "监控" || lower == "监控列表":
+			cmd = &telegram.BotCommand{Name: "monitor"}
+		case lower == "价格" || lower == "查价格":
+			cmd = &telegram.BotCommand{Name: "price"}
+		case lower == "订阅" || lower == "订阅列表":
 			cmd = &telegram.BotCommand{Name: "subs"}
-		} else if lower == "取消" || strings.HasPrefix(lower, "取消 ") {
+		case lower == "取消" || strings.HasPrefix(lower, "取消 "):
 			fields := strings.Fields(trimmed)
 			if len(fields) > 1 {
 				cmd = &telegram.BotCommand{Name: "cancel", Args: fields[1:]}
 			} else {
 				cmd = &telegram.BotCommand{Name: "cancel"}
 			}
-		} else if lower == "买" || lower == "抢" || lower == "下单" {
-			cmd = &telegram.BotCommand{Name: "buy"}
-		} else if strings.HasPrefix(lower, "查库存 ") || strings.HasPrefix(lower, "库存 ") || strings.HasPrefix(lower, "查 ") {
+		case strings.HasPrefix(lower, "查库存 ") || strings.HasPrefix(lower, "库存 ") || strings.HasPrefix(lower, "查 "):
 			fields := strings.Fields(trimmed)
 			if len(fields) > 1 {
 				cmd = &telegram.BotCommand{Name: "stock", Args: fields[1:]}
 			}
-		} else if strings.HasPrefix(lower, "监控 ") {
+		case strings.HasPrefix(lower, "监控 "):
 			fields := strings.Fields(trimmed)
 			if len(fields) > 1 {
 				cmd = &telegram.BotCommand{Name: "monitor", Args: fields[1:]}
 			}
-		} else if strings.HasPrefix(lower, "查价格 ") || strings.HasPrefix(lower, "价格 ") {
+		case strings.HasPrefix(lower, "查价格 ") || strings.HasPrefix(lower, "价格 "):
 			fields := strings.Fields(trimmed)
 			if len(fields) > 1 {
 				cmd = &telegram.BotCommand{Name: "price", Args: fields[1:]}
 			}
-		} else if strings.HasPrefix(lower, "买 ") || strings.HasPrefix(lower, "抢 ") || strings.HasPrefix(lower, "下单 ") {
+		case strings.HasPrefix(lower, "买 ") || strings.HasPrefix(lower, "抢 ") || strings.HasPrefix(lower, "下单 "):
 			fields := strings.Fields(trimmed)
 			if len(fields) > 1 {
 				cmd = &telegram.BotCommand{Name: "buy", Args: fields[1:]}
 			}
+		case strings.HasPrefix(lower, "优惠码 ") || strings.HasPrefix(lower, "coupon "):
+			fields := strings.Fields(trimmed)
+			if len(fields) > 1 {
+				cmd = &telegram.BotCommand{Name: "coupon", Args: fields[1:]}
+			}
 		}
 	}
 	if cmd != nil {
-		if cmd.Name == "start" || cmd.Name == "help" {
-			_, _ = telegram.SendToChat(state, chatID, telegram.HelpMessage(), dashboardKeyboard())
+		if cmd.Name == "start" {
+			// 1. 发送底部常驻快捷键盘（在移动端持久驻留于输入框下方，随时可点）
+			_, _ = telegram.SendToChat(state, chatID, "⚡ 控制中枢已连接", telegram.PersistentReplyKeyboard())
+			// 2. 发送 HUD 动态控制中心与内联操作中枢
+			_, _ = telegram.SendToChat(state, chatID, hudDashboardMessage(state, mon), dashboardKeyboard(state, mon))
+			return
+		}
+		if cmd.Name == "help" {
+			markup := telegram.InlineKeyboard([][]map[string]string{
+				{telegram.CallbackButton("🔙 返回控制中心", "i:dash:refresh")},
+			})
+			_, _ = telegram.SendToChat(state, chatID, telegram.HelpMessage(), markup)
 			return
 		}
 		if !authorized {
@@ -770,7 +778,7 @@ func handleTelegramText(state *app.State, mon *monitor.Monitor, text string, cha
 	orderInfo := telegram.ParseOrderMessage(text)
 	if orderInfo == nil || orderInfo.PlanCode == "" {
 		if strings.EqualFold(text, "help") || text == "?" || text == "帮助" {
-			_, _ = telegram.SendToChat(state, chatID, telegram.HelpMessage(), dashboardKeyboard())
+			_, _ = telegram.SendToChat(state, chatID, telegram.HelpMessage(), dashboardKeyboard(state, mon))
 		}
 		// 严格拒绝无法识别的文本（避免误入队）
 		return
@@ -782,6 +790,23 @@ func handleTelegramText(state *app.State, mon *monitor.Monitor, text string, cha
 
 	state.Logger.Info(fmt.Sprintf("解析 free-form 下单: planCode=%s, datacenter=%s, quantity=%d, options=%v, ref=%s",
 		orderInfo.PlanCode, orderInfo.Datacenter, orderInfo.Quantity, orderInfo.Options, orderInfo.AccountRef), "telegram")
+
+	// 智能型号/关键词模糊识别与直达
+	canonical, matches := findMatchingPlans(state, orderInfo.PlanCode)
+	if canonical != "" {
+		orderInfo.PlanCode = canonical
+	}
+	if orderInfo.Datacenter == "" && len(orderInfo.Options) == 0 && orderInfo.AccountRef == "" {
+		if canonical != "" {
+			// 精确或唯一命中，直接弹出机房选择卡片 (Screen 2)
+			showDCPicker(state, chatID, 0, "b", canonical, false)
+			return
+		} else if len(matches) > 1 {
+			// 命中多个候选型号，弹出精简选择列表
+			renderMatchedPlansPicker(state, mon, chatID, int64(messageID), "b", orderInfo.PlanCode, matches)
+			return
+		}
+	}
 
 	if orderInfo.AccountRef != "" {
 		accs, err := resolveAccountRef(state, mon, orderInfo.AccountRef, orderInfo.PlanCode)
@@ -827,23 +852,170 @@ func handleTelegramText(state *app.State, mon *monitor.Monitor, text string, cha
 	telegram.SendReply(state, chatID, reply, int64(messageID))
 }
 
-func dashboardKeyboard() map[string]interface{} {
+func hudDashboardMessage(state *app.State, mon *monitor.Monitor) string {
+	accText := "未配置 OVH 账户"
+	if state != nil {
+		if acc, ok := telegram.ActiveAccount(state); ok && acc.ID != "" {
+			zone := strings.ToUpper(strings.TrimSpace(acc.Zone))
+			if zone == "" {
+				zone = "EU"
+			}
+			accText = fmt.Sprintf("%s · %s (%s 区 · 共 %d 个账户)", acc.Name, zone, ovh.SubsidiaryRegion(zone), len(state.Accounts))
+		}
+	}
+
+	coupon := ""
+	couponText := "未设置 (点击下方管理)"
+	if state != nil {
+		coupon = telegram.ActiveCoupon(state)
+		if coupon != "" {
+			couponText = coupon + " (抢购自动抵扣已就绪)"
+		}
+	}
+
+	taskText := "队列空闲 (暂无抢购任务)"
+	if state != nil {
+		state.QueueMu.Lock()
+		activeTasks := 0
+		for _, it := range state.Queue {
+			if it.Status == "running" || it.Status == "pending" {
+				activeTasks++
+			}
+		}
+		state.QueueMu.Unlock()
+		if activeTasks > 0 {
+			taskText = fmt.Sprintf("%d 个任务挂机抢购中 (%d 秒轮询)", activeTasks, state.Config.RetryInterval())
+		}
+	}
+
+	monText := "暂无监控机型"
+	if mon != nil {
+		monCount := len(mon.Snapshot())
+		if monCount > 0 {
+			monText = fmt.Sprintf("%d 款机型全天候毫秒监听中", monCount)
+		}
+	}
+
+	cmdExample := "/buy 24ska01 gra 1"
+	if coupon != "" {
+		cmdExample += " coupon=" + coupon
+	}
+
+	var b strings.Builder
+	b.WriteString("⚡ OVH CLOUD TERMINAL · 智能控制中枢 ⚡\n")
+	b.WriteString(telegram.CardDivider + "\n")
+	b.WriteString(fmt.Sprintf("👤 活跃账户: %s\n", accText))
+	b.WriteString(fmt.Sprintf("🎫 活跃优惠码: %s\n", couponText))
+	b.WriteString(fmt.Sprintf("🎯 抢购队列: %s\n", taskText))
+	b.WriteString(fmt.Sprintf("📡 库存监控: %s\n", monText))
+	b.WriteString("⏱️ 极速引擎: 🟢 运行中 · 毫秒级锁单\n")
+	b.WriteString(telegram.CardDivider + "\n")
+	b.WriteString("💡 快捷下单指令 (点击即可复制):\n`" + cmdExample + "`\n\n")
+	b.WriteString("📌 点击下方快捷按钮直达各项操作 👇")
+	return b.String()
+}
+
+func dashboardKeyboard(state *app.State, mon *monitor.Monitor) map[string]interface{} {
+	taskCount := 0
+	if state != nil {
+		state.QueueMu.Lock()
+		for _, it := range state.Queue {
+			if it.Status == "running" || it.Status == "pending" {
+				taskCount++
+			}
+		}
+		state.QueueMu.Unlock()
+	}
+	taskLabel := "📋 抢购任务"
+	if taskCount > 0 {
+		taskLabel = fmt.Sprintf("📋 抢购任务 (%d)", taskCount)
+	}
+
+	monCount := 0
+	if mon != nil {
+		monCount = len(mon.Snapshot())
+	}
+	monLabel := "📡 监控管理"
+	if monCount > 0 {
+		monLabel = fmt.Sprintf("📡 监控管理 (%d)", monCount)
+	}
+
+	accLabel := "👤 账户矩阵"
+	if state != nil {
+		if acc, ok := telegram.ActiveAccount(state); ok && acc.ID != "" {
+			z := strings.ToUpper(strings.TrimSpace(acc.Zone))
+			if z == "" {
+				z = "EU"
+			}
+			accLabel = fmt.Sprintf("👤 账户矩阵 (%s★)", z)
+		}
+	}
+
+	cpLabel := "🎫 优惠码管理"
+	if state != nil {
+		if cp := telegram.ActiveCoupon(state); cp != "" {
+			cpLabel = fmt.Sprintf("🎫 优惠码 (%s)", cp)
+		}
+	}
+
+	ivLabel := "⏱️ 抢购参数"
+	if state != nil {
+		iv := state.Config.RetryInterval()
+		ivLabel = fmt.Sprintf("⏱️ 抢购参数 (%ds)", iv)
+	}
+
 	return telegram.InlineKeyboard([][]map[string]string{
 		{
-			telegram.CallbackButton("⚡ 快速下单", "i:cat:b:root"),
-			telegram.CallbackButton("📥 抢购排队", "i:cat:q:root"),
+			telegram.CallbackButton("⚡ 极速选机下单", "i:cat:b:root"),
+			telegram.CallbackButton(taskLabel, "i:Tk:list"),
 		},
 		{
-			telegram.CallbackButton("📦 查询库存", "i:cat:s:root"),
-			telegram.CallbackButton("📡 监控管理", "i:mon:list"),
+			telegram.CallbackButton("📦 现货库存查询", "i:cat:s:root"),
+			telegram.CallbackButton(monLabel, "i:mon:list"),
 		},
 		{
-			telegram.CallbackButton("💰 价格查询", "i:cat:pr:root"),
-			telegram.CallbackButton("📋 抢购任务", "i:Tk:list"),
+			telegram.CallbackButton(accLabel, "i:acc:list"),
+			telegram.CallbackButton(cpLabel, "i:cp:manage"),
 		},
 		{
-			telegram.CallbackButton("👤 账户矩阵", "i:acc:list"),
-			telegram.CallbackButton("⏱️ 重试间隔", "i:dash:iv"),
+			telegram.CallbackButton(ivLabel, "i:dash:iv"),
+			telegram.CallbackButton("🔄 刷新中枢", "i:dash:refresh"),
 		},
 	})
 }
+
+// cmdCoupon 查看或设置当前 Telegram 默认优惠码。
+func cmdCoupon(state *app.State, args []string) string {
+	if len(args) == 0 {
+		cur := telegram.ActiveCoupon(state)
+		if cur == "" {
+			return fmt.Sprintf("🎫 当前未设置默认优惠码\n%s\n"+
+				"💡 设置默认优惠码后，所有通过 Telegram 点击通知抢购、入队或文本下单都会自动带入该优惠码。\n\n"+
+				"📌 指令用法:\n"+
+				"  • 设置优惠码: /coupon <代码> (例如: /coupon SAVE10)\n"+
+				"  • 清除优惠码: /coupon clear", telegram.CardDivider)
+		}
+		return fmt.Sprintf("🎫 当前默认优惠码: %s\n%s\n"+
+			"✅ 状态: 激活中\n"+
+			"🚀 效果: 所有 Telegram 下单与监控通知 1-Click 按钮将自动带入该优惠码！\n\n"+
+			"📌 操作指引:\n"+
+			"  • 更换优惠码: /coupon <新代码>\n"+
+			"  • 清除优惠码: /coupon clear", cur, telegram.CardDivider)
+	}
+
+	arg := strings.TrimSpace(args[0])
+	lower := strings.ToLower(arg)
+	if lower == "clear" || lower == "none" || lower == "0" || lower == "off" || lower == "del" || lower == "delete" {
+		_ = telegram.ClearActiveCoupon(state)
+		return fmt.Sprintf("✅ 已清除默认优惠码\n%s\n后续 Telegram 下单将默认不使用优惠码。", telegram.CardDivider)
+	}
+
+	if err := telegram.SetActiveCoupon(state, arg); err != nil {
+		return fmt.Sprintf("❌ 保存优惠码失败: %v", err)
+	}
+	return fmt.Sprintf("✅ 默认优惠码设置成功！\n%s\n"+
+		"🎫 当前代码: %s\n"+
+		"🚀 无论是点击 Telegram 监控通知上的抢购按钮，还是发送命令下单，都将自动带入该优惠码！\n\n"+
+		"💡 如需清除，请发送 /coupon clear", telegram.CardDivider, arg)
+}
+

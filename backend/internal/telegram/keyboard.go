@@ -16,6 +16,26 @@ func InlineKeyboard(rows [][]map[string]string) map[string]interface{} {
 	return map[string]interface{}{"inline_keyboard": rows}
 }
 
+// PersistentReplyKeyboard 返回手机底部常驻菜单键盘（安装于聊天输入框下方）
+func PersistentReplyKeyboard() map[string]interface{} {
+	return map[string]interface{}{
+		"keyboard": [][]map[string]string{
+			{
+				{"text": "⚡ 快速下单"},
+				{"text": "📋 抢购任务"},
+				{"text": "🎫 优惠码"},
+			},
+			{
+				{"text": "👤 账户矩阵"},
+				{"text": "📦 查询库存"},
+				{"text": "🎛️ 控制中心"},
+			},
+		},
+		"resize_keyboard": true,
+		"is_persistent":   true,
+	}
+}
+
 func ChunkButtons(btns []map[string]string, perRow int) [][]map[string]string {
 	if perRow < 1 {
 		perRow = 2

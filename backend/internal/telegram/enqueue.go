@@ -17,6 +17,9 @@ func EnqueueSingle(state *app.State, accountID, planCode, datacenter string, opt
 	if len(coupon) > 0 {
 		item.Coupon = strings.TrimSpace(coupon[0])
 	}
+	if item.Coupon == "" {
+		item.Coupon = ActiveCoupon(state)
+	}
 	return enqueuePrepared(state, item, requirePrice)
 }
 

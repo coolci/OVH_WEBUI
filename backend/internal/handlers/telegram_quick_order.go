@@ -72,6 +72,15 @@ func TelegramQuickOrder(state *app.State, mon *monitor.Monitor) gin.HandlerFunc 
 				cmd = &telegram.BotCommand{Name: "tasks", Raw: raw}
 			case lower == "账户" || lower == "账号" || lower == "切换账户":
 				cmd = &telegram.BotCommand{Name: "accounts", Raw: raw}
+			case lower == "优惠码" || lower == "coupon":
+				cmd = &telegram.BotCommand{Name: "coupon", Raw: raw}
+			case strings.HasPrefix(lower, "优惠码 ") || strings.HasPrefix(lower, "coupon "):
+				fields := strings.Fields(raw)
+				if len(fields) > 1 {
+					cmd = &telegram.BotCommand{Name: "coupon", Args: fields[1:], Raw: raw}
+				} else {
+					cmd = &telegram.BotCommand{Name: "coupon", Raw: raw}
+				}
 			case lower == "监控" || lower == "监控列表" || lower == "订阅":
 				cmd = &telegram.BotCommand{Name: "subs", Raw: raw}
 			case lower == "库存" || lower == "查库存":
@@ -164,18 +173,25 @@ func TelegramQuickOrder(state *app.State, mon *monitor.Monitor) gin.HandlerFunc 
 			return
 		}
 
-		// 结构化模式：tasks / accounts / subs 不需要 planCode
-		if mode == "tasks" || mode == "accounts" || mode == "subs" {
+		// 结构化模式：tasks / accounts / subs / coupon 不需要 planCode
+		if mode == "tasks" || mode == "accounts" || mode == "subs" || mode == "coupon" {
+			args := []string{}
+			rawCmd := "/" + mode
+			if mode == "coupon" && strings.TrimSpace(body.Coupon) != "" {
+				args = []string{strings.TrimSpace(body.Coupon)}
+				rawCmd = "/coupon " + strings.TrimSpace(body.Coupon)
+			}
 			cmd := &telegram.BotCommand{
 				Name: mode,
-				Raw:  "/" + mode,
+				Args: args,
+				Raw:  rawCmd,
 			}
 			reply := dispatchTelegramCommand(state, mon, cmd)
 			c.JSON(http.StatusOK, gin.H{
 				"success": true,
 				"message": reply,
 				"mode":    mode,
-				"command": "/" + mode,
+				"command": rawCmd,
 			})
 			return
 		}

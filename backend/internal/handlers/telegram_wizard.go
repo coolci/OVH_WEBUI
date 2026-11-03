@@ -61,19 +61,11 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 			showDCPicker(state, chatID, messageID, mode, plan, true)
 			return true
 		}
-		configs := enumerateWizardConfigs(state, plan, "")
-		if len(configs) > 1 {
-			telegram.AnswerCallback(state, cbID, "请选择配置", false)
-			showConfigPicker(state, mon, chatID, messageID, mode, plan, true, nil, 1)
-			return true
-		}
 		sess := getPickerSession(chatID, messageID, mode, plan)
+		configs := enumerateWizardConfigs(state, plan, "")
 		if len(configs) == 1 {
 			sess.Options = configs[0].Options
 			sess.ConfigLabel = configs[0].Label
-		} else {
-			sess.Options = nil
-			sess.ConfigLabel = ""
 		}
 		telegram.AnswerCallback(state, cbID, "已选 "+plan, false)
 		showDCPicker(state, chatID, messageID, mode, plan, true)
@@ -232,6 +224,23 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 			sess.Selected = map[string]bool{}
 			telegram.AnswerCallback(state, cbID, "已清空机房选择", false)
 			showDCPicker(state, chatID, messageID, mode, plan, true)
+			return true
+		case "allq":
+			if len(parts) < 5 {
+				telegram.AnswerCallback(state, cbID, "按钮无效", true)
+				return true
+			}
+			mode, plan := parts[3], parts[4]
+			sess := getPickerSession(chatID, messageID, mode, plan)
+			validDCs, _ := validAndInStockDCs(state, plan, "")
+			if len(validDCs) == 0 {
+				validDCs = telegram.StandardDCs
+			}
+			pickedOpts := append([]string{}, sess.Options...)
+			pickedCfgLabel := sess.ConfigLabel
+			clearPickerSession(chatID, messageID)
+			telegram.AnswerCallback(state, cbID, fmt.Sprintf("已选全部 %d 个机房，正在提交抢购…", len(validDCs)), false)
+			enqueueWizardDCs(state, chatID, messageID, mode, plan, validDCs, "", pickedOpts, pickedCfgLabel, false)
 			return true
 		case "ok":
 			if len(parts) < 5 {
@@ -426,7 +435,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 			telegram.AnswerCallback(state, cbID, "会话已过期，请等新的上架通知", true)
 			return true
 		}
-		telegram.AnswerCallback(state, cbID, "已选账户", false)
+		telegram.AnswerCallback(state, cbID, "⚡ 正在以指定账户抢购入队…", false)
 		enqueueFromNotifyButton(state, mon, cbID, chatID, messageID, btnID, "queue_all", accID, false)
 	case "M":
 		if len(parts) < 3 {
@@ -717,8 +726,26 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 			_ = telegram.EditMessage(state, chatID, messageID, text, markup)
 			return true
 		}
-		telegram.AnswerCallback(state, cbID, "控制台已就绪", false)
-		_ = telegram.EditMessage(state, chatID, messageID, telegram.HelpMessage(), dashboardKeyboard())
+		telegram.AnswerCallback(state, cbID, "中枢已刷新", false)
+		_ = telegram.EditMessage(state, chatID, messageID, hudDashboardMessage(state, mon), dashboardKeyboard(state, mon))
+		return true
+	case "cp":
+		if len(parts) < 3 {
+			telegram.AnswerCallback(state, cbID, "按钮无效", true)
+			return true
+		}
+		act := parts[2]
+		if act == "manage" {
+			telegram.AnswerCallback(state, cbID, "优惠码管理", false)
+			showCouponManager(state, chatID, messageID)
+			return true
+		}
+		if act == "clear" {
+			_ = telegram.ClearActiveCoupon(state)
+			telegram.AnswerCallback(state, cbID, "✅ 已清空优惠码", false)
+			showCouponManager(state, chatID, messageID)
+			return true
+		}
 		return true
 	case "acc":
 		telegram.AnswerCallback(state, cbID, "账户管理", false)

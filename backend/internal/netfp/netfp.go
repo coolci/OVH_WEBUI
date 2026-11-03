@@ -222,10 +222,17 @@ func Transport(o Options) (http.RoundTripper, error) {
 		tlsCfg.NextProtos = []string{"http/1.1"}
 	}
 
+	dialer := &net.Dialer{
+		Timeout:   30 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+
 	base := &http.Transport{
+		DialContext:           dialer.DialContext,
 		TLSClientConfig:       tlsCfg,
 		ForceAttemptHTTP2:     o.Profile.HTTP2,
-		MaxIdleConns:          100,
+		MaxIdleConns:          200,
+		MaxIdleConnsPerHost:   64,
 		IdleConnTimeout:       90 * time.Second,
 		TLSHandshakeTimeout:   15 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,

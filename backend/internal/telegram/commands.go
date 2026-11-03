@@ -36,6 +36,8 @@ var KnownCommands = map[string]string{
 	"price":    "查询价格: /price <planCode> <dc>",
 	"interval": "查看或修改默认重试间隔: /interval [秒]",
 	"iv":       "interval 的别名",
+	"coupon":   "查看或设置默认优惠码: /coupon [code|clear]",
+	"cp":       "coupon 的别名",
 }
 
 // ParseBotCommand 解析以 / 开头的 Bot 命令。
@@ -99,6 +101,8 @@ func HelpMessage() string {
   └ 📋 实时并发抢购任务队列与一键中止
 • /accounts
   └ 👤 多区 OVH 账户矩阵状态与无缝切换
+• /coupon [优惠码]
+  └ 🎫 查看或设定当前默认优惠码 (抢购点击即自动抵扣)
 • /interval [秒]
   └ ⏱️ 查看或设置新建任务全局重试间隔
 

@@ -138,6 +138,7 @@ func processQueueLoop(loopCtx context.Context, state *app.State, purchase func(c
 			select {
 			case <-loopCtx.Done():
 				return
+			case <-state.QueueWakeCh():
 			case <-time.After(time.Second):
 			}
 			continue
@@ -159,6 +160,7 @@ func processQueueLoop(loopCtx context.Context, state *app.State, purchase func(c
 			select {
 			case <-loopCtx.Done():
 				return
+			case <-state.QueueWakeCh():
 			case <-time.After(time.Second):
 			}
 			continue
@@ -458,6 +460,7 @@ func processQueueLoop(loopCtx context.Context, state *app.State, purchase func(c
 		select {
 		case <-loopCtx.Done():
 			return
+		case <-state.QueueWakeCh():
 		case <-time.After(time.Second):
 		}
 	}

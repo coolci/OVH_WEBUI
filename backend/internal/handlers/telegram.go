@@ -120,11 +120,11 @@ func handleTelegramCallback(state *app.State, mon *monitor.Monitor, cb map[strin
 	buttonID := strOr(callbackObj, "u", "uuid")
 	switch action {
 	case "sniper", "queue_all":
-		telegram.AnswerCallback(state, cbID, "已收到", false)
+		telegram.AnswerCallback(state, cbID, "⚡ 正在毫秒锁单入队…", false)
 		enqueueFromNotifyButton(state, mon, cbID, chatID, msgID, buttonID, action, "", false)
 		return
 	case "pick_acc":
-		telegram.AnswerCallback(state, cbID, "选择账户", false)
+		telegram.AnswerCallback(state, cbID, "👤 请选择下单账户…", false)
 		rememberShort(state, buttonID, "btn")
 		showAccountPicker(state, chatID, msgID, buttonID)
 		return
@@ -271,6 +271,7 @@ func handleTelegramCallback(state *app.State, mon *monitor.Monitor, cb map[strin
 		PlanCode:      planCode,
 		Datacenter:    dc,
 		Options:       options,
+		Coupon:        telegram.ActiveCoupon(state),
 		Status:        "running",
 		CreatedAt:     types.NowISO(),
 		UpdatedAt:     types.NowISO(),
@@ -306,6 +307,9 @@ func handleTelegramCallback(state *app.State, mon *monitor.Monitor, cb map[strin
 	b.WriteString("📍 部署机房: " + telegram.DisplayDCFull(dc) + "\n")
 	b.WriteString("⚙️ 锁定配置: " + optsStr + "\n")
 	b.WriteString("👤 执行账户: " + accLabel + "\n")
+	if item.Coupon != "" {
+		b.WriteString("🎫 优惠代码: " + item.Coupon + " (结账自动抵扣)\n")
+	}
 	b.WriteString(telegram.CardDivider + "\n")
 	b.WriteString("🚀 调度状态: 后台全天候高频监听中，官方一旦上架即刻锁单！\n")
 	b.WriteString("💡 常用指令: 发送 /queue 查看任务，/cancel 停止抢购")

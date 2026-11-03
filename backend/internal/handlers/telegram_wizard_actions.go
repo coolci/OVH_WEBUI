@@ -34,6 +34,7 @@ func enqueueWizardDCs(state *app.State, chatID interface{}, messageID int64, mod
 		item := telegram.NewTelegramQueueItem(accountID, planCode, dc, options)
 		item.TelegramChatID = chatStr
 		item.TelegramMessageID = messageID
+		item.Coupon = telegram.ActiveCoupon(state)
 		if quick {
 			item.QuickOrder = true
 			item.Priority = 100
@@ -58,33 +59,38 @@ func enqueueWizardDCs(state *app.State, chatID interface{}, messageID int64, mod
 	if accLabel == "" {
 		accLabel = accountID
 	}
-	kind := "抢购队列挂机"
-	if quick {
-		kind = "极速下单"
-	}
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("⚡ 抢购任务已建立入队 · %s\n", kind))
-	b.WriteString(telegram.CardDivider + "\n")
-	b.WriteString("📦 目标型号: " + planCode + "\n")
-	cfgText := "任意硬件配置 (自动优选)"
+	actionWord := "已加入极速抢购队列"
+	if !quick {
+		actionWord = "已加入挂机排队队列"
+	}
+	cfgText := "任意配置"
 	if configLabel != "" {
 		cfgText = configLabel
 	} else if len(options) > 0 {
 		cfgText = telegram.HumanizeOptionCodes(options)
 	}
-	b.WriteString("⚙️ 锁定规格: " + cfgText + "\n")
-	b.WriteString("👤 执行账户: " + accLabel + "\n")
-	b.WriteString(telegram.CardDivider + "\n")
-	b.WriteString(fmt.Sprintf("📍 监听节点 (%d 个机房并发抢占):\n", okN))
+	cpText := ""
+	if cp := telegram.ActiveCoupon(state); cp != "" {
+		cpText = " · 🎫 " + cp
+	}
+	dcsList := make([]string, 0, len(createdTasks))
 	for _, t := range createdTasks {
-		b.WriteString("  • " + telegram.DisplayDCFull(t.Datacenter) + "\n")
+		dcsList = append(dcsList, strings.ToUpper(t.Datacenter))
 	}
+	dcsText := strings.Join(dcsList, " ")
+	b.WriteString(fmt.Sprintf("✅ %s！\n", actionWord))
+	b.WriteString(fmt.Sprintf("📦 %s · %s · ⚙️ %s%s\n", planCode, dcsText, cfgText, cpText))
+	b.WriteString(fmt.Sprintf("👤 %s · ⏱️ %ds 轮询 · 毫秒级锁单中", accLabel, state.Config.RetryInterval()))
 	if failN > 0 {
-		b.WriteString(fmt.Sprintf("\n⚠️ 异常未入队 (%d个): %s\n", failN, lastErr))
+		b.WriteString(fmt.Sprintf("\n⚠️ 异常未入队 (%d个): %s", failN, lastErr))
 	}
-	b.WriteString("\n🚀 状态: 后台挂机监听中，检测到上架即毫秒抢占并锁单支付！")
 
 	var btnRows [][]map[string]string
+	btnRows = append(btnRows, []map[string]string{
+		telegram.CallbackButton("📋 查看抢购任务", "i:Tk:list"),
+		telegram.CallbackButton("⚡ 再下一单", "i:cat:b:root"),
+	})
 	var cancelBtns []map[string]string
 	for _, t := range createdTasks {
 		short := rememberShort(state, t.ID, "task")
@@ -464,4 +470,33 @@ func showMonitorManager(state *app.State, mon *monitor.Monitor, chatID interface
 		return
 	}
 	_, _ = telegram.SendToChat(state, chatID, b.String(), markup)
+}
+
+func showCouponManager(state *app.State, chatID interface{}, messageID int64) {
+	cp := telegram.ActiveCoupon(state)
+	statusText := "⚪ 当前未设置默认优惠码"
+	if cp != "" {
+		statusText = fmt.Sprintf("🟢 当前默认优惠码: %s (已激活 · 抢购自动抵扣)", cp)
+	}
+
+	var b strings.Builder
+	b.WriteString("🎫 默认优惠码控制台\n")
+	b.WriteString(telegram.CardDivider + "\n")
+	b.WriteString(statusText + "\n\n")
+	b.WriteString("💡 机制说明:\n")
+	b.WriteString("设置默认优惠码后，无论是点击通知卡片上的【立即抢购】，还是发送文本命令下单，都会自动带入该优惠码并由 OVH 官方核销！\n\n")
+	b.WriteString("📌 设置或更换优惠码:\n")
+	b.WriteString("直接在聊天框发送: `/coupon 你的代码` (例如 `/coupon SAVE10`)\n")
+
+	var rows [][]map[string]string
+	if cp != "" {
+		rows = append(rows, []map[string]string{
+			telegram.CallbackButton("🗑️ 清空当前优惠码", "i:cp:clear"),
+		})
+	}
+	rows = append(rows, []map[string]string{
+		telegram.CallbackButton("🔙 返回控制中心", "i:dash:refresh"),
+	})
+
+	_ = telegram.EditMessage(state, chatID, messageID, b.String(), telegram.InlineKeyboard(rows))
 }

@@ -1,6 +1,7 @@
 package purchase
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -212,7 +213,10 @@ func EnqueueQuickOrder(state *app.State, params QuickOrderParams) *QuickOrderRes
 	}
 
 	var priceInfo *price.PriceInfo
-	if params.FromMonitor {
+	if params.FromMonitor && HasPrewarmedCart(params.AccountID, params.PlanCode, params.Datacenter, options, params.Coupon) {
+		// 命中预热就绪车：跳过耗时建车查价，直接免检入队，由后台 worker 立即唤醒直出 Checkout！
+		state.Logger.Info(fmt.Sprintf("[quick_order] %s@%s 命中预热池有效车，免检极速入队", params.PlanCode, params.Datacenter), "quick_order")
+	} else if params.FromMonitor {
 		// 监控批量入队路径:
 		// 监控已在 check 阶段做过可用性探测，在此切忌重新发起完整的建车删车周期 (消耗 3~6s 且易踩 429 导致任务被拦截弃单)。
 		// 仅尝试从短 TTL 内存缓存获取价格；若无缓存或失败，不阻塞任务直接入队抢购。

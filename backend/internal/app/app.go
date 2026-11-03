@@ -133,8 +133,9 @@ type State struct {
 	AccountsMu sync.RWMutex
 	Accounts   []types.OVHAccount
 
-	QueueMu sync.Mutex
-	Queue   []types.QueueItem
+	QueueMu     sync.Mutex
+	Queue       []types.QueueItem
+	queueWakeCh chan struct{}
 	// QueueMu 同时保护用户对监控自动建单的停止记录。
 	automaticOrderBlocks   map[string]bool
 	pausedMonitorScopes    []MonitorQueueScope
@@ -210,6 +211,7 @@ func NewState(paths storage.Paths, cfg *config.Store, lg *logger.Logger, sqliteD
 		taskCancel:            make(map[string]context.CancelFunc),
 		Accounts:              []types.OVHAccount{},
 		Queue:                 []types.QueueItem{},
+		queueWakeCh:           make(chan struct{}, 1),
 		History:               []types.PurchaseHistoryEntry{},
 		ServerPlans:           []types.ServerPlan{},
 		VPSSubscriptions:      []types.VPSSubscription{},
@@ -640,7 +642,27 @@ func (s *State) enqueueItems(items []types.QueueItem, prepend, automatic bool) e
 			}
 		}
 	}
+	s.WakeQueueProcessor()
 	return nil
+}
+
+// QueueWakeCh 返回队列唤醒事件通道
+func (s *State) QueueWakeCh() <-chan struct{} {
+	if s == nil {
+		return nil
+	}
+	return s.queueWakeCh
+}
+
+// WakeQueueProcessor 触发队列处理器立即唤醒执行，避免轮询等待
+func (s *State) WakeQueueProcessor() {
+	if s == nil || s.queueWakeCh == nil {
+		return
+	}
+	select {
+	case s.queueWakeCh <- struct{}{}:
+	default:
+	}
 }
 
 var ErrQueueNotFound = errors.New("任务不存在")

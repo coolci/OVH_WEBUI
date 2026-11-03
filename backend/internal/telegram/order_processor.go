@@ -70,6 +70,9 @@ func ProcessOrder(state *app.State, accountID, planCode, datacenter string, quan
 	if len(coupon) > 0 {
 		couponCode = strings.TrimSpace(coupon[0])
 	}
+	if couponCode == "" {
+		couponCode = ActiveCoupon(state)
+	}
 	acc, ok := state.FindAccount(accountID)
 	if !ok {
 		acc, ok = ActiveAccount(state)

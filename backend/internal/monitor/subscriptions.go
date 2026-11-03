@@ -58,6 +58,9 @@ func (m *Monitor) AddSubscription(planCode string, datacenters []string, notifyA
 				s.History = []HistoryEntry{}
 			}
 			s.mu.Unlock()
+			if autoOrder {
+				go m.TriggerPrewarmForSubscription(s)
+			}
 			return
 		}
 	}
@@ -97,6 +100,9 @@ func (m *Monitor) AddSubscription(planCode string, datacenters []string, notifyA
 		sub.ServerName = serverName
 	}
 	m.subscriptions = append(m.subscriptions, sub)
+	if autoOrder {
+		go m.TriggerPrewarmForSubscription(sub)
+	}
 	displayName := planCode
 	if serverName != "" {
 		displayName = planCode + " (" + serverName + ")"
@@ -167,6 +173,9 @@ func (m *Monitor) UpdateSubscriptionFields(planCode string, originalKey *string,
 		s.AutoPay = autoPay && autoOrder
 		s.Options = append([]string(nil), options...)
 		s.mu.Unlock()
+		if autoOrder {
+			go m.TriggerPrewarmForSubscription(s)
+		}
 		return nil
 	}
 	return ErrSubscriptionNotFound

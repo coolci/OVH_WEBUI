@@ -395,6 +395,25 @@ func (m *Monitor) buildAvailabilityAlert(planCode string, availableDCs []map[str
 		msg.WriteString(traceLine + "\n")
 	}
 
+	activeCoupon := telegram.ActiveCoupon(m.state)
+	if activeCoupon != "" {
+		msg.WriteString("🎫 默认优惠码: " + activeCoupon + " (抢购就绪 · 按钮下单自动抵扣)\n")
+	}
+	firstDC := ""
+	if len(availableDCs) > 0 {
+		firstDC, _ = availableDCs[0]["dc"].(string)
+	}
+	cmdCopy := "/buy " + planCode
+	if firstDC != "" {
+		cmdCopy += " " + strings.ToLower(firstDC)
+	}
+	cmdCopy += " 1"
+	if activeCoupon != "" {
+		cmdCopy += " coupon=" + activeCoupon
+	}
+	msg.WriteString(telegram.CardDivider + "\n")
+	msg.WriteString("💡 快捷下单指令 (点击即可复制):\n`" + cmdCopy + "`\n")
+
 	// 构建按钮（每行最多 2 个）
 	type btn struct {
 		Text         string `json:"text"`
@@ -578,6 +597,7 @@ func (m *Monitor) buildUnavailableAlertGrouped(planCode string, unavailableDCs [
 	if traceLine := formatTraceBlock(traceID, configTraceID); traceLine != "" {
 		msg.WriteString(traceLine + "\n")
 	}
+
 	return msg.String()
 }
 
@@ -685,7 +705,15 @@ func (m *Monitor) SendAvailabilityAlert(planCode, datacenter, status, changeType
 			msg.WriteString(traceLine + "\n")
 		}
 		msg.WriteString(telegram.CardDivider + "\n")
-		msg.WriteString("⚡ 极速下单: /buy " + planCode + " " + strings.ToLower(datacenter))
+		activeCoupon := telegram.ActiveCoupon(m.state)
+		if activeCoupon != "" {
+			msg.WriteString("🎫 默认优惠码: " + activeCoupon + " (抢购就绪 · 按钮下单自动抵扣)\n")
+		}
+		cmdCopy := "/buy " + planCode + " " + strings.ToLower(datacenter) + " 1"
+		if activeCoupon != "" {
+			cmdCopy += " coupon=" + activeCoupon
+		}
+		msg.WriteString("💡 快捷下单指令 (点击即可复制):\n`" + cmdCopy + "`\n")
 
 	case "price_check_failed":
 		msg.WriteString(fmt.Sprintf("⚠️ 价格校验告警 · %s\n", planCode))
@@ -748,27 +776,58 @@ func (m *Monitor) SendAvailabilityAlert(planCode, datacenter, status, changeType
 	}
 	var replyMarkup map[string]interface{}
 	if changeType == "available" {
-		btnUUID := uuid.NewString()
 		options := optionsFromConfig(configInfo)
-		m.AddMessageUUID(btnUUID, planCode, datacenter, options, configInfo)
-		btnAccID := m.resolveNotifyAccountID(planCode)
-		if btnAccID != "" && m.state.DB != nil {
-			_ = m.state.DB.SetTelegramButtonAccount(btnUUID, btnAccID)
+		btnAccounts := m.AccountsForPlan(planCode)
+		if len(btnAccounts) <= 1 {
+			btnAccounts = nil
 		}
 		type btn struct {
 			Text         string `json:"text"`
 			CallbackData string `json:"callback_data"`
 		}
-		cb, _ := json.Marshal(map[string]string{"a": "add_to_queue", "u": btnUUID})
-		kb := [][]btn{
-			{{Text: "⚡ 立即抢购 (" + dcButtonLabel(datacenter) + ")", CallbackData: string(cb)}},
-		}
-		if m.state != nil && len(m.state.Accounts) > 1 {
-			cbPick, _ := json.Marshal(map[string]string{"a": "pick_acc", "u": btnUUID})
+		var kb [][]btn
+
+		if len(btnAccounts) >= 2 && len(btnAccounts) <= 3 {
+			var accRow []btn
+			for _, acc := range btnAccounts {
+				subUUID := uuid.NewString()
+				m.AddMessageUUID(subUUID, planCode, datacenter, options, configInfo)
+				if m.state.DB != nil {
+					_ = m.state.DB.SetTelegramButtonAccount(subUUID, acc.ID)
+				}
+				cbAcc, _ := json.Marshal(map[string]string{"a": "add_to_queue", "u": subUUID})
+				accRow = append(accRow, btn{
+					Text:         "⚡ 抢购 · " + acc.Name,
+					CallbackData: string(cbAcc),
+				})
+			}
+			kb = append(kb, accRow)
+			masterUUID := uuid.NewString()
+			m.AddMessageUUID(masterUUID, planCode, datacenter, options, configInfo)
+			cbQ, _ := json.Marshal(map[string]string{"a": "add_to_queue", "u": masterUUID})
+			cbPick, _ := json.Marshal(map[string]string{"a": "pick_acc", "u": masterUUID})
 			kb = append(kb, []btn{
-				{Text: "📥 加入抢购队列", CallbackData: string(cb)},
-				{Text: "👤 切换下单账户", CallbackData: string(cbPick)},
+				{Text: "📥 挂机入队", CallbackData: string(cbQ)},
+				{Text: "👤 更多账户", CallbackData: string(cbPick)},
 			})
+		} else {
+			btnUUID := uuid.NewString()
+			m.AddMessageUUID(btnUUID, planCode, datacenter, options, configInfo)
+			btnAccID := m.resolveNotifyAccountID(planCode)
+			if btnAccID != "" && m.state.DB != nil {
+				_ = m.state.DB.SetTelegramButtonAccount(btnUUID, btnAccID)
+			}
+			cb, _ := json.Marshal(map[string]string{"a": "add_to_queue", "u": btnUUID})
+			kb = append(kb, []btn{
+				{Text: "⚡ 立即抢购 (" + dcButtonLabel(datacenter) + ")", CallbackData: string(cb)},
+			})
+			if m.state != nil && len(m.state.Accounts) > 1 {
+				cbPick, _ := json.Marshal(map[string]string{"a": "pick_acc", "u": btnUUID})
+				kb = append(kb, []btn{
+					{Text: "📥 加入抢购队列", CallbackData: string(cb)},
+					{Text: "👤 切换下单账户", CallbackData: string(cbPick)},
+				})
+			}
 		}
 		replyMarkup = map[string]interface{}{"inline_keyboard": kb}
 	}

@@ -12,6 +12,7 @@ require (
 	github.com/ovh/go-ovh v1.5.1
 	github.com/shirou/gopsutil/v4 v4.26.4
 	golang.org/x/net v0.62.0
+	golang.org/x/sync v0.24.0
 	modernc.org/sqlite v1.50.1
 )
 

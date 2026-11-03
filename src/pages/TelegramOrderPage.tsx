@@ -242,6 +242,7 @@ const TelegramOrderPage = () => {
   const quickShortcuts = [
     { label: "⚡ /buy @all 全开抢", cmd: "/buy 24sk102 gra 1 @all" },
     { label: "📦 /stock 查库存", cmd: "/stock 24ska01" },
+    { label: "🎫 /coupon 优惠码", cmd: "/coupon" },
     { label: "📋 /tasks 抢购队列", cmd: "/tasks" },
     { label: "👤 /accounts 账号矩阵", cmd: "/accounts" },
     { label: "📡 /subs 监控列表", cmd: "/subs" },

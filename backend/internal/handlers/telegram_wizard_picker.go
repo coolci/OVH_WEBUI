@@ -208,83 +208,242 @@ func getPlansForCategory(state *app.State, mon *monitor.Monitor, category string
 	}
 }
 
-func renderCategoryPicker(state *app.State, mon *monitor.Monitor, chatID interface{}, messageID int64, mode string, edit bool) {
-	_, entryPlans := getPlansForCategory(state, mon, "entry")
-	_, storPlans := getPlansForCategory(state, mon, "storage")
-	_, perfPlans := getPlansForCategory(state, mon, "perf")
-	_, flagPlans := getPlansForCategory(state, mon, "flagship")
-	_, inStockPlans := getPlansForCategory(state, mon, "instock")
-	_, monPlans := getPlansForCategory(state, mon, "mon")
-	_, allPlans := getPlansForCategory(state, mon, "all")
+type topPickModel struct {
+	Code      string
+	ShortName string
+	Badge     string // "🟢", "📋", "🔥", "🕘"
+	InStock   bool
+	Monitored bool
+}
 
-	actionText := "快速下单"
-	icon := "⚡"
+func getTopPickModels(state *app.State, mon *monitor.Monitor) []topPickModel {
+	state.ServerPlansMu.RLock()
+	allPlans := append([]types.ServerPlan{}, state.ServerPlans...)
+	state.ServerPlansMu.RUnlock()
+
+	planMap := make(map[string]types.ServerPlan, len(allPlans))
+	for _, p := range allPlans {
+		planMap[p.PlanCode] = p
+	}
+
+	formatShortName := func(code string, fullName string) string {
+		clean := fullName
+		if idx := strings.Index(clean, " | "); idx != -1 {
+			clean = clean[:idx]
+		}
+		clean = strings.TrimSpace(clean)
+		if clean == "" || strings.EqualFold(clean, code) {
+			return ""
+		}
+		if len(clean) > 8 {
+			clean = clean[:8]
+		}
+		return clean
+	}
+
+	inStockMap := make(map[string]bool)
+	for _, s := range allPlans {
+		for _, dc := range s.Datacenters {
+			if catalog.IsAvailableForOrder(dc.Availability) || dc.Availability == "available" {
+				inStockMap[s.PlanCode] = true
+				break
+			}
+		}
+	}
+	if mon != nil {
+		for _, sub := range mon.Snapshot() {
+			if sub != nil && sub.PlanCode != "" {
+				for _, st := range sub.LastStatus {
+					if catalog.IsAvailableForOrder(st) || st == "available" {
+						inStockMap[sub.PlanCode] = true
+						break
+					}
+				}
+			}
+		}
+	}
+
+	monitoredMap := make(map[string]bool)
+	if mon != nil {
+		for _, sub := range mon.Snapshot() {
+			if sub != nil && sub.PlanCode != "" {
+				monitoredMap[sub.PlanCode] = true
+			}
+		}
+	}
+	if state != nil {
+		state.QueueMu.Lock()
+		for _, q := range state.Queue {
+			if q.PlanCode != "" {
+				monitoredMap[q.PlanCode] = true
+			}
+		}
+		state.QueueMu.Unlock()
+	}
+
+	benchmarkCodes := []string{
+		"24ska01", "24sk20", "24sys01", "24rise01",
+		"ks-1", "ks-5", "sys-1", "rise-1",
+		"24sk50", "24sk50-v1", "24sk60", "24ska02", "24ska03",
+		"24game01", "24adv01",
+	}
+
+	var result []topPickModel
+	seen := make(map[string]bool)
+
+	addModel := func(code string, badge string) {
+		if seen[code] || len(result) >= 6 {
+			return
+		}
+		seen[code] = true
+		var name string
+		if p, ok := planMap[code]; ok {
+			name = formatShortName(code, p.Name)
+		}
+		result = append(result, topPickModel{
+			Code:      code,
+			ShortName: name,
+			Badge:     badge,
+			InStock:   inStockMap[code],
+			Monitored: monitoredMap[code],
+		})
+	}
+
+	// Priority 1: 实时现货机型
+	for code := range inStockMap {
+		addModel(code, "🟢")
+		if len(result) >= 3 {
+			break
+		}
+	}
+
+	// Priority 2: 关注或排队中机型
+	for code := range monitoredMap {
+		addModel(code, "📋")
+		if len(result) >= 4 {
+			break
+		}
+	}
+
+	// Priority 3: 知名常青热门神机
+	for _, code := range benchmarkCodes {
+		if _, exists := planMap[code]; exists {
+			badge := "🔥"
+			if inStockMap[code] {
+				badge = "🟢"
+			} else if monitoredMap[code] {
+				badge = "📋"
+			}
+			addModel(code, badge)
+		}
+		if len(result) >= 6 {
+			break
+		}
+	}
+
+	// Priority 4: 兜底机型库
+	if len(result) < 6 {
+		for _, p := range allPlans {
+			badge := "🕘"
+			if inStockMap[p.PlanCode] {
+				badge = "🟢"
+			} else if monitoredMap[p.PlanCode] {
+				badge = "📋"
+			}
+			addModel(p.PlanCode, badge)
+			if len(result) >= 6 {
+				break
+			}
+		}
+	}
+
+	// 空库兜底
+	if len(result) == 0 {
+		fallbacks := []string{"24ska01", "24sk20", "24sys01", "24rise01", "ks-1", "sys-1"}
+		for _, fb := range fallbacks {
+			addModel(fb, "🔥")
+		}
+	}
+
+	return result
+}
+
+func renderCategoryPicker(state *app.State, mon *monitor.Monitor, chatID interface{}, messageID int64, mode string, edit bool) {
+	picks := getTopPickModels(state, mon)
+
+	inStockCount := 0
+	monitoredCount := 0
+	if mon != nil {
+		monitoredCount = len(mon.Snapshot())
+	}
+	for _, m := range picks {
+		if m.InStock {
+			inStockCount++
+		}
+	}
+
+	accTag := "默认账户"
+	if state != nil {
+		if acc, ok := telegram.ActiveAccount(state); ok && acc.Name != "" {
+			accTag = acc.Name
+			if acc.Zone != "" {
+				accTag += " (" + strings.ToUpper(acc.Zone) + ")"
+			}
+		}
+	}
+	cpTag := ""
+	if state != nil {
+		if cp := telegram.ActiveCoupon(state); cp != "" {
+			cpTag = " · 🎫 " + cp
+		}
+	}
+
+	actionTitle := "⚡ 快速下单"
 	switch mode {
 	case "q":
-		actionText = "抢购排队"
-		icon = "📥"
+		actionTitle = "📥 抢购排队"
 	case "s":
-		actionText = "查询库存"
-		icon = "📦"
+		actionTitle = "📦 现货库存查询"
 	case "m":
-		actionText = "添加监控"
-		icon = "📡"
+		actionTitle = "📡 添加库存监控"
 	case "pr":
-		actionText = "查询价格"
-		icon = "💰"
+		actionTitle = "💰 价格查询"
 	}
 
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("%s 服务器选型中心 · %s\n", icon, actionText))
-	b.WriteString(telegram.CardDivider + "\n")
-	b.WriteString("🔥 明星标杆机型参考：\n")
-	b.WriteString("• KS-1  │ €4.99/月  │ Atom 4C ｜ 4G ｜ 500G HDD\n")
-	b.WriteString("• KS-5  │ €17.99/月 │ Xeon-E 6C ｜ 32G ECC ｜ 2×2T HDD\n")
-	b.WriteString("• SYS-1 │ €23.99/月 │ Xeon-E 6C ｜ 32G ECC ｜ 2×512G NVMe\n")
-	b.WriteString("• Rise-1│ €35.99/月 │ Ryzen 6C ｜ 32G DDR4 ｜ 2×512G NVMe\n")
-	b.WriteString(telegram.CardDivider + "\n")
-	b.WriteString("🎯 按核心硬件与需求拆解选型：\n")
-	b.WriteString(fmt.Sprintf("🏷️ 特惠入门 (%d款): 低至 €4.99，个人折腾与轻量服务超值首选\n", len(entryPlans)))
-	b.WriteString(fmt.Sprintf("💾 大盘存储 (%d款): 2×2T ~ 4×4T 海量机械多盘，归档备份利器\n", len(storPlans)))
-	b.WriteString(fmt.Sprintf("⚡ 性能主力 (%d款): 极速 NVMe 高频独立核心，企业生产主力\n", len(perfPlans)))
-	b.WriteString(fmt.Sprintf("🏢 旗舰高配 (%d款): 64G~128G+ 专有计算核心，集群与密集负载\n", len(flagPlans)))
-	b.WriteString(telegram.CardDivider + "\n")
-	if len(inStockPlans) > 0 {
-		b.WriteString(fmt.Sprintf("🟢 实时现货: 监控雷达检测到 %d 款机型可直接下单\n", len(inStockPlans)))
-	} else {
-		b.WriteString("💡 提示: 现货稀缺机型建议选择「📥 抢购排队」全天候挂机抢购\n")
+	b.WriteString(fmt.Sprintf("%s · 👤 %s%s\n", actionTitle, accTag, cpTag))
+	b.WriteString(fmt.Sprintf("🟢 现货 %d 款 · 📋 关注 %d 款\n", inStockCount, monitoredCount))
+	b.WriteString("💡 点击下方机型直达，或直接发送型号 (如 ks5 / 24ska01)")
+
+	modelBtns := make([]map[string]string, 0, len(picks))
+	for _, p := range picks {
+		label := fmt.Sprintf("%s %s", p.Badge, p.Code)
+		if p.ShortName != "" {
+			label = fmt.Sprintf("%s %s %s", p.Badge, p.Code, p.ShortName)
+		}
+		data := fmt.Sprintf("i:P:%s:%s", mode, p.Code)
+		modelBtns = append(modelBtns, telegram.CallbackButton(label, data))
+	}
+	rows := telegram.ChunkButtons(modelBtns, 2)
+
+	totalPlansCount := 0
+	if state != nil {
+		state.ServerPlansMu.RLock()
+		totalPlansCount = len(state.ServerPlans)
+		state.ServerPlansMu.RUnlock()
 	}
 
-	btns := [][]map[string]string{
-		{
-			telegram.CallbackButton("🏷️ 特惠入门 (<€20)", "i:cat:"+mode+":entry"),
-			telegram.CallbackButton("💾 大盘存储 (多盘)", "i:cat:"+mode+":storage"),
-		},
-		{
-			telegram.CallbackButton("⚡ 性能主力 (NVMe)", "i:cat:"+mode+":perf"),
-			telegram.CallbackButton("🏢 旗舰高配 (64G+)", "i:cat:"+mode+":flagship"),
-		},
+	allLabel := "🔍 全部型号"
+	if totalPlansCount > 0 {
+		allLabel = fmt.Sprintf("🔍 全部型号 (%d款)", totalPlansCount)
 	}
 
-	thirdRow := []map[string]string{}
-	stockBtnText := "🟢 实时有货机型速览"
-	if len(inStockPlans) > 0 {
-		stockBtnText = fmt.Sprintf("🟢 实时有货 (%d款)", len(inStockPlans))
-	}
-	thirdRow = append(thirdRow, telegram.CallbackButton(stockBtnText, "i:cat:"+mode+":instock"))
-	if len(monPlans) > 0 {
-		thirdRow = append(thirdRow, telegram.CallbackButton(fmt.Sprintf("📋 我的监控 (%d款)", len(monPlans)), "i:cat:"+mode+":mon"))
-	}
-	btns = append(btns, thirdRow)
-
-	btns = append(btns, []map[string]string{
-		telegram.CallbackButton(fmt.Sprintf("🌐 全部型号列表 (%d款)", len(allPlans)), "i:cat:"+mode+":all"),
-	})
-	btns = append(btns, []map[string]string{
+	rows = append(rows, []map[string]string{
+		telegram.CallbackButton(allLabel, "i:cat:"+mode+":all"),
 		telegram.CallbackButton("🔙 返回控制中心", "i:dash:refresh"),
 	})
 
-	markup := telegram.InlineKeyboard(btns)
+	markup := telegram.InlineKeyboard(rows)
 	if edit && messageID > 0 {
 		if telegram.EditMessage(state, chatID, messageID, b.String(), markup) {
 			return
@@ -296,9 +455,9 @@ func renderCategoryPicker(state *app.State, mon *monitor.Monitor, chatID interfa
 func renderPlanPage(state *app.State, mon *monitor.Monitor, chatID interface{}, messageID int64, mode, category string, page int, edit bool) {
 	catTitle, plans := getPlansForCategory(state, mon, category)
 	if len(plans) == 0 {
-		text := fmt.Sprintf("%s 暂无现货机型。\n\n💡 建议选择「📥 抢购排队」或「📡 添加监控」，有货时系统将毫秒级自动响应。", catTitle)
+		text := fmt.Sprintf("%s 暂无可用机型。\n\n💡 建议选择「📥 抢购排队」或直接输入型号抢购。", catTitle)
 		markup := telegram.InlineKeyboard([][]map[string]string{
-			{telegram.CallbackButton("🔙 返回系列分类", "i:cat:"+mode+":root")},
+			{telegram.CallbackButton("🔙 返回精选机型", "i:cat:"+mode+":root")},
 		})
 		if edit && messageID > 0 {
 			_ = telegram.EditMessage(state, chatID, messageID, text, markup)
@@ -308,7 +467,7 @@ func renderPlanPage(state *app.State, mon *monitor.Monitor, chatID interface{}, 
 		return
 	}
 
-	pageSize := 6
+	pageSize := 8
 	totalPages := (len(plans) + pageSize - 1) / pageSize
 	if page < 0 {
 		page = 0
@@ -324,69 +483,13 @@ func renderPlanPage(state *app.State, mon *monitor.Monitor, chatID interface{}, 
 	}
 	pagePlans := plans[start:end]
 
-	actionText := "快速下单"
-	icon := "⚡"
-	switch mode {
-	case "q":
-		actionText = "抢购排队"
-		icon = "📥"
-	case "s":
-		actionText = "查询库存"
-		icon = "📦"
-	case "m":
-		actionText = "添加监控"
-		icon = "📡"
-	case "pr":
-		actionText = "查询价格"
-		icon = "💰"
-	}
-
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("%s 机型列表 · %s\n", icon, catTitle))
-	b.WriteString(telegram.CardDivider + "\n")
-	b.WriteString(fmt.Sprintf("📄 浏览进度: 第 %d / %d 页 (共收录 %d 款型号)\n", page+1, totalPages, len(plans)))
-	b.WriteString(telegram.CardDivider + "\n")
-
-	for _, p := range pagePlans {
-		cleanName := p.Name
-		if idx := strings.Index(cleanName, " | "); idx != -1 {
-			cleanName = cleanName[:idx]
-		}
-		cleanName = strings.TrimSpace(cleanName)
-
-		title := p.Code
-		if cleanName != "" && !strings.EqualFold(cleanName, p.Code) {
-			title = fmt.Sprintf("%s (%s)", p.Code, cleanName)
-		}
-
-		var specs []string
-		if p.CPU != "" {
-			specs = append(specs, p.CPU)
-		}
-		if p.Memory != "" {
-			specs = append(specs, telegram.HumanizeHardware(p.Memory, ""))
-		}
-		if p.Storage != "" {
-			specs = append(specs, telegram.HumanizeHardware("", p.Storage))
-		}
-		specStr := strings.Join(specs, " ｜ ")
-		if specStr != "" {
-			b.WriteString(fmt.Sprintf("• %s\n  └ 规格: %s\n", title, specStr))
-		} else {
-			b.WriteString(fmt.Sprintf("• %s\n", title))
-		}
-	}
-
-	b.WriteString(telegram.CardDivider + "\n")
-	b.WriteString(fmt.Sprintf("👇 点选下方机型进入机房配置并%s：", actionText))
+	b.WriteString(fmt.Sprintf("🌐 全部型号列表 · 第 %d / %d 页 (共 %d 款)\n", page+1, totalPages, len(plans)))
+	b.WriteString("👇 请点击目标机型进入机房配置：")
 
 	prefix := "i:P:" + mode + ":"
 	modelBtns := make([]map[string]string, 0, len(pagePlans))
 	for _, p := range pagePlans {
-		data := prefix + p.Code
-		if len(data) > 64 {
-			continue
-		}
 		label := "⚡ " + p.Code
 		cleanName := p.Name
 		if idx := strings.Index(cleanName, " | "); idx != -1 {
@@ -394,12 +497,12 @@ func renderPlanPage(state *app.State, mon *monitor.Monitor, chatID interface{}, 
 		}
 		cleanName = strings.TrimSpace(cleanName)
 		if cleanName != "" && !strings.EqualFold(cleanName, p.Code) {
-			label = fmt.Sprintf("⚡ %s", cleanName)
-			if len(label) > 28 {
-				label = "⚡ " + p.Code
+			if len(cleanName) > 10 {
+				cleanName = cleanName[:10]
 			}
+			label = fmt.Sprintf("⚡ %s %s", p.Code, cleanName)
 		}
-		modelBtns = append(modelBtns, telegram.CallbackButton(label, data))
+		modelBtns = append(modelBtns, telegram.CallbackButton(label, prefix+p.Code))
 	}
 	rows := telegram.ChunkButtons(modelBtns, 2)
 
@@ -420,11 +523,92 @@ func renderPlanPage(state *app.State, mon *monitor.Monitor, chatID interface{}, 
 
 	// 底部返回按钮
 	rows = append(rows, []map[string]string{
-		telegram.CallbackButton("🔙 返回系列分类", "i:cat:"+mode+":root"),
+		telegram.CallbackButton("🔙 返回精选机型", "i:cat:"+mode+":root"),
+		telegram.CallbackButton("🔙 返回控制中心", "i:dash:refresh"),
 	})
 
 	markup := telegram.InlineKeyboard(rows)
 	if edit && messageID > 0 {
+		if telegram.EditMessage(state, chatID, messageID, b.String(), markup) {
+			return
+		}
+	}
+	_, _ = telegram.SendToChat(state, chatID, b.String(), markup)
+}
+
+// findMatchingPlans 模糊匹配机型代码与名称
+func findMatchingPlans(state *app.State, raw string) (canonical string, matches []types.ServerPlan) {
+	rawClean := strings.TrimSpace(strings.ToLower(raw))
+	if rawClean == "" {
+		return "", nil
+	}
+	rawNorm := strings.ReplaceAll(strings.ReplaceAll(rawClean, "-", ""), " ", "")
+
+	if state == nil {
+		return "", nil
+	}
+	state.ServerPlansMu.RLock()
+	plans := append([]types.ServerPlan{}, state.ServerPlans...)
+	state.ServerPlansMu.RUnlock()
+
+	for _, p := range plans {
+		pCodeClean := strings.ToLower(p.PlanCode)
+		pCodeNorm := strings.ReplaceAll(strings.ReplaceAll(pCodeClean, "-", ""), " ", "")
+		pNameClean := strings.ToLower(p.Name)
+		pNameNorm := strings.ReplaceAll(strings.ReplaceAll(pNameClean, "-", ""), " ", "")
+
+		if pCodeClean == rawClean || pCodeNorm == rawNorm {
+			return p.PlanCode, []types.ServerPlan{p}
+		}
+		if pNameClean == rawClean || pNameNorm == rawNorm {
+			return p.PlanCode, []types.ServerPlan{p}
+		}
+		if strings.Contains(pCodeNorm, rawNorm) || strings.Contains(pNameNorm, rawNorm) {
+			matches = append(matches, p)
+		}
+	}
+	if len(matches) == 1 {
+		return matches[0].PlanCode, matches
+	}
+	return "", matches
+}
+
+func renderMatchedPlansPicker(state *app.State, mon *monitor.Monitor, chatID interface{}, messageID int64, mode, query string, matches []types.ServerPlan) {
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("🔍 关键词「%s」匹配到 %d 款机型\n", query, len(matches)))
+	b.WriteString("👇 请点击目标机型进入机房下单：")
+
+	limit := 6
+	if len(matches) < limit {
+		limit = len(matches)
+	}
+
+	modelBtns := make([]map[string]string, 0, limit)
+	for i := 0; i < limit; i++ {
+		p := matches[i]
+		cleanName := p.Name
+		if idx := strings.Index(cleanName, " | "); idx != -1 {
+			cleanName = cleanName[:idx]
+		}
+		cleanName = strings.TrimSpace(cleanName)
+		label := "⚡ " + p.PlanCode
+		if cleanName != "" && !strings.EqualFold(cleanName, p.PlanCode) {
+			if len(cleanName) > 10 {
+				cleanName = cleanName[:10]
+			}
+			label = fmt.Sprintf("⚡ %s %s", p.PlanCode, cleanName)
+		}
+		data := fmt.Sprintf("i:P:%s:%s", mode, p.PlanCode)
+		modelBtns = append(modelBtns, telegram.CallbackButton(label, data))
+	}
+	rows := telegram.ChunkButtons(modelBtns, 2)
+	rows = append(rows, []map[string]string{
+		telegram.CallbackButton("🔙 返回精选机型", "i:cat:"+mode+":root"),
+		telegram.CallbackButton("🔙 返回控制中心", "i:dash:refresh"),
+	})
+
+	markup := telegram.InlineKeyboard(rows)
+	if messageID > 0 {
 		if telegram.EditMessage(state, chatID, messageID, b.String(), markup) {
 			return
 		}
@@ -523,27 +707,6 @@ func enumerateWizardConfigs(state *app.State, planCode, accountID string) []wiza
 func showConfigPicker(state *app.State, mon *monitor.Monitor, chatID interface{}, messageID int64, mode, planCode string, edit bool, targetDCs []string, quantity int) {
 	configs := enumerateWizardConfigs(state, planCode, "")
 	if len(configs) <= 1 {
-		sess := getPickerSession(chatID, messageID, mode, planCode)
-		if len(configs) == 1 {
-			sess.Options = append([]string{}, configs[0].Options...)
-			sess.ConfigLabel = configs[0].Label
-		} else {
-			sess.Options = nil
-			sess.ConfigLabel = ""
-		}
-		if len(targetDCs) > 0 && mode != "m" {
-			qty := quantity
-			if qty < 1 {
-				qty = 1
-			}
-			opts := append([]string{}, sess.Options...)
-			label := sess.ConfigLabel
-			accID := telegram.ActiveAccountID(state)
-			for i := 0; i < qty; i++ {
-				enqueueWizardDCs(state, chatID, messageID, mode, planCode, targetDCs, accID, opts, label, false)
-			}
-			return
-		}
 		showDCPicker(state, chatID, messageID, mode, planCode, edit)
 		return
 	}
@@ -556,41 +719,27 @@ func showConfigPicker(state *app.State, mon *monitor.Monitor, chatID interface{}
 		Quantity:  quantity,
 	})
 	var btns []map[string]string
+	btns = append(btns, telegram.CallbackButton(tgBtnLabel("🌐 任意硬件配置 (推荐 · 优先抢占首选机房)"), fmt.Sprintf("i:cfg:%s:any", tok)))
+
 	for i, c := range configs {
-		if i >= 8 {
+		if i >= 6 {
 			break
 		}
 		stockBadge := "[🔴 缺货]"
 		if c.InStock > 0 {
 			stockBadge = fmt.Sprintf("[🟢 %d机房有货]", c.InStock)
 		}
-		btnText := tgBtnLabel(fmt.Sprintf("⚡ %s  %s", c.Label, stockBadge))
+		btnText := tgBtnLabel(fmt.Sprintf("⚙ %s %s", c.Label, stockBadge))
 		btns = append(btns, telegram.CallbackButton(btnText, fmt.Sprintf("i:cfg:%s:%d", tok, i)))
 	}
 	rows := telegram.ChunkButtons(btns, 1)
-
 	rows = append(rows, []map[string]string{
-		telegram.CallbackButton(tgBtnLabel("🌐 任意硬件配置 (不限规格 · 优先抢占首选机房)"), fmt.Sprintf("i:cfg:%s:any", tok)),
-	})
-	rows = append(rows, []map[string]string{
-		telegram.CallbackButton("🔙 返回系列分类", "i:cat:"+mode+":root"),
+		telegram.CallbackButton("🔙 返回机房选择", "i:P:"+mode+":"+planCode),
 	})
 
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("🖥️ 硬件规格自选匹配 · %s\n", planCode))
-	b.WriteString(telegram.CardDivider + "\n")
-	if len(targetDCs) > 0 {
-		up := make([]string, len(targetDCs))
-		for i, d := range targetDCs {
-			up[i] = telegram.DisplayDCFull(d)
-		}
-		b.WriteString("📍 目标机房: " + strings.Join(up, "、") + "\n")
-	}
-	b.WriteString(fmt.Sprintf("📊 规格选项: 共检测到 %d 种物理硬件配置方案\n", len(configs)))
-	b.WriteString("🎯 下单策略: 硬件规格精准锁单匹配\n")
-	b.WriteString(telegram.CardDivider + "\n")
-	b.WriteString("💡 说明: 抢购将按选定配置精确锁单。若对内存/硬盘无特定要求，推荐选择最下方的「🌐 任意硬件配置」，成功率最高！\n\n")
-	b.WriteString("👇 请点选要锁定抢购的硬件方案：")
+	b.WriteString(fmt.Sprintf("⚙️ 硬件规格自选 · %s\n", planCode))
+	b.WriteString(fmt.Sprintf("检测到 %d 种硬件配置方案，请点选要锁定的配置：", len(configs)))
 
 	markup := telegram.InlineKeyboard(rows)
 	if edit && messageID > 0 {
@@ -617,11 +766,15 @@ func showDCPicker(state *app.State, chatID interface{}, messageID int64, mode, p
 	if mode == "pr" {
 		btns := []map[string]string{}
 		for _, dc := range targetDCs {
-			btns = append(btns, telegram.CallbackButton(telegram.DisplayDC(dc), "i:D:pr:"+planCode+":"+dc))
+			dot := "🔴 "
+			if stockSet[dc] {
+				dot = "🟢 "
+			}
+			btns = append(btns, telegram.CallbackButton(dot+telegram.DisplayDC(dc), "i:D:pr:"+planCode+":"+dc))
 		}
 		rows := telegram.ChunkButtons(btns, 3)
 		rows = append(rows, []map[string]string{
-			telegram.CallbackButton("🔙 返回系列分类", "i:cat:pr:root"),
+			telegram.CallbackButton("🔙 换个机型", "i:cat:pr:root"),
 		})
 		text := fmt.Sprintf("💰 型号 %s\n请选择要询价的目标机房：", planCode)
 		markup := telegram.InlineKeyboard(rows)
@@ -636,6 +789,33 @@ func showDCPicker(state *app.State, chatID interface{}, messageID int64, mode, p
 
 	// 多选模式 (mode == "b" || mode == "q" || mode == "m")
 	sess := getPickerSession(chatID, messageID, mode, planCode)
+
+	// 智能自动预选：如果当前未勾选任何机房，且有货机房 > 0，自动预选所有现货机房！
+	if len(sess.Selected) == 0 && len(stock) > 0 {
+		for _, d := range stock {
+			sess.Selected[d] = true
+		}
+	}
+
+	// 检测硬件配置
+	configs := enumerateWizardConfigs(state, planCode, accountID)
+	if len(configs) == 1 && sess.ConfigLabel == "" {
+		sess.Options = append([]string{}, configs[0].Options...)
+		sess.ConfigLabel = configs[0].Label
+	}
+
+	var rows [][]map[string]string
+
+	// 如果有多种配置，在机房上方显示配置选择下拉按钮
+	if len(configs) > 1 {
+		cfgBtnLabel := "⚙ 配置: 任意 ▾"
+		if sess.ConfigLabel != "" {
+			cfgBtnLabel = "⚙ 配置: " + sess.ConfigLabel + " ▾"
+		}
+		rows = append(rows, []map[string]string{
+			telegram.CallbackButton(tgBtnLabel(cfgBtnLabel), fmt.Sprintf("i:cfgshow:%s:%s", mode, planCode)),
+		})
+	}
 
 	btns := []map[string]string{}
 	selectedCount := 0
@@ -655,71 +835,74 @@ func showDCPicker(state *app.State, chatID interface{}, messageID int64, mode, p
 		data := "i:D:t:" + mode + ":" + planCode + ":" + dc
 		btns = append(btns, telegram.CallbackButton(label, data))
 	}
-	rows := telegram.ChunkButtons(btns, 3)
+	rows = append(rows, telegram.ChunkButtons(btns, 3)...)
 
-	// 顶部快捷控制行
-	var topRow []map[string]string
-	topRow = append(topRow, telegram.CallbackButton("⚡ 全选有货", "i:D:as:"+mode+":"+planCode))
-	topRow = append(topRow, telegram.CallbackButton("🌐 全选所有", "i:D:aa:"+mode+":"+planCode))
+	// 提交操作行
 	if selectedCount > 0 {
-		topRow = append(topRow, telegram.CallbackButton("🔄 清空", "i:D:cl:"+mode+":"+planCode))
-	}
-	rows = append([][]map[string]string{topRow}, rows...)
-
-	// 底部确认提交按钮 (当选中 >= 1 个机房时展示)
-	if selectedCount > 0 {
-		submitLabel := fmt.Sprintf("🚀 立即下单 (已选 %d 个机房)", selectedCount)
+		submitLabel := fmt.Sprintf("🚀 立即下单 (已选 %d 机房)", selectedCount)
 		if mode == "q" {
-			submitLabel = fmt.Sprintf("📥 确认入队 (已选 %d 个机房)", selectedCount)
+			submitLabel = fmt.Sprintf("📥 确认入队 (已选 %d 机房)", selectedCount)
 		} else if mode == "m" {
-			submitLabel = fmt.Sprintf("👁 开启监控 (已选 %d 个机房)", selectedCount)
+			submitLabel = fmt.Sprintf("👁 开启监控 (已选 %d 机房)", selectedCount)
 		}
 		rows = append(rows, []map[string]string{
 			telegram.CallbackButton(submitLabel, "i:D:ok:"+mode+":"+planCode),
 		})
 	}
 
-	var navRow []map[string]string
-	navRow = append(navRow, telegram.CallbackButton("⚙️ 更改配置", "i:cfgshow:"+mode+":"+planCode))
-	navRow = append(navRow, telegram.CallbackButton("🔙 返回系列分类", "i:cat:"+mode+":root"))
-	rows = append(rows, navRow)
-
-	var b strings.Builder
-	actionTitle := "🛒 目标机房选择"
-	if mode == "q" {
-		actionTitle = "📥 队列挂机机房选择"
-	} else if mode == "m" {
-		actionTitle = "📡 监控目标机房选择"
+	// 快速挂机与操作行
+	actionRow := []map[string]string{
+		telegram.CallbackButton("🌐 全部机房挂机", "i:D:allq:"+mode+":"+planCode),
 	}
-	b.WriteString(fmt.Sprintf("%s · %s\n", actionTitle, planCode))
-	b.WriteString(telegram.CardDivider + "\n")
-	cfgText := "任意硬件配置 (全规格优选)"
+	if selectedCount > 0 {
+		actionRow = append(actionRow, telegram.CallbackButton("🔄 清空", "i:D:cl:"+mode+":"+planCode))
+	} else if len(stock) > 0 {
+		actionRow = append(actionRow, telegram.CallbackButton("⚡ 全选有货", "i:D:as:"+mode+":"+planCode))
+	}
+	rows = append(rows, actionRow)
+
+	// 底部返回
+	rows = append(rows, []map[string]string{
+		telegram.CallbackButton("🔙 换个机型", "i:cat:"+mode+":root"),
+	})
+
+	// 消息卡片正文 (严格控制在 3 行)
+	cleanName := planCode
+	if state != nil {
+		state.ServerPlansMu.RLock()
+		for _, s := range state.ServerPlans {
+			if s.PlanCode == planCode && s.Name != "" {
+				cleanName = s.Name
+				if idx := strings.Index(cleanName, " | "); idx != -1 {
+					cleanName = cleanName[:idx]
+				}
+				break
+			}
+		}
+		state.ServerPlansMu.RUnlock()
+	}
+
+	cfgText := "任意配置"
 	if sess.ConfigLabel != "" {
 		cfgText = sess.ConfigLabel
-	} else if len(sess.Options) > 0 {
-		cfgText = telegram.HumanizeOptionCodes(sess.Options)
 	}
-	b.WriteString("⚙️ 锁定配置: " + cfgText + "\n")
-	if len(stock) > 0 {
-		up := make([]string, len(stock))
-		for i, d := range stock {
-			up[i] = telegram.DisplayDC(d)
-		}
-		b.WriteString(fmt.Sprintf("🟢 实时现货: %s 有现货！\n", strings.Join(up, "、")))
-	} else {
-		b.WriteString("🔴 现货状态: 当前全区缺货 (支持挂机自动抢购)\n")
-	}
-	b.WriteString(telegram.CardDivider + "\n")
+
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("🚀 %s · %s\n", planCode, cleanName))
 	if selectedCount > 0 {
-		b.WriteString(fmt.Sprintf("📌 已勾选 (%d 个机房): %s\n", selectedCount, strings.Join(selectedList, "、")))
-		b.WriteString("👉 点击下方提交按钮立即生效！")
+		autoNote := ""
+		if len(stock) > 0 && selectedCount == len(stock) {
+			autoNote = " (有货机房已自动勾选)"
+		}
+		b.WriteString(fmt.Sprintf("⚙ %s · 已选 %s%s\n", cfgText, strings.Join(selectedList, " "), autoNote))
 	} else {
-		if mode == "m" {
-			b.WriteString("💡 请点击机房按钮进行多选（🟢有现货 🔴缺货监控）\n支持多机房同时监听，上架即刻报警！")
+		if len(stock) > 0 {
+			b.WriteString(fmt.Sprintf("⚙ %s · 🟢 %d 个机房有现货 (点击勾选)\n", cfgText, len(stock)))
 		} else {
-			b.WriteString("💡 请点击机房按钮进行多选（🟢有现货 🔴缺货挂机）\n可点击上方「⚡ 全选有货」或「🌐 全选所有」。")
+			b.WriteString(fmt.Sprintf("⚙ %s · 🔴 当前全区缺货 (建议全机房挂机)\n", cfgText))
 		}
 	}
+	b.WriteString("👇 点击机房切换勾选，点击下方按钮立即提交")
 
 	markup := telegram.InlineKeyboard(rows)
 	sentID := messageID

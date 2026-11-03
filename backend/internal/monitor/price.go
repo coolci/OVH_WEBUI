@@ -8,6 +8,7 @@ import (
 	"github.com/ovh-webui/server/internal/catalog"
 	"github.com/ovh-webui/server/internal/numconv"
 	"github.com/ovh-webui/server/internal/price"
+	"github.com/ovh-webui/server/internal/purchase"
 )
 
 // optionsFromConfig 取本次配置组合要询价的 addon 列表
@@ -135,6 +136,14 @@ func formatAmount(currency string, v float64) string {
 func (m *Monitor) verifyPriceAvailable(planCode, datacenter string, configInfo map[string]interface{}) (bool, string) {
 	options := optionsFromConfig(configInfo)
 	accountID := accountIDFromConfig(configInfo)
+
+	// 预热就绪车直通校验闸门：
+	// 若预热池中已存在该机型与配置的预装车，说明此前已在 OVH 侧完成装车验证，
+	// 直接放行，避免在抢购黄金窗口因现场建车删车询价浪费 3.5s~5.0s 甚至踩 429 导致丢单！
+	if purchase.HasPrewarmedCart(accountID, planCode, datacenter, options, "") {
+		m.state.Logger.Info(fmt.Sprintf("[monitor/prewarm] %s@%s 命中预热就绪车，跳过二次建车验价直通放行", planCode, datacenter), "monitor")
+		return true, ""
+	}
 
 	// 监控轮询验价: 直接进程内调用带有短 TTL 缓存的 price.GetInternalCached,
 	// 避免 HTTP 回环网络开销与 429 抖动。
