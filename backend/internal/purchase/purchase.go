@@ -277,7 +277,7 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 	if prewarmed := TakePrewarmedCart(item.AccountID, item.PlanCode, item.Datacenter, item.Options, item.Coupon); prewarmed != nil {
 		cartID = prewarmed.CartID
 		state.Logger.Info(fmt.Sprintf("⚡ 命中预装车池！直接使用预热就绪购物车 %s，装车耗时 0 秒！", cartID), "purchase")
-		tl.mark("命中预装车")
+		tl.mark("预装车就绪")
 	} else {
 
 	// 创建购物车
@@ -703,11 +703,15 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 	// 订单逾期作废 —— 这是整条链路里最不能丢的一条消息(issue #2)。
 	payURL := ovh.ManagerOrderURL(acc.Endpoint, orderID)
 	// 云下单:绑定了进度卡片的任务把卡片改成"锁单成功"+支付按钮;统一通知照发,不能丢
-	telegram.NotifyTaskProgress(state, item, "success", map[string]string{
+	extra := map[string]string{
 		"orderId":  orderID,
 		"orderUrl": payURL,
-	})
-	message := BuildOrderSuccessMessage(item, orderID, payURL)
+	}
+	if tl != nil {
+		extra["timing"] = tl.FormatMetrics()
+	}
+	telegram.NotifyTaskProgress(state, item, "success", extra)
+	message := BuildOrderSuccessMessage(item, orderID, payURL, tl)
 	if couponWarning != "" {
 		message += "\n\n⚠️ " + couponWarning
 	}
@@ -1232,7 +1236,7 @@ func backfillOrderDetail(state *app.State, client *ovhsdk.Client, taskID, orderI
 // 关键在于"成功"两个字的真实语义:checkout 返回订单号就算成功,
 // 但订单是**未付款**的,逾期会自动作废。不把这句写出来,
 // 用户看到 🎉 就睡了,第二天机器没了还以为是我们没抢到。
-func BuildOrderSuccessMessage(item *types.QueueItem, orderID, managerURL string) string {
+func BuildOrderSuccessMessage(item *types.QueueItem, orderID, managerURL string, tls ...*timeline) string {
 	payNote := "⚠️ 订单尚未付款：请尽快打开订单链接完成付款，逾期未付订单会自动作废。\n" +
 		"（订单未付款前处于 14 天撤销期内，可在 OVH 订单页撤回）"
 	if item.AutoPay {
@@ -1260,6 +1264,15 @@ func BuildOrderSuccessMessage(item *types.QueueItem, orderID, managerURL string)
 	}
 	b.WriteString("🧾 订单编号: " + orderID + "\n")
 	b.WriteString("🔗 订单链接: " + linkURL + "\n")
+
+	// 耗时指标明细（如有）
+	if len(tls) > 0 && tls[0] != nil {
+		if metrics := tls[0].FormatMetrics(); metrics != "" {
+			b.WriteString(telegram.CardDivider + "\n")
+			b.WriteString(metrics + "\n")
+		}
+	}
+
 	b.WriteString(telegram.CardDivider + "\n")
 	b.WriteString(payNote + "\n")
 	b.WriteString(telegram.CardDivider + "\n")
@@ -1282,11 +1295,15 @@ func handleReconciledOrder(state *app.State, client *ovhsdk.Client, endpoint str
 		go backfillOrderDetail(state, client, item.ID, orderID)
 	}
 	payURL := ovh.ManagerOrderURL(endpoint, orderID)
-	telegram.NotifyTaskProgress(state, item, "success", map[string]string{
+	extra := map[string]string{
 		"orderId":  orderID,
 		"orderUrl": payURL,
-	})
-	msg := BuildOrderSuccessMessage(item, orderID, payURL)
+	}
+	if tl != nil {
+		extra["timing"] = tl.FormatMetrics()
+	}
+	telegram.NotifyTaskProgress(state, item, "success", extra)
+	msg := BuildOrderSuccessMessage(item, orderID, payURL, tl)
 	if warn != "" {
 		msg += "\n\n⚠️ " + warn
 	}

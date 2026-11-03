@@ -73,6 +73,54 @@ func (t *timeline) String() string {
 	return fmt.Sprintf("总 %dms = %s", t.total().Milliseconds(), strings.Join(parts, " + "))
 }
 
+func formatPhaseDur(d time.Duration) string {
+	ms := d.Milliseconds()
+	if ms < 1000 {
+		return fmt.Sprintf("%dms", ms)
+	}
+	return fmt.Sprintf("%.2fs", float64(ms)/1000.0)
+}
+
+// FormatMetrics 返回用于 Telegram / Webhook 成功通知卡片展示的多行耗时指标。
+// 例如：
+// ⏱️ 抢购耗时: 总计 7.62s
+//   • 查库存: 395ms
+//   • 建购物车: 564ms
+//   • 绑定并加购: 1.15s
+//   • 必需配置与选件: 1.07s
+//   • 下单: 4.45s
+func (t *timeline) FormatMetrics() string {
+	if t == nil || len(t.items) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	totalStr := formatPhaseDur(t.total())
+
+	hasPrewarm := false
+	for _, p := range t.items {
+		if strings.Contains(p.Name, "预装车") || strings.Contains(p.Name, "预热") {
+			hasPrewarm = true
+			break
+		}
+	}
+
+	if hasPrewarm {
+		b.WriteString(fmt.Sprintf("⚡ 抢购耗时: 总计 %s (预热极速秒杀)\n", totalStr))
+	} else {
+		b.WriteString(fmt.Sprintf("⏱️ 抢购耗时: 总计 %s\n", totalStr))
+	}
+
+	for _, p := range t.items {
+		durStr := formatPhaseDur(p.Dur)
+		if strings.Contains(p.Name, "预装车") || strings.Contains(p.Name, "预热") {
+			b.WriteString(fmt.Sprintf("  • %s: ⚡ %s (预热池命中，0s直接结算)\n", p.Name, durStr))
+		} else {
+			b.WriteString(fmt.Sprintf("  • %s: %s\n", p.Name, durStr))
+		}
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
 // entries 转成可落库的结构
 func (t *timeline) entries() []types.PhaseTiming {
 	if t == nil || len(t.items) == 0 {

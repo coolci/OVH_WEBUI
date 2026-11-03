@@ -3,6 +3,7 @@ package purchase
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/ovh-webui/server/internal/types"
 )
@@ -27,4 +28,26 @@ func TestDumpOrderMessages(t *testing.T) {
 	fmt.Println("\n════════ 拿不到控制面板链接时 ════════")
 	item.AutoPay = false
 	fmt.Println(BuildOrderSuccessMessage(item, "108523471", ""))
+
+	fmt.Println("\n════════ 带阶段耗时指标（常规抢购）════════")
+	tl := newTimeline()
+	tl.items = []phase{
+		{Name: "查库存", Dur: 395 * time.Millisecond},
+		{Name: "建购物车", Dur: 564 * time.Millisecond},
+		{Name: "绑定并加购", Dur: 1150 * time.Millisecond},
+		{Name: "必需配置与选件", Dur: 1070 * time.Millisecond},
+		{Name: "下单", Dur: 4450 * time.Millisecond},
+	}
+	tl.start = time.Now().Add(-7629 * time.Millisecond)
+	fmt.Println(BuildOrderSuccessMessage(item, "108523471", url, tl))
+
+	fmt.Println("\n════════ 带阶段耗时指标（预热秒杀）════════")
+	tlPre := newTimeline()
+	tlPre.items = []phase{
+		{Name: "查库存", Dur: 210 * time.Millisecond},
+		{Name: "预装车就绪", Dur: 0},
+		{Name: "下单", Dur: 1040 * time.Millisecond},
+	}
+	tlPre.start = time.Now().Add(-1250 * time.Millisecond)
+	fmt.Println(BuildOrderSuccessMessage(item, "108523471", url, tlPre))
 }

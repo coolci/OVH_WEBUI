@@ -147,6 +147,9 @@ func FormatTaskProgress(item *types.QueueItem, phase string, extra map[string]st
 		if len(item.Options) > 0 {
 			b.WriteString("⚙️ 选配: " + strings.Join(item.Options, ", ") + "\n")
 		}
+		if timing := extra["timing"]; timing != "" {
+			b.WriteString("\n" + timing + "\n")
+		}
 		b.WriteString("\n")
 		if item.AutoPay {
 			b.WriteString("💳 已请求默认支付方式自动扣款，请点击下方按钮核对支付状态。\n")
