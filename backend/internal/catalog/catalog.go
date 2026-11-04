@@ -734,6 +734,17 @@ func LoadServerList(state *app.State, accountID string) ([]types.ServerPlan, int
 		state.Logger.Info(fmt.Sprintf("已并发预拉 %d 个 plan 的可用性", len(planCodes)), "")
 	}
 
+	// 建立底层 products 硬件技术字典（供 plan 依据 product 外键关联读取精确硬件规格）
+	productsRaw, _ := catalogResp["products"].([]interface{})
+	productByName := make(map[string]map[string]interface{}, len(productsRaw))
+	for _, pr := range productsRaw {
+		if pm, ok := pr.(map[string]interface{}); ok {
+			if name := getString(pm, "name", ""); name != "" {
+				productByName[name] = pm
+			}
+		}
+	}
+
 	for _, planRaw := range plans {
 		plan, ok := planRaw.(map[string]interface{})
 		if !ok {
@@ -743,6 +754,9 @@ func LoadServerList(state *app.State, accountID string) ([]types.ServerPlan, int
 		if planCode == "" {
 			continue
 		}
+
+		prodKey := getString(plan, "product", "")
+		linkedProd := productByName[prodKey]
 
 		// 从预拉结果取（保持串行解析以确保 1:1）
 		datacenters := []types.Datacenter{}
@@ -792,33 +806,43 @@ func LoadServerList(state *app.State, accountID string) ([]types.ServerPlan, int
 			AvailableOptions: []types.ServerOption{},
 		}
 
-		// 特殊系列：SYSLE / SK
+		// 优先从关联的 product 顶层技术规格中提取权威 CPU 型号 (如 KS-5-B 对应的 26sk50b -> Intel Xeon E5-1650v4)
+		if linkedProd != nil {
+			if cpu := extractCPUFromProduct(linkedProd); cpu != "" {
+				serverInfo.CPU = cpu
+			}
+		}
+
+		// 特殊系列：SYSLE / SK 兜底逻辑（若上一步未能提取到 CPU 时）
 		lcPlan := strings.ToLower(planCode)
 		if strings.Contains(lcPlan, "sysle") {
-			state.Logger.Info(fmt.Sprintf("检测到SYSLE系列服务器: %s", planCode), "")
-			switch {
-			case strings.Contains(planCode, "011"):
-				serverInfo.CPU = "SYSLE 011系列 (入门级服务器CPU)"
-			case strings.Contains(planCode, "021"):
-				serverInfo.CPU = "SYSLE 021系列 (中端服务器CPU)"
-			case strings.Contains(planCode, "031"):
-				serverInfo.CPU = "SYSLE 031系列 (高端服务器CPU)"
-			default:
-				serverInfo.CPU = "SYSLE系列CPU"
-			}
-			extractCPUFromNames(plan, &serverInfo, state)
-		} else if strings.Contains(lcPlan, "sk") {
-			state.Logger.Info(fmt.Sprintf("检测到SK系列服务器: %s", planCode), "")
-			displayName := getString(plan, "displayName", "")
-			invoiceName := getString(plan, "invoiceName", "")
-			description := getString(plan, "description", "")
-			foundCPU := false
-			for _, name := range []string{displayName, invoiceName, description} {
-				if name == "" {
-					continue
+			if serverInfo.CPU == "N/A" {
+				state.Logger.Info(fmt.Sprintf("检测到SYSLE系列服务器: %s", planCode), "")
+				switch {
+				case strings.Contains(planCode, "011"):
+					serverInfo.CPU = "SYSLE 011系列 (入门级服务器CPU)"
+				case strings.Contains(planCode, "021"):
+					serverInfo.CPU = "SYSLE 021系列 (中端服务器CPU)"
+				case strings.Contains(planCode, "031"):
+					serverInfo.CPU = "SYSLE 031系列 (高端服务器CPU)"
+				default:
+					serverInfo.CPU = "SYSLE系列CPU"
 				}
-				if strings.Contains(name, "|") {
-					parts := strings.SplitN(name, "|", 2)
+				extractCPUFromNames(plan, &serverInfo, state)
+			}
+		} else if strings.Contains(lcPlan, "sk") {
+			if serverInfo.CPU == "N/A" {
+				state.Logger.Info(fmt.Sprintf("检测到SK系列服务器: %s", planCode), "")
+				displayName := getString(plan, "displayName", "")
+				invoiceName := getString(plan, "invoiceName", "")
+				description := getString(plan, "description", "")
+				foundCPU := false
+				for _, name := range []string{displayName, invoiceName, description} {
+					if name == "" {
+						continue
+					}
+					if strings.Contains(name, "|") {
+						parts := strings.SplitN(name, "|", 2)
 					if len(parts) > 1 {
 						cpuPart := strings.TrimSpace(parts[1])
 						lc := strings.ToLower(cpuPart)
@@ -837,6 +861,7 @@ func LoadServerList(state *app.State, accountID string) ([]types.ServerPlan, int
 				serverInfo.CPU = "SK系列专用CPU"
 			}
 		}
+	}
 
 		if serverInfo.CPU == "N/A" {
 			state.Logger.Info(fmt.Sprintf("服务器 %s 无法从API提取CPU信息，尝试从名称提取", planCode), "")
@@ -974,9 +999,9 @@ func LoadServerList(state *app.State, accountID string) ([]types.ServerPlan, int
 			}
 		}
 
-		// 解析方法 3: 从 plan.product.configurations 提取
-		if product, ok := plan["product"].(map[string]interface{}); ok {
-			if cfgs, ok := product["configurations"].([]interface{}); ok {
+		// 解析方法 3: 从 linkedProd.configurations 提取
+		if linkedProd != nil {
+			if cfgs, ok := linkedProd["configurations"].([]interface{}); ok {
 				for _, cRaw := range cfgs {
 					cfg, ok := cRaw.(map[string]interface{})
 					if !ok {
@@ -1148,6 +1173,37 @@ func parseBandwidthValue(defaultValue string, sv *types.ServerPlan) string {
 		return defaultValue
 	}
 	return defaultValue
+}
+
+// extractCPUFromProduct 从目录关联的 product 顶层对象中提取 CPU 型号
+func extractCPUFromProduct(prod map[string]interface{}) string {
+	if prod == nil {
+		return ""
+	}
+	// 优先从 blobs.technical.server.cpu 提取 (含 brand 和 model)
+	if blobs, ok := prod["blobs"].(map[string]interface{}); ok {
+		if tech, ok := blobs["technical"].(map[string]interface{}); ok {
+		if srv, ok := tech["server"].(map[string]interface{}); ok {
+		if cpuMap, ok := srv["cpu"].(map[string]interface{}); ok {
+		brand := strings.TrimSpace(getString(cpuMap, "brand", ""))
+		model := strings.TrimSpace(getString(cpuMap, "model", ""))
+		if brand != "" && model != "" {
+			if strings.Contains(strings.ToLower(model), strings.ToLower(brand)) {
+				return model
+			}
+			return brand + " " + model
+		} else if model != "" {
+			return model
+		}
+		}
+		}
+		}
+	}
+	// 降级从 product.description 提取
+	if desc := strings.TrimSpace(getString(prod, "description", "")); desc != "" {
+		return desc
+	}
+	return ""
 }
 
 func extractCPUFromNames(plan map[string]interface{}, info *types.ServerPlan, state *app.State) {
