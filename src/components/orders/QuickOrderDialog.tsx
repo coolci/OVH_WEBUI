@@ -219,10 +219,10 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
       autoPay,
       force: isCustomPlan,
       coupon: coupon.trim() || undefined,
-      preorder: !!server?.prerelease,
+      // preorder: !!server?.prerelease, // 预订模式已停用。
     });
     if (result.success > 0) {
-      toast.success(`已创建 ${result.success}/${result.total} 个${server?.prerelease ? "预订" : "抢购"}任务`);
+      toast.success(`已创建 ${result.success}/${result.total} 个抢购任务`);
       onOpenChange(false);
       return;
     }
@@ -239,10 +239,10 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
           autoPay,
           force: true,
           coupon: coupon.trim() || undefined,
-          preorder: !!server?.prerelease,
+          // preorder: !!server?.prerelease, // 预订模式已停用。
         });
         if (forceResult.success > 0) {
-          toast.success(`已强制创建 ${forceResult.success}/${forceResult.total} 个${server?.prerelease ? "预订" : "抢购"}任务`);
+          toast.success(`已强制创建 ${forceResult.success}/${forceResult.total} 个抢购任务`);
           onOpenChange(false);
           return;
         }
@@ -470,9 +470,8 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
                 ) : (
                   <ShoppingCart className="h-4 w-4" />
                 )}
-                {server?.prerelease
-                  ? (selectedDCs.length > 0 ? `创建预订任务（共 ${totalTasks} 个）` : "创建预订抢购任务")
-                  : (selectedDCs.length > 0 ? `创建 ${totalTasks} 个任务` : "创建抢购任务")}
+                {/* 预订按钮文案已停用 */}
+                {(selectedDCs.length > 0 ? `创建 ${totalTasks} 个任务` : "创建抢购任务")}
               </Button>
             </DialogFooter>
           </div>

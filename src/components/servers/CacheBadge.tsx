@@ -1,40 +1,36 @@
-import { useCacheInfo } from "@/hooks/use-settings";
+import { useEffect, useState } from "react";
+import type { CatalogRefreshStatus } from "@/lib/catalog-refresh";
 
-/** 服务器目录缓存状态徽章 */
-export function CacheBadge() {
-  const info = useCacheInfo();
-  const backend = info.data?.backend;
-  if (!backend || !backend.hasCachedData) {
-    return <span className="text-[11px] text-muted-foreground">尚未加载</span>;
-  }
-  const ageSec = backend.cacheAge ?? 0;
-  const valid = !!backend.cacheValid;
-
-  let text: string;
-  if (ageSec < 60) {
-    text = `${ageSec} 秒前`;
-  } else if (ageSec < 3600) {
-    text = `${Math.floor(ageSec / 60)} 分钟前`;
-  } else {
-    const h = Math.floor(ageSec / 3600);
-    const m = Math.floor((ageSec % 3600) / 60);
-    text = m > 0 ? `${h} 小时 ${m} 分钟前` : `${h} 小时前`;
-  }
-
+/** Use the same account-scoped response as the list, never the default account's cache. */
+export function CacheBadge({ status, fetching, failed }: {
+  status?: CatalogRefreshStatus;
+  fetching: boolean;
+  failed: boolean;
+}) {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  const ageSec = status?.updatedAt == null ? null : Math.max(0, Math.floor((now - status.updatedAt) / 1000));
+  const text = ageSec == null ? "尚无成功更新记录"
+    : ageSec < 60 ? `${ageSec} 秒前`
+    : ageSec < 3600 ? `${Math.floor(ageSec / 60)} 分钟前`
+    : `${Math.floor(ageSec / 3600)} 小时 ${Math.floor((ageSec % 3600) / 60)} 分钟前`;
+  const error = failed || !!status?.failures;
+  const label = fetching ? "正在刷新" : error ? "刷新失败，自动重试中"
+    : status?.expiresAt != null && now >= status.expiresAt ? "等待自动刷新" : "自动刷新已开启";
   return (
     <span
       className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] border ${
-        valid
-          ? "border-border text-muted-foreground bg-muted/40"
-          : "border-amber-500/30 text-amber-700 dark:text-amber-300 bg-amber-50/60 dark:bg-amber-950/30"
+        error
+          ? "border-amber-500/30 text-amber-700 dark:text-amber-300 bg-amber-50/60 dark:bg-amber-950/30"
+          : "border-border text-muted-foreground bg-muted/40"
       }`}
-      title={
-        valid
-          ? "数据来自缓存，过期后再次访问才会重新调 OVH"
-          : "缓存已过期，下次访问或点刷新会调 OVH 拉新数据"
-      }
+      title="页面可见时，目录缓存 120 秒到期自动刷新；失败后自动退避重试，返回页面或恢复网络时重新检查。"
+      role="status"
     >
-      {valid ? "缓存" : "缓存已过期"} · {text}
+      {label} · {ageSec == null ? text : `最后成功更新：${text}`}
     </span>
   );
 }

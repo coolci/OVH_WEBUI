@@ -63,6 +63,25 @@ func TestTransientThroughWrappedError(t *testing.T) {
 // net.Error 的 Timeout() 路径
 type fakeTimeout struct{}
 
+func TestUnsupportedLocationStopsButStockAndRateLimitRetry(t *testing.T) {
+	for _, tc := range []struct {
+		code    int
+		message string
+		fatal   bool
+	}{
+		{400, "datacenter waw is not supported", true},
+		{404, "data center xyz does not exist", true},
+		{400, "Invalid value for datacenter", true},
+		{400, "server is not available in datacenter waw", false},
+		{429, "datacenter temporarily unsupported", false},
+		{503, "datacenter service not supported", false},
+	} {
+		if got := attemptOutcome(&ovhsdk.APIError{Code: tc.code, Message: tc.message}); got.Fatal != tc.fatal {
+			t.Fatalf("%+v -> %+v", tc, got)
+		}
+	}
+}
+
 func (fakeTimeout) Error() string   { return "some opaque failure" }
 func (fakeTimeout) Timeout() bool   { return true }
 func (fakeTimeout) Temporary() bool { return true }

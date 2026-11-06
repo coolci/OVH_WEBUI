@@ -30,6 +30,7 @@ func TestPurchaseCouponBeforeCheckout(t *testing.T) {
 		status                                int
 		preorder, cancel, reconciled, network bool
 		checkout, warning                     bool
+		catalogWatch                          bool
 	}{
 		{name: "blank", coupon: "  ", checkout: true},
 		{name: "accepted", coupon: " Save10 ", status: 200, checkout: true},
@@ -41,6 +42,7 @@ func TestPurchaseCouponBeforeCheckout(t *testing.T) {
 		{name: "server error", coupon: "Save10", status: 503},
 		{name: "unrecognized transport error", coupon: "Save10", network: true},
 		{name: "cancelled", coupon: "Save10", cancel: true},
+		{name: "concurrent catalog checkout uncertainty", coupon: "Save10", status: 200, reconciled: true, catalogWatch: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -144,7 +146,21 @@ func TestPurchaseCouponBeforeCheckout(t *testing.T) {
 			}
 			client.Client = &http.Client{Transport: transport}
 			item := &types.QueueItem{ID: "coupon-task", AccountID: "eu", PlanCode: "24sk202", Datacenter: "gra", Coupon: tc.coupon, Preorder: tc.preorder}
+			if tc.catalogWatch {
+				item.ID = "catalog-watch-scoped-job-waw"
+			}
 			outcome := PurchaseServer(ctx, st, item)
+			if tc.catalogWatch {
+				if !outcome.PauseTask || outcome.Success || checkoutCalls != 1 {
+					t.Fatalf("uncertain concurrent checkout not paused: %+v", outcome)
+				}
+				for _, h := range st.HistorySnapshot() {
+					if h.Status == "success" {
+						t.Fatal("falsely claimed another worker's order")
+					}
+				}
+				return
+			}
 			wantCoupon := 1
 			if strings.TrimSpace(tc.coupon) == "" {
 				wantCoupon = 0

@@ -200,7 +200,7 @@ export function CreateQueueDialog({
       options: parsedOptions,
       autoPay,
       coupon: coupon.trim() || undefined,
-      preorder: !!matchedServer?.prerelease,
+      // preorder: !!matchedServer?.prerelease, // 预订模式已停用。
       force: isCustom,
     });
     if (result.success > 0) {
@@ -221,7 +221,7 @@ export function CreateQueueDialog({
           options: parsedOptions,
           autoPay,
           coupon: coupon.trim() || undefined,
-          preorder: !!matchedServer?.prerelease,
+          // preorder: !!matchedServer?.prerelease, // 预订模式已停用。
           force: true,
         });
         if (forceResult.success > 0) {
@@ -271,6 +271,7 @@ export function CreateQueueDialog({
                 {matchedServer.cpu} · {matchedServer.memory} · {matchedServer.storage}
               </p>
             )}
+            {/* 预订提示已停用
             {matchedServer?.prerelease && (
               <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-[12px] text-blue-200/90 flex items-start gap-2 mt-1.5">
                 <span className="text-blue-400 font-bold shrink-0">预上架:</span>
@@ -279,6 +280,7 @@ export function CreateQueueDialog({
                 </span>
               </div>
             )}
+            */}
             {isCustomPlan && !matchedServer?.prerelease && (
               <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-200/90 flex items-start gap-2 mt-1.5">
                 <span className="text-amber-400 font-bold shrink-0">自定义型号:</span>
@@ -420,9 +422,8 @@ export function CreateQueueDialog({
             ) : (
               <>
                 <Plus className="w-4 h-4" />
-                {matchedServer?.prerelease
-                  ? (datacenters.length > 0 ? `创建 ${totalTasks} 个预订抢购任务` : "创建预订抢购任务")
-                  : (datacenters.length > 0 ? `创建 ${totalTasks} 个任务` : "创建任务")}
+                {/* 预订按钮文案已停用 */}
+                {(datacenters.length > 0 ? `创建 ${totalTasks} 个任务` : "创建任务")}
               </>
             )}
           </Button>

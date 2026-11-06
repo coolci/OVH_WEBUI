@@ -42,11 +42,19 @@ export interface PurchaseHistory {
 export function useHistory() {
   return useQuery({
     queryKey: qk.history(),
+    // Background orders bypass this browser's mutation callbacks.
+    refetchInterval: 5_000,
+    refetchIntervalInBackground: false,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
+    refetchOnReconnect: "always",
     // Array.isArray:调用方直接 items.filter,truthy 非数组(代理层改写响应等)
     // 会整页白屏 —— 宁可当空列表走"没有历史"的空态
     queryFn: async () => {
       const d = (await api.get<PurchaseHistory[]>("/purchase-history")).data;
-      return Array.isArray(d) ? d : [];
+      return Array.isArray(d)
+        ? [...d].sort((a, b) => Date.parse(b.purchaseTime) - Date.parse(a.purchaseTime))
+        : [];
     },
   });
 }

@@ -1,4 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
+import { catalogRefresh } from "@/lib/catalog-refresh";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { isOrderable } from "@/lib/availability";
 import axios from "axios";
 import { api } from "@/lib/http";
@@ -266,24 +267,25 @@ export interface PriceInfo {
 
 /**
  * 拉取 OVH 公共目录（每个 subsidiary 各自一份：不同币、不同税、不同促销价）。
- * - 走我们的后端 /api/catalog?subsidiary=XX：后端 SQLite 缓存 2 小时，
+ * - 走我们的后端 /api/catalog?subsidiary=XX：后端 SQLite 缓存 120 秒，
  *   首次拉完落库，之后 F5 / 新 tab / 换浏览器都能秒回（~10ms）。
  * - subsidiary 不传时后端按 config.Zone 兜底，前端不需要先调 settings。
- * - 缓存策略与 useServers 对齐：2 小时新鲜、24 小时 gc、不自动 refetch
+ * - 缓存策略与 useServers 对齐：120 秒新鲜、24 小时 gc、可见时到期自动刷新
  */
 export function useOvhCatalog(subsidiary?: string) {
+  const client = useQueryClient();
+  const key = ["ovh-catalog", "eco", subsidiary || "auto"] as const;
   return useQuery({
-    queryKey: ["ovh-catalog", "eco", subsidiary || "auto"] as const,
-    queryFn: async () => {
+    queryKey: key,
+    ...catalogRefresh<CatalogData>(client, key, async () => {
       const params: Record<string, string> = {};
       if (subsidiary) params.subsidiary = subsidiary;
       const res = await api.get<CatalogData>("/catalog", { params });
-      return res.data;
-    },
-    staleTime: 2 * 60 * 60_000,
+      const failed = !!res.headers?.["x-cache-warning"];
+      const age = Number(res.headers?.["x-cache-age-seconds"] ?? 0);
+      return { data: res.data, updatedAt: Date.now() - (Number.isFinite(age) ? age : 0) * 1000, failed };
+    }),
     gcTime: 24 * 60 * 60_000,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
   });
 }
 

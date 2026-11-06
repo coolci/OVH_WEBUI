@@ -163,9 +163,11 @@ export function EditQueueDialog({ open, onOpenChange, item }: EditQueueDialogPro
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-mono font-semibold text-sm text-foreground">{item.planCode}</span>
               <AccountChip accountId={item.accountId} />
+              {/* 预订标记已停用
               {item.preorder && (
                 <Chip tone="warning">预订抢购</Chip>
               )}
+              */}
             </div>
             <p className="text-[11px] text-muted-foreground">
               {t("queue.editIdentity")}

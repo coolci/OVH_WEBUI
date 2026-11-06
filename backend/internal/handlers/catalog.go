@@ -17,7 +17,7 @@ import (
 )
 
 // catalogTTL OVH 公开 catalog 缓存时长，与前端 useOvhCatalog 的 staleTime 对齐
-const catalogTTL = 2 * time.Hour
+const catalogTTL = 120 * time.Second
 
 // catalogBaseURLForSubsidiary 把 subsidiary 映射成对应站点的 base URL。
 // 实现收敛在 ovh 包一份(catalog 包解析 region 时也要用同一张表),
@@ -27,7 +27,7 @@ func catalogBaseURLForSubsidiary(sub string) string {
 }
 
 // GetCatalog GET /api/catalog?subsidiary=IE[&forceRefresh=true]
-// 返回 OVH 公开 eco catalog 的原始 JSON。优先走 SQLite 缓存（2 小时 TTL），
+// 返回 OVH 公开 eco catalog 的原始 JSON。优先走 SQLite 缓存（120 秒 TTL），
 // 缓存过期或带 forceRefresh=true 时才直连 OVH。
 func GetCatalog(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {

@@ -333,9 +333,11 @@ func processQueueLoop(loopCtx context.Context, state *app.State, purchase func(c
 					// 用户删除或暂停,不计失败,不覆盖用户选择的队列状态。
 					return
 				}
-				if outcome.WaitingForCatalog {
-					return
-				}
+				// 预订专用逻辑已停用：不等待销售目录，使用普通抢购流程。
+				// 				if outcome.WaitingForCatalog {
+				// 					return
+				// 				}
+
 				if outcome.Success {
 					state.QueueMu.Lock()
 					for i := range state.Queue {

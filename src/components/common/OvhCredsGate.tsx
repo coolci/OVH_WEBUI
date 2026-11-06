@@ -14,7 +14,7 @@ import { OVH_SUBSIDIARIES, subsidiaryLabel } from "@/lib/ovh-subsidiaries";
 import { apiBaseUrlForEndpoint, endpointRegion } from "@/lib/ovh-regions";
 import { OvhTokenGuide } from "@/components/common/OvhTokenGuide";
 
-const PREFETCH_STALE = 2 * 60 * 60_000;
+const PREFETCH_STALE = 120_000;
 
 /** 凭据存好后立刻预热三件套. 用户切到 servers 页时直接命中,不会再"加载中" */
 function prefetchAfterCredsSaved(qc: ReturnType<typeof useQueryClient>, zone: string) {

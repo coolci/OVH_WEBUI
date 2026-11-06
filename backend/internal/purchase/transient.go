@@ -75,5 +75,13 @@ func IsTransient(err error) bool {
 // transient 的失败不计进 FailureCount —— 它没告诉我们"这单买不成",
 // 只告诉我们"这一下没打通"。
 func attemptOutcome(err error) Outcome {
+	var apiErr *ovhsdk.APIError
+	if errors.As(err, &apiErr) && (apiErr.Code == 400 || apiErr.Code == 404) {
+		message := strings.ToLower(apiErr.Message)
+		if (strings.Contains(message, "datacenter") || strings.Contains(message, "data center")) &&
+			(strings.Contains(message, "not supported") || strings.Contains(message, "unsupported") || strings.Contains(message, "invalid value") || strings.Contains(message, "does not exist")) {
+			return Outcome{Attempted: true, Fatal: true, Reason: "目标机房不支持当前请求: " + apiErr.Message}
+		}
+	}
 	return Outcome{Attempted: !IsTransient(err)}
 }

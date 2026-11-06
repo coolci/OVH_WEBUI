@@ -48,3 +48,33 @@ coverage/
 scratch/ovh-webui
 scratch/deploy-payload/ovh-webui
 *.tsbuildinfo
+
+# Independent catalog watcher runtime state
+tools/catalog_watch/*.db*
+tools/catalog_watch/*.lock
+tools/catalog_watch/__pycache__/
+
+# Local release bundles and operational working files (keep on disk)
+/artifacts/
+/deploy_package.tar.gz
+/scratch/
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# SQLite sidecar files and alternate database extensions
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-wal
+*.sqlite3-shm
+
+# Account-specific live test harness and private operational reports
+/backend/internal/catalogwatch/live_authorized_test.go
+/docs/live-stock-order-2026-11-07.md
+/docs/live-verification-2026-11-07.md

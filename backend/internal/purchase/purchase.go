@@ -62,6 +62,9 @@ func cancelledOutcome(state *app.State, item *types.QueueItem, stage string) Out
 // ctx 由队列处理器给,用户删任务时会被取消(app.State.MarkTaskDeleted)。
 // 结账之前的每一次 OVH 调用都挂在它上面,取消即中断;结账本身例外,见那里的注释。
 func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem) Outcome {
+	if strings.HasPrefix(item.ID, "catalog-watch-") {
+		item.AutoPay = false
+	}
 	attemptStart := time.Now() // checkout 对账用:transient 失败后按此时间查 /me/order
 	client, err := state.OVH.IsolatedClientFor(item.AccountID)
 	if err != nil {
@@ -73,20 +76,26 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 		recordFailure(state, item, errMsg)
 		return Outcome{Fatal: true, Reason: errMsg}
 	}
-
-	if item.Preorder {
-		ready, err := catalog.PreorderReady(state, item.AccountID, item.PlanCode)
-		if ctx.Err() != nil {
-			return cancelledOutcome(state, item, "等上架")
-		}
-		if err != nil || !ready {
-			state.Logger.Info(fmt.Sprintf("预订任务 %s 等待 %s 上架到下单账户的销售目录", item.ID, item.PlanCode), "purchase")
-			if err != nil {
-				state.Logger.Warn("预订任务查询销售目录失败，本轮继续等待: "+err.Error(), "purchase")
-			}
-			return Outcome{WaitingForCatalog: true}
-		}
+	// The SDK overwrites http.Client.Timeout with its own default (180s).
+	// Set the SDK timeout on this isolated workflow, including checkout settlement.
+	if strings.HasPrefix(item.ID, "catalog-watch-") && (client.Timeout <= 0 || client.Timeout > 60*time.Second) {
+		client.Timeout = 60 * time.Second
 	}
+
+	// 预订专用逻辑已停用：不等待销售目录，使用普通抢购流程。
+	// 	if item.Preorder {
+	// 		ready, err := catalog.PreorderReady(state, item.AccountID, item.PlanCode)
+	// 		if ctx.Err() != nil {
+	// 			return cancelledOutcome(state, item, "等上架")
+	// 		}
+	// 		if err != nil || !ready {
+	// 			state.Logger.Info(fmt.Sprintf("预订任务 %s 等待 %s 上架到下单账户的销售目录", item.ID, item.PlanCode), "purchase")
+	// 			if err != nil {
+	// 				state.Logger.Warn("预订任务查询销售目录失败，本轮继续等待: "+err.Error(), "purchase")
+	// 			}
+	// 			return Outcome{WaitingForCatalog: true}
+	// 		}
+	// 	}
 
 	cartID := ""
 	var itemID int64
@@ -172,19 +181,23 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 	// "32G+HDD 有货" 不等于 "用户要的 64G+NVMe 有货"。用户指定了硬件选项时，
 	// 只在 FQN 段集合覆盖了这些选项的条目里判有货。
 	wantedHW := fqnRelevantOptions(availabilities, item.Options, item.PlanCode)
-	if item.Preorder {
-		// 预订保存的是原始 FQN 硬件段;参数消失也不能忽略它后改买其他配置。
-		wantedHW = item.Options
-	}
+	// 预订专用逻辑已停用：不等待销售目录，使用普通抢购流程。
+	// 	if item.Preorder {
+	// 		// 预订保存的是原始 FQN 硬件段;参数消失也不能忽略它后改买其他配置。
+	// 		wantedHW = item.Options
+	// 	}
+
 	candidates := availabilities
 	if len(wantedHW) > 0 {
 		matchedAvs := []map[string]interface{}{}
 		for _, av := range availabilities {
 			fqn, _ := av["fqn"].(string)
 			matches := fqnCoversOptions(fqn, wantedHW, item.PlanCode)
-			if item.Preorder {
-				matches = preorderFQNCoversOptions(fqn, wantedHW, item.PlanCode)
-			}
+			// 预订专用逻辑已停用：不等待销售目录，使用普通抢购流程。
+			// 			if item.Preorder {
+			// 				matches = preorderFQNCoversOptions(fqn, wantedHW, item.PlanCode)
+			// 			}
+
 			if matches {
 				matchedAvs = append(matchedAvs, av)
 			}
@@ -621,6 +634,9 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 	// 而且方向上是可恢复的 —— 真需要弃权还有 POST /me/order/{id}/waiveRetraction
 	// 可以事后补;反过来结账时一旦 true,权利当场消失,没有任何接口能拿回来。
 
+	if err := saveCheckoutJournal(ctx, cartID); err != nil {
+		return Outcome{PauseTask: true, Reason: "结账凭据保存失败，未提交订单：" + err.Error()}
+	}
 	if err := client.PostWithContext(context.WithoutCancel(ctx), "/order/cart/"+cartID+"/checkout", checkoutPayload, &checkoutResult); err != nil {
 		// POST /item/{id}/configuration 对取值不做任何校验 —— 实测在 EU 车上把
 		// dedicated_datacenter 设成 "hil"、region 设成 "usa" 都会 200 返回配置项 id,
@@ -645,7 +661,16 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 		// 只是我方没等到响应。这时任务会重试 → 新车再 checkout → **买两台**
 		// (autoPay 开着就是重复扣款)。所以 transient 失败先按官方 GET /me/order 对账
 		// (long[] + date.from,见 ReconcileRecentOrder),命中就按成功处理。
-		if IsTransient(err) {
+		var checkoutAPIError *ovhsdk.APIError
+		definiteRejection := errors.As(err, &checkoutAPIError) && checkoutAPIError.Code >= 400 && checkoutAPIError.Code < 500 && checkoutAPIError.Code != 408 && checkoutAPIError.Code != 429
+		if IsTransient(err) || (strings.HasPrefix(item.ID, "catalog-watch-") && !definiteRejection) {
+			// Concurrent catalog jobs may share a planCode. A fuzzy recent-order
+			// match cannot prove which configuration/location submitted that order.
+			// Preserve uncertainty rather than attributing another worker's order.
+			if strings.HasPrefix(item.ID, "catalog-watch-") {
+				success = true // Retain the original cart for read-only automatic reconciliation.
+				return Outcome{PauseTask: true, Reason: "结账响应不确定，后台将自动核对原购物车；确认前不重复提交"}
+			}
 			claimed := make(map[string]bool)
 			state.HistoryMu.Lock()
 			for _, h := range state.History {
@@ -685,10 +710,19 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 
 	orderID := numconv.ToString(checkoutResult["orderId"])
 	orderURL, _ := checkoutResult["url"].(string)
+	if strings.HasPrefix(item.ID, "catalog-watch-") && (orderID == "" || orderID == "0") {
+		success = true
+		return Outcome{PauseTask: true, Reason: "结账未返回有效订单编号，后台自动核对"}
+	}
 
 	// checkout 已返回订单 ID,cart 已成功转 order,标记成功阻止 defer 删除
 	success = true
 
+	// Persist the returned identity before history/notifications; a restart can
+	// query this exact order without relying on cart retention upstream.
+	if err := saveCheckoutJournal(ctx, cartID, orderID); err != nil {
+		state.Logger.Error("订单已创建但确认凭据保存失败: "+err.Error(), "purchase")
+	}
 	// 立刻记成功 —— 价格和过期时间空着,后台异步补
 	recordSuccess(state, item, orderID, orderURL, "", nil, couponWarning)
 	recordTimingToHistory(state, item.ID, tl)

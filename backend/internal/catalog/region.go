@@ -95,7 +95,7 @@ func fetchEcoCatalogRaw(subsidiary string) (map[string]interface{}, error) {
 // 所以唯一权威来源就是目录里的 configurations[].values。
 
 const (
-	regionCacheTTL = 2 * time.Hour
+	regionCacheTTL = 120 * time.Second
 	// regionCacheFailTTL 目录拉取失败后的负缓存时长。
 	// 目录单份 12MB,监控是「每订阅 5 秒一轮 × maxWorkers 并发」,一旦 OVH 侧不可用
 	// (429 最常见),没有负缓存就会每一轮每一个订阅都重发一次完整请求:自己把自己
@@ -316,7 +316,7 @@ func parseEcoCatalogFull(r io.Reader) (ecoCatalogPayload, error) {
 }
 
 // AddonFamiliesForPlan 取该 (账户子公司, planCode) 的 addon family → addon planCode 列表。
-// 走的是 2 小时内存缓存的公开目录:以前每次可用性检查都用账户凭据现拉一份 10MB 目录,
+// 走的是 120 秒内存缓存的公开目录:以前每次可用性检查都用账户凭据现拉一份 10MB 目录,
 // 监控按「每订阅 × 每 5 秒」的频率跑,几个订阅就能把 OVH 打到 429 —— 恰好在补货那一刻失灵。
 func AddonFamiliesForPlan(state *app.State, accountID, planCode string) (map[string][]string, error) {
 	acc, _ := state.FindAccount(accountID)
@@ -413,12 +413,12 @@ func normalizeDCCity(dc string) string {
 	return d
 }
 
-// loadSubsidiaryCatalog 取某子公司的目录(只保留 region/机房两项配置),带 2 小时内存缓存。
+// loadSubsidiaryCatalog 取某子公司的目录(只保留 region/机房两项配置),带 120 秒内存缓存。
 // 目录是公开数据(前端浏览页也直接打这个端点),不需要凭据,所以这里走 HTTP 而不是 SDK ——
 // 避免为了读一张配置表去占用账户的 API 配额。
 //
 // 三层防护,都是为了「目录不可用时不要把自己打死」:
-//  1. 正缓存 2 小时(区域/机房配置几乎不变);
+//  1. 正缓存 120 秒(区域/机房配置几乎不变);
 //  2. singleflight:同一子公司同时只发一次请求,不管多少个监控 worker 同时进来;
 //  3. 负缓存 30 秒 + 过期正缓存兜底:拉不到时优先返回上一份(过期的)目录,
 //     因为一份两小时前的区域配置远好过没有 —— 后者会让下单退回静态兜底。
@@ -559,7 +559,7 @@ func FallbackRegion(apiDC, subsidiary string) string {
 func NormalizeDCCity(dc string) string { return normalizeDCCity(dc) }
 
 // DatacentersForPlan 取该 (账户子公司, planCode) 在目录里可选的机房列表(目录给的原始顺序)。
-// 走的是同一份 2 小时缓存,不额外打 OVH。
+// 走的是同一份 120 秒缓存,不额外打 OVH。
 func DatacentersForPlan(state *app.State, accountID, planCode string) ([]string, error) {
 	acc, _ := state.FindAccount(accountID)
 	subsidiary := SubsidiaryOfAccount(acc)
@@ -683,7 +683,7 @@ type PlanPrice struct {
 // 口径必须和前端 use-availability.ts 的 computePrice 一致:
 // base plan 的月费/安装费,加上每个选中 addon 各自的月费/安装费。
 // 统一按不含税价格计算。
-// 走的是已经缓存 2 小时的公开目录,不消耗账户 API 配额。
+// 走的是已经缓存 120 秒的公开目录,不消耗账户 API 配额。
 //
 // 为什么不复用询价接口(price.GetInternal):那个要真的建购物车、加商品、拿 summary、删车,
 // 一次好几秒还会占配额。补货通知是"有货那一刻要立刻发出去"的东西,不能等。

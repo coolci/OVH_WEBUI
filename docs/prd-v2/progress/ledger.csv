@@ -253,3 +253,5 @@ EP-254,REGISTRY,P2,POST,/api/vps-control/:service_name/reinstall,/vps-control/:s
 EP-255,REGISTRY,P2,POST,/api/vps-control/:service_name/retraction,/vps-control/:service_name/retraction,wip,,2026-11-06
 EP-256,REGISTRY,P2,POST,/api/vps-monitor/subscriptions/batch-add-all,/vps-monitor/subscriptions/batch-add-all,wip,,2026-11-06
 EP-257,REGISTRY,P2,PUT,/api/queue/:id,/queue/:id,wip,,2026-11-06
+EP-258,F03,P2,GET,/api/catalog-watch,/catalog-watch,wip,,2026-11-07
+EP-259,F03,P2,PUT,/api/catalog-watch,/catalog-watch,wip,,2026-11-07

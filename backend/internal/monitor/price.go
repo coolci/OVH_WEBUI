@@ -238,7 +238,7 @@ func (m *Monitor) GetPriceInfoText(planCode, datacenter string, configInfo map[s
 	// 补货通知要展示的是真实的「月付续费」价格。OVH 购物车接口 (/order/cart/summary)
 	// 回的是整张首月订单的含税总额，在有安装费时会把一次性安装费打包进 withTax，
 	// 若直接当月费展示会把首月总计误标为“/月”，且造成重复计费误解。
-	// 公开目录已带 2 小时缓存，按 capacity 严格分离了 monthly 和 installation，毫秒级响应且不耗配额。
+	// 公开目录已带 120 秒缓存，按 capacity 严格分离了 monthly 和 installation，毫秒级响应且不耗配额。
 	if p, err := catalog.PriceForOptions(m.state, accountID, planCode, options); err == nil && p.Monthly > 0 {
 		text := formatMoney(p.Currency, p.Monthly)
 		m.state.Logger.Debug("目录纯月费获取成功: "+text, "monitor")
@@ -326,7 +326,7 @@ func (m *Monitor) getPriceWithTimeout(planCode, datacenter string, configInfo ma
 // installPriceText 这套配置的一次性安装费。拿不到就返回空串 —— 通知里那一行直接不出现。
 //
 // 用目录算而不是询价:询价要建购物车 → 加商品 → 拿 summary → 删车,一次好几秒,
-// 而补货通知的全部价值就是"有货那一刻立刻发出去"。目录有 2 小时缓存,也不占账户配额。
+// 而补货通知的全部价值就是"有货那一刻立刻发出去"。目录有 120 秒缓存,也不占账户配额。
 func (m *Monitor) installPriceText(planCode, accountID string, options []string) string {
 	info := m.resolvePlanPriceInfo(planCode, accountID, options)
 	return info.InstallText

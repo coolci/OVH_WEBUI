@@ -36,16 +36,19 @@ func TestClassifyPrereleaseKeepsRegionAndProductGuards(t *testing.T) {
 		plan string
 		want PlanVerdict
 	}{
-		{"27skle03-v1", PlanVerdictPrerelease},
-		{"27sysstorle01-v1", PlanVerdictPrerelease},
-		{"27risele01-v1", PlanVerdictPrerelease},
+		{"27skle03-v1", PlanVerdictUnknown},
+		{"27sysstorle01-v1", PlanVerdictUnknown},
+		{"27risele01-v1", PlanVerdictUnknown},
 		{"24sk202", PlanVerdictOK},
 		{"27skle03-v1-us", PlanVerdictCrossRegion},
 		{"27skle99-v1", PlanVerdictNoSuchPlan},
 		{"25scale01-v1", PlanVerdictNotEco},
 		{"custom-NewModel.LZ", PlanVerdictUnlisted},
 	} {
-		got, _ := ClassifyPlan(st, "eu", tc.plan, "test")
+		got, hint := ClassifyPlan(st, "eu", tc.plan, "test")
+		if tc.want == PlanVerdictUnknown && hint != "" {
+			t.Fatalf("unlisted Eco must not require preorder: %s", hint)
+		}
 		if got != tc.want {
 			t.Errorf("%s: verdict %v, want %v", tc.plan, got, tc.want)
 		}

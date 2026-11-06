@@ -224,3 +224,6 @@ CREATE TABLE IF NOT EXISTS telegram_short_ids (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_short_ids_created ON telegram_short_ids(created_at);
+
+-- Independent discovery baseline and one-order-per-configuration ledger.
+CREATE TABLE IF NOT EXISTS catalog_watch (id INTEGER PRIMARY KEY CHECK(id=1), data TEXT NOT NULL);

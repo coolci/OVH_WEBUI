@@ -131,7 +131,7 @@ export function useCreateQueueItem() {
               options: payload.options || [],
               autoPay: payload.autoPay ?? false,
               force: payload.force ?? false,
-              preorder: payload.preorder ?? false,
+              // preorder: payload.preorder ?? false, // 预订模式已停用，不发送此开关。
               coupon: payload.coupon?.trim() || undefined,
             });
             success++;

@@ -245,6 +245,8 @@ var usedEndpoints = []string{
 	// —— 下单 / 目录 ——
 	"POST /order/cart",
 	"DELETE /order/cart/{cartId}",
+	"GET /order/cart/{cartId}",
+	"GET /order/cart/{cartId}/checkout",
 	"POST /order/cart/{cartId}/assign",
 	"POST /order/cart/{cartId}/checkout",
 	"POST /order/cart/{cartId}/coupon",

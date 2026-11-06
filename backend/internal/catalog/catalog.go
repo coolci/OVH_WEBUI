@@ -95,7 +95,7 @@ func CheckServerAvailabilityWithConfigs(state *app.State, planCode string, accou
 
 	state.Logger.Info(fmt.Sprintf("[配置监控] OVH API 返回 %d 个配置组合", len(availabilities)), "monitor")
 
-	// addon 匹配用的目录走 2 小时内存缓存(公开数据,不耗账户配额)。
+	// addon 匹配用的目录走 120 秒内存缓存(公开数据,不耗账户配额)。
 	// 以前这里每次调用都用账户凭据现拉一份 ~10MB 的 eco 目录,而监控是
 	// 「每订阅 × 每 5 秒」调一次 —— 几个订阅就能把 OVH 打到 429,
 	// 结果是补货那一刻监控恰好最不可靠。

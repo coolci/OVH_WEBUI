@@ -7,6 +7,7 @@ import (
 
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/catalog"
+	"github.com/ovh-webui/server/internal/catalogwatch"
 	"github.com/ovh-webui/server/internal/handlers"
 	"github.com/ovh-webui/server/internal/monitor"
 	"github.com/ovh-webui/server/internal/netfp"
@@ -68,6 +69,9 @@ func (s *Supervisor) Start() {
 	go telegram.StartPoller(state, func(u map[string]interface{}) {
 		handlers.ProcessTelegramUpdate(state, mon, u)
 	})
+
+	// Independent catalog watcher: browser lifecycle never controls this worker.
+	catalogwatch.For(state).Run(s.ctx)
 
 	// 5. 自动启动监控（按需）
 	// 用户手动停止过监控的话,重启后保持停止(AutoStartAllowed 读库失败时也不自动恢复)

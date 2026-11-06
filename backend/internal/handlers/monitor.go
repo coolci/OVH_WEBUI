@@ -105,7 +105,7 @@ func AddSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 
 		// 区域预检:OVH 的 EU / US / CA 是三套独立系统,拿错站点查 planCode 返回的是
 		// 200 + 空数组而不是报错。订阅一个没人能查的机型会静默失效,所以下单前就告诉用户。
-		// 只提示不拦截 —— 目录有 2 小时缓存、OVH 也会抖动,不能凭一次探测把人挡在门外。
+		// 只提示不拦截 —— 目录有 120 秒缓存、OVH 也会抖动,不能凭一次探测把人挡在门外。
 		region, subsidiary, regionWarning := preflightMonitorAccounts(mon, body.PlanCode, accountIDs)
 
 		mon.AddSubscription(body.PlanCode, body.Datacenters, notifyAvailable, notifyUnavailable,

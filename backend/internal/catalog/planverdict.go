@@ -44,7 +44,8 @@ func CanForceCustomPlan(verdict PlanVerdict) bool {
 	return verdict == PlanVerdictNoSuchPlan || verdict == PlanVerdictUnlisted
 }
 
-// PreorderReady 用短缓存等上架,避免普通目录两小时缓存错过开售;并发刷新仍合并。
+// PreorderReady 保留为历史工具函数；预订流程已停用，生产购买链路不再调用。
+// 原用途：短缓存等上架，避免普通目录缓存错过开售。
 func PreorderReady(state *app.State, accountID, planCode string) (bool, error) {
 	acc, ok := state.FindAccount(accountID)
 	if !ok {
@@ -61,7 +62,7 @@ func PreorderReady(state *app.State, accountID, planCode string) (bool, error) {
 // ClassifyPlan 判定 planCode 对这个账户属于哪种情况,并给出面向用户的说明。
 // 说明为空 = 无需提示(OK / Unknown),调用方必须保持原来的"无货,下轮再来"语义。
 //
-// 顺序有讲究:先查本子公司的 eco 目录(2 小时内存缓存,不耗账户配额、命中时不发网络请求),
+// 顺序有讲究:先查本子公司的 eco 目录(120 秒内存缓存,不耗账户配额、命中时不发网络请求),
 // 有就直接放行 —— 抢购主链路上正常任务一次探测都不会多发。只有"目录里没有"才去探大区归属。
 //
 // logSource 只影响日志归类(queue / purchase),不影响判定。
@@ -117,7 +118,9 @@ func ClassifyPlan(state *app.State, accountID, planCode, logSource string) (Plan
 			planCode, region, acc.Name, accRegion, acc.Endpoint, region)
 	}
 	if ecoStockPlanCode.MatchString(planCode) {
-		return PlanVerdictPrerelease, fmt.Sprintf("机型 %s 已出现在本区库存中，但尚未进入账户销售目录；请创建预订抢购任务等待上架。", planCode)
+		// return PlanVerdictPrerelease, fmt.Sprintf("机型 %s 已出现在本区库存中，但尚未进入账户销售目录；请创建预订抢购任务等待上架。", planCode)
+		// 不再要求先创建预订任务；销售目录未收录不阻止直接尝试购物车。
+		return PlanVerdictUnknown, ""
 	}
 	if !dedicatedOnlyPlanCode.MatchString(planCode) {
 		return PlanVerdictUnlisted, fmt.Sprintf("机型 %s 在本区有库存记录，但公开目录尚未收录，无法确定其销售状态；可作为自定义型号添加，以 OVH 购物车校验为准。", planCode)

@@ -23,21 +23,20 @@ type preorderTransport func(*http.Request) (*http.Response, error)
 
 func (f preorderTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
-func TestPreorderWaitsBeforeCartAndStartsAfterListing(t *testing.T) {
+func TestLegacyPreorderUsesNormalPurchaseWithoutCatalogWait(t *testing.T) {
 	original := http.DefaultTransport
 	t.Cleanup(func() { http.DefaultTransport = original })
 	for _, tc := range []struct {
 		sub            string
 		listed, outage bool
 		options        []string
-		expectCart     bool
 	}{
-		{"IE", false, false, nil, false},
-		{"DE", false, true, nil, false},
-		{"FR", true, false, nil, true},
-		{"ES", true, false, []string{"ram-32g"}, true},
-		{"NL", true, false, []string{"ram-64g"}, false},
-		{"GB", true, false, []string{"ram-32g", "softraid-2x480ssd"}, false},
+		{"IE", false, false, nil},
+		{"DE", false, true, nil},
+		{"FR", true, false, nil},
+		{"ES", true, false, []string{"ram-32g"}},
+		{"NL", true, false, []string{"ram-64g"}},
+		{"GB", true, false, []string{"ram-32g", "softraid-2x480ssd"}},
 	} {
 		t.Run(tc.sub, func(t *testing.T) {
 			dir := t.TempDir()
@@ -49,11 +48,12 @@ func TestPreorderWaitsBeforeCartAndStartsAfterListing(t *testing.T) {
 			lg := logger.New(filepath.Join(dir, "test.log"), slog.New(slog.NewTextHandler(io.Discard, nil)))
 			st := app.NewState(storage.Paths{DataDir: dir}, config.New(database), lg, database)
 			st.Accounts = []types.OVHAccount{{ID: "eu", Endpoint: "ovh-eu", Zone: tc.sub, AppKey: "test", AppSecret: "test", ConsumerKey: "test"}}
-			carts, checkouts := 0, 0
+			carts, checkouts, catalogRequests := 0, 0, 0
 			transport := preorderTransport(func(r *http.Request) (*http.Response, error) {
 				body, status := "{}", http.StatusOK
 				switch {
 				case strings.Contains(r.URL.Path, "/order/catalog/public/eco"):
+					catalogRequests++
 					body = `{"plans":[]}`
 					if tc.outage {
 						status = http.StatusTooManyRequests
@@ -82,14 +82,26 @@ func TestPreorderWaitsBeforeCartAndStartsAfterListing(t *testing.T) {
 				t.Fatal(err)
 			}
 			client.Client = &http.Client{Transport: transport}
-			item := &types.QueueItem{ID: "pre", AccountID: "eu", PlanCode: "27skle03-v1", Datacenter: "gra", Preorder: true, MaxRetries: 1, Options: tc.options}
-			outcome := PurchaseServer(context.Background(), st, item)
-			if tc.expectCart {
-				if outcome.WaitingForCatalog || carts != 1 {
-					t.Fatalf("listed plan did not reach normal purchase: %+v carts=%d", outcome, carts)
+			var normalOutcome Outcome
+			normalCarts := 0
+			for _, legacyFlag := range []bool{false, true} {
+				carts = 0
+				item := &types.QueueItem{ID: "pre", AccountID: "eu", PlanCode: "27skle03-v1", Datacenter: "gra", Preorder: legacyFlag, MaxRetries: 1, Options: tc.options}
+				outcome := PurchaseServer(context.Background(), st, item)
+				if outcome.WaitingForCatalog || catalogRequests != 0 {
+					t.Fatalf("unexpected catalog gate: %+v requests=%d", outcome, catalogRequests)
 				}
-			} else if (!tc.listed && !outcome.WaitingForCatalog) || outcome.Attempted || outcome.Fatal || carts != 0 {
-				t.Fatalf("unlisted/outage must wait without ordering or failing: %+v carts=%d", outcome, carts)
+				if len(tc.options) == 0 && carts != 1 {
+					t.Fatalf("unlisted/outage/listed task must try cart: carts=%d outcome=%+v", carts, outcome)
+				}
+				if legacyFlag {
+					if carts != normalCarts || outcome != normalOutcome {
+						t.Fatalf("legacy flag changed ordinary behavior: carts %d/%d, outcome %+v/%+v", carts, normalCarts, outcome, normalOutcome)
+					}
+				} else {
+					normalCarts = carts
+					normalOutcome = outcome
+				}
 			}
 			if checkouts != 0 {
 				t.Fatal("fixture must never reach checkout")

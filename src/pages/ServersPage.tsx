@@ -1,3 +1,4 @@
+import { CatalogWatchPanel } from "@/components/servers/CatalogWatchPanel";
 import { useMemo, useState, useEffect } from "react";
 import { Server, RefreshCw } from "lucide-react";
 import { Helmet } from "react-helmet-async";
@@ -139,10 +140,10 @@ function ServersPage() {
       <PageHeader
         icon={Server}
         title="服务器列表"
-        description="目录、价格、可用性全部走访问触发的缓存，2 小时内复用"
+        description="目录与价格缓存 120 秒，到期自动刷新，失败自动重试；库存独立刷新"
         action={
           <div className="flex items-center gap-2">
-            <CacheBadge />
+            <CacheBadge status={q.refreshStatus} fetching={q.isFetching} failed={q.isError} />
             <Button
               size="sm"
               className="h-8 gap-1.5 text-xs font-medium rounded-lg shadow-sm px-3"
@@ -165,6 +166,8 @@ function ServersPage() {
           </div>
         }
       />
+
+      <CatalogWatchPanel />
 
       <ServerFilterBar
         search={search}

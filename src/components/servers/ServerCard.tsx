@@ -47,11 +47,13 @@ export function ServerCard({
             <h3 className="font-mono text-[15px] font-bold tracking-tight text-foreground truncate">
               {server.planCode}
             </h3>
+            {/* 预订标记已停用
             {server.prerelease && (
               <Chip tone="warning" className="h-4 px-1 text-[10px] shrink-0 font-medium">
                 预售
               </Chip>
             )}
+            */}
           </div>
           {okCount > 0 ? (
             <Chip tone="success" className="flex-shrink-0">

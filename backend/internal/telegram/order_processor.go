@@ -42,7 +42,7 @@ func accountRegionLabel(acc types.OVHAccount) (string, string) {
 // 只回一句"无法获取可用性信息"会让用户以为是抢购程序坏了,而真正该做的是换本区的 planCode。
 //
 // 用目录判断而不是猜后缀:后缀规则是观察出来的,目录才是权威。
-// 目录走 catalog 的 2 小时缓存,不额外消耗账户配额。
+// 目录走 catalog 的 120 秒缓存,不额外消耗账户配额。
 // 注意 eco 目录只覆盖 Kimsufi/Rise/Advance 这一档,所以"目录里没有"只用来补充说明,
 // 不作为拦截条件 —— 否则会误杀不在 eco 目录里但确实能买的机型。
 func emptyAvailabilityReason(state *app.State, accountID, planCode string, acc types.OVHAccount) string {

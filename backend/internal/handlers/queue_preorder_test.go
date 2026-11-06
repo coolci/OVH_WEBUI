@@ -45,7 +45,7 @@ func TestAddQueuePreorderDoesNotBypassValidation(t *testing.T) {
 		preorder bool
 		status   int
 	}{
-		{"27skle03-v1", false, http.StatusBadRequest},
+		{"27skle03-v1", false, http.StatusOK},
 		{"27skle03-v1", true, http.StatusOK},
 		{"27skle03-v1-us", true, http.StatusBadRequest},
 		{"27skle99-v1", true, http.StatusBadRequest},
@@ -61,7 +61,12 @@ func TestAddQueuePreorderDoesNotBypassValidation(t *testing.T) {
 		}
 	}
 	items, err := st.DB.ListQueue()
-	if err != nil || len(items) != 1 || !items[0].Preorder || items[0].Coupon != "Save10" {
-		t.Fatalf("preorder was not persisted: %+v %v", items, err)
+	if err != nil || len(items) != 2 {
+		t.Fatalf("expected two ordinary tasks: %d %v", len(items), err)
+	}
+	for _, item := range items {
+		if item.Preorder || item.Coupon != "Save10" {
+			t.Fatalf("legacy preorder flag must be ignored: %+v", item)
+		}
 	}
 }

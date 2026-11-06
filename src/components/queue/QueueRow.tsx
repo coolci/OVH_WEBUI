@@ -55,9 +55,11 @@ export function QueueRow({ item, onToggle, onDelete, onEdit }: QueueRowProps) {
           <div className="flex items-center gap-2 mb-1.5 flex-wrap">
             <span className="font-mono font-semibold text-sm text-foreground tracking-tight">{item.planCode}</span>
             <AccountChip accountId={item.accountId} />
+            {/* 预订标记已停用
             {item.preorder && (
               <Chip tone="warning" title="预订抢购：等待官方目录收录后自动下单">预订抢购</Chip>
             )}
+            */}
             {item.coupon && (
               <Chip tone="default" title={`优惠码: ${item.coupon}`}>优惠码 {item.coupon}</Chip>
             )}

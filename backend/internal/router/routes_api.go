@@ -82,6 +82,8 @@ func registerAPIRoutes(api *gin.RouterGroup, cfg Config) {
 
 	// Servers / availability / cache
 	api.GET("/servers", handlers.GetServers(state))
+	api.GET("/catalog-watch", handlers.GetCatalogWatch(state))
+	api.PUT("/catalog-watch", handlers.SetCatalogWatch(state))
 	api.GET("/availability/*planCode", availabilityHandler(handlers.GetAvailability(state)))
 	api.POST("/availability/*planCode", availabilityHandler(handlers.GetAvailability(state)))
 	api.POST("/internal/monitor/price", handlers.MonitorPrice(state))

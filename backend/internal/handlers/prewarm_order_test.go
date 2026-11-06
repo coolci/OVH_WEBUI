@@ -20,6 +20,7 @@ import (
 	"github.com/ovh-webui/server/internal/config"
 	"github.com/ovh-webui/server/internal/db"
 	"github.com/ovh-webui/server/internal/logger"
+	"github.com/ovh-webui/server/internal/netfp"
 	"github.com/ovh-webui/server/internal/purchase"
 	"github.com/ovh-webui/server/internal/storage"
 	"github.com/ovh-webui/server/internal/types"
@@ -97,6 +98,8 @@ func TestPrewarmOrderAPI(t *testing.T) {
 		return nil, fmt.Errorf("blocked: %s", r.URL)
 	})
 	defer func() { http.DefaultTransport = oldTransport }()
+	// Catalog fetches use the shared fingerprint client, not http.DefaultTransport.
+	defer netfp.SwapSharedTransportForTesting(http.DefaultTransport)()
 
 	r := gin.New()
 	r.POST("/api/purchase/prewarm", PrewarmOrder(st))
@@ -142,4 +145,3 @@ func TestPrewarmOrderAPI(t *testing.T) {
 		t.Fatalf("池中有就绪车时应当返回 ready: true，实际: %+v", resp2)
 	}
 }
-

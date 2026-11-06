@@ -56,8 +56,8 @@ assert re.fullmatch(r'navigate\("/queue"\s*\)',env['t'])
 print('REGRESSION TL-03: complete navigate conversion has balanced syntax')
 
 r = subprocess.run(['node', 'scratch/audit_api_routes.cjs'], cwd=root, text=True, capture_output=True)
-assert r.returncode == 0 and 'Found 254 backend routes' in r.stdout
-print('REGRESSION TL-04: scanner reads all 254 actual routes')
+assert r.returncode == 0 and 'Found 256 backend routes' in r.stdout
+print('REGRESSION TL-04: scanner reads all 256 actual routes')
 
 start = (root/'scripts/start-backend.ps1').read_text(encoding='utf-8-sig')
 assert 'if ((Test-BackendUp) -and -not $Rebuild)' in start

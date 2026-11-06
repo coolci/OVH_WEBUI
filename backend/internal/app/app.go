@@ -26,6 +26,13 @@ import (
 	"github.com/ovh-webui/server/internal/types"
 )
 
+// CatalogWatchController owns the independent server-list discovery lifecycle.
+type CatalogWatchController interface {
+	SetEnabled(context.Context, bool) error
+	Snapshot() interface{}
+	Run(context.Context)
+}
+
 // DefaultServerBucket 默认账户视角的缓存桶 key。
 // SQLite 里的 servers 只有一张全局表（没有 account 维度），启动回灌和落盘都只认这个桶。
 const DefaultServerBucket = ""
@@ -48,9 +55,9 @@ type ServerListCache struct {
 	TTL     time.Duration
 }
 
-// NewServerListCache 默认 2 小时 TTL
+// NewServerListCache 默认 120 秒 TTL
 func NewServerListCache() *ServerListCache {
-	return &ServerListCache{TTL: 2 * time.Hour, buckets: map[string]*serverListBucket{}}
+	return &ServerListCache{TTL: 120 * time.Second, buckets: map[string]*serverListBucket{}}
 }
 
 // GetBucket 返回指定账户视角的缓存副本和是否仍在 TTL 内
@@ -118,12 +125,14 @@ func (s *ServerListCache) SetAt(data []types.ServerPlan, ts time.Time) {
 
 // State 聚合所有共享运行状态
 type State struct {
-	Paths       storage.Paths
-	Config      *config.Store
-	OVH         *ovh.Factory
-	Logger      *logger.Logger
-	ServerCache *ServerListCache
-	DB          *db.DB // SQLite 持久化层
+	CatalogWatchOnce sync.Once
+	CatalogWatch     CatalogWatchController
+	Paths            storage.Paths
+	Config           *config.Store
+	OVH              *ovh.Factory
+	Logger           *logger.Logger
+	ServerCache      *ServerListCache
+	DB               *db.DB // SQLite 持久化层
 
 	APIKey string
 	Port   string

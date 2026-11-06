@@ -66,7 +66,7 @@ func (n notification) oldStatusJSON() interface{} {
 // 现在改成:按 planCode 在各账户子公司公开目录里的归属自动挑一个区域正确的账户。
 
 // checkAccountTTL 查询账户选取结果的缓存时长。
-// 目录本身已有 2 小时缓存,这里再缓一层是为了不让「每订阅 × 每 5 秒」的检查
+// 目录本身已有 120 秒缓存,这里再缓一层是为了不让「每订阅 × 每 5 秒」的检查
 // 一轮轮地把所有账户遍历一遍、并反复刷同样的日志。
 const checkAccountTTL = 10 * time.Minute
 
@@ -119,7 +119,7 @@ func (m *Monitor) accountsFingerprint() string {
 }
 
 // planInAccountCatalog 判断 planCode 是否出现在该账户子公司的公开目录里。
-// 返回 (在目录里, 结论是否确定)。走 catalog 的 2 小时内存缓存,
+// 返回 (在目录里, 结论是否确定)。走 catalog 的 120 秒内存缓存,
 // 不消耗账户 API 配额,也不会在热路径上现拉整份 10MB 目录。
 //
 // 必须把 catalog.ErrPlanNotInCatalog 和其它错误分开:前者是确定性结论
@@ -338,7 +338,7 @@ func (m *Monitor) resolveQueryAccount(planCode, autoOrderAccountID string) query
 
 // PreflightRegion 添加订阅时的区域预检:告诉调用方这个 planCode 会由哪个大区的账户来查,
 // 以及有没有明显的区域错配。返回的 warning 非空时只是提示,不阻止订阅 ——
-// 目录有 2 小时缓存、OVH 也会临时抖动,不能凭一次探测就把用户挡在门外。
+// 目录有 120 秒缓存、OVH 也会临时抖动,不能凭一次探测就把用户挡在门外。
 //
 // autoOrderAccountID 传订阅要用的下单账户(可为空),口径与真正检查时完全一致。
 func (m *Monitor) PreflightRegion(planCode, autoOrderAccountID string) (region, subsidiary, warning string) {
@@ -749,7 +749,7 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 			} else if priceInfo.MonthlyText != "" {
 				configInfoWithPrice["cached_price"] = priceInfo.MonthlyText
 			}
-			// 安装费与首月总计从公开目录算(已缓存 2 小时,不占账户配额)。
+			// 安装费与首月总计从公开目录算(已缓存 120 秒,不占账户配额)。
 			// 不走询价接口:那个要真的建购物车再删,一次好几秒 ——
 			// 而补货通知的全部价值就在于"有货那一刻立刻发出去"。
 			if priceInfo.InstallText != "" {
@@ -1041,7 +1041,7 @@ func (m *Monitor) PlanAccount(planCode, prefer string) (accountID, region, subsi
 // PlanAccountFast 只查已缓存的目录,不做跨区可用性探测。
 //
 // 给交互式路径用(Telegram 下单):探测要逐个大区打 OVH,实测能到好几秒,
-// 而补货那一刻每一秒都算数。目录本身有 2 小时缓存,命中就是零延迟。
+// 而补货那一刻每一秒都算数。目录本身有 120 秒缓存,命中就是零延迟。
 //
 // 判不出来时返回空 accountID —— 调用方**不要**据此拒绝下单,
 // 退回当前账户并把"没能确认"这件事说出来就行:

@@ -154,12 +154,14 @@ export function ServerDetailDialog({
       </DialogHeader>
 
       <div className="overflow-y-auto -mx-6 px-6 space-y-6 flex-1">
+        {/* 预订提示已停用
         {server.prerelease && (
           <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200/90 flex items-start gap-2">
             <span className="font-semibold text-amber-400 shrink-0">预售机型提示：</span>
             <span>仅出现在库存流中，尚未进入当前账户销售目录。创建抢购将作为预订任务在后台挂机轮询，一旦销售目录上架该型号即刻自动下单，等待期间不计入失败重试。</span>
           </div>
         )}
+        */}
         {/* 价格 Hero */}
         <div className="border border-border rounded-2xl p-4 bg-secondary/30 flex items-end justify-between gap-3 flex-wrap">
           <div>
@@ -328,10 +330,10 @@ export function ServerDetailDialog({
                 options: selectedValues,
                 autoPay,
                 coupon: coupon.trim() || undefined,
-                preorder: !!server.prerelease,
+                // preorder: !!server.prerelease, // 预订模式已停用。
               });
               if (result.success > 0) {
-                toast.success(`已创建 ${result.success}/${result.total} 个${server.prerelease ? "预订" : "抢购"}任务`);
+                toast.success(`已创建 ${result.success}/${result.total} 个抢购任务`);
                 onClose();
                 return;
               }
@@ -347,11 +349,11 @@ export function ServerDetailDialog({
                     options: selectedValues,
                     autoPay,
                     coupon: coupon.trim() || undefined,
-                    preorder: !!server.prerelease,
+                    // preorder: !!server.prerelease, // 预订模式已停用。
                     force: true,
                   });
                   if (forceResult.success > 0) {
-                    toast.success(`已强制创建 ${forceResult.success}/${forceResult.total} 个${server.prerelease ? "预订" : "抢购"}任务`);
+                    toast.success(`已强制创建 ${forceResult.success}/${forceResult.total} 个抢购任务`);
                     onClose();
                     return;
                   }
@@ -370,9 +372,8 @@ export function ServerDetailDialog({
             ) : (
               <>
                 <ShoppingCart className="w-3.5 h-3.5" />
-                {server.prerelease
-                  ? (selectedDCs.length > 0 ? `创建预订任务（共 ${totalTasks} 个）` : "创建预订抢购任务")
-                  : (selectedDCs.length > 0 ? `创建 ${totalTasks} 个任务` : "创建抢购任务")}
+                {/* 预订按钮文案已停用 */}
+                {(selectedDCs.length > 0 ? `创建 ${totalTasks} 个任务` : "创建抢购任务")}
               </>
             )}
           </Button>

@@ -80,7 +80,7 @@ func AddQueueItem(state *app.State) gin.HandlerFunc {
 		// 探测失败(catalog.PlanVerdictUnknown)不拦 —— 一次网络瞬断不该让用户下不了单。
 		// 用户明确指定 Force(新品 / 自定义型号)时,放过尚未收录或销售链路未明的型号,记日志后入队;
 		// 跨区 / 非 Eco 仍然拦,Force 不能拿来绕过确定性买不到的组合。
-		if verdict, hint := catalog.ClassifyPlan(state, body.AccountID, body.PlanCode, "queue"); hint != "" && !(body.Preorder && verdict == catalog.PlanVerdictPrerelease) {
+		if verdict, hint := catalog.ClassifyPlan(state, body.AccountID, body.PlanCode, "queue"); hint != "" {
 			if body.Force && catalog.CanForceCustomPlan(verdict) {
 				state.Logger.Warn(fmt.Sprintf("[queue] 用户强制添加未收录型号(判定 %d): %s 在 %s: %s", verdict, body.PlanCode, body.Datacenter, hint), "queue")
 			} else {
@@ -106,8 +106,8 @@ func AddQueueItem(state *app.State) gin.HandlerFunc {
 			LastCheckTime: 0,
 			AutoPay:       body.AutoPay,
 			Force:         body.Force,
-			Preorder:      body.Preorder,
-			Coupon:        strings.TrimSpace(body.Coupon),
+			// Preorder: body.Preorder, // 已停用；兼容旧客户端字段，新任务按普通抢购保存。
+			Coupon: strings.TrimSpace(body.Coupon),
 		}
 		// 入队 + 落库由 OrderService 统一保证:失败时自动撤回,不存在半成功任务
 		if err := state.OrderService.Enqueue(item, false); err != nil {

@@ -71,6 +71,7 @@ func GetServers(state *app.State) gin.HandlerFunc {
 		isDefaultBucket := cacheKey == app.DefaultServerBucket
 
 		usingExpiredCache := false
+		refreshFailed := false
 		cacheAgeMinutes := 0
 
 		cached, valid := state.ServerCache.GetBucket(cacheKey)
@@ -90,6 +91,7 @@ func GetServers(state *app.State) gin.HandlerFunc {
 			// 目录随账户走:ovhSubsidiary 取该账户的 zone,endpoint 也跟着账户,
 			// 否则切到 US 账户仍然看到默认(EU)账户子公司的机型集合
 			apiServers, availFailed := catalog.LoadServerList(state, reqAccount)
+			refreshFailed = availFailed > 0
 			if len(apiServers) > 0 && availFailed > 0 && len(cached) > 0 {
 				// 部分 plan 的可用性没拉到(多半是 OVH 限流),这份结果的机房列是残缺的。
 				// 用它覆盖缓存 + SQLite 会让用户在整个 TTL 内看到"全线无货",宁可继续用旧缓存。
@@ -169,6 +171,7 @@ func GetServers(state *app.State) gin.HandlerFunc {
 			}
 			state.Logger.Info("该账户视角无缓存且未要求刷新，改为现拉一次目录", "")
 			apiServers, availFailed := catalog.LoadServerList(state, reqAccount)
+			refreshFailed = availFailed > 0
 			if len(apiServers) == 0 {
 				state.Logger.Error("❌ 现拉目录失败，且该账户视角无任何缓存可用", "")
 				c.JSON(http.StatusServiceUnavailable, gin.H{
@@ -241,6 +244,7 @@ func GetServers(state *app.State) gin.HandlerFunc {
 			"cacheInfo": gin.H{
 				"cached":             valid,
 				"usingExpiredCache":  usingExpiredCache,
+				"refreshFailed":      refreshFailed || usingExpiredCache,
 				"cacheAgeMinutes":    cacheAgeMinutes,
 				"timestamp":          ts,
 				"cacheAge":           cacheAgeSecs,

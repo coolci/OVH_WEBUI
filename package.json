@@ -21,7 +21,7 @@
     "verify": "npm run typecheck && npm run build && npm run test:unit:frontend && npm run test:unit:backend && npm run test:unit:tooling && npm run verify:ledger",
     "test:smoke": "python scripts/smoke_test.py",
     "test:full": "python scripts/full_functional_test.py",
-    "test:unit:tooling": "go test ./tools/status -count=1 && python scripts/tooling_safety_test.py && python docs/audit-2026-11-06/proofs/tooling-proof.py"
+    "test:unit:tooling": "go test ./tools/status -count=1 && python scripts/tooling_safety_test.py && python docs/audit-2026-11-06/proofs/tooling-proof.py && python -m unittest discover -s tools/catalog_watch -p test_*.py"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
