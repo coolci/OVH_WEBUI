@@ -89,19 +89,22 @@ type Subscription struct {
 	// 检查是「每订阅一个 goroutine」并发跑的,用一把全局锁会让 30 个订阅的检查串行化。
 	mu       sync.Mutex
 	revision uint64
+	// checkParent links an isolated per-account check to its live subscription.
+	checkParent *Subscription
 
-	PlanCode           string            `json:"planCode"`
-	Datacenters        []string          `json:"datacenters"`
-	NotifyAvailable    bool              `json:"notifyAvailable"`
-	NotifyUnavailable  bool              `json:"notifyUnavailable"`
-	LastStatus         map[string]string `json:"lastStatus"`
-	CreatedAt          string            `json:"createdAt"`
-	History            []HistoryEntry    `json:"history"`
-	ServerName         string            `json:"serverName,omitempty"`
-	AutoOrder          bool              `json:"autoOrder,omitempty"`
-	Quantity           int               `json:"quantity,omitempty"`
-	AutoOrderAccountID string            `json:"autoOrderAccountId,omitempty"` // 空 = 触发时只通知不下单
-	AutoPay            bool              `json:"autoPay,omitempty"`            // 下单后自动付款(显式开关,默认关)
+	PlanCode            string            `json:"planCode"`
+	Datacenters         []string          `json:"datacenters"`
+	NotifyAvailable     bool              `json:"notifyAvailable"`
+	NotifyUnavailable   bool              `json:"notifyUnavailable"`
+	LastStatus          map[string]string `json:"lastStatus"`
+	CreatedAt           string            `json:"createdAt"`
+	History             []HistoryEntry    `json:"history"`
+	ServerName          string            `json:"serverName,omitempty"`
+	AutoOrder           bool              `json:"autoOrder,omitempty"`
+	Quantity            int               `json:"quantity,omitempty"`
+	AutoOrderAccountIDs []string          `json:"autoOrderAccountIds,omitempty"`
+	AutoOrderAccountID  string            `json:"autoOrderAccountId,omitempty"` // 空 = 触发时只通知不下单
+	AutoPay             bool              `json:"autoPay,omitempty"`            // 下单后自动付款(显式开关,默认关)
 	// Paused 暂停监控:检查循环跳过,订阅与历史保留,恢复即继续。
 	// 场景:暂时不想收通知但不想删掉重建(OVH US 已下线手动续费,删了重加门槛更高)
 	Paused bool `json:"paused,omitempty"`
@@ -133,17 +136,18 @@ type Subscription struct {
 // 期间用户可能改订阅配置,半程换配置会让状态机前后不一致(比如前半程按"通知有货"、
 // 后半程按"不通知"走),而且每次读都要加锁。
 type subCheckConfig struct {
-	Revision           uint64
-	Paused             bool
-	Datacenters        []string
-	NotifyAvailable    bool
-	NotifyUnavailable  bool
-	ServerName         string
-	AutoOrder          bool
-	Quantity           int
-	AutoOrderAccountID string
-	AutoPay            bool
-	Options            []string
+	Revision            uint64
+	Paused              bool
+	Datacenters         []string
+	NotifyAvailable     bool
+	NotifyUnavailable   bool
+	ServerName          string
+	AutoOrder           bool
+	Quantity            int
+	AutoOrderAccountID  string
+	AutoOrderAccountIDs []string
+	AutoPay             bool
+	Options             []string
 }
 
 func (s *Subscription) checkConfig() subCheckConfig {
@@ -154,17 +158,18 @@ func (s *Subscription) checkConfig() subCheckConfig {
 	opts := make([]string, len(s.Options))
 	copy(opts, s.Options)
 	return subCheckConfig{
-		Revision:           s.revision,
-		Paused:             s.Paused,
-		Datacenters:        dcs,
-		Options:            opts,
-		NotifyAvailable:    s.NotifyAvailable,
-		NotifyUnavailable:  s.NotifyUnavailable,
-		ServerName:         s.ServerName,
-		AutoOrder:          s.AutoOrder,
-		Quantity:           s.Quantity,
-		AutoOrderAccountID: s.AutoOrderAccountID,
-		AutoPay:            s.AutoPay,
+		Revision:            s.revision,
+		Paused:              s.Paused,
+		Datacenters:         dcs,
+		Options:             opts,
+		NotifyAvailable:     s.NotifyAvailable,
+		NotifyUnavailable:   s.NotifyUnavailable,
+		ServerName:          s.ServerName,
+		AutoOrder:           s.AutoOrder,
+		Quantity:            s.Quantity,
+		AutoOrderAccountID:  s.AutoOrderAccountID,
+		AutoOrderAccountIDs: cloneAccountIDs(s.AutoOrderAccountIDs),
+		AutoPay:             s.AutoPay,
 	}
 }
 
@@ -221,6 +226,9 @@ func (s *Subscription) replaceLastStatus(m map[string]string) {
 
 // appendHistory 追加历史并就地裁剪到 maxSize 条(旧的先丢)。
 func (s *Subscription) appendHistory(entries []HistoryEntry, maxSize int) {
+	if s.checkParent != nil {
+		s.checkParent.appendHistory(entries, maxSize)
+	}
 	if len(entries) == 0 {
 		return
 	}
@@ -265,21 +273,23 @@ func (s *Subscription) snapshot() *Subscription {
 		}
 	}
 	return &Subscription{
-		LastRestockAt:      lastRestock,
-		PlanCode:           s.PlanCode,
-		Datacenters:        dcs,
-		Options:            opts,
-		NotifyAvailable:    s.NotifyAvailable,
-		NotifyUnavailable:  s.NotifyUnavailable,
-		LastStatus:         last,
-		CreatedAt:          s.CreatedAt,
-		History:            hist,
-		ServerName:         s.ServerName,
-		AutoOrder:          s.AutoOrder,
-		Quantity:           s.Quantity,
-		AutoOrderAccountID: s.AutoOrderAccountID,
-		AutoPay:            s.AutoPay,
-		Paused:             s.Paused,
+		revision:            s.revision,
+		LastRestockAt:       lastRestock,
+		PlanCode:            s.PlanCode,
+		Datacenters:         dcs,
+		Options:             opts,
+		NotifyAvailable:     s.NotifyAvailable,
+		NotifyUnavailable:   s.NotifyUnavailable,
+		LastStatus:          last,
+		CreatedAt:           s.CreatedAt,
+		History:             hist,
+		ServerName:          s.ServerName,
+		AutoOrder:           s.AutoOrder,
+		Quantity:            s.Quantity,
+		AutoOrderAccountID:  s.AutoOrderAccountID,
+		AutoOrderAccountIDs: cloneAccountIDs(s.AutoOrderAccountIDs),
+		AutoPay:             s.AutoPay,
+		Paused:              s.Paused,
 
 		LastCheckAt:         s.LastCheckAt,
 		LastCheckAccountID:  s.LastCheckAccountID,

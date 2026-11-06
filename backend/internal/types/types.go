@@ -178,9 +178,9 @@ type QueueItem struct {
 	TelegramChatID     string `json:"telegramChatId,omitempty"`
 	TelegramMessageID  int64  `json:"telegramMessageId,omitempty"`
 	// UncertainCheckout 结账曾出现超时未决，恢复运行时先对账确认上一单是否已建
-	UncertainCheckout  bool   `json:"uncertainCheckout,omitempty"`
-	UncertainTime      string `json:"uncertainTime,omitempty"`
-	// Force 用户强制允许自定义或未收录型号入队(只放过 PlanVerdictNoSuchPlan,不绕过跨区/非 Eco)
+	UncertainCheckout bool   `json:"uncertainCheckout,omitempty"`
+	UncertainTime     string `json:"uncertainTime,omitempty"`
+	// Force 用户允许自定义或未收录型号入队(放过 NoSuchPlan/Unlisted,不绕过明确跨区/非 Eco)
 	Force bool `json:"force,omitempty"`
 }
 
@@ -275,17 +275,18 @@ type SubscriptionHistoryEntry struct {
 
 // Subscription 监控订阅（跨账户共享列表;auto-order 触发时按 AutoOrderAccountID 下单）
 type Subscription struct {
-	PlanCode           string                     `json:"planCode"`
-	Datacenters        []string                   `json:"datacenters"`
-	NotifyAvailable    bool                       `json:"notifyAvailable"`
-	NotifyUnavailable  bool                       `json:"notifyUnavailable"`
-	LastStatus         map[string]string          `json:"lastStatus"`
-	CreatedAt          string                     `json:"createdAt"`
-	History            []SubscriptionHistoryEntry `json:"history"`
-	ServerName         string                     `json:"serverName,omitempty"`
-	AutoOrder          bool                       `json:"autoOrder,omitempty"`
-	Quantity           int                        `json:"quantity,omitempty"`
-	AutoOrderAccountID string                     `json:"autoOrderAccountId,omitempty"` // 空 = 触发时只通知不下单
+	PlanCode            string                     `json:"planCode"`
+	Datacenters         []string                   `json:"datacenters"`
+	NotifyAvailable     bool                       `json:"notifyAvailable"`
+	NotifyUnavailable   bool                       `json:"notifyUnavailable"`
+	LastStatus          map[string]string          `json:"lastStatus"`
+	CreatedAt           string                     `json:"createdAt"`
+	History             []SubscriptionHistoryEntry `json:"history"`
+	ServerName          string                     `json:"serverName,omitempty"`
+	AutoOrder           bool                       `json:"autoOrder,omitempty"`
+	Quantity            int                        `json:"quantity,omitempty"`
+	AutoOrderAccountIDs []string                   `json:"autoOrderAccountIds,omitempty"`
+	AutoOrderAccountID  string                     `json:"autoOrderAccountId,omitempty"` // 空 = 触发时只通知不下单
 	// AutoPay 下单成功后用默认支付方式自动付款(显式开关,默认关)
 	AutoPay bool `json:"autoPay,omitempty"`
 	// Paused 暂停监控:检查循环跳过,订阅与历史保留

@@ -30,10 +30,19 @@ const (
 	PlanVerdictNotEco                         // ② 本区有它,但不属于 Eco 系列,本工具下不了
 	PlanVerdictNoSuchPlan                     // ③ 三区都查不到:planCode 拼错 / 已下架
 	PlanVerdictPrerelease                     // Eco 系列在本区库存中出现,尚未进入销售目录
+	PlanVerdictUnlisted                       // 本区有库存但公开目录缺失,产品链路尚无法确定
 )
 
 // 只识别本工具支持的 Eco 系列候选;是否存在仍须由库存接口确认。
 var ecoStockPlanCode = regexp.MustCompile(`(?i)^[0-9]{2}(sk|sys|rise)[a-z0-9]*(-v[0-9]+)?(-[a-z]+)?$`)
+
+// Only known dedicated-only families justify a definitive non-Eco conclusion.
+// A new/custom name alone is not evidence that the live cart cannot sell it.
+var dedicatedOnlyPlanCode = regexp.MustCompile(`(?i)^[0-9]{2}(scale|hci|sds|hg|highgrade)[a-z0-9]*(-|$)`)
+
+func CanForceCustomPlan(verdict PlanVerdict) bool {
+	return verdict == PlanVerdictNoSuchPlan || verdict == PlanVerdictUnlisted
+}
 
 // PreorderReady 用短缓存等上架,避免普通目录两小时缓存错过开售;并发刷新仍合并。
 func PreorderReady(state *app.State, accountID, planCode string) (bool, error) {
@@ -109,6 +118,9 @@ func ClassifyPlan(state *app.State, accountID, planCode, logSource string) (Plan
 	}
 	if ecoStockPlanCode.MatchString(planCode) {
 		return PlanVerdictPrerelease, fmt.Sprintf("机型 %s 已出现在本区库存中，但尚未进入账户销售目录；请创建预订抢购任务等待上架。", planCode)
+	}
+	if !dedicatedOnlyPlanCode.MatchString(planCode) {
+		return PlanVerdictUnlisted, fmt.Sprintf("机型 %s 在本区有库存记录，但公开目录尚未收录，无法确定其销售状态；可作为自定义型号添加，以 OVH 购物车校验为准。", planCode)
 	}
 
 	// ② 本区有货但不走 Eco 下单链路

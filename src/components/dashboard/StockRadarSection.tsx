@@ -14,7 +14,8 @@ import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/common/Chip";
 import { Skeleton } from "@/components/common/Skeleton";
 import { StatusDot } from "@/components/common/StatusDot";
-import { isDcInStock } from "@/lib/datacenters";
+import { isDcInStock, monitorDcAvailability } from "@/lib/datacenters";
+import { monitorAccountIds } from "@/lib/order-inputs";
 import { cn } from "@/lib/utils";
 import type { MonitorSubscription } from "@/hooks/use-monitor";
 
@@ -120,14 +121,16 @@ export function StockRadarSection({
                 sub.datacenters && sub.datacenters.length > 0
                   ? sub.datacenters
                   : ["gra", "rbx", "sbg", "bhs"];
-              const inStockDcList = Object.entries(sub.lastStatus || {}).filter(
+              const orderAccounts = monitorAccountIds(sub);
+              const dcStatus = monitorDcAvailability(sub.lastStatus, orderAccounts);
+              const inStockDcList = Object.entries(dcStatus).filter(
                 ([_, status]) => isDcInStock(status)
               );
               const hasStock = inStockDcList.length > 0;
 
               return (
                 <div
-                  key={sub.planCode}
+                  key={`${sub.planCode}:${[...(sub.options || [])].sort().join(",")}`}
                   className={cn(
                     "p-3.5 rounded-xl border transition-all duration-200 flex flex-col justify-between gap-2.5",
                     hasStock
@@ -147,10 +150,10 @@ export function StockRadarSection({
                           </span>
                         )}
                       </div>
-                      {sub.autoOrder ? (
+                      {sub.autoOrder && orderAccounts.length > 0 ? (
                         <Chip tone="success" className="flex-shrink-0 rounded-md font-mono text-[10px] font-semibold">
                           <Zap className="w-3 h-3" />
-                          自抢 x{sub.quantity || 1}
+                          {orderAccounts.length} 账户 · 各抢 ×{sub.quantity || 1}
                         </Chip>
                       ) : (
                         <Chip tone="default" className="flex-shrink-0 rounded-md font-mono text-[10px] text-muted-foreground">
@@ -163,7 +166,7 @@ export function StockRadarSection({
                     {/* 目标机房探针状态 */}
                     <div className="flex items-center gap-1.5 flex-wrap mt-2">
                       {targetDcs.slice(0, 6).map((dc) => {
-                        const status = sub.lastStatus?.[dc.toLowerCase()];
+                        const status = dcStatus[dc.toLowerCase()];
                         const inStock = isDcInStock(status);
                         return (
                           <Chip

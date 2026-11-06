@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
+import { monitorAccountIds } from "@/lib/order-inputs";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -305,6 +306,7 @@ function SubRow({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const orderAccountIds = monitorAccountIds(sub);
   return (
     <Card className={cn("surface-card rounded-xl border-border hover:border-border/80 transition-all duration-200 shadow-sm", sub.paused && "opacity-60")}>
       <CardContent className="p-4 sm:p-5">
@@ -334,14 +336,14 @@ function SubRow({
               )}
               {sub.notifyAvailable && <Chip tone="success">有货提醒</Chip>}
               {sub.notifyUnavailable && <Chip tone="warning">无货提醒</Chip>}
-              {sub.autoOrder && sub.autoOrderAccountId ? (
+              {sub.autoOrder && orderAccountIds.length > 0 ? (
                 <>
                   <Chip tone="solid">
                     自动下单
-                    {sub.quantity && sub.quantity > 1 ? ` ×${sub.quantity}` : ""}
+                    {` · ${orderAccountIds.length} 个账户 · 每账户 ×${sub.quantity || 1}`}
                   </Chip>
                   <span className="text-[11px] text-muted-foreground">→</span>
-                  <AccountChip accountId={sub.autoOrderAccountId} />
+                  {orderAccountIds.map((accountId) => <AccountChip key={accountId} accountId={accountId} />)}
                 </>
               ) : sub.autoOrder ? (
                 <Chip tone="warning">已勾自动下单但未选账户(只通知)</Chip>

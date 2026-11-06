@@ -257,10 +257,12 @@ export const commonLayerZh = {
       tag: "获取失败",
     },
     planCode: {
-      placeholder: "选择或搜索服务器型号",
+      placeholder: "选择、搜索或输入服务器型号",
       clear: "清空",
-      searchPlaceholder: "搜索 planCode / 型号 / CPU / 内存...",
+      searchPlaceholder: "搜索型号 / CPU，或输入自定义 planCode…",
       noMatch: "没有匹配的服务器",
+      useCustom: "使用自定义 planCode：{{code}}",
+      singleCode: "每次请输入一个 planCode，不含空格或逗号",
     },
     optionGroup: {
       group: {

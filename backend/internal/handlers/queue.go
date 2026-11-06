@@ -67,6 +67,10 @@ func AddQueueItem(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "缺少 planCode 或 datacenter", "code": "E75DA4B08"})
 			return
 		}
+		if strings.ContainsAny(body.PlanCode, ",，、 \t\r\n") {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "每个任务只能填写一个 planCode"})
+			return
+		}
 		// 入队前挡住"这个账户根本买不到这台机器"的任务(跨区 / 非 Eco / planCode 不存在)。
 		// 前端的下单对话框有独立的账户选择器(web/src/routes/servers.tsx:646),
 		// 机型列表却是按另一个账户拉的 —— 拿欧区机型配美区账户是一键就能做出来的组合。
@@ -74,14 +78,14 @@ func AddQueueItem(state *app.State) gin.HandlerFunc {
 		// → 按 retryInterval 永远重试,日志里永远只有一句"当前无货",用户看不出错在哪。
 		// 所以在这里就说清楚,而不是让它在后台空转到天荒地老。
 		// 探测失败(catalog.PlanVerdictUnknown)不拦 —— 一次网络瞬断不该让用户下不了单。
-		// 用户明确指定 Force(新品 / 自定义型号)时,只放过"目录没收录"这一类,记日志后入队;
+		// 用户明确指定 Force(新品 / 自定义型号)时,放过尚未收录或销售链路未明的型号,记日志后入队;
 		// 跨区 / 非 Eco 仍然拦,Force 不能拿来绕过确定性买不到的组合。
 		if verdict, hint := catalog.ClassifyPlan(state, body.AccountID, body.PlanCode, "queue"); hint != "" && !(body.Preorder && verdict == catalog.PlanVerdictPrerelease) {
-			if body.Force && verdict == catalog.PlanVerdictNoSuchPlan {
+			if body.Force && catalog.CanForceCustomPlan(verdict) {
 				state.Logger.Warn(fmt.Sprintf("[queue] 用户强制添加未收录型号(判定 %d): %s 在 %s: %s", verdict, body.PlanCode, body.Datacenter, hint), "queue")
 			} else {
 				state.Logger.Warn(fmt.Sprintf("[queue] 拒绝任务(判定 %d): %s", verdict, hint), "queue")
-				canForce := verdict == catalog.PlanVerdictNoSuchPlan
+				canForce := catalog.CanForceCustomPlan(verdict)
 				c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": hint, "can_force": canForce})
 				return
 			}

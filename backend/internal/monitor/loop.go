@@ -204,6 +204,9 @@ func (m *Monitor) stillInSubscriptions(sub *Subscription) bool {
 
 // 配置改变或暂停后,旧一轮即使完成了网络请求也不能触发通知或下单。
 func (m *Monitor) checkCurrent(sub *Subscription, cfg subCheckConfig) bool {
+	if sub.checkParent != nil {
+		sub = sub.checkParent
+	}
 	if !m.stillInSubscriptions(sub) {
 		return false
 	}
@@ -288,13 +291,13 @@ func (m *Monitor) stopLocked() bool {
 // batchOrder 监控触发的批量下单:逐个调本地 quick-order 入队。
 // accountID:auto_order 账户;空时 batchOrder 不应该被调到(check.go 的 guard 已挡住),
 // 这里再做一次防御性检查。
-func (m *Monitor) batchOrder(planCode string, configInfo map[string]interface{}, targets []notification, quantity int, accountID string, autoPay bool, shouldContinue func() bool) {
+func (m *Monitor) batchOrder(planCode string, configInfo map[string]interface{}, targets []notification, quantity int, accountID string, autoPay bool, shouldContinue func() bool, guards ...func(func() error) error) {
 	if accountID == "" {
 		m.state.Logger.Warn("[monitor->order] 跳过自动下单: 订阅未指定 auto_order 账户", "monitor")
 		return
 	}
-	if quantity < 0 {
-		quantity = 0
+	if quantity < 1 {
+		return
 	}
 	totalOrders := len(targets) * quantity
 	m.state.Logger.Info(fmt.Sprintf("[monitor->order] 开始批量下单: %s, 配置数=1, 数据中心数=%d, 数量=%d, 总订单数=%d",
@@ -314,30 +317,34 @@ func (m *Monitor) batchOrder(planCode string, configInfo map[string]interface{},
 		}
 	}
 
-	// 把 N 个 DC × M 个数量打成一个任务列表后并发发出去。
+	// 每个 DC 一次原子入队整批数量,避免同批第 2 台被自动任务去重挡住。
 	// 直接在进程内调用 purchase.EnqueueQuickOrder，避免 HTTP 回环开销与端口依赖。
 	// 真正的下单在 ProcessQueueLoop 里按 concurrentBatchSize=10 节流跑。
 	type orderTask struct {
-		dc  string
-		idx int // 当前 DC 下的第 idx+1 个,日志用
+		dc string
 	}
 	tasks := make([]orderTask, 0, len(targets)*quantity)
 	for _, n := range targets {
-		for i := 0; i < quantity; i++ {
-			tasks = append(tasks, orderTask{dc: n.dc, idx: i})
-		}
+		tasks = append(tasks, orderTask{dc: n.dc})
 	}
 
 	var successCount, failCount int64
+	var guard func(func() error) error
+	if len(guards) > 0 {
+		guard = guards[0]
+	}
 	postOne := func(t orderTask) {
 		if shouldContinue != nil && !shouldContinue() {
 			return
 		}
-		m.state.Logger.Info(fmt.Sprintf("[monitor->order] 尝试快速下单 (%d/%d): %s@%s, options=%v",
-			t.idx+1, quantity, planCode, t.dc, options), "monitor")
+		m.state.Logger.Info(fmt.Sprintf("[monitor->order] 尝试入队 %d 台: 账户=%s %s@%s, options=%v",
+			quantity, accountID, planCode, t.dc, options), "monitor")
 
 		res := purchase.EnqueueQuickOrder(m.state, purchase.QuickOrderParams{
 			AccountID:          accountID,
+			Quantity:           quantity,
+			Force:              true,
+			GuardEnqueue:       guard,
 			PlanCode:           planCode,
 			Datacenter:         t.dc,
 			Options:            options,
@@ -347,13 +354,13 @@ func (m *Monitor) batchOrder(planCode string, configInfo map[string]interface{},
 		})
 
 		if res.Success {
-			atomic.AddInt64(&successCount, 1)
-			m.state.Logger.Info(fmt.Sprintf("[monitor->order] 快速下单成功 (%d/%d): %s@%s",
-				t.idx+1, quantity, planCode, t.dc), "monitor")
+			atomic.AddInt64(&successCount, int64(quantity))
+			m.state.Logger.Info(fmt.Sprintf("[monitor->order] 已入队 %d 台: 账户=%s %s@%s",
+				quantity, accountID, planCode, t.dc), "monitor")
 		} else {
-			atomic.AddInt64(&failCount, 1)
-			m.state.Logger.Warn(fmt.Sprintf("[monitor->order] 快速下单失败 (%d/%d): %s",
-				t.idx+1, quantity, res.Error), "monitor")
+			atomic.AddInt64(&failCount, int64(quantity))
+			m.state.Logger.Warn(fmt.Sprintf("[monitor->order] %d 台入队失败: 账户=%s %s",
+				quantity, accountID, res.Error), "monitor")
 		}
 	}
 

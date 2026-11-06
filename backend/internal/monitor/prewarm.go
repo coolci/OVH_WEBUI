@@ -43,11 +43,11 @@ func (m *Monitor) TriggerPrewarmForSubscription(sub *Subscription) {
 		return
 	}
 	cfg := sub.checkConfig()
-	if cfg.Paused || !cfg.AutoOrder || cfg.AutoOrderAccountID == "" {
+	if cfg.Paused || !cfg.AutoOrder || len(NormalizeOrderAccounts(cfg.AutoOrderAccountID, cfg.AutoOrderAccountIDs)) == 0 {
 		return
 	}
 	planCode := sub.PlanCode
-	options := sub.Options
+	options := cfg.Options
 	dcs := cfg.Datacenters
 
 	if len(dcs) == 0 {
@@ -59,7 +59,9 @@ func (m *Monitor) TriggerPrewarmForSubscription(sub *Subscription) {
 		if dcTrimmed == "" {
 			continue
 		}
-		go m.assemblePrewarmedCartAsync(cfg.AutoOrderAccountID, planCode, dcTrimmed, options)
+		for _, accountID := range NormalizeOrderAccounts(cfg.AutoOrderAccountID, cfg.AutoOrderAccountIDs) {
+			go m.assemblePrewarmedCartAsync(accountID, planCode, dcTrimmed, options)
+		}
 	}
 }
 

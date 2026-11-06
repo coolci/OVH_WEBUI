@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
@@ -31,6 +31,9 @@ import {
 import { OptionGroupSection } from "@/components/common/OptionGroupSection";
 import { groupOptions, type OptionGroupKey } from "@/lib/option-groups";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { useAccounts } from "@/hooks/use-accounts";
+import { accountsWhenEnablingAutoOrder, isSinglePlanCode, monitorAccountIds, parseOptionCodes } from "@/lib/order-inputs";
 
 const ALL_DC_CODES = OVH_DATACENTERS.map((dc) => dc.code);
 const HW_GROUPS: OptionGroupKey[] = ["memory", "systemStorage", "storage", "bandwidth", "vrack"];
@@ -51,7 +54,7 @@ function optionsFromSub(sub?: Partial<MonitorSubscription> | null): MonitorNotif
     autoOrder: !!sub?.autoOrder,
     autoPay: !!sub?.autoPay,
     quantity: sub?.quantity && sub.quantity > 0 ? sub.quantity : 1,
-    autoOrderAccountId: sub?.autoOrderAccountId || "",
+    autoOrderAccountIds: monitorAccountIds(sub),
   };
 }
 
@@ -81,6 +84,8 @@ export function MonitorSubscribeDialog({
   const tgVerify = useTelegramVerify();
   const tgBlocked = tgVerify.data ? !tgVerify.data.ok : false;
   const serversQ = useServers();
+  const accountsQ = useAccounts();
+  const accountsInitialized = useRef(false);
   const availQ = useAvailability();
   const availMap = useMemo(() => buildAvailabilityMap(availQ.data), [availQ.data]);
 
@@ -88,7 +93,7 @@ export function MonitorSubscribeDialog({
   const [selectedDCs, setSelectedDCs] = useState<string[]>([...ALL_DC_CODES]);
   const [opts, setOpts] = useState<MonitorNotifyOptions>(DEFAULT_MONITOR_OPTIONS);
   const [restrictHw, setRestrictHw] = useState(false);
-  const [picked, setPicked] = useState<Record<string, string>>({});
+  const [optionsInput, setOptionsInput] = useState("");
 
   const planLocked = mode === "edit" || !!lockPlanCode;
   const matchedServer = useMemo(
@@ -104,63 +109,51 @@ export function MonitorSubscribeDialog({
     [matchedServer, availMap]
   );
   const grouped = useMemo(() => groupOptions(matchedServer?.availableOptions), [matchedServer]);
-  const hasHwGroups = HW_GROUPS.some((g) => grouped[g].length > 0);
+  const selectedOptions = useMemo(() => parseOptionCodes(optionsInput), [optionsInput]);
 
   useEffect(() => {
     if (!open) return;
     setPlanCode((initial?.planCode || planCodeProp || "").trim());
     setSelectedDCs(parseDatacenters(initial?.datacenters));
     setOpts(optionsFromSub(initial));
+    // Existing subscriptions keep their saved accounts; only new subscriptions default to all.
+    accountsInitialized.current = mode === "edit" || monitorAccountIds(initial).length > 0;
     setRestrictHw(!!(initial?.options && initial.options.length > 0));
+    setOptionsInput((initial?.options || []).join(", "));
     // 只在打开瞬间快照，避免父组件每次 render 把正在改的表单冲掉
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   useEffect(() => {
-    if (!open) return;
-    const src = initial?.options || [];
-    if (src.length === 0) {
-      setPicked({});
-      return;
-    }
-    const next: Record<string, string> = {};
-    for (const g of HW_GROUPS) {
-      for (const opt of grouped[g]) {
-        if (src.some((o) => o === opt.value || opt.value.startsWith(o) || o.startsWith(opt.value))) {
-          next[g] = opt.value;
-          break;
-        }
-      }
-    }
-    setPicked(next);
-  }, [open, grouped, initial?.options]);
+    if (!open || accountsInitialized.current || !accountsQ.data) return;
+    accountsInitialized.current = true;
+    setOpts((current) => ({ ...current, autoOrderAccountIds: accountsQ.data.map((a) => a.id) }));
+  }, [open, accountsQ.data]);
 
   const close = () => onOpenChange(false);
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
     const code = planCode.trim();
-    if (!code) {
-      toast.error("请输入服务器型号");
+    if (!isSinglePlanCode(code)) {
+      toast.error("请输入一个服务器 planCode，不含空格或逗号");
       return;
     }
-    if (opts.autoOrder && !opts.autoOrderAccountId) {
-      toast.error("开启自动下单时必须选择 OVH 账户(否则只通知不下单)");
+    if (opts.autoOrder && !opts.autoOrderAccountIds.length) {
+      toast.error("没有下单账户，请添加 OVH 账户或勾选要一起下单的账户");
       return;
     }
 
     const datacenters =
       selectedDCs.length === 0 || selectedDCs.length === ALL_DC_CODES.length ? [] : selectedDCs;
 
-    const hwOptions = restrictHw ? HW_GROUPS.map((g) => picked[g]).filter(Boolean) : [];
+    const hwOptions = restrictHw ? selectedOptions : [];
     if (restrictHw && hwOptions.length === 0) {
       toast.error("请选择至少一项硬件配置，或关闭「只盯指定配置」");
       return;
     }
 
-    const initialOptionsKey = initial?.options && initial.options.length > 0
-      ? [...initial.options].sort().join(",")
-      : undefined;
+    const initialOptionsKey = [...(initial?.options || [])].sort().join(",");
 
     const payload = {
       planCode: code,
@@ -171,7 +164,8 @@ export function MonitorSubscribeDialog({
       notifyUnavailable: opts.notifyUnavailable,
       autoOrder: opts.autoOrder,
       quantity: opts.autoOrder ? opts.quantity : undefined,
-      autoOrderAccountId: opts.autoOrder ? opts.autoOrderAccountId : "",
+      autoOrderAccountIds: opts.autoOrder ? opts.autoOrderAccountIds : [],
+      autoOrderAccountId: opts.autoOrder ? opts.autoOrderAccountIds[0] || "" : "",
       autoPay: opts.autoOrder ? opts.autoPay : false,
     };
 
@@ -230,7 +224,11 @@ export function MonitorSubscribeDialog({
             </label>
             <PlanCodeCombobox
               value={planCode}
-              onChange={setPlanCode}
+              onChange={(code) => {
+                setPlanCode(code);
+                setOptionsInput("");
+                setRestrictHw(false);
+              }}
               servers={serversQ.data || []}
               placeholder="输入或搜索型号，例如 24sk102"
               disabled={planLocked}
@@ -250,7 +248,7 @@ export function MonitorSubscribeDialog({
             </p>
           </div>
 
-          {hasHwGroups && (
+          {planCode.trim() && (
             <div className="space-y-3">
               <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-border px-3.5 py-2.5 transition-colors hover:bg-muted/40">
                 <Checkbox
@@ -271,15 +269,38 @@ export function MonitorSubscribeDialog({
                     key={g}
                     groupKey={g}
                     options={grouped[g]}
-                    picked={picked[g] || ""}
+                    picked={grouped[g].find((o) => selectedOptions.includes(o.value))?.value || ""}
                     defaultValueSet={new Set()}
-                    onPick={(value) => setPicked((p) => ({ ...p, [g]: value }))}
+                    onPick={(value) => {
+                      const next = selectedOptions.filter((code) => !grouped[g].some((o) => o.value === code));
+                      if (value) next.push(value);
+                      setOptionsInput(next.join(", "));
+                    }}
                   />
                 ))}
+              {restrictHw && (
+                <div>
+                  <label htmlFor="monitor-options" className="mb-1.5 block text-xs font-medium text-muted-foreground">
+                    配置 planCode（可手动输入，逗号分隔）
+                  </label>
+                  <Input id="monitor-options" value={optionsInput} onChange={(e) => setOptionsInput(e.target.value)}
+                    placeholder="例如 ram-64g-ecc-2400, softraid-2x450nvme-24sk50" />
+                  <p className="mt-1 text-[11px] text-muted-foreground">目录未收录的型号也可指定配置；已有配置会完整保留。</p>
+                </div>
+              )}
             </div>
           )}
 
-          <MonitorOptionsFields value={opts} onChange={setOpts} />
+          <MonitorOptionsFields value={opts} onChange={(next) => {
+            if (!opts.autoOrder && next.autoOrder && next.autoOrderAccountIds.length === 0 && !accountsQ.data) {
+              accountsInitialized.current = false;
+            }
+            setOpts((current) => ({
+              ...next,
+              autoOrderAccountIds: accountsWhenEnablingAutoOrder(current.autoOrder, next.autoOrder,
+                next.autoOrderAccountIds, (accountsQ.data || []).map((account) => account.id)),
+            }));
+          }} />
           </div>
 
           <DialogFooter className="pt-3">
@@ -288,7 +309,7 @@ export function MonitorSubscribeDialog({
             </Button>
             <Button
               type="submit"
-              disabled={pending || blockCreate}
+              disabled={pending || blockCreate || (opts.autoOrder && accountsQ.isPending)}
               title={mode === "create" && tgBlocked ? "Telegram 通知无效,无法添加订阅" : undefined}
             >
               {pending

@@ -43,6 +43,7 @@ func TestClassifyPrereleaseKeepsRegionAndProductGuards(t *testing.T) {
 		{"27skle03-v1-us", PlanVerdictCrossRegion},
 		{"27skle99-v1", PlanVerdictNoSuchPlan},
 		{"25scale01-v1", PlanVerdictNotEco},
+		{"custom-NewModel.LZ", PlanVerdictUnlisted},
 	} {
 		got, _ := ClassifyPlan(st, "eu", tc.plan, "test")
 		if got != tc.want {

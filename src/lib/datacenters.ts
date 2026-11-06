@@ -54,6 +54,33 @@ export function isDcInStock(status: string | undefined): boolean {
   return !!status && status !== "unavailable" && status !== "unknown";
 }
 
+/** Collapse account/configuration stock snapshots for the dashboard's DC chips. */
+export function monitorDcAvailability(lastStatus?: Record<string, string>, accountIds?: string[]): Record<string, string> {
+  const result: Record<string, string> = {};
+  const hasAccountScopes = Object.keys(lastStatus || {}).some((key) => key.startsWith("account:"));
+  for (const [key, status] of Object.entries(lastStatus || {})) {
+    // Account IDs are JSON strings and may themselves contain a pipe or escaped quote.
+    const accountMatch = /^account:("(?:\\.|[^"\\])*")\|/u.exec(key);
+    // Old notify-only baselines can remain when account-scoped monitoring begins.
+    if (!accountMatch && accountIds?.length && hasAccountScopes) continue;
+    if (accountMatch && accountIds) {
+      try {
+        if (!accountIds.includes(JSON.parse(accountMatch[1]))) continue;
+      } catch {
+        continue;
+      }
+    }
+    const legacyKey = accountMatch ? key.slice(accountMatch[0].length) : key;
+    if (legacyKey.startsWith("account:")) continue;
+    const apiCode = legacyKey.split("|", 1)[0].toLowerCase();
+    const dc = OVH_DATACENTERS.find((item) => item.apiCode === apiCode)?.code || apiCode;
+    if (!dc) continue;
+    // A sold-out account/config must not hide another account/config with stock.
+    if (!(dc in result) || isDcInStock(status) || result[dc] === "unknown") result[dc] = status;
+  }
+  return result;
+}
+
 /** 目录静态可用性 + 实时 availability 覆盖（实时优先） */
 export function mergeDcAvailability(
   catalog?: { datacenter?: string; availability?: string }[],

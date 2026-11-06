@@ -40,13 +40,14 @@ func UpdateSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc 
 		}
 
 		var body struct {
-			Datacenters        *[]string `json:"datacenters"`
-			NotifyAvailable    *bool     `json:"notifyAvailable"`
-			NotifyUnavailable  *bool     `json:"notifyUnavailable"`
-			AutoOrder          *bool     `json:"autoOrder"`
-			Quantity           *int      `json:"quantity"`
-			AutoOrderAccountID *string   `json:"autoOrderAccountId"`
-			AutoPay            *bool     `json:"autoPay"`
+			Datacenters         *[]string `json:"datacenters"`
+			NotifyAvailable     *bool     `json:"notifyAvailable"`
+			NotifyUnavailable   *bool     `json:"notifyUnavailable"`
+			AutoOrder           *bool     `json:"autoOrder"`
+			Quantity            *int      `json:"quantity"`
+			AutoOrderAccountID  *string   `json:"autoOrderAccountId"`
+			AutoOrderAccountIDs []string  `json:"autoOrderAccountIds"`
+			AutoPay             *bool     `json:"autoPay"`
 			// Options 只盯这套配置。空数组 = 改回"盯全部配置"。
 			Options *[]string `json:"options"`
 		}
@@ -63,6 +64,7 @@ func UpdateSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc 
 		autoOrder := cur.AutoOrder
 		quantity := cur.Quantity
 		accountID := cur.AutoOrderAccountID
+		accountIDs := cur.AutoOrderAccountIDs
 		autoPay := cur.AutoPay
 		options := cur.Options
 
@@ -87,14 +89,16 @@ func UpdateSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc 
 		if body.Options != nil {
 			options = *body.Options
 		}
-		if body.AutoOrderAccountID != nil {
-			accountID = *body.AutoOrderAccountID
-			// 空串是合法值:表示「触发时只通知、不下单」
-			if accountID != "" {
-				if _, ok := state.FindAccount(accountID); !ok {
-					c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "autoOrderAccountId 不存在", "code": "EB5C2D1BB"})
-					return
-				}
+		accountsChanged := body.AutoOrderAccountIDs != nil || body.AutoOrderAccountID != nil
+		if accountsChanged {
+			if body.AutoOrderAccountID != nil {
+				accountID = *body.AutoOrderAccountID
+			}
+			var err error
+			accountIDs, err = validatedMonitorAccounts(state, accountID, body.AutoOrderAccountIDs)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": err.Error(), "code": "EB5C2D1BB"})
+				return
 			}
 		}
 		if quantity < 1 {
@@ -106,15 +110,15 @@ func UpdateSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc 
 
 		// 换了下单账户就重新做一次区域预检:欧区机型配美区账户,补货时会被 OVH 400 掉
 		var regionWarning, region, subsidiary string
-		if body.AutoOrderAccountID != nil {
-			region, subsidiary, regionWarning = mon.PreflightRegion(planCode, accountID)
+		if accountsChanged {
+			region, subsidiary, regionWarning = preflightMonitorAccounts(mon, planCode, accountIDs)
 		}
 
 		var originalKey *string
 		if len(selector) > 0 {
 			originalKey = &selector[0]
 		}
-		if err := mon.UpdateSubscriptionFields(planCode, originalKey, datacenters, notifyAvailable, notifyUnavailable, autoOrder, quantity, accountID, autoPay, options); err != nil {
+		if err := mon.UpdateSubscriptionFields(planCode, originalKey, datacenters, notifyAvailable, notifyUnavailable, autoOrder, quantity, accountID, autoPay, options, accountIDs); err != nil {
 			status := http.StatusConflict
 			if errors.Is(err, monitor.ErrSubscriptionNotFound) {
 				status = http.StatusNotFound

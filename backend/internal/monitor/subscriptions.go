@@ -14,7 +14,11 @@ import (
 // 非空则只盯匹配那套 addon 的配置 —— 见 configMatchesFilter 上的说明。
 func (m *Monitor) AddSubscription(planCode string, datacenters []string, notifyAvailable, notifyUnavailable bool,
 	serverName string, lastStatus map[string]string, history []HistoryEntry, autoOrder bool, quantity int,
-	autoOrderAccountID string, autoPay bool, options []string) {
+	autoOrderAccountID string, autoPay bool, options []string, accountIDs ...[]string) {
+	ids := optionalOrderAccounts(autoOrderAccountID, accountIDs)
+	if ids != nil {
+		autoOrderAccountID = firstOrderAccount(ids)
+	}
 
 	m.subsMu.Lock()
 	defer m.subsMu.Unlock()
@@ -45,7 +49,7 @@ func (m *Monitor) AddSubscription(planCode string, datacenters []string, notifyA
 				s.Quantity = 0
 			}
 			s.ServerName = serverName
-			s.AutoOrderAccountID = autoOrderAccountID
+			s.setOrderAccountsLocked(ids, autoOrderAccountID)
 			// 自动付款依附于自动下单:不下单就谈不上付款
 			s.AutoPay = autoPay && autoOrder
 			// 配置筛选:显式传 nil 和传空切片都当成"盯全部配置"。
@@ -78,16 +82,17 @@ func (m *Monitor) AddSubscription(planCode string, datacenters []string, notifyA
 		options = []string{}
 	}
 	sub := &Subscription{
-		PlanCode:           planCode,
-		Datacenters:        datacenters,
-		NotifyAvailable:    notifyAvailable,
-		NotifyUnavailable:  notifyUnavailable,
-		LastStatus:         lastStatus,
-		CreatedAt:          time.Now().Format(time.RFC3339Nano),
-		History:            history,
-		AutoOrderAccountID: autoOrderAccountID,
-		AutoPay:            autoPay && autoOrder,
-		Options:            options,
+		PlanCode:            planCode,
+		Datacenters:         datacenters,
+		NotifyAvailable:     notifyAvailable,
+		NotifyUnavailable:   notifyUnavailable,
+		LastStatus:          lastStatus,
+		CreatedAt:           time.Now().Format(time.RFC3339Nano),
+		History:             history,
+		AutoOrderAccountID:  autoOrderAccountID,
+		AutoOrderAccountIDs: cloneAccountIDs(ids),
+		AutoPay:             autoPay && autoOrder,
+		Options:             options,
 	}
 	if autoOrder {
 		if quantity < 1 {
@@ -143,7 +148,11 @@ var ErrSubscriptionConflict = errors.New("已存在同型号同配置的订阅,�
 
 // UpdateSubscriptionFields 用原配置键定位,保留暂停状态、历史和库存基准。
 func (m *Monitor) UpdateSubscriptionFields(planCode string, originalKey *string, datacenters []string, notifyAvailable, notifyUnavailable bool,
-	autoOrder bool, quantity int, autoOrderAccountID string, autoPay bool, options []string) error {
+	autoOrder bool, quantity int, autoOrderAccountID string, autoPay bool, options []string, accountIDs ...[]string) error {
+	ids := optionalOrderAccounts(autoOrderAccountID, accountIDs)
+	if ids != nil {
+		autoOrderAccountID = firstOrderAccount(ids)
+	}
 	m.subsMu.Lock()
 	defer m.subsMu.Unlock()
 	defer m.publishPausedQueueScopesLocked()
@@ -169,7 +178,7 @@ func (m *Monitor) UpdateSubscriptionFields(planCode string, originalKey *string,
 			}
 			s.Quantity = quantity
 		}
-		s.AutoOrderAccountID = autoOrderAccountID
+		s.setOrderAccountsLocked(ids, autoOrderAccountID)
 		s.AutoPay = autoPay && autoOrder
 		s.Options = append([]string(nil), options...)
 		s.mu.Unlock()
@@ -187,7 +196,7 @@ func (m *Monitor) queueScopesLocked(all bool) []app.MonitorQueueScope {
 	for _, sub := range m.subscriptions {
 		cfg := sub.checkConfig()
 		if all || cfg.Paused {
-			scopes = append(scopes, app.MonitorQueueScope{PlanCode: sub.PlanCode, AccountID: cfg.AutoOrderAccountID, Datacenters: cfg.Datacenters, Options: cfg.Options})
+			scopes = append(scopes, monitorQueueScopes(sub.PlanCode, cfg)...)
 		}
 	}
 	return scopes
@@ -217,7 +226,7 @@ func (m *Monitor) SetPaused(planCode string, optionsKey *string, paused bool) (i
 			return 0, nil
 		}
 		cfg := sub.checkConfig()
-		return m.state.PauseMonitorQueues([]app.MonitorQueueScope{{PlanCode: planCode, AccountID: cfg.AutoOrderAccountID, Datacenters: cfg.Datacenters, Options: cfg.Options}})
+		return m.state.PauseMonitorQueues(monitorQueueScopes(planCode, cfg))
 	}
 	return 0, ErrSubscriptionNotFound
 }
@@ -452,16 +461,17 @@ func (m *Monitor) SubscriptionConfig(planCode string, optionsKey ...string) Subs
 		}
 		s.mu.Lock()
 		cfg := SubscriptionConfig{
-			PlanCode:           s.PlanCode,
-			Datacenters:        append([]string(nil), s.Datacenters...),
-			NotifyAvailable:    s.NotifyAvailable,
-			NotifyUnavailable:  s.NotifyUnavailable,
-			ServerName:         s.ServerName,
-			AutoOrder:          s.AutoOrder,
-			Quantity:           s.Quantity,
-			AutoOrderAccountID: s.AutoOrderAccountID,
-			AutoPay:            s.AutoPay,
-			Options:            append([]string(nil), s.Options...),
+			PlanCode:            s.PlanCode,
+			Datacenters:         append([]string(nil), s.Datacenters...),
+			NotifyAvailable:     s.NotifyAvailable,
+			NotifyUnavailable:   s.NotifyUnavailable,
+			ServerName:          s.ServerName,
+			AutoOrder:           s.AutoOrder,
+			Quantity:            s.Quantity,
+			AutoOrderAccountID:  s.AutoOrderAccountID,
+			AutoOrderAccountIDs: cloneAccountIDs(s.AutoOrderAccountIDs),
+			AutoPay:             s.AutoPay,
+			Options:             append([]string(nil), s.Options...),
 		}
 		s.mu.Unlock()
 		return cfg
@@ -471,15 +481,16 @@ func (m *Monitor) SubscriptionConfig(planCode string, optionsKey ...string) Subs
 
 // SubscriptionConfig 订阅里「用户可改的那部分」
 type SubscriptionConfig struct {
-	PlanCode           string
-	Datacenters        []string
-	NotifyAvailable    bool
-	NotifyUnavailable  bool
-	ServerName         string
-	AutoOrder          bool
-	Quantity           int
-	AutoOrderAccountID string
-	AutoPay            bool
+	PlanCode            string
+	Datacenters         []string
+	NotifyAvailable     bool
+	NotifyUnavailable   bool
+	ServerName          string
+	AutoOrder           bool
+	Quantity            int
+	AutoOrderAccountID  string
+	AutoOrderAccountIDs []string
+	AutoPay             bool
 	// Options 只盯这套配置。空 = 全部配置。
 	Options []string
 }
@@ -496,37 +507,52 @@ func (m *Monitor) ClearAccountRefs(accountID string) int {
 	}
 	m.subsMu.Lock()
 	defer m.subsMu.Unlock()
+	defer m.publishPausedQueueScopesLocked()
 	n := 0
-	for _, s := range m.subscriptions {
-		s.mu.Lock()
-		if s.AutoOrderAccountID == accountID {
-			s.AutoOrderAccountID = ""
-			// 账户没了就不可能下单,别让 AutoOrder 停留在"开着但买不了"的假状态
-			s.AutoOrder = false
+	for _, sub := range m.subscriptions {
+		sub.mu.Lock()
+		if removeOrderAccountLocked(sub, accountID) {
 			n++
 		}
-		s.mu.Unlock()
+		sub.mu.Unlock()
 	}
 	return n
 }
 
-// DisableAutoOrderForAccount 关掉指定账户全部订阅的自动下单(带锁,持久化)。
-// 给 proxyguard 用:以前它绕过内存态直接改库,监控循环轮末的整表落库
-// 会用内存里的 AutoOrder=true 覆盖回去 —— 代理挂了但自动下单照常触发
+// DisableAutoOrderForAccount removes only the affected account from automatic
+// targets; healthy accounts in the same subscription remain active.
 func (m *Monitor) DisableAutoOrderForAccount(accountID string) int {
-	m.subsMu.Lock()
-	n := 0
-	for _, sub := range m.subscriptions {
-		if sub.AutoOrderAccountID == accountID && sub.AutoOrder {
-			sub.mu.Lock()
-			sub.AutoOrder = false
-			sub.mu.Unlock()
-			n++
-		}
-	}
-	m.subsMu.Unlock()
+	n := m.ClearAccountRefs(accountID)
 	if n > 0 {
 		m.SaveToDB()
 	}
 	return n
+}
+
+func removeOrderAccountLocked(sub *Subscription, accountID string) bool {
+	ids := NormalizeOrderAccounts(sub.AutoOrderAccountID, sub.AutoOrderAccountIDs)
+	kept := make([]string, 0, len(ids))
+	found := false
+	for _, id := range ids {
+		if id == accountID {
+			found = true
+		} else {
+			kept = append(kept, id)
+		}
+	}
+	if !found {
+		return false
+	}
+	sub.revision++
+	sub.setOrderAccountsLocked(kept)
+	if len(kept) == 0 {
+		sub.AutoOrder = false
+		sub.AutoPay = false
+	}
+	for key := range sub.LastStatus {
+		if strings.HasPrefix(key, accountStatusPrefix(accountID)) {
+			delete(sub.LastStatus, key)
+		}
+	}
+	return true
 }

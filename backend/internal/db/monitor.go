@@ -9,20 +9,21 @@ import (
 )
 
 type monitorSubRow struct {
-	PlanCode           string `db:"plan_code"`
-	DatacentersJSON    string `db:"datacenters"`
-	NotifyAvailable    int    `db:"notify_available"`
-	NotifyUnavailable  int    `db:"notify_unavailable"`
-	LastStatusJSON     string `db:"last_status"`
-	CreatedAt          string `db:"created_at"`
-	HistoryJSON        string `db:"history"`
-	ServerName         string `db:"server_name"`
-	AutoOrder          int    `db:"auto_order"`
-	Quantity           int    `db:"quantity"`
-	AutoOrderAccountID string `db:"auto_order_account_id"`
-	AutoPay            int    `db:"auto_pay"`
-	Paused             int    `db:"paused"`
-	OptionsJSON        string `db:"options"`
+	PlanCode                string `db:"plan_code"`
+	DatacentersJSON         string `db:"datacenters"`
+	NotifyAvailable         int    `db:"notify_available"`
+	NotifyUnavailable       int    `db:"notify_unavailable"`
+	LastStatusJSON          string `db:"last_status"`
+	CreatedAt               string `db:"created_at"`
+	HistoryJSON             string `db:"history"`
+	ServerName              string `db:"server_name"`
+	AutoOrder               int    `db:"auto_order"`
+	Quantity                int    `db:"quantity"`
+	AutoOrderAccountIDsJSON string `db:"auto_order_account_ids"`
+	AutoOrderAccountID      string `db:"auto_order_account_id"`
+	AutoPay                 int    `db:"auto_pay"`
+	Paused                  int    `db:"paused"`
+	OptionsJSON             string `db:"options"`
 }
 
 func rowToMonitorSub(r monitorSubRow) types.Subscription {
@@ -37,21 +38,24 @@ func rowToMonitorSub(r monitorSubRow) types.Subscription {
 	_ = json.Unmarshal([]byte(r.HistoryJSON), &hist)
 	var opts []string
 	_ = json.Unmarshal([]byte(r.OptionsJSON), &opts)
+	var accountIDs []string
+	_ = json.Unmarshal([]byte(r.AutoOrderAccountIDsJSON), &accountIDs)
 	return types.Subscription{
-		PlanCode:           r.PlanCode,
-		Datacenters:        dcs,
-		NotifyAvailable:    r.NotifyAvailable == 1,
-		NotifyUnavailable:  r.NotifyUnavailable == 1,
-		LastStatus:         last,
-		CreatedAt:          r.CreatedAt,
-		History:            hist,
-		ServerName:         r.ServerName,
-		AutoOrder:          r.AutoOrder == 1,
-		Quantity:           r.Quantity,
-		AutoOrderAccountID: r.AutoOrderAccountID,
-		AutoPay:            r.AutoPay == 1,
-		Paused:             r.Paused == 1,
-		Options:            opts,
+		PlanCode:            r.PlanCode,
+		Datacenters:         dcs,
+		NotifyAvailable:     r.NotifyAvailable == 1,
+		NotifyUnavailable:   r.NotifyUnavailable == 1,
+		LastStatus:          last,
+		CreatedAt:           r.CreatedAt,
+		History:             hist,
+		ServerName:          r.ServerName,
+		AutoOrder:           r.AutoOrder == 1,
+		Quantity:            r.Quantity,
+		AutoOrderAccountID:  r.AutoOrderAccountID,
+		AutoOrderAccountIDs: accountIDs,
+		AutoPay:             r.AutoPay == 1,
+		Paused:              r.Paused == 1,
+		Options:             opts,
 	}
 }
 
@@ -92,21 +96,26 @@ func monitorSubToRow(s types.Subscription) (monitorSubRow, error) {
 		}
 		return 0
 	}
+	accountIDsJSON, err := json.Marshal(s.AutoOrderAccountIDs)
+	if err != nil {
+		return monitorSubRow{}, err
+	}
 	return monitorSubRow{
-		PlanCode:           s.PlanCode,
-		DatacentersJSON:    string(dcsJSON),
-		NotifyAvailable:    bi(s.NotifyAvailable),
-		NotifyUnavailable:  bi(s.NotifyUnavailable),
-		LastStatusJSON:     string(lastJSON),
-		CreatedAt:          s.CreatedAt,
-		HistoryJSON:        string(histJSON),
-		ServerName:         s.ServerName,
-		AutoOrder:          bi(s.AutoOrder),
-		Quantity:           s.Quantity,
-		AutoOrderAccountID: s.AutoOrderAccountID,
-		AutoPay:            bi(s.AutoPay),
-		Paused:             bi(s.Paused),
-		OptionsJSON:        string(optsJSON),
+		PlanCode:                s.PlanCode,
+		DatacentersJSON:         string(dcsJSON),
+		NotifyAvailable:         bi(s.NotifyAvailable),
+		NotifyUnavailable:       bi(s.NotifyUnavailable),
+		LastStatusJSON:          string(lastJSON),
+		CreatedAt:               s.CreatedAt,
+		HistoryJSON:             string(histJSON),
+		ServerName:              s.ServerName,
+		AutoOrder:               bi(s.AutoOrder),
+		Quantity:                s.Quantity,
+		AutoOrderAccountID:      s.AutoOrderAccountID,
+		AutoOrderAccountIDsJSON: string(accountIDsJSON),
+		AutoPay:                 bi(s.AutoPay),
+		Paused:                  bi(s.Paused),
+		OptionsJSON:             string(optsJSON),
 	}, nil
 }
 
@@ -135,10 +144,10 @@ func (db *DB) UpsertMonitorSubscription(s types.Subscription) error {
 	_, err = db.NamedExec(`
 		INSERT INTO monitor_subscriptions
 		(plan_code, datacenters, notify_available, notify_unavailable, last_status,
-		 created_at, history, server_name, auto_order, quantity, auto_order_account_id, auto_pay, paused, options)
+		 created_at, history, server_name, auto_order, quantity, auto_order_account_id, auto_order_account_ids, auto_pay, paused, options)
 		VALUES
 		(:plan_code, :datacenters, :notify_available, :notify_unavailable, :last_status,
-		 :created_at, :history, :server_name, :auto_order, :quantity, :auto_order_account_id, :auto_pay, :paused, :options)
+		 :created_at, :history, :server_name, :auto_order, :quantity, :auto_order_account_id, :auto_order_account_ids, :auto_pay, :paused, :options)
 		ON CONFLICT(plan_code, options) DO UPDATE SET
 		  datacenters        = excluded.datacenters,
 		  notify_available   = excluded.notify_available,
@@ -149,6 +158,7 @@ func (db *DB) UpsertMonitorSubscription(s types.Subscription) error {
 		  auto_order             = excluded.auto_order,
 		  quantity               = excluded.quantity,
 		  auto_order_account_id  = excluded.auto_order_account_id,
+		  auto_order_account_ids = excluded.auto_order_account_ids,
 		  auto_pay               = excluded.auto_pay,
           paused                 = excluded.paused,
 		  options                = excluded.options
@@ -177,10 +187,10 @@ func (db *DB) ReplaceMonitorSubscriptions(subs []types.Subscription) error {
 		_, err = tx.NamedExec(`
 			INSERT INTO monitor_subscriptions
 			(plan_code, datacenters, notify_available, notify_unavailable, last_status,
-			 created_at, history, server_name, auto_order, quantity, auto_order_account_id, auto_pay, paused, options)
+			 created_at, history, server_name, auto_order, quantity, auto_order_account_id, auto_order_account_ids, auto_pay, paused, options)
 			VALUES
 			(:plan_code, :datacenters, :notify_available, :notify_unavailable, :last_status,
-			 :created_at, :history, :server_name, :auto_order, :quantity, :auto_order_account_id, :auto_pay, :paused, :options)
+			 :created_at, :history, :server_name, :auto_order, :quantity, :auto_order_account_id, :auto_order_account_ids, :auto_pay, :paused, :options)
 		`, r)
 		if err != nil {
 			return fmt.Errorf("insert monitor sub %s: %w", s.PlanCode, err)

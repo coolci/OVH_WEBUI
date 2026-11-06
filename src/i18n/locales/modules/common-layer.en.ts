@@ -272,10 +272,12 @@ const pack: CommonLayerPack = {
       tag: "fetch failed",
     },
     planCode: {
-      placeholder: "Pick or search a server model",
+      placeholder: "Pick, search, or enter a server model",
       clear: "Clear",
-      searchPlaceholder: "Search planCode / model / CPU / memory...",
+      searchPlaceholder: "Search models / CPU, or enter a custom planCode…",
       noMatch: "No matching servers",
+      useCustom: "Use custom planCode: {{code}}",
+      singleCode: "Enter one planCode without spaces or commas",
     },
     optionGroup: {
       group: {

@@ -3,6 +3,7 @@ import { Bell, Loader2, ShoppingCart, Zap } from "lucide-react";
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
+import { parseOptionCodes } from "@/lib/order-inputs";
 import { AccountSelect } from "@/components/common/AccountSelect";
 import { PlanCodeCombobox } from "@/components/common/PlanCodeCombobox";
 import { OptionGroupSection } from "@/components/common/OptionGroupSection";
@@ -81,6 +82,7 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
     if (!intervalTouchedRef.current) setRetryInterval(String(cfgDefault));
   }, [cfgDefault]);
   const [picked, setPicked] = useState<Partial<Record<OptionGroupKey, string>>>({});
+  const [extraInput, setExtraInput] = useState("");
   const [autoPay, setAutoPay] = useState(false);
   const [coupon, setCoupon] = useState("");
 
@@ -119,8 +121,8 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
   );
 
   const selectedValues = useMemo(
-    () => (Object.values(picked).filter(Boolean) as string[]),
-    [picked]
+    () => [...new Set([...(Object.values(picked).filter(Boolean) as string[]), ...parseOptionCodes(extraInput)])],
+    [picked, extraInput]
   );
 
   const price = useMemo(() => {
@@ -146,6 +148,7 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
     intervalTouchedRef.current = false;
     setRetryInterval(String(cfgDefault));
     setPicked({});
+    setExtraInput("");
     setAutoPay(false);
     setCoupon("");
     setAccountId(defaultAcc?.id || "");
@@ -296,7 +299,10 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
               <label className="block text-[13px] font-medium">服务器型号 *</label>
               <PlanCodeCombobox
                 value={planCode}
-                onChange={setPlanCode}
+                onChange={(code) => {
+                  setPlanCode(code);
+                  setExtraInput("");
+                }}
                 servers={servers}
                 placeholder={serversQ.isPending ? "型号加载中…" : "输入或搜索型号，例如 24sk102"}
               />
@@ -352,6 +358,14 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
               availability={dcMap}
               disabled={!planCode.trim()}
             />
+
+            {planCode.trim() && (
+              <div>
+                <label htmlFor="quick-order-options" className="mb-1 block text-[11px] text-muted-foreground">自定义配置 planCode（可选，逗号分隔）</label>
+                <Input id="quick-order-options" value={extraInput} onChange={(e) => setExtraInput(e.target.value)}
+                  placeholder="例如 ram-64g-ecc-2400, softraid-2x450nvme-24sk50" />
+              </div>
+            )}
 
             {grouped &&
               OPTION_GROUP_ORDER.filter((g) => grouped[g].length > 0).map((g) => (
@@ -474,6 +488,7 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
         initial={
           existingMonitor ?? {
             planCode: planCode.trim(),
+            options: selectedValues,
             datacenters:
               selectedDCs.length > 0 ? selectedDCs : OVH_DATACENTERS.map((dc) => dc.code),
           }

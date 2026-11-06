@@ -349,7 +349,7 @@ func (m *Monitor) PreflightRegion(planCode, autoOrderAccountID string) (region, 
 // 并发:同一条订阅同一时刻只会有一个 goroutine 在跑这里(loop 每轮一个,轮间 wg.Wait),
 // 但 HTTP 侧随时可能读同一条订阅。所以本函数对 sub 的所有读写都走 types.go 里的带锁方法,
 // 中间态(lastStatus)先在本地副本上算,算完一次性写回。
-func (m *Monitor) CheckAvailabilityChange(sub *Subscription, traceID string) {
+func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID string) {
 	planCode := sub.PlanCode // 创建后不变,可以裸读
 
 	// 订阅配置在本轮开始时取一份快照,后面统一用它 ——
@@ -431,12 +431,16 @@ func (m *Monitor) CheckAvailabilityChange(sub *Subscription, traceID string) {
 		// (还要再乘以机房数)。用户想要的往往是"只盯 64G + 2x480SSD 那套",
 		// 在有这个字段之前他没有任何办法表达。
 		// 空 = 全部配置,保持一直以来的行为。
-		if !configMatchesFilter(cfg.Options, configData.Options) {
+		matchedOptions := configData.Options
+		if configData.CatalogMissing {
+			matchedOptions = catalog.CustomInventoryOptions(planCode, configData.Options, cfg.Options)
+		}
+		if !configMatchesFilter(cfg.Options, matchedOptions) {
 			m.state.Logger.Debug(fmt.Sprintf("订阅 %s 跳过配置 %s(与订阅指定的配置不符)",
 				planCode, configKey), "monitor")
 			continue
 		}
-		effectiveOptions := monitoringOptions(configData.Options, cfg.Options)
+		effectiveOptions := monitoringOptions(matchedOptions, cfg.Options)
 		memory := configData.Memory
 		storage := configData.Storage
 		configDisplay := memory + " + " + storage
@@ -456,6 +460,9 @@ func (m *Monitor) CheckAvailabilityChange(sub *Subscription, traceID string) {
 		// 没指定时用的是区域正确的那个账户 —— 以前这里传空串会落到默认账户,
 		// 美区机型就会拿欧区购物车去验价,币种和可售性全错。
 		// 账户 ID 只加在传给询价/通知的副本上,不污染写进订阅历史的 configInfo。
+		if sub.checkParent != nil {
+			configInfo["account_id"] = choice.accountID
+		}
 		priceCfg := copyMap(configInfo)
 		priceCfg["account_id"] = choice.accountID
 
@@ -725,7 +732,9 @@ func (m *Monitor) CheckAvailabilityChange(sub *Subscription, traceID string) {
 					"[monitor] %s 跳过自动下单:验价用的是账户 %q,而订阅指定的下单账户是 %q,两者不一致(下单账户可能已被删除)",
 					planCode, choice.accountID, cfg.AutoOrderAccountID), "monitor")
 			default:
-				m.batchOrder(planCode, configInfo, orderTargets, cfg.Quantity, cfg.AutoOrderAccountID, cfg.AutoPay, func() bool { return m.checkCurrent(sub, cfg) })
+				m.batchOrder(planCode, configInfo, orderTargets, cfg.Quantity, cfg.AutoOrderAccountID, cfg.AutoPay,
+					func() bool { return m.checkCurrent(sub, cfg) },
+					func(enqueue func() error) error { return m.guardCheckEnqueue(sub, cfg, enqueue) })
 			}
 		}
 
@@ -896,6 +905,9 @@ func (m *Monitor) calcDuration(sub *Subscription, dc, configDisplay string, targ
 	var lastTS string
 	for i := len(history) - 1; i >= 0; i-- {
 		entry := history[i]
+		if sub.checkParent != nil && entry.Config["account_id"] != sub.AutoOrderAccountID {
+			continue
+		}
 		if entry.Datacenter != dc {
 			continue
 		}

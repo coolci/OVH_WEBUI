@@ -33,13 +33,14 @@ func AddSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 			return
 		}
 		var body struct {
-			PlanCode           string   `json:"planCode"`
-			Datacenters        []string `json:"datacenters"`
-			NotifyAvailable    *bool    `json:"notifyAvailable"`
-			NotifyUnavailable  *bool    `json:"notifyUnavailable"`
-			AutoOrder          bool     `json:"autoOrder"`
-			Quantity           int      `json:"quantity"`
-			AutoOrderAccountID string   `json:"autoOrderAccountId"` // 空 = 触发时只通知不下单
+			PlanCode            string   `json:"planCode"`
+			Datacenters         []string `json:"datacenters"`
+			NotifyAvailable     *bool    `json:"notifyAvailable"`
+			NotifyUnavailable   *bool    `json:"notifyUnavailable"`
+			AutoOrder           bool     `json:"autoOrder"`
+			Quantity            int      `json:"quantity"`
+			AutoOrderAccountID  string   `json:"autoOrderAccountId"` // 兼容旧单账户请求
+			AutoOrderAccountIDs []string `json:"autoOrderAccountIds"`
 			// AutoPay 下单成功后用默认支付方式自动付款。默认 false ——
 			// 自动扣钱必须是显式打开的开关
 			AutoPay bool `json:"autoPay"`
@@ -48,7 +49,10 @@ func AddSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 			// 按配置逐套触发的 —— 不筛的话"抢 1 台"会变成"每套配置各抢 1 台"。
 			Options []string `json:"options"`
 		}
-		_ = c.ShouldBindJSON(&body)
+		if err := c.ShouldBindJSON(&body); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "请求体格式错误"})
+			return
+		}
 		body.PlanCode = strings.TrimSpace(body.PlanCode)
 		// 一条订阅一个型号(issue #2):整串"plan-a,plan-b"会被当成一个型号存进库,
 		// 永远匹配不到库存,界面上却显示创建成功。半/全角逗号、顿号、空白、换行都拒。
@@ -63,12 +67,10 @@ func AddSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "缺少planCode参数", "code": "E2E02A4EA"})
 			return
 		}
-		// 校验 auto_order_account_id 引用的账户真的存在
-		if body.AutoOrderAccountID != "" {
-			if _, ok := state.FindAccount(body.AutoOrderAccountID); !ok {
-				c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "autoOrderAccountId 不存在", "code": "EB5C2D1BB"})
-				return
-			}
+		accountIDs, err := validatedMonitorAccounts(state, body.AutoOrderAccountID, body.AutoOrderAccountIDs)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": err.Error(), "code": "EB5C2D1BB"})
+			return
 		}
 		notifyAvailable := true
 		notifyUnavailable := false
@@ -104,12 +106,15 @@ func AddSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 		// 区域预检:OVH 的 EU / US / CA 是三套独立系统,拿错站点查 planCode 返回的是
 		// 200 + 空数组而不是报错。订阅一个没人能查的机型会静默失效,所以下单前就告诉用户。
 		// 只提示不拦截 —— 目录有 2 小时缓存、OVH 也会抖动,不能凭一次探测把人挡在门外。
-		region, subsidiary, regionWarning := mon.PreflightRegion(body.PlanCode, body.AutoOrderAccountID)
+		region, subsidiary, regionWarning := preflightMonitorAccounts(mon, body.PlanCode, accountIDs)
 
 		mon.AddSubscription(body.PlanCode, body.Datacenters, notifyAvailable, notifyUnavailable,
 			serverName, nil, nil, body.AutoOrder, body.Quantity, body.AutoOrderAccountID, body.AutoPay,
-			body.Options)
-		mon.SaveToDB()
+			body.Options, accountIDs)
+		if err := mon.SaveToDB(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "本次运行已添加，但未能保存到数据库: " + err.Error()})
+			return
+		}
 
 		if !mon.Running() {
 			mon.Start()

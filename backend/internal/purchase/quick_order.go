@@ -30,7 +30,11 @@ type QuickOrderParams struct {
 	FromMonitor        bool     `json:"fromMonitor"`
 	SkipDuplicateCheck bool     `json:"skipDuplicateCheck"`
 	AutoPay            bool     `json:"autoPay"`
-	Coupon             string   `json:"coupon"`
+	Force              bool     `json:"force"`
+	Quantity           int      `json:"quantity"`
+	// Internal monitor generation guard; external HTTP callers cannot supply it.
+	GuardEnqueue func(func() error) error `json:"-"`
+	Coupon       string                   `json:"coupon"`
 }
 
 // QuickOrderResult 快速下单执行结果
@@ -48,10 +52,12 @@ type QuickOrderResult struct {
 // EnqueueQuickOrder 执行快速下单验证与入队逻辑。
 // 供 HTTP Handler (handlers.QuickOrder) 以及进程内监控 (monitor.batchOrder) 直接调用。
 func EnqueueQuickOrder(state *app.State, params QuickOrderParams) *QuickOrderResult {
+	params.PlanCode = strings.TrimSpace(params.PlanCode)
+	params.Datacenter = strings.TrimSpace(params.Datacenter)
 	if params.AccountID == "" && params.AccountIDCamel != "" {
 		params.AccountID = params.AccountIDCamel
 	}
-	if params.PlanCode == "" || params.Datacenter == "" {
+	if params.PlanCode == "" || params.Datacenter == "" || strings.ContainsAny(params.PlanCode, ",，、 \t\r\n") {
 		return &QuickOrderResult{
 			Success:    false,
 			Error:      "缺少 planCode 或 datacenter",
@@ -76,7 +82,10 @@ func EnqueueQuickOrder(state *app.State, params QuickOrderParams) *QuickOrderRes
 		}
 	}
 	options := params.Options
-	if len(options) == 0 {
+	// Explicit custom plans are validated by the live cart API below. A stale
+	// public catalog must not prevent that validation; monitor callers have
+	// already checked availability and pricing for this exact account.
+	if len(options) == 0 && !params.Force {
 		availByConfig := catalog.CheckServerAvailabilityWithConfigs(state, params.PlanCode, params.AccountID)
 		// cfg.Datacenters 的 key 是 OVH 原样返回的 AvailabilityDatacenterEnum(孟买是 ynm),
 		// 而 params.Datacenter 是前端显示码(孟买是 mum),必须和 purchase / price 一样先转换
@@ -293,6 +302,7 @@ func EnqueueQuickOrder(state *app.State, params QuickOrderParams) *QuickOrderRes
 		Status:     "running",
 		RetryCount: 0,
 		AutoPay:    params.AutoPay,
+		Force:      params.Force,
 		Coupon:     strings.TrimSpace(params.Coupon),
 		// MaxRetries 封顶的是**真正提交并失败的次数**(FailureCount),无货轮次不计。
 		MaxRetries:    20,
@@ -310,7 +320,31 @@ func EnqueueQuickOrder(state *app.State, params QuickOrderParams) *QuickOrderRes
 	if params.FromMonitor {
 		enqueue = state.EnqueueAutomaticItems
 	}
-	if err := enqueue([]types.QueueItem{item}, true); err != nil {
+	quantity := params.Quantity
+	if quantity < 1 {
+		quantity = 1
+	}
+	if quantity > types.MaxOrderQuantity {
+		quantity = types.MaxOrderQuantity
+	}
+	// One atomic batch keeps the requested quantity together. Calling the
+	// automatic enqueue path repeatedly would reject item two as a duplicate.
+	items := make([]types.QueueItem, quantity)
+	for i := range items {
+		items[i] = item
+		items[i].Options = append([]string(nil), options...)
+		if i > 0 {
+			items[i].ID = uuid.NewString()
+		}
+	}
+	commit := func() error { return enqueue(items, true) }
+	var enqueueErr error
+	if params.GuardEnqueue != nil {
+		enqueueErr = params.GuardEnqueue(commit)
+	} else {
+		enqueueErr = commit()
+	}
+	if err := enqueueErr; err != nil {
 		state.Logger.Error("自动下单任务落库失败,已撤回: "+err.Error(), "queue")
 		return &QuickOrderResult{
 			Success:    false,
@@ -323,7 +357,7 @@ func EnqueueQuickOrder(state *app.State, params QuickOrderParams) *QuickOrderRes
 
 	return &QuickOrderResult{
 		Success:    true,
-		Message:    "✅ " + params.PlanCode + " (" + params.Datacenter + ") 已加入购买队列",
+		Message:    fmt.Sprintf("✅ %s (%s) 已加入购买队列，共 %d 台", params.PlanCode, params.Datacenter, quantity),
 		Price:      priceInfo,
 		Options:    options,
 		Item:       &item,

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/ovh-webui/server/internal/netfp"
 	"github.com/ovh-webui/server/internal/types"
 )
 
@@ -34,6 +35,7 @@ func TestAddQueuePreorderDoesNotBypassValidation(t *testing.T) {
 		}
 		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
 	})
+	defer netfp.SwapSharedTransportForTesting(http.DefaultTransport)()
 	st, _ := newWatchTestMonitor(t)
 	st.Accounts = []types.OVHAccount{{ID: "eu", Endpoint: "ovh-eu", Zone: "FI"}}
 	router := gin.New()

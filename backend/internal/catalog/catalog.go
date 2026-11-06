@@ -29,9 +29,8 @@ type ConfigAvailability struct {
 	// "这个配置确实没有可匹配 addon",否则会把 OVH 瞬断报成"该机房无可定价配置"。
 	CatalogError string `json:"catalogError,omitempty"`
 	// CatalogMissing:目录拉到了,但这个 planCode 不在该账户子公司的目录里。
-	// 与 CatalogError(网络/OVH 故障,重试有用)必须分开:这种情况重试一万次也没用,
-	// 是拿错区的 planCode 了 —— 美区目录的机型一律带 -us/-ca/-eu/-sgp 后缀
-	// (US 143 个 plan 全部带后缀,欧区的裸 planCode 在美区目录里根本不存在)。
+	// 可能是跨区型号，也可能是尚未同步到公开目录的自定义型号。
+	// 此时 Options 保留库存 FQN 中的原始硬件段，须经真实购物车验证后才能下单。
 	CatalogMissing bool `json:"catalogMissing,omitempty"`
 	// OptionsNote:目录和 planCode 都在,但这一条 FQN 的内存/存储在该子公司目录里
 	// 没有对应 addon(实测 US 35 条、EU/CA 各 18 条)。这类配置在本子公司买不到,
@@ -110,8 +109,7 @@ func CheckServerAvailabilityWithConfigs(state *app.State, planCode string, accou
 		// 调用方(quick_order / telegram)据此给用户不同的提示。
 		catalogMissing = errors.Is(addonErr, ErrPlanNotInCatalog)
 		if catalogMissing {
-			catalogErr = fmt.Sprintf("%s 子公司(%s 站点)的目录里没有 planCode %s —— "+
-				"三个站点的目录互不相通,美区机型带 -us/-ca/-eu/-sgp 后缀,请换本区的 planCode",
+			catalogErr = fmt.Sprintf("%s 子公司(%s 站点)的公开目录尚未收录 planCode %s，可能为新品、自定义或跨区型号；以该账户购物车校验结果为准",
 				subsidiary, region, planCode)
 			state.Logger.Warn("[配置监控] "+catalogErr, "monitor")
 		} else {
@@ -192,6 +190,12 @@ func CheckServerAvailabilityWithConfigs(state *app.State, planCode string, accou
 					memory, storage, subsidiary)
 				state.Logger.Warn("[配置监控] "+optionsNote, "monitor")
 			}
+		} else if catalogMissing {
+			// The stock API already identified this exact hardware combination.
+			// Keep those raw addon segments so a missing public catalog cannot
+			// silently discard the user's hardware filter. price/purchase resolve
+			// them against live eco/options and reject anything not orderable.
+			api2Options = stockHardwareOptions(planCode, fqn, rawMemory, rawStorage)
 		} else if catalogErr == "" {
 			state.Logger.Warn(fmt.Sprintf("[配置监控] %s 子公司的目录里 %s 没有 addonFamilies,无法匹配选项", subsidiary, planCode), "monitor")
 		}
@@ -215,6 +219,39 @@ func CheckServerAvailabilityWithConfigs(state *app.State, planCode string, accou
 
 	state.Logger.Info(fmt.Sprintf("[配置监控] 成功获取 %d 个配置组合的可用性", len(result)), "monitor")
 	return result
+}
+
+func stockHardwareOptions(planCode, fqn, memory, storage string) []string {
+	var candidates []string
+	if suffix, ok := strings.CutPrefix(fqn, planCode+"."); ok {
+		candidates = strings.Split(suffix, ".")
+	} else {
+		candidates = []string{memory, storage}
+	}
+	options := []string{}
+	for _, code := range candidates {
+		code = strings.TrimSpace(code)
+		if code != "" && code != "N/A" && !contains(options, code) {
+			options = append(options, code)
+		}
+	}
+	return options
+}
+
+// CustomInventoryOptions maps a raw stock addon to the user's full addon code
+// only when the suffix is exactly this planCode. A shared storage prefix is not
+// sufficient evidence: a mixed-disk option must never match the smaller layout.
+func CustomInventoryOptions(planCode string, hardware, selected []string) []string {
+	options := append([]string(nil), hardware...)
+	for i, raw := range options {
+		for _, code := range selected {
+			if code == raw+"-"+planCode {
+				options[i] = code
+				break
+			}
+		}
+	}
+	return options
 }
 
 // matchAddonsForSegment 把 availabilities 里的一段 FQN(如 softraid-2x6000sa / ram-32g-ecc-2400)
@@ -843,25 +880,25 @@ func LoadServerList(state *app.State, accountID string) ([]types.ServerPlan, int
 					}
 					if strings.Contains(name, "|") {
 						parts := strings.SplitN(name, "|", 2)
-					if len(parts) > 1 {
-						cpuPart := strings.TrimSpace(parts[1])
-						lc := strings.ToLower(cpuPart)
-						if strings.Contains(lc, "intel") || strings.Contains(lc, "amd") || strings.Contains(lc, "xeon") || strings.Contains(lc, "i7") {
-							serverInfo.CPU = cpuPart
-							state.Logger.Info(fmt.Sprintf("从名称中提取CPU型号: %s 给 %s", cpuPart, planCode), "")
-							foundCPU = true
+						if len(parts) > 1 {
+							cpuPart := strings.TrimSpace(parts[1])
+							lc := strings.ToLower(cpuPart)
+							if strings.Contains(lc, "intel") || strings.Contains(lc, "amd") || strings.Contains(lc, "xeon") || strings.Contains(lc, "i7") {
+								serverInfo.CPU = cpuPart
+								state.Logger.Info(fmt.Sprintf("从名称中提取CPU型号: %s 给 %s", cpuPart, planCode), "")
+								foundCPU = true
+							}
 						}
 					}
+					if foundCPU {
+						break
+					}
 				}
-				if foundCPU {
-					break
+				if !foundCPU {
+					serverInfo.CPU = "SK系列专用CPU"
 				}
-			}
-			if !foundCPU {
-				serverInfo.CPU = "SK系列专用CPU"
 			}
 		}
-	}
 
 		if serverInfo.CPU == "N/A" {
 			state.Logger.Info(fmt.Sprintf("服务器 %s 无法从API提取CPU信息，尝试从名称提取", planCode), "")
@@ -1183,20 +1220,20 @@ func extractCPUFromProduct(prod map[string]interface{}) string {
 	// 优先从 blobs.technical.server.cpu 提取 (含 brand 和 model)
 	if blobs, ok := prod["blobs"].(map[string]interface{}); ok {
 		if tech, ok := blobs["technical"].(map[string]interface{}); ok {
-		if srv, ok := tech["server"].(map[string]interface{}); ok {
-		if cpuMap, ok := srv["cpu"].(map[string]interface{}); ok {
-		brand := strings.TrimSpace(getString(cpuMap, "brand", ""))
-		model := strings.TrimSpace(getString(cpuMap, "model", ""))
-		if brand != "" && model != "" {
-			if strings.Contains(strings.ToLower(model), strings.ToLower(brand)) {
-				return model
+			if srv, ok := tech["server"].(map[string]interface{}); ok {
+				if cpuMap, ok := srv["cpu"].(map[string]interface{}); ok {
+					brand := strings.TrimSpace(getString(cpuMap, "brand", ""))
+					model := strings.TrimSpace(getString(cpuMap, "model", ""))
+					if brand != "" && model != "" {
+						if strings.Contains(strings.ToLower(model), strings.ToLower(brand)) {
+							return model
+						}
+						return brand + " " + model
+					} else if model != "" {
+						return model
+					}
+				}
 			}
-			return brand + " " + model
-		} else if model != "" {
-			return model
-		}
-		}
-		}
 		}
 	}
 	// 降级从 product.description 提取

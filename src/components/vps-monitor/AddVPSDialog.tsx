@@ -5,6 +5,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { PlanCodeCombobox } from "@/components/common/PlanCodeCombobox";
+import { isSinglePlanCode } from "@/lib/order-inputs";
 import {
   Select,
   SelectContent,
@@ -55,7 +57,7 @@ export function AddVPSDialog({ open, onOpenChange, initial }: AddVPSDialogProps)
   useEffect(() => {
     if (isEdit) return;
     if (models.length === 0) return;
-    if (!vpsModel || !models.some((m) => m.planCode === vpsModel)) {
+    if (!vpsModel) {
       setVpsModel(models[0].planCode);
     }
   }, [models, vpsModel, isEdit]);
@@ -88,6 +90,10 @@ export function AddVPSDialog({ open, onOpenChange, initial }: AddVPSDialogProps)
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isSinglePlanCode(vpsModel)) {
+      toast.error("请输入一个 VPS planCode，不含空格或逗号");
+      return;
+    }
     const dcs = datacenters
       .split(",")
       .map((d) => d.trim())
@@ -109,7 +115,7 @@ export function AddVPSDialog({ open, onOpenChange, initial }: AddVPSDialogProps)
       update.mutate({ id: initial.id, ...payload }, { onSuccess });
       return;
     }
-    create.mutate({ planCode: vpsModel, ...payload }, { onSuccess });
+    create.mutate({ planCode: vpsModel.trim(), ...payload }, { onSuccess });
   };
 
   const pending = create.isPending || update.isPending;
@@ -156,25 +162,13 @@ export function AddVPSDialog({ open, onOpenChange, initial }: AddVPSDialogProps)
               <label className="block text-xs font-medium text-muted-foreground mb-1.5">
                 VPS 型号 <span className="text-destructive">*</span>
               </label>
-              <Select
+              <PlanCodeCombobox
                 value={vpsModel}
-                onValueChange={setVpsModel}
-                disabled={isEdit || modelsQ.isPending || models.length === 0}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={modelsQ.isPending ? "加载型号…" : "选择在售型号"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {isEdit && vpsModel && !models.some((m) => m.planCode === vpsModel) && (
-                    <SelectItem value={vpsModel}>{vpsModel}（当前订阅）</SelectItem>
-                  )}
-                  {models.map((m) => (
-                    <SelectItem key={m.planCode} value={m.planCode}>
-                      {m.name} ({m.planCode})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                onChange={setVpsModel}
+                servers={models}
+                disabled={isEdit}
+                placeholder="选择或输入自定义 VPS planCode"
+              />
               {modelsQ.isError && (
                 <p className="text-[11px] text-destructive mt-1">实时目录拉取失败，请稍后重试</p>
               )}

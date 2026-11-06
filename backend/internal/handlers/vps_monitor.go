@@ -68,9 +68,17 @@ func AddVPSSubscription(state *app.State) gin.HandlerFunc {
 			OS                 string   `json:"os"`
 			AutoPay            bool     `json:"autoPay"`
 		}
-		_ = c.ShouldBindJSON(&body)
+		if err := c.ShouldBindJSON(&body); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "请求体格式错误"})
+			return
+		}
+		body.PlanCode = strings.TrimSpace(body.PlanCode)
 		if body.PlanCode == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "缺少planCode参数", "code": "E2E02A4EA"})
+			return
+		}
+		if strings.ContainsAny(body.PlanCode, ",，、 \t\r\n") {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "每条订阅只能填写一个 planCode"})
 			return
 		}
 		var autoOrderAccount types.OVHAccount

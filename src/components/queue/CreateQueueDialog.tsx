@@ -16,6 +16,7 @@ import { Chip } from "@/components/common/Chip";
 import { AccountSelect } from "@/components/common/AccountSelect";
 import { DatacenterPicker } from "@/components/common/DatacenterPicker";
 import { PlanCodeCombobox } from "@/components/common/PlanCodeCombobox";
+import { parseOptionCodes } from "@/lib/order-inputs";
 import { OptionGroupSection } from "@/components/common/OptionGroupSection";
 import { useServers } from "@/hooks/use-servers";
 import { useCreateQueueItem } from "@/hooks/use-queue";
@@ -134,14 +135,8 @@ export function CreateQueueDialog({
   );
 
   const parsedOptions = useMemo(() => {
-    if (matchedServer) {
-      return Object.values(picked).filter(Boolean) as string[];
-    }
-    return extraInput
-      .split(",")
-      .map((v) => v.trim())
-      .filter(Boolean);
-  }, [matchedServer, picked, extraInput]);
+    return [...new Set([...(Object.values(picked).filter(Boolean) as string[]), ...parseOptionCodes(extraInput)])];
+  }, [picked, extraInput]);
 
   const variants = matchedServer ? variantIndex[matchedServer.planCode] : undefined;
   const optionHasStock = (groupKey: OptionGroupKey, value: string): boolean => {
@@ -360,13 +355,16 @@ export function CreateQueueDialog({
                     />
                   ))}
               </div>
-            ) : (
+            ) : null}
+            <div className="mt-3">
+              <label htmlFor="queue-custom-options" className="mb-1 block text-[11px] text-muted-foreground">自定义配置 planCode（可选）</label>
               <Input
+                id="queue-custom-options"
                 placeholder="addon planCode,逗号分隔。例如:ram-64g-ecc-2400, softraid-2x450nvme-24sk50"
                 value={extraInput}
                 onChange={(e) => setExtraInput(e.target.value)}
               />
-            )}
+            </div>
 
             {parsedOptions.length > 0 && (
               <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-border">

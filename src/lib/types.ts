@@ -95,6 +95,7 @@ export interface Subscription {
   autoOrder?: boolean;
   quantity?: number;
   autoOrderAccountId?: string;
+  autoOrderAccountIds?: string[];
   /** @deprecated 兼容旧字段，推荐使用 autoOrderAccountId */
   accountId?: string;
   autoPay?: boolean;

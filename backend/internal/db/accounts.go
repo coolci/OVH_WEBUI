@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 
 	"github.com/ovh-webui/server/internal/secret"
@@ -231,10 +232,43 @@ func (db *DB) DeleteAccount(id string) error {
 	if _, err := tx.Exec(`DELETE FROM queue WHERE account_id = ?`, id); err != nil {
 		return fmt.Errorf("cascade delete queue: %w", err)
 	}
-	if _, err := tx.Exec(
-		`UPDATE monitor_subscriptions SET auto_order_account_id = '' WHERE auto_order_account_id = ?`, id,
-	); err != nil {
-		return fmt.Errorf("clear monitor auto_order_account_id: %w", err)
+	var monitorRows []monitorSubRow
+	if err := tx.Select(&monitorRows, `SELECT * FROM monitor_subscriptions`); err != nil {
+		return fmt.Errorf("read monitor account references: %w", err)
+	}
+	for _, row := range monitorRows {
+		var ids []string
+		if err := json.Unmarshal([]byte(row.AutoOrderAccountIDsJSON), &ids); err != nil {
+			return fmt.Errorf("decode monitor account references: %w", err)
+		}
+		if ids == nil && row.AutoOrderAccountID != "" {
+			ids = []string{row.AutoOrderAccountID}
+		}
+		kept := []string{}
+		removed := false
+		for _, target := range ids {
+			if target == id {
+				removed = true
+			} else {
+				kept = append(kept, target)
+			}
+		}
+		if !removed {
+			continue
+		}
+		primary := ""
+		if len(kept) > 0 {
+			primary = kept[0]
+		}
+		encoded, err := json.Marshal(kept)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`UPDATE monitor_subscriptions SET auto_order_account_id=?, auto_order_account_ids=?,
+		 auto_order=CASE WHEN ?=0 THEN 0 ELSE auto_order END, auto_pay=CASE WHEN ?=0 THEN 0 ELSE auto_pay END
+		 WHERE plan_code=? AND options=?`, primary, string(encoded), len(kept), len(kept), row.PlanCode, row.OptionsJSON); err != nil {
+			return fmt.Errorf("clear monitor account references: %w", err)
+		}
 	}
 	if _, err := tx.Exec(
 		`UPDATE vps_subscriptions SET auto_order_account_id = '' WHERE auto_order_account_id = ?`, id,

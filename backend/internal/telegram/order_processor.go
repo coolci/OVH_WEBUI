@@ -94,6 +94,11 @@ func ProcessOrder(state *app.State, accountID, planCode, datacenter string, quan
 		data *catalog.ConfigAvailability
 	}
 	configsToOrder := []configEntry{}
+	for _, d := range availByConfig {
+		if d.CatalogMissing {
+			d.Options = catalog.CustomInventoryOptions(planCode, d.Options, options)
+		}
+	}
 	if len(options) > 0 {
 		for k, d := range availByConfig {
 			// 检查用户 options 是否被该配置完全覆盖
@@ -209,6 +214,7 @@ func ProcessOrder(state *app.State, accountID, planCode, datacenter string, quan
 					RetryCount:    0,
 					LastCheckTime: 0,
 					FromTelegram:  true,
+					Force:         ce.data.CatalogMissing,
 				}
 				ordersToCreate = append(ordersToCreate, item)
 			}

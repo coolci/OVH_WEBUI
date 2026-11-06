@@ -1,17 +1,18 @@
 import { useState, useMemo } from "react";
 import { Command } from "cmdk";
 import { useTranslation } from "react-i18next";
-import { Check, ChevronsUpDown, Search, X } from "lucide-react";
+import { Check, ChevronsUpDown, Plus, Search, X } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { ServerPlan } from "@/hooks/use-servers";
+import { customPlanCode, isSinglePlanCode } from "@/lib/order-inputs";
 
 /** 服务器 planCode 选择器,Combobox(Popover + cmdk Command):
  *  - 触发器看起来像 Input,带 chevron;选了之后显示 planCode + 服务器名
  *  - 弹层里有搜索框 + 过滤列表,每行 planCode + 名称 + CPU 简介
  *  - 键盘导航(↑↓ + Enter),Esc 关
- *  - 也支持手动输入(选错列表时输入框 fallback 走 onChange)
+ *  - 搜索结果之外可明确选择使用手动输入的 planCode
  */
 export function PlanCodeCombobox({
   value,
@@ -23,7 +24,7 @@ export function PlanCodeCombobox({
 }: {
   value: string;
   onChange: (planCode: string) => void;
-  servers: ServerPlan[];
+  servers: (Pick<ServerPlan, "planCode" | "name"> & Partial<Pick<ServerPlan, "cpu" | "memory" | "storage">>)[];
   placeholder?: string;
   className?: string;
   /** 锁定型号(例如编辑已有订阅时 planCode 是主键,不允许改) */
@@ -32,6 +33,13 @@ export function PlanCodeCombobox({
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const customCode = customPlanCode(query, servers);
+
+  const selectCode = (code: string) => {
+    onChange(code);
+    setOpen(false);
+    setQuery("");
+  };
 
   const matched = useMemo(
     () => servers.find((s) => s.planCode === value),
@@ -49,14 +57,17 @@ export function PlanCodeCombobox({
 
   return (
     <Popover open={open && !disabled} onOpenChange={(v) => setOpen(disabled ? false : v)}>
+      <div className="relative">
       <PopoverTrigger asChild>
         <Button
+          type="button"
           variant="outline"
           role="combobox"
           aria-expanded={open}
           disabled={disabled}
           className={cn(
             "w-full justify-between font-normal h-10 px-3.5 rounded-xl",
+            value && !disabled && "pr-10",
             !value && "text-muted-foreground",
             className
           )}
@@ -71,24 +82,17 @@ export function PlanCodeCombobox({
           ) : (
             <span>{placeholder || t("commons.planCode.placeholder")}</span>
           )}
-          <div className="flex items-center gap-1">
-            {value && !disabled && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onChange("");
-                }}
-                className="rounded hover:bg-muted p-0.5"
-                aria-label={t("commons.planCode.clear")}
-              >
-                <X className="w-3.5 h-3.5 text-muted-foreground" />
-              </button>
-            )}
-            <ChevronsUpDown className="w-4 h-4 opacity-50 shrink-0" />
-          </div>
+          <ChevronsUpDown className="w-4 h-4 opacity-50 shrink-0" />
         </Button>
       </PopoverTrigger>
+      {value && !disabled && (
+        <button type="button" onClick={() => onChange("")}
+          className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded p-0.5 hover:bg-muted"
+          aria-label={t("commons.planCode.clear")}>
+          <X className="w-3.5 h-3.5 text-muted-foreground" />
+        </button>
+      )}
+      </div>
       <PopoverContent
         className="w-[var(--radix-popover-trigger-width)] p-0"
         sideOffset={4}
@@ -114,7 +118,7 @@ export function PlanCodeCombobox({
             onWheel={(e) => e.stopPropagation()}
           >
             <Command.Empty className="py-6 text-center text-[12px] text-muted-foreground">
-              {t("commons.planCode.noMatch")}
+              {query.trim() && !isSinglePlanCode(query) ? t("commons.planCode.singleCode") : t("commons.planCode.noMatch")}
             </Command.Empty>
             {filtered.map((s) => {
               const selected = s.planCode === value;
@@ -122,11 +126,7 @@ export function PlanCodeCombobox({
                 <Command.Item
                   key={s.planCode}
                   value={s.planCode}
-                  onSelect={() => {
-                    onChange(s.planCode);
-                    setOpen(false);
-                    setQuery("");
-                  }}
+                  onSelect={() => selectCode(s.planCode)}
                   className={cn(
                     "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm cursor-pointer",
                     "aria-selected:bg-muted aria-selected:text-foreground",
@@ -153,6 +153,16 @@ export function PlanCodeCombobox({
                 </Command.Item>
               );
             })}
+            {customCode && (
+              <Command.Item
+                value={`custom:${customCode}`}
+                onSelect={() => selectCode(customCode)}
+                className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm aria-selected:bg-muted aria-selected:text-foreground"
+              >
+                <Plus className="h-3.5 w-3.5 shrink-0" />
+                <span className="min-w-0 break-all">{t("commons.planCode.useCustom", { code: customCode })}</span>
+              </Command.Item>
+            )}
           </Command.List>
         </Command>
       </PopoverContent>

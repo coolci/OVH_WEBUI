@@ -13,7 +13,9 @@ export interface MonitorSubscription {
   notifyUnavailable: boolean;
   autoOrder?: boolean;
   quantity?: number;
-  /** 触发 auto-order 时用哪个 OVH 账户下单;空 = 只通知 */
+  /** 多账户自动下单列表；显式空数组表示不下单 */
+  autoOrderAccountIds?: string[];
+  /** 旧版单账户字段，缺少数组时用于兼容 */
   autoOrderAccountId?: string;
   /** 下单成功后自动付款(显式开关,默认关) */
   autoPay?: boolean;
@@ -92,10 +94,11 @@ export function useUpsertMonitorSubscription() {
   return useMutation({
     mutationFn: async (payload: Partial<MonitorSubscription> & { planCode: string }) =>
       (await api.post("/monitor/subscriptions", payload)).data,
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       qc.invalidateQueries({ queryKey: qk.monitor.list() });
       qc.invalidateQueries({ queryKey: qk.monitor.status() });
-      toast.success(i18n.t("hooksMsg.monitor.saved"));
+      if (data?.regionWarning) toast.warning(data.regionWarning);
+      else toast.success(i18n.t("hooksMsg.monitor.saved"));
     },
     onError: (e: any) => toast.error(apiMessage(e) || i18n.t("hooksMsg.monitor.saveFailed")),
   });

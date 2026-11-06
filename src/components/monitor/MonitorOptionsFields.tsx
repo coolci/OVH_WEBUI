@@ -1,7 +1,8 @@
-import { AccountSelect } from "@/components/common/AccountSelect";
+import { AccountMultiSelect } from "@/components/common/AccountMultiSelect";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { MAX_ORDER_QUANTITY } from "@/lib/order-limits";
 
 export type MonitorNotifyOptions = {
   notifyAvailable: boolean;
@@ -9,7 +10,7 @@ export type MonitorNotifyOptions = {
   autoOrder: boolean;
   autoPay: boolean;
   quantity: number;
-  autoOrderAccountId: string;
+  autoOrderAccountIds: string[];
 };
 
 export const DEFAULT_MONITOR_OPTIONS: MonitorNotifyOptions = {
@@ -18,7 +19,7 @@ export const DEFAULT_MONITOR_OPTIONS: MonitorNotifyOptions = {
   autoOrder: false,
   autoPay: false,
   quantity: 1,
-  autoOrderAccountId: "",
+  autoOrderAccountIds: [],
 };
 
 function OptionCheck({
@@ -90,7 +91,7 @@ export function MonitorOptionsFields({
             })
           }
           label="有货时自动下单"
-          hint="补货瞬间按所选账户加入抢购队列"
+          hint="补货时所有选中账户分别加入抢购队列"
         />
       </div>
 
@@ -100,37 +101,35 @@ export function MonitorOptionsFields({
             <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
               下单账户 <span className="text-destructive">*</span>
             </label>
-            <AccountSelect
-              value={value.autoOrderAccountId}
-              onChange={(id) => set({ autoOrderAccountId: id })}
-              allowEmpty
-              placeholder="选择自动下单账户"
+            <AccountMultiSelect
+              value={value.autoOrderAccountIds}
+              onChange={(ids) => set({ autoOrderAccountIds: ids })}
             />
-            <p className="mt-1 text-[11px] text-muted-foreground">必须选账户才会真正下单，不选则只通知</p>
+            <p className="mt-1 text-[11px] text-muted-foreground">新订阅默认选中全部现有账户，可取消不需要的账户。每个账户独立下单。</p>
           </div>
           <OptionCheck
             checked={value.autoPay}
             onChange={(v) => set({ autoPay: v })}
             label="抢到后自动付款"
-            hint="默认关闭。开启后用该 OVH 账户的默认支付方式扣款"
+            hint="默认关闭。开启后分别使用各下单账户的默认支付方式扣款"
           />
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">下单数量</label>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">每账户、每配置、每机房下单数量</label>
             <Input
               type="number"
               min={1}
-              max={100}
+              max={MAX_ORDER_QUANTITY}
               value={value.quantity}
               onChange={(e) => {
                 const n = Number(e.target.value);
                 if (Number.isFinite(n)) {
-                  set({ quantity: Math.max(1, Math.min(100, Math.floor(n))) });
+                  set({ quantity: Math.max(1, Math.min(MAX_ORDER_QUANTITY, Math.floor(n))) });
                 }
               }}
               placeholder="默认 1"
             />
             <p className="mt-1.5 text-[11px] text-muted-foreground">
-              总下单量 = 检测出的配置数 × 可用数据中心数 × 数量
+              总下单量 = {value.autoOrderAccountIds.length} 个账户 × 检测出的配置数 × 可用数据中心数 × {value.quantity}
             </p>
           </div>
         </div>
