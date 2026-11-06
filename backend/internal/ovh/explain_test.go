@@ -230,3 +230,15 @@ func TestExplainBackupFTPDoesNotExist(t *testing.T) {
 		t.Fatalf("应包含未开通提示: %s", got)
 	}
 }
+
+func TestExpiredServiceIsNotExpiredCredential(t *testing.T) {
+	service := &ovhsdk.APIError{Code: 460, Message: "This service is expired", QueryID: "test-query"}
+	if !IsServiceExpired(service) || !strings.Contains(Explain(service), "服务器服务已过期") || strings.Contains(Explain(service), "凭据或令牌") {
+		t.Fatal(Explain(service))
+	}
+	for _, err := range []error{nil, errors.New("This service is expired"), &ovhsdk.APIError{Code: 460, Message: "Credential is expired"}, &ovhsdk.APIError{Code: 403, Message: "This call has not been granted"}} {
+		if IsServiceExpired(err) {
+			t.Fatalf("incorrect service classification: %v", err)
+		}
+	}
+}

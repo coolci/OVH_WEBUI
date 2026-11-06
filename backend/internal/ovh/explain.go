@@ -95,6 +95,8 @@ func hintFor(e *ovhsdk.APIError) string {
 		return "所选系统模板缺少必填的定制参数(如预装应用、自定义配置等),请在重装弹窗中完成定制配置后再试"
 	case strings.Contains(lower, "backupftp does not exist") || (strings.Contains(lower, "backupftp") && strings.Contains(lower, "does not exist")):
 		return "该服务器未开通或未激活备份FTP服务"
+	case IsServiceExpired(e):
+		return "该服务器服务已过期，请在 OVH 控制台核对服务状态或续费"
 	case strings.Contains(lower, "expired"):
 		return "凭据或令牌已过期,需要重新生成"
 	}
@@ -223,4 +225,11 @@ func IsTaskConflict(err error) bool {
 		}
 	}
 	return false
+}
+
+// IsServiceExpired distinguishes an expired service from expired credentials.
+// OVH's custom 460 code alone is insufficient evidence to hide a server.
+func IsServiceExpired(err error) bool {
+	var e *ovhsdk.APIError
+	return errors.As(err, &e) && strings.Contains(strings.ToLower(e.Message), "this service is expired")
 }

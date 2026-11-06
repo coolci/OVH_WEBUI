@@ -114,6 +114,9 @@ func ListMyServers(state *app.State) gin.HandlerFunc {
 					return
 				}
 				results[idx].svcInfo = svc
+				if expiredOwnedServer(info, svc, nil, nil) {
+					return
+				}
 				// 中奖摘要:详情页算过就纯缓存读(0 请求),没算过补 1 次 hardware GET,
 				// 1h TTL。徽章是锦上添花,失败只当没有,不影响列表
 				results[idx].lottery = hwLotteryFor(client, nm)
@@ -124,6 +127,10 @@ func ListMyServers(state *app.State) gin.HandlerFunc {
 		servers := []gin.H{}
 		for i, name := range names {
 			r := results[i]
+			if expiredOwnedServer(r.info, r.svcInfo, r.detailError, r.svcInfoError) {
+				state.Logger.Debug("隐藏已过期服务器 "+name, "server_control")
+				continue
+			}
 			if r.detailError != nil {
 				state.Logger.Error("获取服务器 "+name+" 详情失败: "+r.detailError.Error(), "server_control")
 				servers = append(servers, gin.H{"serviceName": name, "name": name, "error": r.detailError.Error()})
@@ -185,6 +192,20 @@ func ListMyServers(state *app.State) gin.HandlerFunc {
 		}
 		c.JSON(http.StatusOK, gin.H{"success": true, "servers": servers, "total": len(servers)})
 	}
+}
+
+// Only explicit expiry evidence hides a server. A past billing date, a timeout,
+// or an authentication failure must not make an otherwise usable server vanish.
+func expiredOwnedServer(info, serviceInfo map[string]interface{}, detailErr, serviceErr error) bool {
+	if ovh.IsServiceExpired(detailErr) || ovh.IsServiceExpired(serviceErr) {
+		return true
+	}
+	for _, value := range []interface{}{info["state"], serviceInfo["status"]} {
+		if status, ok := value.(string); ok && strings.EqualFold(strings.TrimSpace(status), "expired") {
+			return true
+		}
+	}
+	return false
 }
 
 func valueOr(m map[string]interface{}, key, fallback string) interface{} {
