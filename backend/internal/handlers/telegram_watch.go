@@ -75,40 +75,27 @@ func watchText(state *app.State, mon *monitor.Monitor, args []string) string {
 		return fmt.Sprintf("看不懂参数 %q。机房如 gra / rbx，数量如 x2，指定账户如 @us。\n\n发 /watch 看用法。", a)
 	}
 
-	// 自动下单必须落到一个具体账户。
-	//
-	// 不解析成具体 ID 的话，下单那一刻才现取默认账户 —— 中间只要有人改过默认账户，
-	// 这一单就会用另一个账户、另一个区的凭据去下，而 planCode 是分区的
-	// （EU / US / CA 三套目录基本不重合），结果是永远抢不到且看不出原因。
-	accountID := ""
-	accLabel := ""
+	// 在创建时固定账户列表；不依赖执行时的默认账户。
+	accountIDs := []string{}
+	accountID, accLabel := "", ""
 	if autoOrder {
-		if targetAccountRef != "" {
-			accs, err := resolveAccountRef(state, mon, targetAccountRef, planCode)
-			if err != "" {
-				return "❌ " + err
-			}
-			accountID = accs[0].ID
-			accLabel = fmt.Sprintf("%s (@%s 已指定)", telegram.AccountLabel(accs[0]), targetAccountRef)
-		} else {
-			// 账户按 planCode 反推,不用"上次切到哪个" ——
-			// 订阅是要挂着长期跑的,落错区的表现是"永远等不到货",
-			// 而那和"这机器一直没补货"在界面上一模一样。
-			ra := resolveOrderAccount(state, mon, planCode)
-			if ra.Account.ID == "" {
-				return "要自动下单得先配置 OVH 账户。请到控制台「设置 → OVH 账户」添加，或者去掉 x<数量> 只接收通知。"
-			}
-			accountID = ra.Account.ID
-			accLabel = telegram.AccountLabel(ra.Account)
-			if ra.Confident {
-				accLabel += fmt.Sprintf("（%s 在它的目录里，已自动选定）", planCode)
-			} else {
-				// 判不出来不拒绝,但必须说 —— 订阅是挂着长期跑的,
-				// 落错区的表现是"永远等不到货",和"这机器一直没补货"在界面上一模一样。
-				accLabel += "\n⚠️ 没能确认 " + planCode + " 属于哪个区，用的是当前账户。" +
-					"\n   用错区的账户不会报错，只会一直抢不到。换账户发 /accounts。"
-			}
+		if targetAccountRef == "" {
+			targetAccountRef = "all"
 		}
+		accs, resolveErr := resolveAccountRef(state, mon, targetAccountRef, planCode)
+		if resolveErr != "" {
+			return "❌ 要自动下单得先配置 OVH 账户，或检查指定账户：" + resolveErr
+		}
+		labels := []string{}
+		for _, acc := range accs {
+			accountIDs = append(accountIDs, acc.ID)
+			labels = append(labels, telegram.AccountLabel(acc))
+		}
+		if len(accountIDs) == 0 {
+			return "要自动下单得先配置 OVH 账户。"
+		}
+		accountID = accountIDs[0]
+		accLabel = strings.Join(labels, " / ") + fmt.Sprintf(" (@%s)", targetAccountRef)
 	}
 
 	if quantity > telegram.MaxOrderQuantity {
@@ -128,7 +115,7 @@ func watchText(state *app.State, mon *monitor.Monitor, args []string) string {
 
 	// autoPay 恒 false：自动付款是个要用户显式打开的开关，
 	// 不能因为他在手机上打了句 /watch 就替他决定花钱方式。
-	mon.AddSubscription(planCode, dcs, true, false, "", nil, nil, autoOrder, quantity, accountID, false, nil)
+	mon.AddSubscription(planCode, dcs, true, false, "", nil, nil, autoOrder, quantity, accountID, false, nil, accountIDs)
 	mon.SaveToDB()
 
 	// 监控没在跑的话订阅加了也没用 —— 顺手拉起来，并说清楚
@@ -157,8 +144,8 @@ func watchText(state *app.State, mon *monitor.Monitor, args []string) string {
 		// 所以 x1 在"三套配置 × 两个机房"同时补货时会下六单 ——
 		// 用户以为自己说的是"抢 1 台"。
 		b.WriteString(fmt.Sprintf(
-			"\n⚠️ 这是真实下单，而且 %d 是**每个机房、每套配置**各 %d 台。\n"+
-				"这个型号如果有多套配置同时补货，实际下单数 = 配置数 × 机房数 × %d。\n"+
+			"\n⚠️ 这是真实下单，而且 %d 是**每个账户、每个机房、每套配置**各 %d 台。\n"+
+				"这个型号如果有多套配置同时补货，实际下单数 = 账户数 × 配置数 × 机房数 × %d。\n"+
 				"抢到的订单默认不自动付款，需要你去付。\n",
 			quantity, quantity, quantity))
 	} else {
@@ -204,4 +191,3 @@ func isLowerAlpha(s string) bool {
 	}
 	return len(s) >= 3 && len(s) <= 15
 }
-

@@ -67,7 +67,8 @@ export function useReinstallServer() {
       const useCustom = !!(
         args.useSoftwareRaid ||
         (args.hardwareRaid && Object.values(args.hardwareRaid).some((v) => !!v)) ||
-        (args.customPartitions && args.customPartitions.length > 0)
+        (args.customPartitions && args.customPartitions.length > 0) ||
+        (args.keepDiskGroups && args.keepDiskGroups.length > 0)
       );
 
       if (useCustom) {
@@ -140,6 +141,17 @@ export function useReinstallServer() {
           });
         }
         const storageArray = Array.from(groups.values());
+        if (args.keepDiskGroups?.length) {
+          if (args.useProxmox9Zfs) throw new Error("保留磁盘数据时请关闭 ZFS 预设，并为安装磁盘组明确配置分区。");
+          const keep = new Set(args.keepDiskGroups);
+          if (keep.size !== args.keepDiskGroups.length || [...keep].some(id => !Number.isInteger(id) || id <= 0)) {
+            throw new Error("保留数据的磁盘组编号必须为不重复的正整数。");
+          }
+          if (!storageArray.some(g => g.partitioning) || storageArray.some(g => !g.diskGroupId)) {
+            throw new Error("保留数据时必须为另一磁盘组明确配置安装分区，不能使用默认磁盘组或仅勾选保留数据。");
+          }
+          if (storageArray.some(g => keep.has(g.diskGroupId))) throw new Error("同一磁盘组不能同时安装系统和保留数据。");
+        }
         for (const keepGid of args.keepDiskGroups ?? []) {
           storageArray.push({ diskGroupId: keepGid, erase: false });
         }

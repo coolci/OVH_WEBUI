@@ -5,10 +5,10 @@ import { KeyRound, Loader2, Globe, Settings as SettingsIcon } from "lucide-react
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { api } from "@/lib/http";
 import { apiMessage } from "@/lib/api-error";
+import { useCreateAccount } from "@/hooks/ovh/use-accounts";
 import { qk } from "@/lib/query";
 import { OVH_SUBSIDIARIES, subsidiaryLabel } from "@/lib/ovh-subsidiaries";
 import { apiBaseUrlForEndpoint, endpointRegion } from "@/lib/ovh-regions";
@@ -125,6 +125,7 @@ function AccountOverlay({ onSuccess }: { onSuccess: () => void }) {
     ...DEFAULT_FORM,
     name: t("commons.credsGate.defaultAccountName"),
   }));
+  const createAccount = useCreateAccount();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string>("");
 
@@ -147,7 +148,7 @@ function AccountOverlay({ onSuccess }: { onSuccess: () => void }) {
     setError("");
     try {
       const zone = form.zone || "IE";
-      const res = await api.post("/accounts", {
+      const result = await createAccount.mutateAsync({
         name: form.name.trim(),
         appKey: form.appKey.trim(),
         appSecret: form.appSecret.trim(),
@@ -156,23 +157,11 @@ function AccountOverlay({ onSuccess }: { onSuccess: () => void }) {
         endpoint: endpointForZone(zone),
         setDefault: true, // 首次创建自动设默认
       });
-      qc.invalidateQueries({ queryKey: ["accounts", "list"] });
-      // 后端 /accounts 会带回 subsidiaryWarning:凭据能用,但这个账户在 OVH 那边属于另一个子公司。
-      // 它不影响 valid,却决定目录/价格/库存/下单 region 打到哪个站点,所以必须当场说出来。
-      const warning: string = res.data?.subsidiaryWarning || "";
-      if (res.data?.valid === false) {
-        setError(
-          t("commons.credsGate.savedButInvalid") + (warning ? " " + warning : "")
-        );
-        // 验证失败也放行,不强卡用户
-        prefetchAfterCredsSaved(qc, zone);
+      if (!result.valid) {
+        // The account is already saved (including HTTP 422). Enter settings so
+        // corrections update that ID instead of creating another account.
         onSuccess();
         return;
-      }
-      if (warning) {
-        // 凭据没问题就放行,但这层引导页马上会被 onSuccess 卸载,setError 用户根本看不到 ——
-        // 用长时间 toast 把错配带到主界面上,让用户去设置页把 zone 改对再下单。
-        toast.warning(warning, { duration: 20000 });
       }
       prefetchAfterCredsSaved(qc, zone);
       onSuccess();

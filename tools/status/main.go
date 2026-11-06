@@ -1,15 +1,27 @@
 package main
 
 import (
+	"bytes"
 	"encoding/csv"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"gopkg.in/yaml.v3"
 	"os"
-	"path/filepath"
+	"os/exec"
 	"regexp"
 	"strings"
 	"time"
 )
+
+type RegisteredRoute struct {
+	Method  string `json:"method"`
+	Path    string `json:"path"`
+	Handler string `json:"handler"`
+}
+
+var registeredRoutes = map[string]bool{}
+var testResults = map[string]bool{}
 
 type Row struct {
 	ID          string
@@ -47,6 +59,34 @@ func main() {
 		os.Exit(1)
 	}
 	openAPIText := string(openAPIContent)
+	var parsedContract map[string]interface{}
+	if err := yaml.Unmarshal(openAPIContent, &parsedContract); err != nil {
+		fmt.Fprintln(os.Stderr, "Invalid OpenAPI contract:", err)
+		os.Exit(1)
+	}
+	if err := loadRoutes(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	covered := map[string]bool{}
+	invalid := 0
+	for _, r := range rows {
+		key := routeKey(r.Method, r.CurrentPath)
+		if !registeredRoutes[key] || covered[key] {
+			fmt.Fprintf(os.Stderr, "Invalid or duplicate registry entry: %s %s\n", r.Method, r.CurrentPath)
+			invalid++
+		}
+		covered[key] = true
+	}
+	for key := range registeredRoutes {
+		if !covered[key] {
+			fmt.Fprintln(os.Stderr, "Untracked route:", key)
+			invalid++
+		}
+	}
+	if invalid > 0 && (*verify || *sync) {
+		os.Exit(1)
+	}
 
 	mismatches := 0
 	var done, wip, todo, blocked int
@@ -96,7 +136,7 @@ func main() {
 			if r.Status != actual {
 				r.Status = actual
 				if actual == "done" && r.Evidence == "" {
-					r.Evidence = "P1-domain-" + domainToDir(r.Domain)
+					r.Evidence = ""
 				}
 				r.CheckedAt = nowISO
 				syncedCount++
@@ -118,7 +158,6 @@ func saveLedger(path string, rows []Row) error {
 	defer f.Close()
 
 	w := csv.NewWriter(f)
-	defer w.Flush()
 
 	header := []string{"id", "domain", "phase", "method", "current_path", "target", "status", "evidence", "checked_at"}
 	if err := w.Write(header); err != nil {
@@ -131,7 +170,8 @@ func saveLedger(path string, rows []Row) error {
 			return err
 		}
 	}
-	return nil
+	w.Flush()
+	return w.Error()
 }
 
 func loadLedger(path string) ([]Row, error) {
@@ -176,75 +216,92 @@ func loadLedger(path string) ([]Row, error) {
 	return rows, nil
 }
 
-func deriveStatus(r *Row, openAPIText string) string {
-	// If marked blocked in ledger with explicit reason, keep blocked
-	if r.Status == "blocked" {
-		return "blocked"
+func routeKey(method, path string) string {
+	// Parameter names do not change the route contract; wildcard and single
+	// segment parameters remain distinct.
+	path = regexp.MustCompile(`:[A-Za-z0-9_]+|\{[^}]+\}`).ReplaceAllString(path, ":param")
+	path = regexp.MustCompile(`\*[A-Za-z0-9_]+`).ReplaceAllString(path, "*param")
+	return strings.ToUpper(method) + " " + path
+}
+func loadRoutes() error {
+	cmd := exec.Command("go", "run", "./backend/cmd/routes")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	data, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("export registry: %w: %s", err, stderr.String())
 	}
-
-	// 1. Check if contract exists in openapi.yaml
-	contractOK := false
-	if openAPIText != "" {
-		targetPath := r.Target
-		reParam := regexp.MustCompile(`:([a-zA-Z0-9_]+)`)
-		openAPIFormat := reParam.ReplaceAllString(targetPath, `{$1}`)
-		openAPIFormat = strings.ReplaceAll(openAPIFormat, "*planCode", "{planCode}")
-		if strings.Contains(openAPIText, targetPath) || strings.Contains(openAPIText, openAPIFormat) {
-			contractOK = true
+	var routes []RegisteredRoute
+	if err = json.Unmarshal(data, &routes); err != nil {
+		return err
+	}
+	if len(routes) == 0 {
+		return fmt.Errorf("empty route registry")
+	}
+	registeredRoutes = map[string]bool{}
+	for _, r := range routes {
+		if r.Handler == "" {
+			return fmt.Errorf("route without handler")
 		}
+		registeredRoutes[routeKey(r.Method, r.Path)] = true
 	}
-
-	// 2. Check if clean layered implementation exists
-	layered := hasLayeredImplementation(r.Domain, r.Target)
-
-	// 3. Check if test exists
-	tested := hasPassingTest(r.Domain, r.Target)
-
-	if contractOK && layered && tested {
-		return "done"
-	}
-	if contractOK || layered || tested {
-		return "wip"
-	}
-	return "todo"
+	return nil
 }
-
-func domainToDir(domain string) string {
-	dom := strings.ToLower(domain)
-	switch {
-	case strings.HasPrefix(dom, "f01"):
-		return "account"
-	case dom == "f02":
-		return "catalog"
-	case dom == "f03" || dom == "f08":
-		return "server"
-	case dom == "f04":
-		return "order"
-	case dom == "f05":
-		return "monitor"
-	case dom == "f06" || dom == "f09":
-		return "vps"
-	case dom == "f07":
-		return "telegram"
-	case dom == "f10" || dom == "f11":
-		return "system"
-	default:
-		return dom
+func contractExists(r *Row, content string) bool {
+	var contract struct {
+		Paths map[string]map[string]interface{} `yaml:"paths"`
 	}
-}
-
-func hasLayeredImplementation(domain, target string) bool {
-	domDir := domainToDir(domain)
-	p := filepath.Join("backend", "internal", "domain", domDir)
-	if fi, err := os.Stat(p); err == nil && fi.IsDir() {
-		return true
+	if yaml.Unmarshal([]byte(content), &contract) != nil {
+		return false
+	}
+	for path, methods := range contract.Paths {
+		target := strings.ReplaceAll(r.Target, "*planCode", ":planCode")
+		if routeKey(r.Method, path) == routeKey(r.Method, target) {
+			_, ok := methods[strings.ToLower(r.Method)]
+			return ok
+		}
 	}
 	return false
 }
+func deriveStatus(r *Row, content string) string {
+	implemented := registeredRoutes[routeKey(r.Method, r.CurrentPath)]
+	if !implemented {
+		return "todo"
+	}
+	if r.Status == "blocked" {
+		return "blocked"
+	}
+	if contractExists(r, content) && verifiedTest(r.Evidence) {
+		return "done"
+	}
+	return "wip"
+}
 
-func hasPassingTest(domain, target string) bool {
-	domDir := domainToDir(domain)
-	p := filepath.Join("backend", "internal", "domain", domDir)
-	matches, _ := filepath.Glob(filepath.Join(p, "*_test.go"))
-	return len(matches) > 0
+// Evidence explicitly associates this ledger row with one runnable named Go
+// regression. A directory or a test file alone cannot establish a passing test.
+func verifiedTest(evidence string) bool {
+	const prefix = "go-test:"
+	if !strings.HasPrefix(evidence, prefix) {
+		return false
+	}
+	if result, ok := testResults[evidence]; ok {
+		return result
+	}
+	parts := strings.Split(strings.TrimPrefix(evidence, prefix), "#")
+	if len(parts) != 2 || !regexp.MustCompile(`^\./backend/internal/[a-zA-Z0-9_/-]+$`).MatchString(parts[0]) || !regexp.MustCompile(`^Test[A-Za-z0-9_]+$`).MatchString(parts[1]) {
+		return false
+	}
+	cmd := exec.Command("go", "test", parts[0], "-run", "^"+parts[1]+"$", "-count=1", "-json")
+	data, err := cmd.Output()
+	passed := false
+	if err == nil {
+		for _, line := range bytes.Split(data, []byte("\n")) {
+			var event struct{ Action, Test string }
+			if json.Unmarshal(line, &event) == nil && event.Action == "pass" && event.Test == parts[1] {
+				passed = true
+			}
+		}
+	}
+	testResults[evidence] = passed
+	return passed
 }

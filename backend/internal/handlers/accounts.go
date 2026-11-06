@@ -364,7 +364,10 @@ func UpdateAccount(state *app.State) gin.HandlerFunc {
 		// PUT {"endpoint":"ovh-us"}(不带 zone)在请求体里完全自洽,合并后却变成
 		// zone=FR + endpoint=ovh-us —— 拿欧洲子公司的目录去打美区站点,账户从此每一次调用都错,
 		// 而以前 UpdateAccount 根本不做任何校验,这种账户会一直躺在库里。
-		if msg := validateZoneEndpoint(acc.Zone, acc.Endpoint); msg != "" {
+		merged := accountInput{Name: acc.Name, Zone: acc.Zone, Endpoint: acc.Endpoint,
+			AppKey: acc.AppKey, AppSecret: acc.AppSecret, ConsumerKey: acc.ConsumerKey,
+			ProxyURL: &acc.ProxyURL, Fingerprint: &acc.Fingerprint}
+		if msg := merged.validate(); msg != "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": msg})
 			return
 		}

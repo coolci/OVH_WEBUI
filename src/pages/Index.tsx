@@ -18,7 +18,7 @@ import { MonitorSubscribeDialog } from "@/components/monitor/MonitorSubscribeDia
 import { useStats } from "@/hooks/use-stats";
 import { useQueueList, type QueueItem } from "@/hooks/use-queue";
 import { useSystemMetrics, useAppVersion, useUpdateCheck } from "@/hooks/use-system-metrics";
-import { useMonitorList } from "@/hooks/use-monitor";
+import { useMonitorList, type MonitorSubscription } from "@/hooks/use-monitor";
 import { useTelegramPollerStatus } from "@/hooks/use-settings";
 import { useAccounts } from "@/hooks/use-accounts";
 import { OperationBanner } from "@/components/dashboard/OperationBanner";
@@ -56,6 +56,7 @@ function DashboardPage() {
 
   const [quickOrderOpen, setQuickOrderOpen] = useState(false);
   const [quickOrderPlanCode, setQuickOrderPlanCode] = useState<string | undefined>(undefined);
+  const [subscribeInitial, setSubscribeInitial] = useState<MonitorSubscription | null>(null);
   const [subscribeOpen, setSubscribeOpen] = useState(false);
   const [subscribePlanCode, setSubscribePlanCode] = useState<string | undefined>(undefined);
   const [isRefreshingAll, setIsRefreshingAll] = useState(false);
@@ -65,7 +66,8 @@ function DashboardPage() {
     setQuickOrderOpen(true);
   };
 
-  const handleOpenSubscribe = (planCode?: string) => {
+  const handleOpenSubscribe = (planCode?: string, subscription?: MonitorSubscription) => {
+    setSubscribeInitial(subscription || null);
     setSubscribePlanCode(planCode);
     setSubscribeOpen(true);
   };
@@ -244,23 +246,11 @@ function DashboardPage() {
           setSubscribeOpen(v);
           if (!v) setSubscribePlanCode(undefined);
         }}
-        mode={
-          subscribePlanCode &&
-          (monitorList.data || []).some((s) => s.planCode === subscribePlanCode)
-            ? "edit"
-            : "create"
-        }
+        mode={subscribeInitial ? "edit" : "create"}
         planCode={subscribePlanCode}
-        serverName={
-          (monitorList.data || []).find((s) => s.planCode === subscribePlanCode)?.serverName
-        }
-        lockPlanCode={
-          !!subscribePlanCode &&
-          (monitorList.data || []).some((s) => s.planCode === subscribePlanCode)
-        }
-        initial={
-          (monitorList.data || []).find((s) => s.planCode === subscribePlanCode) || null
-        }
+        serverName={subscribeInitial?.serverName}
+        lockPlanCode={!!subscribeInitial}
+        initial={subscribeInitial}
       />
     </div>
   );

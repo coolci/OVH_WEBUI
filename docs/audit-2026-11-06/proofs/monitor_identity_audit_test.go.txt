@@ -1,0 +1,68 @@
+package handlers
+
+import (
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/gin-gonic/gin"
+	"github.com/ovh-webui/server/internal/monitor"
+	"github.com/ovh-webui/server/internal/netfp"
+	"github.com/ovh-webui/server/internal/types"
+)
+
+// These assertions preserve the observed bug, not the desired behavior.
+// The helper creates an isolated temporary SQLite database, with no real accounts.
+func TestAuditEmptyConfigurationDeletionTargetsSibling(t *testing.T) {
+	st, mon := newWatchTestMonitor(t)
+	mon.AddSubscription("audit-plan", nil, true, false, "", nil, nil, false, 0, "", false, []string{"ram-64g"})
+	mon.AddSubscription("audit-plan", nil, true, false, "", nil, nil, false, 0, "", false, nil)
+	r := gin.New()
+	r.DELETE("/monitor/subscriptions/:planCode", RemoveSubscription(st, mon))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodDelete, "/monitor/subscriptions/audit-plan?optionsKey=", nil))
+	if w.Code != http.StatusOK { t.Fatalf("status %d: %s", w.Code, w.Body.String()) }
+	subs := mon.Snapshot()
+	if len(subs) != 1 || monitor.OptionsKey(subs[0].Options) != "" { t.Fatalf("unexpected: %+v", subs) }
+	t.Log("BUG REPRODUCED: explicit empty optionsKey removed ram-64g sibling; requested all-config subscription remains")
+}
+
+type auditWatchTransport func(*http.Request) (*http.Response, error)
+func (f auditWatchTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestAuditWatchAllKeepsOnlyFirstAccount(t *testing.T) {
+	st, mon := newWatchTestMonitor(t)
+	for _, id := range []string{"audit-one", "audit-two"} {
+		if err := st.DB.UpsertAccount(types.OVHAccount{ID:id, Name:id, Endpoint:"ovh-eu", Zone:"IE"}); err != nil { t.Fatal(err) }
+	}
+	if err := st.ReloadAccounts(); err != nil { t.Fatal(err) }
+	restore := netfp.SwapSharedTransportForTesting(auditWatchTransport(func(r *http.Request)(*http.Response,error) {
+		return &http.Response{StatusCode:200, Header:http.Header{}, Body:io.NopCloser(strings.NewReader(`{"plans":[]}`)), Request:r},nil
+	})); defer restore()
+	// No DC is selected so subscription prewarming returns immediately. No
+	// notification provider is configured, so any loop stops before inventory IO.
+	defer mon.Stop()
+	out := watchText(st, mon, []string{"audit-plan", "@all", "x1"})
+	subs := mon.Snapshot()
+	if len(subs) != 1 || len(monitor.NormalizeOrderAccounts(subs[0].AutoOrderAccountID, subs[0].AutoOrderAccountIDs)) != 1 { t.Fatalf("unexpected: %+v / %s", subs, out) }
+	t.Logf("BUG REPRODUCED: two-account @all subscription targets only %s", subs[0].AutoOrderAccountID)
+}
+
+func TestAuditFrontendEmptyConfigurationPauseTargetsSibling(t *testing.T) {
+	st, mon := newWatchTestMonitor(t)
+	mon.AddSubscription("audit-plan", nil, true, false, "", nil, nil, false, 0, "", false, []string{"ram-64g"})
+	mon.AddSubscription("audit-plan", nil, true, false, "", nil, nil, false, 0, "", false, nil)
+	r := gin.New()
+	r.POST("/monitor/subscriptions/:planCode/pause", PauseSubscription(st, mon))
+	w := httptest.NewRecorder()
+	// MonitorPage turns empty optionsKey into undefined; JSON omits the field.
+	req := httptest.NewRequest(http.MethodPost, "/monitor/subscriptions/audit-plan/pause", strings.NewReader(`{"paused":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK { t.Fatalf("status %d: %s", w.Code, w.Body.String()) }
+	subs := mon.Snapshot()
+	if len(subs) != 2 || !subs[0].Paused || subs[1].Paused { t.Fatalf("unexpected: %+v", subs) }
+	t.Log("BUG REPRODUCED: all-config row pause payload paused ram-64g sibling while all-config subscription kept running")
+}

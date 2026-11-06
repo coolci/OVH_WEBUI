@@ -25,7 +25,7 @@ interface StockRadarSectionProps {
   isPending: boolean;
   isFetching: boolean;
   onRefetch: () => void;
-  onOpenSubscribe: (planCode?: string) => void;
+  onOpenSubscribe: (planCode?: string, subscription?: MonitorSubscription) => void;
   onOpenQuickOrder: (planCode?: string) => void;
 }
 
@@ -217,7 +217,7 @@ export function StockRadarSection({
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => onOpenSubscribe(sub.planCode)}
+                        onClick={() => onOpenSubscribe(sub.planCode, sub)}
                         className="h-7 text-[11px] px-2 rounded-md font-medium text-muted-foreground hover:text-foreground"
                       >
                         设置

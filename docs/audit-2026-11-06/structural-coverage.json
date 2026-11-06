@@ -1,0 +1,686 @@
+[
+  {
+    "file": "src/components/server-control/reinstall/constants.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/telegram-order/types.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/accordion.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "React.forwardRef",
+      "cn"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/alert-dialog.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "React.forwardRef",
+      "cn",
+      "buttonVariants"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/alert.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "cva",
+      "React.forwardRef",
+      "cn",
+      "alertVariants"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/aspect-ratio.tsx",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/avatar.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "React.forwardRef",
+      "cn"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/badge.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "cva",
+      "cn",
+      "badgeVariants"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/breadcrumb.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "React.forwardRef",
+      "cn"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/button.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "cva",
+      "React.forwardRef",
+      "cn",
+      "buttonVariants"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/calendar.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "cn",
+      "buttonVariants"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/card.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "React.forwardRef",
+      "cn"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/checkbox.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "React.forwardRef",
+      "cn"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/collapsible.tsx",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/command.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "React.forwardRef",
+      "cn"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/context-menu.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "React.forwardRef",
+      "cn"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/dialog.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "React.forwardRef",
+      "cn"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/drawer.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "React.forwardRef",
+      "cn"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/dropdown-menu.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "React.forwardRef",
+      "cn"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/hover-card.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "React.forwardRef",
+      "cn"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/input.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "React.forwardRef",
+      "cn"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/label.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "cva",
+      "React.forwardRef",
+      "cn",
+      "labelVariants"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/menubar.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "React.forwardRef",
+      "cn"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/navigation-menu.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "React.forwardRef",
+      "cn",
+      "cva",
+      "navigationMenuTriggerStyle"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/pagination.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "cn",
+      "React.forwardRef",
+      "buttonVariants"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/popover.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "React.forwardRef",
+      "cn"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/progress.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "React.forwardRef",
+      "cn"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/radio-group.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "React.forwardRef",
+      "cn"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/resizable.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "cn"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/scroll-area.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "React.forwardRef",
+      "cn"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/separator.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "React.forwardRef",
+      "cn"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/sheet.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "React.forwardRef",
+      "cn",
+      "cva",
+      "sheetVariants"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/skeleton.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "cn"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/slider.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "React.forwardRef",
+      "cn"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/stat-card.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "forwardRef",
+      "cn"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/switch.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "React.forwardRef",
+      "cn"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/table.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "React.forwardRef",
+      "cn"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/tabs.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "React.forwardRef",
+      "cn"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/terminal-card.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "forwardRef",
+      "cn"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/textarea.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "React.forwardRef",
+      "cn"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/toast.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "React.forwardRef",
+      "cn",
+      "cva",
+      "toastVariants"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/toggle.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "cva",
+      "React.forwardRef",
+      "cn",
+      "toggleVariants"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/tooltip.tsx",
+    "category": "UI基本封装；调用仅ref转发与样式组合，事件通过props交由使用方",
+    "calls": [
+      "React.forwardRef",
+      "cn"
+    ],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/components/ui/use-toast.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/hooks/ovh/server-control/types.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/hooks/ovh/use-server-control.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/hooks/use-account.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/hooks/use-accounts.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/hooks/use-active-account.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/hooks/use-app-devices.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/hooks/use-availability.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/hooks/use-hide-ip.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/hooks/use-history.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/hooks/use-logs.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/hooks/use-monitor.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/hooks/use-mrtg.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/hooks/use-notify-channels.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/hooks/use-queue.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/hooks/use-server-aliases.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/hooks/use-server-control.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/hooks/use-servers.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/hooks/use-settings.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/hooks/use-stats.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/hooks/use-system-metrics.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/hooks/use-telegram.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/hooks/use-vps-control.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/hooks/use-vps-monitor.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/i18n/locales/api-en.translated.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/i18n/locales/api-zh.generated.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/i18n/locales/en.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/i18n/locales/modules/common-layer.en.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/i18n/locales/modules/common-layer.zh.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/i18n/locales/modules/ctrl-dialogs.en.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/i18n/locales/modules/ctrl-dialogs.zh.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/i18n/locales/modules/live-chat.en.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/i18n/locales/modules/live-chat.zh.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/i18n/locales/modules/maint-dialogs.en.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/i18n/locales/modules/maint-dialogs.zh.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/i18n/locales/modules/server-safety.en.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/i18n/locales/modules/server-safety.zh.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/i18n/locales/modules/settings-pages.en.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/i18n/locales/modules/settings-pages.zh.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/i18n/locales/modules/snipe-pages.en.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/i18n/locales/modules/snipe-pages.zh.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/i18n/locales/modules/vps-dialogs.en.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/i18n/locales/modules/vps-dialogs.zh.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/i18n/locales/modules/watch-pages.en.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/i18n/locales/modules/watch-pages.zh.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/i18n/locales/zh.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/lib/api-client.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/lib/types.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  },
+  {
+    "file": "src/vite-env.d.ts",
+    "category": "声明、类型、资源或转导出；无本地执行函数",
+    "calls": [],
+    "method": "AST结构核对；不冒充人工逐行或视觉测试"
+  }
+]

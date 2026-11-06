@@ -1,18 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 
-const mainGo = fs.readFileSync(path.join(__dirname, '../backend/main.go'), 'utf8');
-const backendRoutes = [];
-
-// Match api.GET/POST etc, sc.GET/POST etc, vc.GET/POST etc
-const routeRegex = /(api|sc|vc)\.(GET|POST|PUT|DELETE|PATCH)\(["']([^"']+)["']/g;
-let m;
-while ((m = routeRegex.exec(mainGo)) !== null) {
-  let prefix = "";
-  if (m[1] === "sc") prefix = "/server-control";
-  if (m[1] === "vc") prefix = "/vps-control";
-  backendRoutes.push({ method: m[2], path: prefix + m[3] });
-}
+const { execFileSync } = require('child_process');
+const backendRoutes = JSON.parse(execFileSync('go', ['run', './backend/cmd/routes'], {cwd:path.join(__dirname,'..'),encoding:'utf8'}))
+  .map(route => ({...route, path:route.path.replace(/^\/api(?=\/)/, '')}));
+if (!backendRoutes.length) throw Error('Backend route registry is empty');
 
 console.log(`Found ${backendRoutes.length} backend routes`);
 
@@ -34,18 +26,19 @@ function scanDir(dir) {
 const frontendFiles = scanDir(path.join(__dirname, '../src'));
 const apiCalls = [];
 // Match strings with api endpoint patterns
-const pathRegex = /["'`]((\/api\/|\/server-control\/|\/vps-control\/|\/ovh\/|\/queue\/|\/monitor\/|\/auth\/|\/catalog\/|\/config\/|\/system\/|\/logs\/|\/traffic\/)[a-zA-Z0-9_\-\/:\$]+)["'`]/g;
+const pathRegex = /api\.(get|post|put|delete|patch)\s*(?:<[^;]+?>)?\s*\(\s*(["'`])([^"'`]+)\2/g;
+
 
 for (const f of frontendFiles) {
   const content = fs.readFileSync(f, 'utf8');
   let match;
   while ((match = pathRegex.exec(content)) !== null) {
-    let p = match[1];
+    let p = match[3];
     let normalized = p;
     if (normalized.startsWith('/api/')) {
       normalized = normalized.substring(4);
     }
-    apiCalls.push({ file: path.relative(path.join(__dirname, '..'), f), raw: p, normalized });
+    apiCalls.push({ method: match[1].toUpperCase(), file: path.relative(path.join(__dirname, '..'), f), raw: p, normalized });
   }
 }
 
@@ -61,7 +54,7 @@ function matchRoute(calledPath, registeredRoute) {
 
 const missing = [];
 for (const call of apiCalls) {
-  const found = backendRoutes.some(br => matchRoute(call.normalized, br.path));
+  const found = backendRoutes.some(br => br.method === call.method && matchRoute(call.normalized, br.path));
   if (!found) {
     missing.push(call);
   }
@@ -75,5 +68,5 @@ for (const mis of missing) {
   uniqueMissing[mis.normalized].push(mis.file);
 }
 
-console.log("\nTrue unmapped backend endpoints in frontend:");
+console.log("\nPotential unmatched calls (static templates require review; not a completeness proof):");
 console.log(JSON.stringify(uniqueMissing, null, 2));

@@ -1,0 +1,9 @@
+package price
+import("fmt";"sync";"testing")
+// This isolated proof intentionally fails under -race on the audited revision.
+func TestAuditConcurrentPriceKeyMutatesSharedOptions(t *testing.T){
+ options:=make([]string,2048);for i:=range options{options[i]=fmt.Sprintf("ram-%04d",len(options)-i)}
+ start:=make(chan struct{});var wg sync.WaitGroup
+ for i:=0;i<10;i++{wg.Add(1);go func(){defer wg.Done();<-start;priceCacheKey("account","plan","gra",options)}()}
+ close(start);wg.Wait()
+}

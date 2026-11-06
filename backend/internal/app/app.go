@@ -332,6 +332,19 @@ func (s *State) SyncDefaultAccountConfig() {
 	}
 	defAcc, ok := s.FindAccount("")
 	if !ok {
+		// Keep the only legacy credential source if its first migration failed.
+		var migrated bool
+		if _, err := s.DB.GetKV(db.LegacyAccountMigrationKey, &migrated); err != nil || !migrated {
+			return
+		}
+
+		cfg := s.Config.Get()
+		if cfg.AppKey != "" || cfg.AppSecret != "" || cfg.ConsumerKey != "" {
+			cfg.AppKey, cfg.AppSecret, cfg.ConsumerKey = "", "", ""
+			if err := s.Config.Set(cfg); err != nil && s.Logger != nil {
+				s.Logger.Error("clear legacy credentials: "+err.Error(), "system")
+			}
+		}
 		return
 	}
 	cfg := s.Config.Get()
@@ -833,12 +846,23 @@ func (s *State) SaveServers() error {
 // 并把现有所有 queue/history/sniper_task 的 account_id 列回填指向它。
 // 已经有账户的话什么都不做,幂等。
 func (s *State) migrateLegacyConfigToAccount() {
+	var complete bool
+	if _, err := s.DB.GetKV(db.LegacyAccountMigrationKey, &complete); err != nil {
+		s.Logger.Error("read legacy migration marker: "+err.Error(), "system")
+		return
+	}
+	if complete {
+		return
+	}
 	n, err := s.DB.CountAccounts()
 	if err != nil {
 		s.Logger.Error("count accounts: "+err.Error(), "system")
 		return
 	}
 	if n > 0 {
+		if err := s.DB.SetKV(db.LegacyAccountMigrationKey, true); err != nil {
+			s.Logger.Error("mark legacy account migration: "+err.Error(), "system")
+		}
 		return // 已经有账户,跳过
 	}
 	cfg := s.Config.Get()
@@ -885,6 +909,9 @@ func (s *State) migrateLegacyConfigToAccount() {
 		}
 	}
 	s.Logger.Info("已把旧 kv['config'] 迁移成默认账户: "+acc.Name+" ("+acc.Zone+")", "system")
+	if err := s.DB.SetKV(db.LegacyAccountMigrationKey, true); err != nil {
+		s.Logger.Error("mark legacy account migration: "+err.Error(), "system")
+	}
 }
 
 // intStr 小工具,避免在 LoadAll 里临时引 strconv

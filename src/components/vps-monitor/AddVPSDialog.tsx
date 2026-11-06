@@ -28,7 +28,7 @@ import {
   useVPSModels,
   type VPSSubscription,
 } from "@/hooks/use-vps-monitor";
-import { useTelegramVerify } from "@/hooks/use-telegram";
+import { useNotifyGate } from "@/hooks/ovh/use-notify-channels";
 import { SUBSIDIARIES } from "./types";
 
 interface AddVPSDialogProps {
@@ -41,8 +41,7 @@ export function AddVPSDialog({ open, onOpenChange, initial }: AddVPSDialogProps)
   const create = useCreateVPSMonitorSubscription();
   const update = useUpdateVPSSubscription();
   const isEdit = !!initial;
-  const tgVerify = useTelegramVerify();
-  const tgBlocked = tgVerify.data ? !tgVerify.data.ok : false;
+  const [notifyBlocked, notifyReason, notifyPending] = useNotifyGate();
   const [ovhSubsidiary, setOvhSubsidiary] = useState("IE");
   const modelsQ = useVPSModels(ovhSubsidiary);
   const rawModels = modelsQ.data?.models;
@@ -137,15 +136,15 @@ export function AddVPSDialog({ open, onOpenChange, initial }: AddVPSDialogProps)
         </DialogHeader>
 
         <form onSubmit={submit} className="space-y-4">
-          {!isEdit && tgBlocked && (
+          {!isEdit && notifyBlocked && (
             <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3.5 py-2.5">
               <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
               <div className="text-xs flex-1 min-w-0">
                 <div className="font-medium text-amber-900 dark:text-amber-200">
-                  Telegram 通知未配置或无效
+                  通知通道未配置或无效
                 </div>
                 <div className="text-amber-800/80 dark:text-amber-200/80 mt-0.5 break-words">
-                  {tgVerify.data?.reason || "请先在设置页配置可用的 Telegram Bot Token 和 Chat ID"}
+                  {notifyReason || "请先在设置页配置可用的 Telegram 或 Webhook 通知"}
                 </div>
                 <Link
                   to="/settings"
@@ -256,12 +255,12 @@ export function AddVPSDialog({ open, onOpenChange, initial }: AddVPSDialogProps)
             </Button>
             <Button
               type="submit"
-              disabled={pending || (!isEdit && (tgBlocked || tgVerify.isPending))}
-              title={!isEdit && tgBlocked ? "Telegram 通知无效,无法添加订阅" : undefined}
+              disabled={pending || (!isEdit && (notifyBlocked || notifyPending))}
+              title={!isEdit && notifyBlocked ? "通知通道无效,无法添加订阅" : undefined}
             >
               {pending
                 ? "提交中…"
-                : !isEdit && tgVerify.isPending
+                : !isEdit && notifyPending
                   ? "校验通知…"
                   : isEdit
                     ? "保存设置"

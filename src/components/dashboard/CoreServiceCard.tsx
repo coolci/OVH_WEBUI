@@ -57,9 +57,9 @@ export function CoreServiceCard({ stats, version, update }: CoreServiceCardProps
         <div className="space-y-1">
           <SystemRow
             icon={<Link2 className="w-3.5 h-3.5" />}
-            label="OVH API 连通"
+            label="后端状态"
             ok={!!stats}
-            onText="正常通信"
+            onText="已读取本地状态"
             offText="未连接"
           />
           <SystemRow

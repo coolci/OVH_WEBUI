@@ -56,31 +56,32 @@ export function useAccountInfo() {
   });
 }
 
-/** 退款记录（后端直接返回数组） */
+export interface AccountRecords<T> { items: T[]; failed: number; total: number }
+function records<T>(items: T[], failed: unknown, total?: number): AccountRecords<T> {
+  const count = Math.max(0, Number(failed) || 0);
+  if (count > 0 && items.length === 0) throw new Error("记录详情读取失败，请重试");
+  return { items, failed: count, total: total ?? items.length + count };
+}
+
 export function useRefunds() {
   const [accountId] = useActiveAccount();
   return useQuery({
     queryKey: qk.account.refunds(accountId),
-    queryFn: async () =>
-      (
-        await api.get<RefundRecord[]>("/ovh/account/refunds", {
-          params: accountId ? { account: accountId } : undefined,
-        })
-      ).data,
+    queryFn: async () => {
+      const res = await api.get<RefundRecord[]>("/ovh/account/refunds", { params: accountId ? { account: accountId } : undefined });
+      return records(res.data, res.headers?.["x-partial-failures"]);
+    },
   });
 }
 
-/** 邮件历史（后端直接返回数组） */
 export function useEmails() {
   const [accountId] = useActiveAccount();
   return useQuery({
     queryKey: qk.account.emails(accountId),
-    queryFn: async () =>
-      (
-        await api.get<EmailHistoryEntry[]>("/ovh/account/email-history", {
-          params: accountId ? { account: accountId } : undefined,
-        })
-      ).data,
+    queryFn: async () => {
+      const res = await api.get<EmailHistoryEntry[]>("/ovh/account/email-history", { params: accountId ? { account: accountId } : undefined });
+      return records(res.data, res.headers?.["x-partial-failures"]);
+    },
   });
 }
 
@@ -108,16 +109,13 @@ export function useOrders(limit = 30) {
   return useQuery({
     queryKey: [...qk.account.info(accountId), "orders", limit] as const,
     queryFn: async () => {
-      const res = await api.get<OrderRecord[] | { orders?: OrderRecord[] }>(
+      const res = await api.get<OrderRecord[] | { orders?: OrderRecord[]; failed?: number; total?: number }>(
         "/ovh/account/orders",
         { params: { limit, ...(accountId ? { account: accountId } : {}) } }
       );
       const data = res.data;
-      if (Array.isArray(data)) return data;
-      if (data && typeof data === "object" && Array.isArray((data as any).orders)) {
-        return (data as any).orders as OrderRecord[];
-      }
-      return [] as OrderRecord[];
+      if (Array.isArray(data)) return records(data, res.headers?.["x-partial-failures"]);
+      return records(data?.orders || [], data?.failed, data?.total);
     },
   });
 }

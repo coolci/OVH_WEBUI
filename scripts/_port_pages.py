@@ -103,7 +103,6 @@ if cp.exists():
         'import { useNavigate } from "react-router-dom";',
     )
     # tanstack navigate({to}) vs react-router navigate(path)
-    t = t.replace("navigate({ to: ", "navigate(")
     # might leave extra }) - fix common pattern navigate({ to: "/x" }) -> navigate("/x")
     t = re.sub(r"navigate\(\{\s*to:\s*([^}]+)\s*\}\)", r"navigate(\1)", t)
     cp.write_text(t, encoding="utf-8", newline="\n")

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -188,7 +189,9 @@ func orderDetailMatchesPlan(detail map[string]interface{}, planCode string) bool
 	desc, _ := detail["description"].(string)
 	domain, _ := detail["domain"].(string)
 	blob := strings.ToLower(desc + "\n" + domain)
-	return strings.Contains(blob, pc)
+	// Model names may share prefixes or contain punctuation; match the whole
+	// model token rather than claiming a neighbouring model's order.
+	return regexp.MustCompile(`(^|[^a-z0-9_.-])` + regexp.QuoteMeta(pc) + `($|[^a-z0-9_.-])`).MatchString(blob)
 }
 
 func parseOrderTime(s string) (time.Time, bool) {

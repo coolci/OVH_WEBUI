@@ -189,11 +189,12 @@ func runPoller(state *app.State, onUpdate func(map[string]interface{}), kick <-c
 			}
 		}()
 		updates, err := fetchUpdates(ctx, client, token, offset)
+		interrupted := ctx.Err() != nil
 		close(done)
 		cancel()
 
 		if err != nil {
-			if ctx.Err() != nil {
+			if interrupted {
 				continue
 			}
 			errText := err.Error()

@@ -1,0 +1,6067 @@
+{
+  "rows": [
+    {
+      "file": "backend/cmd/routes/main.go",
+      "bytes": 984,
+      "lines": 39,
+      "functions": 2,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "backend/internal/handlers/reinstall_preservation_test.go",
+      "bytes": 2517,
+      "lines": 76,
+      "functions": 1,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "backend/internal/handlers/server_support_regression_test.go",
+      "bytes": 2902,
+      "lines": 72,
+      "functions": 3,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "backend/internal/handlers/subscription_identity_regression_test.go",
+      "bytes": 3454,
+      "lines": 88,
+      "functions": 4,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "backend/internal/purchase/subscription_safety_test.go",
+      "bytes": 8215,
+      "lines": 193,
+      "functions": 9,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "backend/internal/server/lifecycle_regression_test.go",
+      "bytes": 2445,
+      "lines": 95,
+      "functions": 2,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "backend/internal/server/persistence_regression_test.go",
+      "bytes": 8810,
+      "lines": 250,
+      "functions": 10,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "backend/internal/telegram/poller_regression_test.go",
+      "bytes": 2535,
+      "lines": 82,
+      "functions": 3,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "scratch/ssh_config.py",
+      "bytes": 1571,
+      "lines": 40,
+      "functions": 0,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "scripts/reinstall-safety.test.mjs",
+      "bytes": 1878,
+      "lines": 34,
+      "functions": 6,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "scripts/server-support.test.mjs",
+      "bytes": 6321,
+      "lines": 116,
+      "functions": 42,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "scripts/test-account-records-ui.cjs",
+      "bytes": 2610,
+      "lines": 37,
+      "functions": 6,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "scripts/test-hook-loader.mjs",
+      "bytes": 1161,
+      "lines": 23,
+      "functions": 13,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "scripts/tooling_safety_test.py",
+      "bytes": 4022,
+      "lines": 66,
+      "functions": 0,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "tools/status/go.sum",
+      "bytes": 153,
+      "lines": null,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "tools/status/main_test.go",
+      "bytes": 1302,
+      "lines": 43,
+      "functions": 2,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": ".dockerignore",
+      "bytes": 682,
+      "lines": null,
+      "functions": 0,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": ".editorconfig",
+      "bytes": 214,
+      "lines": null,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": ".env.example",
+      "bytes": 2335,
+      "lines": null,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": ".gitattributes",
+      "bytes": 151,
+      "lines": null,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": ".gitignore",
+      "bytes": 688,
+      "lines": null,
+      "functions": 0,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "Dockerfile.backend",
+      "bytes": 1531,
+      "lines": null,
+      "functions": 0,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "Dockerfile.frontend",
+      "bytes": 932,
+      "lines": null,
+      "functions": 0,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "PRD-OVH_WEBUI-v3.docx",
+      "bytes": 405451,
+      "lines": null,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "README.en.md",
+      "bytes": 40407,
+      "lines": 480,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "README.md",
+      "bytes": 37384,
+      "lines": 534,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "VERSION",
+      "bytes": 6,
+      "lines": null,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "api/openapi.yaml",
+      "bytes": 163624,
+      "lines": 6549,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/.env.example",
+      "bytes": 1541,
+      "lines": null,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/README.md",
+      "bytes": 6015,
+      "lines": 146,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/VERSION",
+      "bytes": 7,
+      "lines": null,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/docker-entrypoint.sh",
+      "bytes": 728,
+      "lines": 19,
+      "functions": 1,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/go.mod",
+      "bytes": 2495,
+      "lines": null,
+      "functions": 0,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "backend/go.sum",
+      "bytes": 16540,
+      "lines": null,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/app/app.go",
+      "bytes": 31750,
+      "lines": 976,
+      "functions": 45,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/app/automatic_order.go",
+      "bytes": 3204,
+      "lines": 88,
+      "functions": 3,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/app/automatic_order_test.go",
+      "bytes": 3313,
+      "lines": 84,
+      "functions": 4,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/app/enqueue_test.go",
+      "bytes": 6789,
+      "lines": 203,
+      "functions": 6,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/app/loadfail_guard_test.go",
+      "bytes": 3177,
+      "lines": 96,
+      "functions": 3,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/app/monitor_queue.go",
+      "bytes": 3232,
+      "lines": 122,
+      "functions": 4,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/app/queue_completion.go",
+      "bytes": 1044,
+      "lines": 38,
+      "functions": 1,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/app/queue_completion_test.go",
+      "bytes": 1773,
+      "lines": 56,
+      "functions": 2,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/app/queue_store.go",
+      "bytes": 6265,
+      "lines": 198,
+      "functions": 10,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/app/savehistory_race_test.go",
+      "bytes": 3049,
+      "lines": 99,
+      "functions": 3,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/app/taskcancel_test.go",
+      "bytes": 2316,
+      "lines": 68,
+      "functions": 3,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/app/vps_store.go",
+      "bytes": 6870,
+      "lines": 246,
+      "functions": 13,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/auth/device_token_test.go",
+      "bytes": 2217,
+      "lines": 76,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/auth/middleware.go",
+      "bytes": 5729,
+      "lines": 166,
+      "functions": 3,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/auth/ratelimit.go",
+      "bytes": 2957,
+      "lines": 98,
+      "functions": 4,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/auth/ratelimit_test.go",
+      "bytes": 4240,
+      "lines": 126,
+      "functions": 7,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/catalog/addonmatch_test.go",
+      "bytes": 3052,
+      "lines": 69,
+      "functions": 5,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/catalog/availprobe.go",
+      "bytes": 6788,
+      "lines": 184,
+      "functions": 3,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/catalog/availprobe_test.go",
+      "bytes": 2206,
+      "lines": 62,
+      "functions": 2,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/catalog/catalog.go",
+      "bytes": 51582,
+      "lines": 1298,
+      "functions": 18,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/catalog/catalogcache_test.go",
+      "bytes": 12560,
+      "lines": 355,
+      "functions": 12,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/catalog/custom_plan_test.go",
+      "bytes": 1517,
+      "lines": 36,
+      "functions": 2,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/catalog/ecooption.go",
+      "bytes": 3429,
+      "lines": 88,
+      "functions": 2,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/catalog/ecooption_test.go",
+      "bytes": 3706,
+      "lines": 93,
+      "functions": 8,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/catalog/ks5b_cpu_test.go",
+      "bytes": 2732,
+      "lines": 127,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/catalog/planverdict.go",
+      "bytes": 7019,
+      "lines": 133,
+      "functions": 3,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/catalog/preorder_test.go",
+      "bytes": 3833,
+      "lines": 114,
+      "functions": 3,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/catalog/region.go",
+      "bytes": 29673,
+      "lines": 728,
+      "functions": 27,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/catalog/region_test.go",
+      "bytes": 7323,
+      "lines": 206,
+      "functions": 6,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/catalog/standardize.go",
+      "bytes": 2660,
+      "lines": 89,
+      "functions": 5,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/catalog/standardize_test.go",
+      "bytes": 1002,
+      "lines": 38,
+      "functions": 4,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/catalog/storage_parse.go",
+      "bytes": 2504,
+      "lines": 92,
+      "functions": 3,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/catalog/storage_parse_test.go",
+      "bytes": 2706,
+      "lines": 95,
+      "functions": 11,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/config/config.go",
+      "bytes": 3829,
+      "lines": 136,
+      "functions": 9,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/config/retry_interval_test.go",
+      "bytes": 1963,
+      "lines": 57,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/db/account_proxy_test.go",
+      "bytes": 2962,
+      "lines": 96,
+      "functions": 2,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/db/accounts.go",
+      "bytes": 12172,
+      "lines": 371,
+      "functions": 13,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/db/aliases.go",
+      "bytes": 2349,
+      "lines": 72,
+      "functions": 4,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/db/appdevices.go",
+      "bytes": 7663,
+      "lines": 221,
+      "functions": 9,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/db/appdevices_test.go",
+      "bytes": 4461,
+      "lines": 159,
+      "functions": 5,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/db/catalog.go",
+      "bytes": 1329,
+      "lines": 44,
+      "functions": 3,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/db/db.go",
+      "bytes": 9109,
+      "lines": 213,
+      "functions": 3,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/db/driver_cgo.go",
+      "bytes": 504,
+      "lines": 22,
+      "functions": 1,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/db/driver_purego.go",
+      "bytes": 540,
+      "lines": 22,
+      "functions": 1,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/db/encrypt_migrate.go",
+      "bytes": 3435,
+      "lines": 100,
+      "functions": 2,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/db/has_encrypted.go",
+      "bytes": 1411,
+      "lines": 38,
+      "functions": 1,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/db/history.go",
+      "bytes": 5617,
+      "lines": 181,
+      "functions": 5,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/db/kv.go",
+      "bytes": 1353,
+      "lines": 51,
+      "functions": 3,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/db/monitor.go",
+      "bytes": 9785,
+      "lines": 273,
+      "functions": 8,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/db/monitor_accounts_test.go",
+      "bytes": 1694,
+      "lines": 47,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/db/monitor_identity_test.go",
+      "bytes": 2595,
+      "lines": 67,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/db/monitorsub_options_test.go",
+      "bytes": 1689,
+      "lines": 56,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/db/order_payment.go",
+      "bytes": 684,
+      "lines": 19,
+      "functions": 2,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/db/order_payment_test.go",
+      "bytes": 718,
+      "lines": 28,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/db/queue.go",
+      "bytes": 5685,
+      "lines": 175,
+      "functions": 6,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/db/queue_force_test.go",
+      "bytes": 796,
+      "lines": 42,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/db/queue_preorder_test.go",
+      "bytes": 3663,
+      "lines": 112,
+      "functions": 3,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/db/schema.sql",
+      "bytes": 10685,
+      "lines": null,
+      "functions": 0,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/db/servers.go",
+      "bytes": 2243,
+      "lines": 79,
+      "functions": 5,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/db/short_ids.go",
+      "bytes": 2275,
+      "lines": 79,
+      "functions": 4,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/db/subscription_state_test.go",
+      "bytes": 2436,
+      "lines": 76,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/db/telegram_button_restart_test.go",
+      "bytes": 2106,
+      "lines": 62,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/db/telegram_buttons.go",
+      "bytes": 7033,
+      "lines": 180,
+      "functions": 8,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/db/telegram_security.go",
+      "bytes": 1206,
+      "lines": 36,
+      "functions": 2,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/db/vps.go",
+      "bytes": 6963,
+      "lines": 200,
+      "functions": 7,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/db/vps_roundtrip_test.go",
+      "bytes": 2228,
+      "lines": 67,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/domain/account/account.go",
+      "bytes": 4477,
+      "lines": 151,
+      "functions": 5,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/domain/account/account_test.go",
+      "bytes": 2414,
+      "lines": 81,
+      "functions": 2,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/domain/catalog/catalog.go",
+      "bytes": 2374,
+      "lines": 79,
+      "functions": 4,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "backend/internal/domain/catalog/catalog_test.go",
+      "bytes": 1663,
+      "lines": 64,
+      "functions": 3,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/domain/monitor/monitor.go",
+      "bytes": 4501,
+      "lines": 139,
+      "functions": 3,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "backend/internal/domain/monitor/monitor_test.go",
+      "bytes": 2849,
+      "lines": 89,
+      "functions": 2,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/domain/order/order.go",
+      "bytes": 5205,
+      "lines": 158,
+      "functions": 6,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "backend/internal/domain/order/order_test.go",
+      "bytes": 4214,
+      "lines": 159,
+      "functions": 2,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/domain/server/server.go",
+      "bytes": 3936,
+      "lines": 119,
+      "functions": 4,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "backend/internal/domain/server/server_test.go",
+      "bytes": 2949,
+      "lines": 87,
+      "functions": 3,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/domain/system/system.go",
+      "bytes": 2436,
+      "lines": 81,
+      "functions": 2,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "backend/internal/domain/system/system_test.go",
+      "bytes": 1329,
+      "lines": 50,
+      "functions": 2,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/domain/telegram/telegram.go",
+      "bytes": 3018,
+      "lines": 106,
+      "functions": 5,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "backend/internal/domain/telegram/telegram_test.go",
+      "bytes": 2051,
+      "lines": 76,
+      "functions": 3,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/domain/vps/vps.go",
+      "bytes": 4334,
+      "lines": 147,
+      "functions": 6,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "backend/internal/domain/vps/vps_test.go",
+      "bytes": 2924,
+      "lines": 120,
+      "functions": 2,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/account.go",
+      "bytes": 32028,
+      "lines": 798,
+      "functions": 29,
+      "review": "full",
+      "ranges": "1-428,650-EOF",
+      "teamReview": "full",
+      "teamRanges": [
+        {
+          "reviewer": "audit_server_support",
+          "ranges": "1-428,650-EOF"
+        },
+        {
+          "reviewer": "audit_platform",
+          "ranges": "429-649"
+        }
+      ],
+      "note": "区间并集1-EOF，无遗漏；个人partial，团队联合完整",
+      "team": true,
+      "owner": "platform + server-support（分段联合）"
+    },
+    {
+      "file": "backend/internal/handlers/account_d01_test.go",
+      "bytes": 3121,
+      "lines": 102,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/account_fixture_test.go",
+      "bytes": 1534,
+      "lines": 47,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/account_orders_test.go",
+      "bytes": 6055,
+      "lines": 200,
+      "functions": 3,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/account_payment.go",
+      "bytes": 10492,
+      "lines": 283,
+      "functions": 4,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "backend/internal/handlers/account_payment_test.go",
+      "bytes": 10037,
+      "lines": 252,
+      "functions": 10,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/accountdelete_test.go",
+      "bytes": 2266,
+      "lines": 60,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/accountref_test.go",
+      "bytes": 3285,
+      "lines": 91,
+      "functions": 4,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/accounts.go",
+      "bytes": 23750,
+      "lines": 595,
+      "functions": 18,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/handlers/appair.go",
+      "bytes": 8575,
+      "lines": 256,
+      "functions": 9,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/handlers/batch_add_all_test.go",
+      "bytes": 1723,
+      "lines": 55,
+      "functions": 2,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/catalog.go",
+      "bytes": 5257,
+      "lines": 128,
+      "functions": 2,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/handlers/health.go",
+      "bytes": 333,
+      "lines": 19,
+      "functions": 1,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/handlers/logs.go",
+      "bytes": 928,
+      "lines": 37,
+      "functions": 3,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "backend/internal/handlers/monitor.go",
+      "bytes": 17706,
+      "lines": 454,
+      "functions": 14,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/handlers/monitor_accounts.go",
+      "bytes": 1093,
+      "lines": 39,
+      "functions": 2,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/handlers/monitor_accounts_test.go",
+      "bytes": 4369,
+      "lines": 108,
+      "functions": 2,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/monitor_queue_pause_test.go",
+      "bytes": 8977,
+      "lines": 237,
+      "functions": 6,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/monitor_remove_test.go",
+      "bytes": 2138,
+      "lines": 63,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/notification_test.go",
+      "bytes": 1982,
+      "lines": 57,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/order_mapping.go",
+      "bytes": 20660,
+      "lines": 586,
+      "functions": 7,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "backend/internal/handlers/order_mapping_test.go",
+      "bytes": 8634,
+      "lines": 290,
+      "functions": 2,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/ostemplate_inputs_test.go",
+      "bytes": 3297,
+      "lines": 122,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/prewarm_order_test.go",
+      "bytes": 4266,
+      "lines": 146,
+      "functions": 2,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/proxy.go",
+      "bytes": 6771,
+      "lines": 199,
+      "functions": 6,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/handlers/proxy_audit_test.go",
+      "bytes": 2662,
+      "lines": 73,
+      "functions": 4,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/queue.go",
+      "bytes": 14426,
+      "lines": 338,
+      "functions": 8,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/handlers/queue_custom_plan_test.go",
+      "bytes": 2316,
+      "lines": 66,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/queue_preorder_test.go",
+      "bytes": 2398,
+      "lines": 68,
+      "functions": 2,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/queue_snapshot_test.go",
+      "bytes": 1145,
+      "lines": 50,
+      "functions": 2,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/queue_status_test.go",
+      "bytes": 4192,
+      "lines": 108,
+      "functions": 4,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/queue_stub.go",
+      "bytes": 1420,
+      "lines": 54,
+      "functions": 2,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/handlers/quick_order.go",
+      "bytes": 3398,
+      "lines": 113,
+      "functions": 2,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/handlers/reinstall_storage_test.go",
+      "bytes": 8043,
+      "lines": 224,
+      "functions": 12,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/rescue_pick_test.go",
+      "bytes": 1845,
+      "lines": 47,
+      "functions": 3,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/retraction_lookup_test.go",
+      "bytes": 864,
+      "lines": 29,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/retraction_region_test.go",
+      "bytes": 2968,
+      "lines": 81,
+      "functions": 2,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/sdk_concurrency_test.go",
+      "bytes": 3034,
+      "lines": 99,
+      "functions": 2,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/selfupdate.go",
+      "bytes": 6747,
+      "lines": 164,
+      "functions": 6,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/handlers/server_aliases.go",
+      "bytes": 2529,
+      "lines": 85,
+      "functions": 3,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "backend/internal/handlers/server_control_basic.go",
+      "bytes": 61133,
+      "lines": 1449,
+      "functions": 21,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "backend/internal/handlers/server_control_boot.go",
+      "bytes": 13396,
+      "lines": 359,
+      "functions": 6,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "backend/internal/handlers/server_control_engagement.go",
+      "bytes": 9039,
+      "lines": 229,
+      "functions": 7,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "backend/internal/handlers/server_control_features.go",
+      "bytes": 29031,
+      "lines": 719,
+      "functions": 22,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "backend/internal/handlers/server_control_features_test.go",
+      "bytes": 3946,
+      "lines": 126,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/server_control_hardware.go",
+      "bytes": 44983,
+      "lines": 1202,
+      "functions": 22,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "backend/internal/handlers/server_control_lottery.go",
+      "bytes": 12571,
+      "lines": 397,
+      "functions": 12,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "backend/internal/handlers/server_control_lottery_test.go",
+      "bytes": 7603,
+      "lines": 189,
+      "functions": 7,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/server_control_misc.go",
+      "bytes": 30925,
+      "lines": 843,
+      "functions": 34,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "backend/internal/handlers/server_control_mitigation.go",
+      "bytes": 7227,
+      "lines": 192,
+      "functions": 5,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "backend/internal/handlers/server_control_mitigation_test.go",
+      "bytes": 11626,
+      "lines": 279,
+      "functions": 5,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/server_control_network.go",
+      "bytes": 30827,
+      "lines": 733,
+      "functions": 14,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "backend/internal/handlers/server_control_rescue.go",
+      "bytes": 14737,
+      "lines": 368,
+      "functions": 8,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "backend/internal/handlers/server_control_retraction.go",
+      "bytes": 20406,
+      "lines": 542,
+      "functions": 8,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "backend/internal/handlers/server_safety_test.go",
+      "bytes": 8491,
+      "lines": 193,
+      "functions": 8,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/servers.go",
+      "bytes": 19918,
+      "lines": 501,
+      "functions": 8,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/handlers/service_billing.go",
+      "bytes": 2596,
+      "lines": 89,
+      "functions": 4,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "backend/internal/handlers/service_billing_test.go",
+      "bytes": 6371,
+      "lines": 162,
+      "functions": 5,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/servicename_guard.go",
+      "bytes": 2098,
+      "lines": 58,
+      "functions": 1,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "backend/internal/handlers/servicename_guard_test.go",
+      "bytes": 2531,
+      "lines": 76,
+      "functions": 2,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/settings.go",
+      "bytes": 6276,
+      "lines": 174,
+      "functions": 5,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/handlers/settings_test.go",
+      "bytes": 5448,
+      "lines": 194,
+      "functions": 4,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/shortid_test.go",
+      "bytes": 4022,
+      "lines": 132,
+      "functions": 4,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/stats.go",
+      "bytes": 1007,
+      "lines": 34,
+      "functions": 1,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "backend/internal/handlers/subscription_edit.go",
+      "bytes": 10663,
+      "lines": 282,
+      "functions": 2,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/handlers/support_chat.go",
+      "bytes": 4499,
+      "lines": 112,
+      "functions": 4,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "backend/internal/handlers/support_chat_test.go",
+      "bytes": 4680,
+      "lines": 121,
+      "functions": 3,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/support_tickets.go",
+      "bytes": 14921,
+      "lines": 490,
+      "functions": 18,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "backend/internal/handlers/support_tickets_test.go",
+      "bytes": 4154,
+      "lines": 122,
+      "functions": 5,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/system_metrics.go",
+      "bytes": 2765,
+      "lines": 88,
+      "functions": 1,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/handlers/task_edit_test.go",
+      "bytes": 5331,
+      "lines": 117,
+      "functions": 2,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/telegram.go",
+      "bytes": 17862,
+      "lines": 465,
+      "functions": 14,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/handlers/telegram_account.go",
+      "bytes": 6530,
+      "lines": 188,
+      "functions": 5,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/handlers/telegram_commands.go",
+      "bytes": 37491,
+      "lines": 1022,
+      "functions": 17,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/handlers/telegram_coupon_test.go",
+      "bytes": 1496,
+      "lines": 47,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/telegram_custom_plan_test.go",
+      "bytes": 3437,
+      "lines": 91,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/telegram_hud_test.go",
+      "bytes": 2796,
+      "lines": 98,
+      "functions": 2,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/telegram_picker_compact_test.go",
+      "bytes": 3422,
+      "lines": 130,
+      "functions": 2,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/telegram_quick_order.go",
+      "bytes": 9800,
+      "lines": 327,
+      "functions": 3,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/handlers/telegram_watch.go",
+      "bytes": 6746,
+      "lines": 194,
+      "functions": 3,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/handlers/telegram_watch_test.go",
+      "bytes": 8652,
+      "lines": 238,
+      "functions": 11,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/telegram_wizard.go",
+      "bytes": 30218,
+      "lines": 796,
+      "functions": 1,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/handlers/telegram_wizard_actions.go",
+      "bytes": 17433,
+      "lines": 503,
+      "functions": 9,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/handlers/telegram_wizard_picker.go",
+      "bytes": 26681,
+      "lines": 922,
+      "functions": 12,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/handlers/telegram_wizard_session.go",
+      "bytes": 8704,
+      "lines": 345,
+      "functions": 12,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/handlers/telegram_wizard_test.go",
+      "bytes": 2022,
+      "lines": 67,
+      "functions": 3,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/termination_policy.go",
+      "bytes": 5614,
+      "lines": 142,
+      "functions": 5,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "backend/internal/handlers/test_helpers_test.go",
+      "bytes": 714,
+      "lines": 27,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/tgbtn_test.go",
+      "bytes": 997,
+      "lines": 37,
+      "functions": 2,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/timings.go",
+      "bytes": 728,
+      "lines": 23,
+      "functions": 1,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/handlers/util.go",
+      "bytes": 14341,
+      "lines": 421,
+      "functions": 24,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/handlers/version.go",
+      "bytes": 5041,
+      "lines": 154,
+      "functions": 6,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/handlers/vps_control_basic.go",
+      "bytes": 18553,
+      "lines": 475,
+      "functions": 11,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "backend/internal/handlers/vps_control_engagement.go",
+      "bytes": 8253,
+      "lines": 218,
+      "functions": 7,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "backend/internal/handlers/vps_control_install.go",
+      "bytes": 16301,
+      "lines": 437,
+      "functions": 11,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "backend/internal/handlers/vps_control_misc.go",
+      "bytes": 13334,
+      "lines": 326,
+      "functions": 9,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "backend/internal/handlers/vps_control_mitigation.go",
+      "bytes": 9107,
+      "lines": 235,
+      "functions": 5,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "backend/internal/handlers/vps_control_power.go",
+      "bytes": 5446,
+      "lines": 129,
+      "functions": 5,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "backend/internal/handlers/vps_control_rebuild_test.go",
+      "bytes": 6246,
+      "lines": 187,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/handlers/vps_control_snapshot.go",
+      "bytes": 8481,
+      "lines": 200,
+      "functions": 5,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "backend/internal/handlers/vps_models.go",
+      "bytes": 1266,
+      "lines": 42,
+      "functions": 1,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/handlers/vps_monitor.go",
+      "bytes": 16093,
+      "lines": 431,
+      "functions": 11,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/logger/logger.go",
+      "bytes": 3865,
+      "lines": 159,
+      "functions": 13,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/logger/logger_test.go",
+      "bytes": 891,
+      "lines": 49,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/monitor/accounts.go",
+      "bytes": 5893,
+      "lines": 200,
+      "functions": 9,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/monitor/availwording.go",
+      "bytes": 1608,
+      "lines": 57,
+      "functions": 1,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/monitor/availwording_test.go",
+      "bytes": 1019,
+      "lines": 29,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/monitor/check.go",
+      "bytes": 48826,
+      "lines": 1134,
+      "functions": 21,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/monitor/checkerror_test.go",
+      "bytes": 1022,
+      "lines": 30,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/monitor/generation_test.go",
+      "bytes": 1424,
+      "lines": 53,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/monitor/loop.go",
+      "bytes": 12303,
+      "lines": 393,
+      "functions": 14,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/monitor/multiaccount_test.go",
+      "bytes": 13308,
+      "lines": 285,
+      "functions": 8,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/monitor/notify.go",
+      "bytes": 38801,
+      "lines": 1060,
+      "functions": 19,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/monitor/notify_render_test.go",
+      "bytes": 11681,
+      "lines": 332,
+      "functions": 13,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/monitor/options_identity_test.go",
+      "bytes": 1835,
+      "lines": 43,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/monitor/ordertarget_test.go",
+      "bytes": 4234,
+      "lines": 104,
+      "functions": 6,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/monitor/persist.go",
+      "bytes": 6619,
+      "lines": 201,
+      "functions": 5,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/monitor/prewarm.go",
+      "bytes": 4370,
+      "lines": 147,
+      "functions": 5,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/monitor/prewarm_test.go",
+      "bytes": 9371,
+      "lines": 296,
+      "functions": 6,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/monitor/price.go",
+      "bytes": 13832,
+      "lines": 334,
+      "functions": 12,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/monitor/race_test.go",
+      "bytes": 5200,
+      "lines": 164,
+      "functions": 2,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/monitor/setoptions_test.go",
+      "bytes": 2797,
+      "lines": 71,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/monitor/snapshot_test.go",
+      "bytes": 510,
+      "lines": 19,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/monitor/subscriptions.go",
+      "bytes": 18355,
+      "lines": 559,
+      "functions": 23,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/monitor/task_control_test.go",
+      "bytes": 4536,
+      "lines": 115,
+      "functions": 4,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/monitor/types.go",
+      "bytes": 16693,
+      "lines": 436,
+      "functions": 17,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/netfp/netfp.go",
+      "bytes": 19234,
+      "lines": 581,
+      "functions": 19,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/netfp/netfp_test.go",
+      "bytes": 6303,
+      "lines": 194,
+      "functions": 8,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/netfp/probe_test.go",
+      "bytes": 3008,
+      "lines": 87,
+      "functions": 5,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/netfp/testing_transport.go",
+      "bytes": 555,
+      "lines": 19,
+      "functions": 1,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/notify/notify.go",
+      "bytes": 11607,
+      "lines": 359,
+      "functions": 7,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/notify/notify_test.go",
+      "bytes": 10241,
+      "lines": 257,
+      "functions": 13,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/numconv/numconv.go",
+      "bytes": 3506,
+      "lines": 149,
+      "functions": 3,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/numconv/numconv_test.go",
+      "bytes": 672,
+      "lines": 34,
+      "functions": 2,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/ovh/client.go",
+      "bytes": 5790,
+      "lines": 169,
+      "functions": 7,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/ovh/datacenter_test.go",
+      "bytes": 512,
+      "lines": 17,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/ovh/explain.go",
+      "bytes": 10923,
+      "lines": 227,
+      "functions": 7,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/ovh/explain_test.go",
+      "bytes": 9402,
+      "lines": 233,
+      "functions": 11,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/ovh/helpers.go",
+      "bytes": 7821,
+      "lines": 201,
+      "functions": 11,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/ovh/isolated_client.go",
+      "bytes": 1170,
+      "lines": 30,
+      "functions": 2,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/ovh/manager_url_test.go",
+      "bytes": 1039,
+      "lines": 26,
+      "functions": 2,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/ovh/proxyswap_test.go",
+      "bytes": 4045,
+      "lines": 122,
+      "functions": 4,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/platform/httperr/problem.go",
+      "bytes": 3017,
+      "lines": 89,
+      "functions": 10,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/platform/httperr/problem_test.go",
+      "bytes": 1086,
+      "lines": 41,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/platform/ratelimit/limiter.go",
+      "bytes": 1944,
+      "lines": 82,
+      "functions": 6,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/platform/ratelimit/limiter_test.go",
+      "bytes": 1699,
+      "lines": 77,
+      "functions": 3,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/price/price.go",
+      "bytes": 27859,
+      "lines": 616,
+      "functions": 11,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/proxyguard/proxyguard.go",
+      "bytes": 10073,
+      "lines": 307,
+      "functions": 13,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/proxyguard/proxyguard_test.go",
+      "bytes": 5190,
+      "lines": 162,
+      "functions": 7,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/purchase/checkout_payload_test.go",
+      "bytes": 2974,
+      "lines": 72,
+      "functions": 2,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/purchase/coupon_test.go",
+      "bytes": 10353,
+      "lines": 255,
+      "functions": 2,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/purchase/custom_plan_retry_test.go",
+      "bytes": 2415,
+      "lines": 72,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/purchase/custom_plan_test.go",
+      "bytes": 3203,
+      "lines": 86,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/purchase/eco_options_cache.go",
+      "bytes": 1717,
+      "lines": 63,
+      "functions": 2,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/purchase/failnotice_test.go",
+      "bytes": 3255,
+      "lines": 89,
+      "functions": 4,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/purchase/order_audit_test.go",
+      "bytes": 5482,
+      "lines": 143,
+      "functions": 4,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/purchase/order_message_test.go",
+      "bytes": 2029,
+      "lines": 54,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/purchase/orderstatus.go",
+      "bytes": 5632,
+      "lines": 155,
+      "functions": 5,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/purchase/parallel_cart_test.go",
+      "bytes": 11587,
+      "lines": 352,
+      "functions": 3,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/purchase/preorder_test.go",
+      "bytes": 4342,
+      "lines": 117,
+      "functions": 3,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/purchase/prewarm_pool.go",
+      "bytes": 8336,
+      "lines": 279,
+      "functions": 6,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/purchase/prewarm_test.go",
+      "bytes": 6083,
+      "lines": 166,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/purchase/purchase.go",
+      "bytes": 57749,
+      "lines": 1327,
+      "functions": 20,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/purchase/queue_completion_test.go",
+      "bytes": 2427,
+      "lines": 82,
+      "functions": 2,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/purchase/queue_prewarm_test.go",
+      "bytes": 3716,
+      "lines": 126,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/purchase/queue_processor.go",
+      "bytes": 21118,
+      "lines": 586,
+      "functions": 8,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/purchase/queue_wake_test.go",
+      "bytes": 1711,
+      "lines": 62,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/purchase/quick_order.go",
+      "bytes": 15183,
+      "lines": 391,
+      "functions": 2,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/purchase/quick_order_batch_test.go",
+      "bytes": 3338,
+      "lines": 86,
+      "functions": 3,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/purchase/quick_order_test.go",
+      "bytes": 5354,
+      "lines": 186,
+      "functions": 5,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/purchase/reconcile.go",
+      "bytes": 6488,
+      "lines": 216,
+      "functions": 6,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/purchase/reconcile_test.go",
+      "bytes": 7652,
+      "lines": 245,
+      "functions": 5,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/purchase/timing.go",
+      "bytes": 6077,
+      "lines": 205,
+      "functions": 11,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/purchase/timing_test.go",
+      "bytes": 2649,
+      "lines": 90,
+      "functions": 6,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/purchase/transient.go",
+      "bytes": 2407,
+      "lines": 80,
+      "functions": 2,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/purchase/transient_test.go",
+      "bytes": 2900,
+      "lines": 76,
+      "functions": 6,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/repository/interfaces.go",
+      "bytes": 3782,
+      "lines": 98,
+      "functions": 0,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/repository/interfaces_test.go",
+      "bytes": 729,
+      "lines": 24,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/router/cors.go",
+      "bytes": 2018,
+      "lines": 71,
+      "functions": 3,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "backend/internal/router/router.go",
+      "bytes": 1983,
+      "lines": 77,
+      "functions": 1,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "backend/internal/router/router_test.go",
+      "bytes": 2350,
+      "lines": 86,
+      "functions": 3,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "backend/internal/router/routes_api.go",
+      "bytes": 5244,
+      "lines": 117,
+      "functions": 2,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "backend/internal/router/routes_server_control.go",
+      "bytes": 9765,
+      "lines": 149,
+      "functions": 1,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "backend/internal/router/routes_vps_control.go",
+      "bytes": 4312,
+      "lines": 81,
+      "functions": 1,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "backend/internal/router/routes_vps_monitor.go",
+      "bytes": 3423,
+      "lines": 55,
+      "functions": 1,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "backend/internal/router/ui.go",
+      "bytes": 1929,
+      "lines": 57,
+      "functions": 1,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "backend/internal/schemacheck/baseline_test.go",
+      "bytes": 20711,
+      "lines": 502,
+      "functions": 4,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/schemacheck/fields_test.go",
+      "bytes": 11488,
+      "lines": 399,
+      "functions": 11,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/schemacheck/testdata/ovh-endpoints.json",
+      "bytes": 110966,
+      "lines": 4363,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/schemacheck/usage_test.go",
+      "bytes": 7349,
+      "lines": 244,
+      "functions": 7,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/secret/keyreuse_test.go",
+      "bytes": 3460,
+      "lines": 103,
+      "functions": 4,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/secret/secret.go",
+      "bytes": 11909,
+      "lines": 317,
+      "functions": 13,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/secret/secret_test.go",
+      "bytes": 9118,
+      "lines": 293,
+      "functions": 16,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/server/server.go",
+      "bytes": 6692,
+      "lines": 235,
+      "functions": 4,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/server/shutdown.go",
+      "bytes": 2257,
+      "lines": 79,
+      "functions": 1,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/server/shutdown_test.go",
+      "bytes": 1991,
+      "lines": 81,
+      "functions": 4,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/service/account/account_service.go",
+      "bytes": 4412,
+      "lines": 144,
+      "functions": 12,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/service/account/account_service_test.go",
+      "bytes": 2734,
+      "lines": 109,
+      "functions": 9,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/service/catalog/catalog_service.go",
+      "bytes": 1274,
+      "lines": 43,
+      "functions": 4,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "backend/internal/service/catalog/catalog_service_test.go",
+      "bytes": 1310,
+      "lines": 52,
+      "functions": 4,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/service/monitor/monitor_service.go",
+      "bytes": 1495,
+      "lines": 50,
+      "functions": 5,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "backend/internal/service/monitor/monitor_service_test.go",
+      "bytes": 1892,
+      "lines": 71,
+      "functions": 5,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/service/order/order_service.go",
+      "bytes": 4765,
+      "lines": 142,
+      "functions": 10,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "backend/internal/service/order/order_service_test.go",
+      "bytes": 5560,
+      "lines": 181,
+      "functions": 13,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/service/server/server_service.go",
+      "bytes": 1451,
+      "lines": 46,
+      "functions": 4,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "backend/internal/service/server/server_service_test.go",
+      "bytes": 1572,
+      "lines": 65,
+      "functions": 4,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/storage/storage.go",
+      "bytes": 2924,
+      "lines": 123,
+      "functions": 10,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/telegram/activeaccount.go",
+      "bytes": 2462,
+      "lines": 65,
+      "functions": 4,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/telegram/activecoupon.go",
+      "bytes": 1641,
+      "lines": 66,
+      "functions": 3,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/telegram/activecoupon_test.go",
+      "bytes": 610,
+      "lines": 28,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/telegram/commands.go",
+      "bytes": 5388,
+      "lines": 179,
+      "functions": 8,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/telegram/commands_test.go",
+      "bytes": 4131,
+      "lines": 133,
+      "functions": 6,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/telegram/dedupe_test.go",
+      "bytes": 1584,
+      "lines": 53,
+      "functions": 4,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/telegram/enqueue.go",
+      "bytes": 5784,
+      "lines": 167,
+      "functions": 4,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/telegram/format.go",
+      "bytes": 4962,
+      "lines": 181,
+      "functions": 7,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/telegram/format_test.go",
+      "bytes": 1680,
+      "lines": 79,
+      "functions": 2,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/telegram/keyboard.go",
+      "bytes": 2760,
+      "lines": 104,
+      "functions": 7,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/telegram/order_processor.go",
+      "bytes": 10639,
+      "lines": 271,
+      "functions": 4,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/telegram/orderref_test.go",
+      "bytes": 2137,
+      "lines": 62,
+      "functions": 2,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/telegram/parseshape_test.go",
+      "bytes": 5401,
+      "lines": 135,
+      "functions": 6,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/telegram/poller.go",
+      "bytes": 8514,
+      "lines": 344,
+      "functions": 10,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/telegram/poller_test.go",
+      "bytes": 1209,
+      "lines": 47,
+      "functions": 3,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/telegram/progress.go",
+      "bytes": 6662,
+      "lines": 187,
+      "functions": 4,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/telegram/scrub_test.go",
+      "bytes": 794,
+      "lines": 31,
+      "functions": 2,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/telegram/security.go",
+      "bytes": 6600,
+      "lines": 244,
+      "functions": 15,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/telegram/telegram.go",
+      "bytes": 16073,
+      "lines": 513,
+      "functions": 19,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/types/orderlimits_sync_test.go",
+      "bytes": 1549,
+      "lines": 44,
+      "functions": 1,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/types/splitlist.go",
+      "bytes": 1437,
+      "lines": 41,
+      "functions": 1,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/types/splitlist_test.go",
+      "bytes": 1818,
+      "lines": 48,
+      "functions": 2,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/types/types.go",
+      "bytes": 17937,
+      "lines": 375,
+      "functions": 4,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/updater/container.go",
+      "bytes": 2437,
+      "lines": 57,
+      "functions": 1,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/updater/container_test.go",
+      "bytes": 1400,
+      "lines": 49,
+      "functions": 3,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/updater/install_unix.go",
+      "bytes": 3600,
+      "lines": 85,
+      "functions": 3,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/updater/install_windows.go",
+      "bytes": 2117,
+      "lines": 61,
+      "functions": 3,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/updater/restartrace_test.go",
+      "bytes": 3199,
+      "lines": 106,
+      "functions": 2,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/updater/updater.go",
+      "bytes": 16195,
+      "lines": 438,
+      "functions": 16,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/updater/updater_test.go",
+      "bytes": 15768,
+      "lines": 443,
+      "functions": 21,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/vps/catalog.go",
+      "bytes": 9235,
+      "lines": 282,
+      "functions": 11,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/vps/clonesubs_test.go",
+      "bytes": 2383,
+      "lines": 82,
+      "functions": 2,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/vps/lifecycle_test.go",
+      "bytes": 2225,
+      "lines": 95,
+      "functions": 2,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/vps/purchase.go",
+      "bytes": 18608,
+      "lines": 436,
+      "functions": 9,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/vps/purchase_test.go",
+      "bytes": 4343,
+      "lines": 122,
+      "functions": 8,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/internal/vps/vps.go",
+      "bytes": 28207,
+      "lines": 750,
+      "functions": 24,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "backend/internal/worker/supervisor.go",
+      "bytes": 3765,
+      "lines": 143,
+      "functions": 4,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/internal/worker/supervisor_test.go",
+      "bytes": 537,
+      "lines": 27,
+      "functions": 2,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/main.go",
+      "bytes": 6394,
+      "lines": 194,
+      "functions": 5,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "backend/shutdown_test.go",
+      "bytes": 3039,
+      "lines": 91,
+      "functions": 4,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "backend/webembed_noui.go",
+      "bytes": 199,
+      "lines": 11,
+      "functions": 2,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "backend/webembed_ui.go",
+      "bytes": 563,
+      "lines": 26,
+      "functions": 2,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "bun.lockb",
+      "bytes": 198722,
+      "lines": null,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "components.json",
+      "bytes": 434,
+      "lines": 21,
+      "functions": 0,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "deploy/Caddyfile",
+      "bytes": 1657,
+      "lines": null,
+      "functions": 0,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "deploy_package.tar.gz",
+      "bytes": 15107653,
+      "lines": null,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "docker-compose.https.yml",
+      "bytes": 3817,
+      "lines": 144,
+      "functions": 0,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "docker-compose.prod.yml",
+      "bytes": 823,
+      "lines": 32,
+      "functions": 0,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "docker-compose.ssl.yml",
+      "bytes": 1740,
+      "lines": 65,
+      "functions": 0,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "docker-compose.yml",
+      "bytes": 2154,
+      "lines": 85,
+      "functions": 0,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "docs/DEPLOY.md",
+      "bytes": 3998,
+      "lines": 142,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "docs/SECURITY.md",
+      "bytes": 1465,
+      "lines": 48,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "docs/handover/00-INDEX.md",
+      "bytes": 1676,
+      "lines": 33,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "docs/handover/01-ARCHITECTURE.md",
+      "bytes": 3274,
+      "lines": 78,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "docs/handover/02-MIGRATION-MAP.md",
+      "bytes": 1615,
+      "lines": 41,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "docs/handover/03-API-CONTRACT.md",
+      "bytes": 1876,
+      "lines": 75,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "docs/handover/04-INSPECTION.md",
+      "bytes": 1047,
+      "lines": 30,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "docs/handover/05-TESTING.md",
+      "bytes": 1420,
+      "lines": 60,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "docs/handover/06-RUNBOOK.md",
+      "bytes": 1724,
+      "lines": 85,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "docs/handover/BUG-AUDIT-2026-07-11.md",
+      "bytes": 5368,
+      "lines": 116,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "docs/handover/BUG-AUDIT-2026-11-01.md",
+      "bytes": 11798,
+      "lines": 131,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "docs/handover/DECISIONS.md",
+      "bytes": 2245,
+      "lines": 46,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "docs/handover/ENGINEERING-AUDIT-2026-10-12.md",
+      "bytes": 11488,
+      "lines": 112,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "docs/handover/FULL-TEST-RESULTS.md",
+      "bytes": 4937,
+      "lines": 121,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "docs/handover/LOGIC-REVIEW-2026-10-13.md",
+      "bytes": 16262,
+      "lines": 151,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "docs/handover/PROGRESS.md",
+      "bytes": 2231,
+      "lines": 63,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "docs/handover/SMOKE-RESULTS-2026-07-11.md",
+      "bytes": 1024,
+      "lines": 34,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "docs/prd-v2/progress/PROGRESS.md",
+      "bytes": 24157,
+      "lines": 231,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "docs/prd-v2/progress/README.md",
+      "bytes": 1072,
+      "lines": 27,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "docs/prd-v2/progress/ledger.csv",
+      "bytes": 26550,
+      "lines": null,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "eslint.config.js",
+      "bytes": 791,
+      "lines": 27,
+      "functions": 0,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "go.work",
+      "bytes": 52,
+      "lines": null,
+      "functions": 0,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "go.work.sum",
+      "bytes": 630,
+      "lines": null,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "index.html",
+      "bytes": 1477,
+      "lines": 27,
+      "functions": 0,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "nginx/default.conf",
+      "bytes": 1585,
+      "lines": null,
+      "functions": 0,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "package-lock.json",
+      "bytes": 266873,
+      "lines": 7278,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "package.json",
+      "bytes": 4414,
+      "lines": 110,
+      "functions": 0,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "postcss.config.js",
+      "bytes": 87,
+      "lines": 7,
+      "functions": 0,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "prd_v3_extracted.txt",
+      "bytes": 455104,
+      "lines": null,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "progress/PROGRESS.md",
+      "bytes": 12680,
+      "lines": 147,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "progress/README.md",
+      "bytes": 1060,
+      "lines": 27,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "progress/ledger.csv",
+      "bytes": 26550,
+      "lines": null,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "public/author-avatar.png",
+      "bytes": 499714,
+      "lines": null,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "public/avatars/customer.jpg",
+      "bytes": 18965,
+      "lines": null,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "public/avatars/ovh-support.jpg",
+      "bytes": 84747,
+      "lines": null,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "public/favicon.ico",
+      "bytes": 20373,
+      "lines": null,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "public/placeholder.svg",
+      "bytes": 3253,
+      "lines": null,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "public/robots.txt",
+      "bytes": 174,
+      "lines": null,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "scratch/all_plans.json",
+      "bytes": 681572,
+      "lines": 2,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "scratch/audit_api_routes.cjs",
+      "bytes": 2532,
+      "lines": 73,
+      "functions": 4,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "scratch/check_remote.py",
+      "bytes": 464,
+      "lines": 17,
+      "functions": 2,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "scratch/check_server_compose.py",
+      "bytes": 492,
+      "lines": 22,
+      "functions": 2,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "scratch/deploy-payload/Dockerfile.backend.runtime",
+      "bytes": 292,
+      "lines": null,
+      "functions": 0,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "scratch/deploy-payload/Dockerfile.frontend.runtime",
+      "bytes": 215,
+      "lines": null,
+      "functions": 0,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "scratch/deploy-payload/VERSION",
+      "bytes": 5,
+      "lines": null,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "scratch/deploy-payload/backend/docker-entrypoint.sh",
+      "bytes": 728,
+      "lines": 19,
+      "functions": 1,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "scratch/deploy-payload/docker-compose.https.yml",
+      "bytes": 3817,
+      "lines": 144,
+      "functions": 0,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "scratch/deploy-payload/nginx/default.conf",
+      "bytes": 1585,
+      "lines": null,
+      "functions": 0,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "scratch/deploy.sh",
+      "bytes": 2773,
+      "lines": 60,
+      "functions": 1,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "scratch/ovh-webui-linux",
+      "bytes": 19865760,
+      "lines": null,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "scratch/package_and_deploy.py",
+      "bytes": 7813,
+      "lines": 216,
+      "functions": 7,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "scratch/raw_hardware.json",
+      "bytes": 2027,
+      "lines": 1,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "scratch/raw_hw_1.json",
+      "bytes": 2117,
+      "lines": 1,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "scratch/raw_hw_3.json",
+      "bytes": 2089,
+      "lines": 1,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "scratch_test.cjs",
+      "bytes": 386,
+      "lines": 14,
+      "functions": 1,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "scripts/_fix_router_imports.py",
+      "bytes": 854,
+      "lines": 29,
+      "functions": 3,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "scripts/_patch_imports.py",
+      "bytes": 1280,
+      "lines": 39,
+      "functions": 1,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "scripts/_port_pages.py",
+      "bytes": 4505,
+      "lines": 112,
+      "functions": 4,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "scripts/analyze_storage_cache.py",
+      "bytes": 10264,
+      "lines": 281,
+      "functions": 7,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "scripts/check-encoding.py",
+      "bytes": 3403,
+      "lines": 85,
+      "functions": 3,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "scripts/docker-deploy.sh",
+      "bytes": 1908,
+      "lines": 76,
+      "functions": 1,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "scripts/full_functional_test.py",
+      "bytes": 24705,
+      "lines": 666,
+      "functions": 42,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "scripts/init-first-run.ps1",
+      "bytes": 5330,
+      "lines": null,
+      "functions": 3,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "scripts/init-first-run.sh",
+      "bytes": 2285,
+      "lines": 83,
+      "functions": 2,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "scripts/linux-oneclick-deploy.sh",
+      "bytes": 8345,
+      "lines": 262,
+      "functions": 13,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "scripts/order-inputs.test.mjs",
+      "bytes": 4562,
+      "lines": 94,
+      "functions": 13,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "scripts/smoke_test.py",
+      "bytes": 8863,
+      "lines": 264,
+      "functions": 17,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "scripts/start-backend.ps1",
+      "bytes": 3069,
+      "lines": null,
+      "functions": 2,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "scripts/start-dev.ps1",
+      "bytes": 746,
+      "lines": null,
+      "functions": 1,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "scripts/sync_upstream.cjs",
+      "bytes": 757,
+      "lines": 17,
+      "functions": 0,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "scripts/test-subscription-ui.cjs",
+      "bytes": 13509,
+      "lines": 221,
+      "functions": 12,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/App.css",
+      "bytes": 648,
+      "lines": 43,
+      "functions": 0,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/App.tsx",
+      "bytes": 3930,
+      "lines": 86,
+      "functions": 14,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/NavLink.tsx",
+      "bytes": 779,
+      "lines": 29,
+      "functions": 2,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/account/OrderPaymentButton.tsx",
+      "bytes": 9698,
+      "lines": 270,
+      "functions": 13,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/common/AccountChip.tsx",
+      "bytes": 2978,
+      "lines": 77,
+      "functions": 1,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/common/AccountMultiSelect.tsx",
+      "bytes": 1761,
+      "lines": 38,
+      "functions": 6,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/common/AccountSelect.tsx",
+      "bytes": 2331,
+      "lines": 69,
+      "functions": 4,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "src/components/common/ActiveAccountSync.tsx",
+      "bytes": 2492,
+      "lines": 74,
+      "functions": 5,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/common/AuthGate.tsx",
+      "bytes": 7177,
+      "lines": 204,
+      "functions": 14,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "src/components/common/AuthorWatermark.tsx",
+      "bytes": 58,
+      "lines": 5,
+      "functions": 1,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/common/CapabilityNotice.tsx",
+      "bytes": 2710,
+      "lines": 87,
+      "functions": 1,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/common/Chip.tsx",
+      "bytes": 1151,
+      "lines": 35,
+      "functions": 1,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/common/CommandPalette.tsx",
+      "bytes": 6208,
+      "lines": 165,
+      "functions": 16,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/common/DatacenterPicker.tsx",
+      "bytes": 7090,
+      "lines": 186,
+      "functions": 11,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/common/DeviceMetaCapsules.tsx",
+      "bytes": 12494,
+      "lines": 300,
+      "functions": 1,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/common/DeviceSwitcherCard.tsx",
+      "bytes": 14918,
+      "lines": 344,
+      "functions": 12,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/common/EmptyState.tsx",
+      "bytes": 1230,
+      "lines": 40,
+      "functions": 1,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/common/ErrorBoundary.tsx",
+      "bytes": 4828,
+      "lines": 124,
+      "functions": 7,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/common/HardwareLotteryBadge.tsx",
+      "bytes": 1621,
+      "lines": 48,
+      "functions": 2,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/common/InfoCard.tsx",
+      "bytes": 1272,
+      "lines": 49,
+      "functions": 1,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/common/LoadFailed.tsx",
+      "bytes": 2834,
+      "lines": 82,
+      "functions": 3,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/common/MetricRing.tsx",
+      "bytes": 3136,
+      "lines": 95,
+      "functions": 1,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/common/OptionGroupSection.tsx",
+      "bytes": 3344,
+      "lines": 89,
+      "functions": 3,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/common/OvhCredsGate.tsx",
+      "bytes": 11193,
+      "lines": 297,
+      "functions": 27,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "src/components/common/OvhTokenGuide.tsx",
+      "bytes": 3833,
+      "lines": 84,
+      "functions": 1,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/common/PageHeader.tsx",
+      "bytes": 1601,
+      "lines": 46,
+      "functions": 1,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/common/PartialNotice.tsx",
+      "bytes": 1895,
+      "lines": 51,
+      "functions": 2,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/common/PlanCodeCombobox.tsx",
+      "bytes": 7146,
+      "lines": 172,
+      "functions": 14,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/common/Skeleton.tsx",
+      "bytes": 277,
+      "lines": 7,
+      "functions": 1,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/common/StatusDot.tsx",
+      "bytes": 843,
+      "lines": 32,
+      "functions": 1,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/common/TimingChip.tsx",
+      "bytes": 2224,
+      "lines": 76,
+      "functions": 5,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/common/UpdateButton.tsx",
+      "bytes": 7737,
+      "lines": 188,
+      "functions": 8,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/common/active-endpoint.ts",
+      "bytes": 2131,
+      "lines": 44,
+      "functions": 1,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/dashboard/ActiveQueueCard.tsx",
+      "bytes": 4390,
+      "lines": 116,
+      "functions": 4,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/dashboard/CoreServiceCard.tsx",
+      "bytes": 3945,
+      "lines": 107,
+      "functions": 2,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/dashboard/KpiCard.tsx",
+      "bytes": 3356,
+      "lines": 94,
+      "functions": 3,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/dashboard/OperationBanner.tsx",
+      "bytes": 7236,
+      "lines": 136,
+      "functions": 1,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/dashboard/StockRadarSection.tsx",
+      "bytes": 12960,
+      "lines": 283,
+      "functions": 10,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/dashboard/TelemetryCard.tsx",
+      "bytes": 2931,
+      "lines": 80,
+      "functions": 2,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/layout/AppLayout.tsx",
+      "bytes": 2982,
+      "lines": 75,
+      "functions": 2,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/layout/AppSidebar.tsx",
+      "bytes": 7708,
+      "lines": 192,
+      "functions": 4,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/layout/BrandBar.tsx",
+      "bytes": 2120,
+      "lines": 49,
+      "functions": 1,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/layout/LanguageToggle.tsx",
+      "bytes": 1762,
+      "lines": 39,
+      "functions": 2,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/layout/MobileBottomNav.tsx",
+      "bytes": 9344,
+      "lines": 218,
+      "functions": 8,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/layout/StatusBar.tsx",
+      "bytes": 3873,
+      "lines": 92,
+      "functions": 1,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/layout/TopBar.tsx",
+      "bytes": 9229,
+      "lines": 226,
+      "functions": 12,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/monitor/MonitorOptionsFields.tsx",
+      "bytes": 4651,
+      "lines": 140,
+      "functions": 10,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "src/components/monitor/MonitorSubscribeDialog.tsx",
+      "bytes": 13902,
+      "lines": 328,
+      "functions": 33,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "src/components/orders/QuickOrderDialog.tsx",
+      "bytes": 20423,
+      "lines": 500,
+      "functions": 40,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "src/components/queue/CreateQueueDialog.tsx",
+      "bytes": 17636,
+      "lines": 434,
+      "functions": 36,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "src/components/queue/EditQueueDialog.tsx",
+      "bytes": 11701,
+      "lines": 313,
+      "functions": 28,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "src/components/queue/IntervalEditor.tsx",
+      "bytes": 1800,
+      "lines": 60,
+      "functions": 5,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "src/components/queue/QueueFilterBar.tsx",
+      "bytes": 3424,
+      "lines": 88,
+      "functions": 5,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "src/components/queue/QueueRow.tsx",
+      "bytes": 5721,
+      "lines": 143,
+      "functions": 2,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "src/components/server-control/AdvancedTab.tsx",
+      "bytes": 45578,
+      "lines": 993,
+      "functions": 55,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/server-control/BiosDialog.tsx",
+      "bytes": 4486,
+      "lines": 102,
+      "functions": 8,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/server-control/BootModeDialog.tsx",
+      "bytes": 6711,
+      "lines": 152,
+      "functions": 11,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/server-control/ChangeContactDialog.tsx",
+      "bytes": 13636,
+      "lines": 317,
+      "functions": 15,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/server-control/EngagementDialog.tsx",
+      "bytes": 21537,
+      "lines": 467,
+      "functions": 22,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/server-control/HardwareReplaceDialog.tsx",
+      "bytes": 12205,
+      "lines": 308,
+      "functions": 21,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/server-control/InstallProgressDialog.tsx",
+      "bytes": 6932,
+      "lines": 152,
+      "functions": 5,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/server-control/IpmiDialog.tsx",
+      "bytes": 9675,
+      "lines": 243,
+      "functions": 10,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/server-control/LotteryConfetti.tsx",
+      "bytes": 2974,
+      "lines": 81,
+      "functions": 7,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/server-control/MaintenanceTab.tsx",
+      "bytes": 9437,
+      "lines": 206,
+      "functions": 10,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/server-control/MrtgTrafficChart.tsx",
+      "bytes": 11222,
+      "lines": 298,
+      "functions": 26,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/server-control/NetworkSpecsDialog.tsx",
+      "bytes": 14179,
+      "lines": 331,
+      "functions": 13,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/server-control/OsIcon.tsx",
+      "bytes": 19909,
+      "lines": 176,
+      "functions": 5,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/server-control/OverviewTab.tsx",
+      "bytes": 14957,
+      "lines": 307,
+      "functions": 12,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/server-control/PowerTab.tsx",
+      "bytes": 7594,
+      "lines": 181,
+      "functions": 14,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/server-control/ReinstallDialog.tsx",
+      "bytes": 17673,
+      "lines": 438,
+      "functions": 34,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/server-control/RenewalDialog.tsx",
+      "bytes": 12959,
+      "lines": 301,
+      "functions": 9,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/server-control/RescueDialog.tsx",
+      "bytes": 6908,
+      "lines": 169,
+      "functions": 9,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/server-control/RetractionDialog.tsx",
+      "bytes": 9419,
+      "lines": 217,
+      "functions": 8,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/server-control/ReverseDnsDialog.tsx",
+      "bytes": 8758,
+      "lines": 211,
+      "functions": 15,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/server-control/SplaDialog.tsx",
+      "bytes": 8573,
+      "lines": 202,
+      "functions": 6,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/server-control/TasksDialog.tsx",
+      "bytes": 6569,
+      "lines": 136,
+      "functions": 10,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/server-control/TimeslotsDialog.tsx",
+      "bytes": 8297,
+      "lines": 188,
+      "functions": 12,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/server-control/reinstall/OsTemplateSection.tsx",
+      "bytes": 10058,
+      "lines": 230,
+      "functions": 11,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/server-control/reinstall/PartitionRow.tsx",
+      "bytes": 5192,
+      "lines": 127,
+      "functions": 13,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/server-control/reinstall/PostInstallSection.tsx",
+      "bytes": 5394,
+      "lines": 132,
+      "functions": 12,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/server-control/reinstall/SmartPlanDialog.tsx",
+      "bytes": 4436,
+      "lines": 105,
+      "functions": 6,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/server-control/reinstall/StorageModeOption.tsx",
+      "bytes": 1078,
+      "lines": 37,
+      "functions": 2,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/server-control/reinstall/StoragePartitionSection.tsx",
+      "bytes": 21897,
+      "lines": 513,
+      "functions": 29,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/server-control/reinstall/constants.ts",
+      "bytes": 2179,
+      "lines": 57,
+      "functions": 0,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/servers/CacheBadge.tsx",
+      "bytes": 1348,
+      "lines": 41,
+      "functions": 1,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "src/components/servers/ServerCard.tsx",
+      "bytes": 5447,
+      "lines": 138,
+      "functions": 6,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "src/components/servers/ServerDetailDialog.tsx",
+      "bytes": 17291,
+      "lines": 403,
+      "functions": 27,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "src/components/servers/ServerFilterBar.tsx",
+      "bytes": 6309,
+      "lines": 154,
+      "functions": 4,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "src/components/settings/AccountDialog.tsx",
+      "bytes": 19929,
+      "lines": 482,
+      "functions": 27,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "src/components/settings/AccountsSection.tsx",
+      "bytes": 13141,
+      "lines": 329,
+      "functions": 25,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "src/components/settings/AppPairingSection.tsx",
+      "bytes": 5762,
+      "lines": 130,
+      "functions": 9,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "src/components/settings/AppearanceSection.tsx",
+      "bytes": 2438,
+      "lines": 54,
+      "functions": 3,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/settings/CacheSection.tsx",
+      "bytes": 2955,
+      "lines": 73,
+      "functions": 6,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "src/components/settings/Field.tsx",
+      "bytes": 551,
+      "lines": 22,
+      "functions": 1,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "src/components/settings/LinkCheckDialog.tsx",
+      "bytes": 13438,
+      "lines": 313,
+      "functions": 7,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "src/components/settings/NotifySection.tsx",
+      "bytes": 4419,
+      "lines": 105,
+      "functions": 6,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "src/components/settings/PurchaseSection.tsx",
+      "bytes": 2681,
+      "lines": 72,
+      "functions": 4,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "src/components/settings/Section.tsx",
+      "bytes": 467,
+      "lines": 15,
+      "functions": 1,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "src/components/settings/TelegramSection.tsx",
+      "bytes": 6187,
+      "lines": 163,
+      "functions": 7,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "src/components/support/OfficialChat.tsx",
+      "bytes": 6205,
+      "lines": 106,
+      "functions": 8,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/telegram-order/CommandHistoryPanel.tsx",
+      "bytes": 3490,
+      "lines": 83,
+      "functions": 4,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/telegram-order/CommandReferenceCard.tsx",
+      "bytes": 8484,
+      "lines": 158,
+      "functions": 6,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/telegram-order/OrderModeGrid.tsx",
+      "bytes": 3664,
+      "lines": 117,
+      "functions": 3,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/telegram-order/TerminalConsole.tsx",
+      "bytes": 5341,
+      "lines": 115,
+      "functions": 3,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/telegram-order/types.ts",
+      "bytes": 3185,
+      "lines": 94,
+      "functions": 0,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/theme/ThemeProvider.tsx",
+      "bytes": 379,
+      "lines": 14,
+      "functions": 1,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/theme/ThemeToggle.tsx",
+      "bytes": 2699,
+      "lines": 73,
+      "functions": 4,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/tickets/CreateTicketDialog.tsx",
+      "bytes": 18698,
+      "lines": 406,
+      "functions": 21,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/tickets/TicketChat.tsx",
+      "bytes": 26684,
+      "lines": 713,
+      "functions": 42,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/tickets/TicketDetails.tsx",
+      "bytes": 5296,
+      "lines": 159,
+      "functions": 3,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/tickets/TicketList.tsx",
+      "bytes": 10025,
+      "lines": 306,
+      "functions": 17,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/tickets/labels.ts",
+      "bytes": 4575,
+      "lines": 129,
+      "functions": 7,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/tickets/tickets.css",
+      "bytes": 21870,
+      "lines": 978,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "src/components/ui/accordion.tsx",
+      "bytes": 2028,
+      "lines": 53,
+      "functions": 3,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/alert-dialog.tsx",
+      "bytes": 4434,
+      "lines": 105,
+      "functions": 8,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/alert.tsx",
+      "bytes": 1589,
+      "lines": 44,
+      "functions": 3,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/aspect-ratio.tsx",
+      "bytes": 148,
+      "lines": 6,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/avatar.tsx",
+      "bytes": 1403,
+      "lines": 39,
+      "functions": 3,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/badge.tsx",
+      "bytes": 1118,
+      "lines": 30,
+      "functions": 1,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/breadcrumb.tsx",
+      "bytes": 2777,
+      "lines": 91,
+      "functions": 7,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/button.tsx",
+      "bytes": 2929,
+      "lines": 62,
+      "functions": 1,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/calendar.tsx",
+      "bytes": 2617,
+      "lines": 55,
+      "functions": 3,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/card.tsx",
+      "bytes": 1976,
+      "lines": 60,
+      "functions": 6,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/carousel.tsx",
+      "bytes": 6473,
+      "lines": 225,
+      "functions": 13,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/ui/chart.tsx",
+      "bytes": 10290,
+      "lines": 304,
+      "functions": 12,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/ui/checkbox.tsx",
+      "bytes": 1079,
+      "lines": 27,
+      "functions": 1,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/collapsible.tsx",
+      "bytes": 329,
+      "lines": 10,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/command.tsx",
+      "bytes": 5239,
+      "lines": 138,
+      "functions": 9,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/context-menu.tsx",
+      "bytes": 7369,
+      "lines": 179,
+      "functions": 9,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/dialog.tsx",
+      "bytes": 4161,
+      "lines": 97,
+      "functions": 6,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/drawer.tsx",
+      "bytes": 3028,
+      "lines": 88,
+      "functions": 7,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/dropdown-menu.tsx",
+      "bytes": 7439,
+      "lines": 180,
+      "functions": 9,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/form.tsx",
+      "bytes": 4143,
+      "lines": 130,
+      "functions": 7,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/ui/hover-card.tsx",
+      "bytes": 1220,
+      "lines": 28,
+      "functions": 1,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/input-otp.tsx",
+      "bytes": 2227,
+      "lines": 62,
+      "functions": 4,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/ui/input.tsx",
+      "bytes": 817,
+      "lines": 23,
+      "functions": 1,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/label.tsx",
+      "bytes": 713,
+      "lines": 18,
+      "functions": 1,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/menubar.tsx",
+      "bytes": 8070,
+      "lines": 208,
+      "functions": 11,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/navigation-menu.tsx",
+      "bytes": 5150,
+      "lines": 121,
+      "functions": 6,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/pagination.tsx",
+      "bytes": 2764,
+      "lines": 82,
+      "functions": 7,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/popover.tsx",
+      "bytes": 1333,
+      "lines": 32,
+      "functions": 1,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/progress.tsx",
+      "bytes": 788,
+      "lines": 24,
+      "functions": 1,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/radio-group.tsx",
+      "bytes": 1483,
+      "lines": 37,
+      "functions": 2,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/resizable.tsx",
+      "bytes": 1733,
+      "lines": 38,
+      "functions": 2,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/scroll-area.tsx",
+      "bytes": 1646,
+      "lines": 39,
+      "functions": 2,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/select.tsx",
+      "bytes": 6293,
+      "lines": 150,
+      "functions": 7,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/ui/separator.tsx",
+      "bytes": 718,
+      "lines": 21,
+      "functions": 1,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/sheet.tsx",
+      "bytes": 4597,
+      "lines": 113,
+      "functions": 6,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/sidebar.tsx",
+      "bytes": 23474,
+      "lines": 638,
+      "functions": 34,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/ui/skeleton.tsx",
+      "bytes": 241,
+      "lines": 8,
+      "functions": 1,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/slider.tsx",
+      "bytes": 1088,
+      "lines": 24,
+      "functions": 1,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/sonner.tsx",
+      "bytes": 904,
+      "lines": 28,
+      "functions": 1,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/ui/stat-card.tsx",
+      "bytes": 3016,
+      "lines": 97,
+      "functions": 1,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/status-badge.tsx",
+      "bytes": 9059,
+      "lines": 417,
+      "functions": 2,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/ui/switch.tsx",
+      "bytes": 1174,
+      "lines": 28,
+      "functions": 1,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/table.tsx",
+      "bytes": 2766,
+      "lines": 73,
+      "functions": 8,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/tabs.tsx",
+      "bytes": 1950,
+      "lines": 54,
+      "functions": 3,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/terminal-card.tsx",
+      "bytes": 2400,
+      "lines": 69,
+      "functions": 1,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/textarea.tsx",
+      "bytes": 772,
+      "lines": 22,
+      "functions": 1,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/toast.tsx",
+      "bytes": 4909,
+      "lines": 112,
+      "functions": 6,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/toaster.tsx",
+      "bytes": 754,
+      "lines": 25,
+      "functions": 2,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/ui/toggle-group.tsx",
+      "bytes": 1763,
+      "lines": 50,
+      "functions": 2,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/components/ui/toggle.tsx",
+      "bytes": 1453,
+      "lines": 38,
+      "functions": 1,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/tooltip.tsx",
+      "bytes": 1183,
+      "lines": 29,
+      "functions": 1,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/ui/use-toast.ts",
+      "bytes": 85,
+      "lines": 4,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/components/vps-control/VpsDetail.tsx",
+      "bytes": 24386,
+      "lines": 552,
+      "functions": 22,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/vps-control/VpsDialogs.tsx",
+      "bytes": 7537,
+      "lines": 219,
+      "functions": 14,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/vps-control/VpsMitigationPane.tsx",
+      "bytes": 8132,
+      "lines": 171,
+      "functions": 9,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/vps-control/VpsOptionsPanel.tsx",
+      "bytes": 4041,
+      "lines": 80,
+      "functions": 2,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/vps-control/VpsReinstallDialog.tsx",
+      "bytes": 13222,
+      "lines": 293,
+      "functions": 13,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/vps-control/VpsReverseDnsDialog.tsx",
+      "bytes": 3149,
+      "lines": 101,
+      "functions": 5,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/vps-control/VpsSecondaryDnsPane.tsx",
+      "bytes": 5250,
+      "lines": 146,
+      "functions": 8,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/vps-control/VpsSnapshotPane.tsx",
+      "bytes": 11064,
+      "lines": 299,
+      "functions": 16,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/vps-control/VpsTasksDialog.tsx",
+      "bytes": 6958,
+      "lines": 171,
+      "functions": 9,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/vps-control/vps-geo.ts",
+      "bytes": 4265,
+      "lines": 91,
+      "functions": 2,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/components/vps-monitor/AddVPSDialog.tsx",
+      "bytes": 10162,
+      "lines": 275,
+      "functions": 16,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "src/components/vps-monitor/VPSHistoryPanel.tsx",
+      "bytes": 2146,
+      "lines": 63,
+      "functions": 3,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "src/components/vps-monitor/VPSMonitorHeaderCard.tsx",
+      "bytes": 4057,
+      "lines": 98,
+      "functions": 4,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "src/components/vps-monitor/VPSRow.tsx",
+      "bytes": 3584,
+      "lines": 96,
+      "functions": 1,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "src/components/vps-monitor/types.ts",
+      "bytes": 909,
+      "lines": 25,
+      "functions": 4,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "src/hooks/ovh/partial-list.ts",
+      "bytes": 1843,
+      "lines": 35,
+      "functions": 2,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/hooks/ovh/server-control/types.ts",
+      "bytes": 7659,
+      "lines": 357,
+      "functions": 0,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/hooks/ovh/server-control/use-server-boot.ts",
+      "bytes": 5499,
+      "lines": 148,
+      "functions": 24,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/hooks/ovh/server-control/use-server-core.ts",
+      "bytes": 3873,
+      "lines": 122,
+      "functions": 11,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/hooks/ovh/server-control/use-server-engagement.ts",
+      "bytes": 8989,
+      "lines": 249,
+      "functions": 40,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/hooks/ovh/server-control/use-server-features.ts",
+      "bytes": 10572,
+      "lines": 312,
+      "functions": 46,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/hooks/ovh/server-control/use-server-hardware.ts",
+      "bytes": 6496,
+      "lines": 183,
+      "functions": 23,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/hooks/ovh/server-control/use-server-install.ts",
+      "bytes": 7582,
+      "lines": 172,
+      "functions": 16,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/hooks/ovh/server-control/use-server-network.ts",
+      "bytes": 7568,
+      "lines": 215,
+      "functions": 40,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/hooks/ovh/use-account-services.ts",
+      "bytes": 2885,
+      "lines": 98,
+      "functions": 4,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/hooks/ovh/use-account.ts",
+      "bytes": 6548,
+      "lines": 189,
+      "functions": 17,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/hooks/ovh/use-accounts.ts",
+      "bytes": 22187,
+      "lines": 562,
+      "functions": 51,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "src/hooks/ovh/use-active-account.ts",
+      "bytes": 3470,
+      "lines": 97,
+      "functions": 12,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "src/hooks/ovh/use-app-devices.ts",
+      "bytes": 1886,
+      "lines": 57,
+      "functions": 10,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "src/hooks/ovh/use-availability.ts",
+      "bytes": 18534,
+      "lines": 465,
+      "functions": 31,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "src/hooks/ovh/use-hide-ip.ts",
+      "bytes": 3274,
+      "lines": 90,
+      "functions": 13,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/hooks/ovh/use-history.ts",
+      "bytes": 3048,
+      "lines": 87,
+      "functions": 10,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "src/hooks/ovh/use-logs.ts",
+      "bytes": 4841,
+      "lines": 150,
+      "functions": 17,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/hooks/ovh/use-monitor.ts",
+      "bytes": 8204,
+      "lines": 210,
+      "functions": 30,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "src/hooks/ovh/use-mrtg.ts",
+      "bytes": 2147,
+      "lines": 67,
+      "functions": 4,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/hooks/ovh/use-notify-channels.ts",
+      "bytes": 4555,
+      "lines": 109,
+      "functions": 16,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/hooks/ovh/use-queue.ts",
+      "bytes": 8922,
+      "lines": 226,
+      "functions": 28,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "src/hooks/ovh/use-server-aliases.ts",
+      "bytes": 2554,
+      "lines": 58,
+      "functions": 7,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/hooks/ovh/use-server-control.ts",
+      "bytes": 1151,
+      "lines": 22,
+      "functions": 0,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/hooks/ovh/use-servers.ts",
+      "bytes": 4937,
+      "lines": 115,
+      "functions": 7,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "src/hooks/ovh/use-settings.ts",
+      "bytes": 4812,
+      "lines": 148,
+      "functions": 14,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "src/hooks/ovh/use-stats.ts",
+      "bytes": 606,
+      "lines": 24,
+      "functions": 2,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/hooks/ovh/use-system-metrics.ts",
+      "bytes": 4841,
+      "lines": 120,
+      "functions": 10,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/hooks/ovh/use-telegram.ts",
+      "bytes": 954,
+      "lines": 27,
+      "functions": 2,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/hooks/ovh/use-tickets.ts",
+      "bytes": 7011,
+      "lines": 239,
+      "functions": 22,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/hooks/ovh/use-vps-control.ts",
+      "bytes": 22725,
+      "lines": 620,
+      "functions": 98,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/hooks/ovh/use-vps-monitor.ts",
+      "bytes": 6605,
+      "lines": 187,
+      "functions": 28,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "src/hooks/use-account.ts",
+      "bytes": 72,
+      "lines": 3,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/hooks/use-accounts.ts",
+      "bytes": 73,
+      "lines": 3,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/hooks/use-active-account.ts",
+      "bytes": 79,
+      "lines": 3,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/hooks/use-app-devices.ts",
+      "bytes": 76,
+      "lines": 3,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/hooks/use-availability.ts",
+      "bytes": 77,
+      "lines": 3,
+      "functions": 0,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "src/hooks/use-backend-connection.ts",
+      "bytes": 1235,
+      "lines": 43,
+      "functions": 5,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/hooks/use-hide-ip.ts",
+      "bytes": 72,
+      "lines": 3,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/hooks/use-history.ts",
+      "bytes": 72,
+      "lines": 3,
+      "functions": 0,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "src/hooks/use-logs.ts",
+      "bytes": 69,
+      "lines": 3,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/hooks/use-mobile.tsx",
+      "bytes": 595,
+      "lines": 20,
+      "functions": 4,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/hooks/use-monitor.ts",
+      "bytes": 72,
+      "lines": 3,
+      "functions": 0,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "src/hooks/use-mrtg.ts",
+      "bytes": 69,
+      "lines": 3,
+      "functions": 0,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/hooks/use-notify-channels.ts",
+      "bytes": 80,
+      "lines": 3,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/hooks/use-prewarm.ts",
+      "bytes": 1962,
+      "lines": 64,
+      "functions": 4,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/hooks/use-queue.ts",
+      "bytes": 70,
+      "lines": 3,
+      "functions": 0,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "src/hooks/use-server-aliases.ts",
+      "bytes": 79,
+      "lines": 3,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/hooks/use-server-control.ts",
+      "bytes": 79,
+      "lines": 3,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/hooks/use-servers.ts",
+      "bytes": 72,
+      "lines": 3,
+      "functions": 0,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "src/hooks/use-settings.ts",
+      "bytes": 73,
+      "lines": 3,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/hooks/use-stats.ts",
+      "bytes": 70,
+      "lines": 3,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/hooks/use-system-metrics.ts",
+      "bytes": 79,
+      "lines": 3,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/hooks/use-telegram.ts",
+      "bytes": 73,
+      "lines": 3,
+      "functions": 0,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "src/hooks/use-theme.ts",
+      "bytes": 449,
+      "lines": 8,
+      "functions": 1,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/hooks/use-toast.ts",
+      "bytes": 4121,
+      "lines": 187,
+      "functions": 18,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/hooks/use-vps-control.ts",
+      "bytes": 76,
+      "lines": 3,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/hooks/use-vps-monitor.ts",
+      "bytes": 76,
+      "lines": 3,
+      "functions": 0,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "src/i18n/api-codes.generated.json",
+      "bytes": 12793,
+      "lines": 204,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "src/i18n/date-locale.ts",
+      "bytes": 217,
+      "lines": 7,
+      "functions": 1,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/i18n/format.ts",
+      "bytes": 2480,
+      "lines": 62,
+      "functions": 6,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/i18n/index.ts",
+      "bytes": 1856,
+      "lines": 52,
+      "functions": 0,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/i18n/locales/api-en.translated.ts",
+      "bytes": 17555,
+      "lines": 229,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/i18n/locales/api-zh.generated.ts",
+      "bytes": 15103,
+      "lines": 228,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/i18n/locales/en.ts",
+      "bytes": 3266,
+      "lines": 98,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/i18n/locales/modules/.gitkeep",
+      "bytes": 0,
+      "lines": null,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "src/i18n/locales/modules/common-layer.en.ts",
+      "bytes": 18887,
+      "lines": 425,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/i18n/locales/modules/common-layer.zh.ts",
+      "bytes": 17154,
+      "lines": 406,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/i18n/locales/modules/ctrl-dialogs.en.ts",
+      "bytes": 15557,
+      "lines": 309,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/i18n/locales/modules/ctrl-dialogs.zh.ts",
+      "bytes": 14666,
+      "lines": 305,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/i18n/locales/modules/live-chat.en.ts",
+      "bytes": 2063,
+      "lines": 29,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/i18n/locales/modules/live-chat.zh.ts",
+      "bytes": 1954,
+      "lines": 29,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/i18n/locales/modules/maint-dialogs.en.ts",
+      "bytes": 30460,
+      "lines": 592,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/i18n/locales/modules/maint-dialogs.zh.ts",
+      "bytes": 27609,
+      "lines": 587,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/i18n/locales/modules/server-safety.en.ts",
+      "bytes": 901,
+      "lines": 10,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/i18n/locales/modules/server-safety.zh.ts",
+      "bytes": 816,
+      "lines": 10,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/i18n/locales/modules/settings-pages.en.ts",
+      "bytes": 26942,
+      "lines": 434,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/i18n/locales/modules/settings-pages.zh.ts",
+      "bytes": 24074,
+      "lines": 398,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/i18n/locales/modules/snipe-pages.en.ts",
+      "bytes": 16793,
+      "lines": 355,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/i18n/locales/modules/snipe-pages.zh.ts",
+      "bytes": 16184,
+      "lines": 355,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/i18n/locales/modules/vps-dialogs.en.ts",
+      "bytes": 7654,
+      "lines": 165,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/i18n/locales/modules/vps-dialogs.zh.ts",
+      "bytes": 7339,
+      "lines": 159,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/i18n/locales/modules/watch-pages.en.ts",
+      "bytes": 22480,
+      "lines": 538,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/i18n/locales/modules/watch-pages.zh.ts",
+      "bytes": 21141,
+      "lines": 531,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/i18n/locales/zh.ts",
+      "bytes": 3004,
+      "lines": 91,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/index.css",
+      "bytes": 9759,
+      "lines": 379,
+      "functions": 0,
+      "review": "indexed-only",
+      "owner": "AST/文件索引"
+    },
+    {
+      "file": "src/lib/api-client.ts",
+      "bytes": 519,
+      "lines": 23,
+      "functions": 0,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/lib/api-error.ts",
+      "bytes": 1959,
+      "lines": 47,
+      "functions": 2,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/lib/api.ts",
+      "bytes": 25344,
+      "lines": 645,
+      "functions": 108,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/lib/availability.ts",
+      "bytes": 1301,
+      "lines": 27,
+      "functions": 2,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/lib/datacenters.ts",
+      "bytes": 5481,
+      "lines": 122,
+      "functions": 13,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/lib/format-os.ts",
+      "bytes": 5029,
+      "lines": 141,
+      "functions": 3,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/lib/http.ts",
+      "bytes": 12239,
+      "lines": 346,
+      "functions": 21,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/lib/money.ts",
+      "bytes": 2508,
+      "lines": 58,
+      "functions": 4,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/lib/official-chat.ts",
+      "bytes": 1466,
+      "lines": 32,
+      "functions": 1,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/lib/option-groups.ts",
+      "bytes": 8218,
+      "lines": 217,
+      "functions": 8,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/lib/order-inputs.ts",
+      "bytes": 1363,
+      "lines": 32,
+      "functions": 8,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/lib/order-limits.ts",
+      "bytes": 1271,
+      "lines": 27,
+      "functions": 1,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/lib/ovh-regions.ts",
+      "bytes": 3463,
+      "lines": 75,
+      "functions": 6,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/lib/ovh-subsidiaries.ts",
+      "bytes": 4919,
+      "lines": 91,
+      "functions": 5,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/lib/query.ts",
+      "bytes": 10843,
+      "lines": 184,
+      "functions": 81,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/lib/smart-storage.ts",
+      "bytes": 7027,
+      "lines": 193,
+      "functions": 11,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/lib/split-list.ts",
+      "bytes": 1155,
+      "lines": 23,
+      "functions": 2,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/lib/stock-plans.ts",
+      "bytes": 1650,
+      "lines": 36,
+      "functions": 9,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/lib/theme.ts",
+      "bytes": 1375,
+      "lines": 36,
+      "functions": 2,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/lib/types.ts",
+      "bytes": 4589,
+      "lines": 199,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "src/lib/utils.ts",
+      "bytes": 175,
+      "lines": 7,
+      "functions": 1,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/lib/zone-color.ts",
+      "bytes": 2803,
+      "lines": 63,
+      "functions": 5,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/main.tsx",
+      "bytes": 1078,
+      "lines": 34,
+      "functions": 0,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/pages/AccountPage.tsx",
+      "bytes": 17576,
+      "lines": 380,
+      "functions": 23,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/pages/HistoryPage.tsx",
+      "bytes": 21069,
+      "lines": 539,
+      "functions": 27,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "src/pages/Index.tsx",
+      "bytes": 9972,
+      "lines": 271,
+      "functions": 12,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/pages/LogsPage.tsx",
+      "bytes": 12429,
+      "lines": 337,
+      "functions": 28,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/pages/MonitorPage.tsx",
+      "bytes": 18603,
+      "lines": 506,
+      "functions": 31,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "src/pages/NotFound.tsx",
+      "bytes": 2790,
+      "lines": 72,
+      "functions": 3,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/pages/QueuePage.tsx",
+      "bytes": 10812,
+      "lines": 306,
+      "functions": 28,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "src/pages/ServerControlPage.tsx",
+      "bytes": 17233,
+      "lines": 420,
+      "functions": 32,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/pages/ServersPage.tsx",
+      "bytes": 10377,
+      "lines": 277,
+      "functions": 37,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "src/pages/SettingsPage.tsx",
+      "bytes": 7136,
+      "lines": 190,
+      "functions": 11,
+      "review": "full",
+      "owner": "platform"
+    },
+    {
+      "file": "src/pages/TelegramOrderPage.tsx",
+      "bytes": 27876,
+      "lines": 614,
+      "functions": 32,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/pages/TicketsPage.tsx",
+      "bytes": 10898,
+      "lines": 309,
+      "functions": 30,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/pages/VpsControlPage.tsx",
+      "bytes": 6228,
+      "lines": 163,
+      "functions": 17,
+      "review": "full",
+      "owner": "server-support"
+    },
+    {
+      "file": "src/pages/VpsMonitorPage.tsx",
+      "bytes": 8161,
+      "lines": 238,
+      "functions": 20,
+      "review": "full",
+      "owner": "order-monitor"
+    },
+    {
+      "file": "src/routes/settings-sections.tsx",
+      "bytes": 467,
+      "lines": 15,
+      "functions": 1,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "src/vite-env.d.ts",
+      "bytes": 39,
+      "lines": 2,
+      "functions": 0,
+      "review": "structural",
+      "owner": "AST结构核对"
+    },
+    {
+      "file": "tailwind.config.ts",
+      "bytes": 4840,
+      "lines": 151,
+      "functions": 0,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "tools/status/go.mod",
+      "bytes": 69,
+      "lines": null,
+      "functions": 0,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "tools/status/main.go",
+      "bytes": 7901,
+      "lines": 308,
+      "functions": 8,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "tsconfig.app.json",
+      "bytes": 713,
+      "lines": 32,
+      "functions": 0,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "tsconfig.json",
+      "bytes": 385,
+      "lines": 17,
+      "functions": 0,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "tsconfig.node.json",
+      "bytes": 503,
+      "lines": 23,
+      "functions": 0,
+      "review": "full",
+      "owner": "root"
+    },
+    {
+      "file": "vite.config.ts",
+      "bytes": 846,
+      "lines": 31,
+      "functions": 1,
+      "review": "full",
+      "owner": "root"
+    }
+  ],
+  "pendingProduction": []
+}

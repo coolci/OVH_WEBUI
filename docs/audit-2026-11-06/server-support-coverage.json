@@ -1,0 +1,533 @@
+{
+  "date": "2026-11-06",
+  "reviewer": "audit_server_support",
+  "meaning": "full=完整业务实现人工阅读（可省重复注释日志）；partial=明确区间；indexed-only=全项目结构提取，未冒称人工阅读全文",
+  "files": [
+    {
+      "file": "backend/internal/domain/server/server.go",
+      "lines": 119,
+      "review": "full"
+    },
+    {
+      "file": "backend/internal/handlers/account.go",
+      "lines": 798,
+      "review": "partial",
+      "ranges": "1-428,650-EOF",
+      "teamReview": "full",
+      "teamRanges": [
+        {
+          "reviewer": "audit_server_support",
+          "ranges": "1-428,650-EOF"
+        },
+        {
+          "reviewer": "audit_platform",
+          "ranges": "429-649"
+        }
+      ],
+      "note": "区间并集1-EOF，无遗漏；个人partial，团队联合完整"
+    },
+    {
+      "file": "backend/internal/handlers/account_payment.go",
+      "lines": 283,
+      "review": "full"
+    },
+    {
+      "file": "backend/internal/handlers/order_mapping.go",
+      "lines": 586,
+      "review": "full"
+    },
+    {
+      "file": "backend/internal/handlers/server_aliases.go",
+      "lines": 85,
+      "review": "full"
+    },
+    {
+      "file": "backend/internal/handlers/server_control_basic.go",
+      "lines": 1449,
+      "review": "full"
+    },
+    {
+      "file": "backend/internal/handlers/server_control_boot.go",
+      "lines": 359,
+      "review": "full"
+    },
+    {
+      "file": "backend/internal/handlers/server_control_engagement.go",
+      "lines": 229,
+      "review": "full"
+    },
+    {
+      "file": "backend/internal/handlers/server_control_features.go",
+      "lines": 719,
+      "review": "full"
+    },
+    {
+      "file": "backend/internal/handlers/server_control_hardware.go",
+      "lines": 1202,
+      "review": "full"
+    },
+    {
+      "file": "backend/internal/handlers/server_control_lottery.go",
+      "lines": 397,
+      "review": "full"
+    },
+    {
+      "file": "backend/internal/handlers/server_control_misc.go",
+      "lines": 843,
+      "review": "full"
+    },
+    {
+      "file": "backend/internal/handlers/server_control_mitigation.go",
+      "lines": 192,
+      "review": "full"
+    },
+    {
+      "file": "backend/internal/handlers/server_control_network.go",
+      "lines": 733,
+      "review": "full"
+    },
+    {
+      "file": "backend/internal/handlers/server_control_rescue.go",
+      "lines": 368,
+      "review": "full"
+    },
+    {
+      "file": "backend/internal/handlers/server_control_retraction.go",
+      "lines": 542,
+      "review": "full"
+    },
+    {
+      "file": "backend/internal/handlers/service_billing.go",
+      "lines": 89,
+      "review": "full"
+    },
+    {
+      "file": "backend/internal/handlers/support_chat.go",
+      "lines": 112,
+      "review": "full"
+    },
+    {
+      "file": "backend/internal/handlers/support_tickets.go",
+      "lines": 490,
+      "review": "full"
+    },
+    {
+      "file": "backend/internal/handlers/termination_policy.go",
+      "lines": 142,
+      "review": "full"
+    },
+    {
+      "file": "backend/internal/handlers/util.go",
+      "lines": 421,
+      "review": "partial",
+      "ranges": "1-140",
+      "teamReview": "full",
+      "teamRanges": [
+        {
+          "reviewer": "audit_server_support",
+          "ranges": "1-140"
+        },
+        {
+          "reviewer": "audit_platform",
+          "ranges": "141-EOF"
+        }
+      ],
+      "note": "区间并集1-EOF，无遗漏；个人partial，团队联合完整"
+    },
+    {
+      "file": "backend/internal/handlers/vps_control_basic.go",
+      "lines": 475,
+      "review": "full"
+    },
+    {
+      "file": "backend/internal/handlers/vps_control_engagement.go",
+      "lines": 218,
+      "review": "full"
+    },
+    {
+      "file": "backend/internal/handlers/vps_control_install.go",
+      "lines": 437,
+      "review": "full"
+    },
+    {
+      "file": "backend/internal/handlers/vps_control_misc.go",
+      "lines": 326,
+      "review": "full"
+    },
+    {
+      "file": "backend/internal/handlers/vps_control_mitigation.go",
+      "lines": 235,
+      "review": "full"
+    },
+    {
+      "file": "backend/internal/handlers/vps_control_power.go",
+      "lines": 129,
+      "review": "full"
+    },
+    {
+      "file": "backend/internal/handlers/vps_control_snapshot.go",
+      "lines": 200,
+      "review": "full"
+    },
+    {
+      "file": "backend/internal/router/routes_server_control.go",
+      "lines": 149,
+      "review": "full"
+    },
+    {
+      "file": "backend/internal/router/routes_vps_control.go",
+      "lines": 81,
+      "review": "full"
+    },
+    {
+      "file": "backend/internal/service/server/server_service.go",
+      "lines": 46,
+      "review": "full"
+    },
+    {
+      "file": "src/components/account/OrderPaymentButton.tsx",
+      "lines": 270,
+      "review": "full"
+    },
+    {
+      "file": "src/components/server-control/AdvancedTab.tsx",
+      "lines": 993,
+      "review": "full"
+    },
+    {
+      "file": "src/components/server-control/BiosDialog.tsx",
+      "lines": 102,
+      "review": "full"
+    },
+    {
+      "file": "src/components/server-control/BootModeDialog.tsx",
+      "lines": 152,
+      "review": "full"
+    },
+    {
+      "file": "src/components/server-control/ChangeContactDialog.tsx",
+      "lines": 317,
+      "review": "full"
+    },
+    {
+      "file": "src/components/server-control/EngagementDialog.tsx",
+      "lines": 467,
+      "review": "full"
+    },
+    {
+      "file": "src/components/server-control/HardwareReplaceDialog.tsx",
+      "lines": 308,
+      "review": "full"
+    },
+    {
+      "file": "src/components/server-control/InstallProgressDialog.tsx",
+      "lines": 152,
+      "review": "full"
+    },
+    {
+      "file": "src/components/server-control/IpmiDialog.tsx",
+      "lines": 243,
+      "review": "full"
+    },
+    {
+      "file": "src/components/server-control/LotteryConfetti.tsx",
+      "lines": 81,
+      "review": "full"
+    },
+    {
+      "file": "src/components/server-control/MaintenanceTab.tsx",
+      "lines": 206,
+      "review": "full"
+    },
+    {
+      "file": "src/components/server-control/MrtgTrafficChart.tsx",
+      "lines": 298,
+      "review": "full"
+    },
+    {
+      "file": "src/components/server-control/NetworkSpecsDialog.tsx",
+      "lines": 331,
+      "review": "full"
+    },
+    {
+      "file": "src/components/server-control/OsIcon.tsx",
+      "lines": 176,
+      "review": "full"
+    },
+    {
+      "file": "src/components/server-control/OverviewTab.tsx",
+      "lines": 307,
+      "review": "full"
+    },
+    {
+      "file": "src/components/server-control/PowerTab.tsx",
+      "lines": 181,
+      "review": "full"
+    },
+    {
+      "file": "src/components/server-control/ReinstallDialog.tsx",
+      "lines": 438,
+      "review": "full"
+    },
+    {
+      "file": "src/components/server-control/RenewalDialog.tsx",
+      "lines": 301,
+      "review": "full"
+    },
+    {
+      "file": "src/components/server-control/RescueDialog.tsx",
+      "lines": 169,
+      "review": "full"
+    },
+    {
+      "file": "src/components/server-control/RetractionDialog.tsx",
+      "lines": 217,
+      "review": "full"
+    },
+    {
+      "file": "src/components/server-control/ReverseDnsDialog.tsx",
+      "lines": 211,
+      "review": "full"
+    },
+    {
+      "file": "src/components/server-control/SplaDialog.tsx",
+      "lines": 202,
+      "review": "full"
+    },
+    {
+      "file": "src/components/server-control/TasksDialog.tsx",
+      "lines": 136,
+      "review": "full"
+    },
+    {
+      "file": "src/components/server-control/TimeslotsDialog.tsx",
+      "lines": 188,
+      "review": "full"
+    },
+    {
+      "file": "src/components/server-control/reinstall/OsTemplateSection.tsx",
+      "lines": 230,
+      "review": "full"
+    },
+    {
+      "file": "src/components/server-control/reinstall/PartitionRow.tsx",
+      "lines": 127,
+      "review": "full"
+    },
+    {
+      "file": "src/components/server-control/reinstall/PostInstallSection.tsx",
+      "lines": 132,
+      "review": "full"
+    },
+    {
+      "file": "src/components/server-control/reinstall/SmartPlanDialog.tsx",
+      "lines": 105,
+      "review": "full"
+    },
+    {
+      "file": "src/components/server-control/reinstall/StorageModeOption.tsx",
+      "lines": 37,
+      "review": "full"
+    },
+    {
+      "file": "src/components/server-control/reinstall/StoragePartitionSection.tsx",
+      "lines": 513,
+      "review": "full"
+    },
+    {
+      "file": "src/components/server-control/reinstall/constants.ts",
+      "lines": 57,
+      "review": "full"
+    },
+    {
+      "file": "src/components/support/OfficialChat.tsx",
+      "lines": 106,
+      "review": "full"
+    },
+    {
+      "file": "src/components/tickets/CreateTicketDialog.tsx",
+      "lines": 406,
+      "review": "full"
+    },
+    {
+      "file": "src/components/tickets/TicketChat.tsx",
+      "lines": 713,
+      "review": "full"
+    },
+    {
+      "file": "src/components/tickets/TicketDetails.tsx",
+      "lines": 159,
+      "review": "full"
+    },
+    {
+      "file": "src/components/tickets/TicketList.tsx",
+      "lines": 306,
+      "review": "full"
+    },
+    {
+      "file": "src/components/tickets/labels.ts",
+      "lines": 129,
+      "review": "full"
+    },
+    {
+      "file": "src/components/vps-control/VpsDetail.tsx",
+      "lines": 552,
+      "review": "full"
+    },
+    {
+      "file": "src/components/vps-control/VpsDialogs.tsx",
+      "lines": 219,
+      "review": "full"
+    },
+    {
+      "file": "src/components/vps-control/VpsMitigationPane.tsx",
+      "lines": 171,
+      "review": "full"
+    },
+    {
+      "file": "src/components/vps-control/VpsOptionsPanel.tsx",
+      "lines": 80,
+      "review": "full"
+    },
+    {
+      "file": "src/components/vps-control/VpsReinstallDialog.tsx",
+      "lines": 293,
+      "review": "full"
+    },
+    {
+      "file": "src/components/vps-control/VpsReverseDnsDialog.tsx",
+      "lines": 101,
+      "review": "full"
+    },
+    {
+      "file": "src/components/vps-control/VpsSecondaryDnsPane.tsx",
+      "lines": 146,
+      "review": "full"
+    },
+    {
+      "file": "src/components/vps-control/VpsSnapshotPane.tsx",
+      "lines": 299,
+      "review": "full"
+    },
+    {
+      "file": "src/components/vps-control/VpsTasksDialog.tsx",
+      "lines": 171,
+      "review": "full"
+    },
+    {
+      "file": "src/components/vps-control/vps-geo.ts",
+      "lines": 91,
+      "review": "full"
+    },
+    {
+      "file": "src/hooks/ovh/server-control/types.ts",
+      "lines": 357,
+      "review": "full"
+    },
+    {
+      "file": "src/hooks/ovh/server-control/use-server-boot.ts",
+      "lines": 148,
+      "review": "full"
+    },
+    {
+      "file": "src/hooks/ovh/server-control/use-server-core.ts",
+      "lines": 122,
+      "review": "full"
+    },
+    {
+      "file": "src/hooks/ovh/server-control/use-server-engagement.ts",
+      "lines": 249,
+      "review": "full"
+    },
+    {
+      "file": "src/hooks/ovh/server-control/use-server-features.ts",
+      "lines": 312,
+      "review": "full"
+    },
+    {
+      "file": "src/hooks/ovh/server-control/use-server-hardware.ts",
+      "lines": 183,
+      "review": "full"
+    },
+    {
+      "file": "src/hooks/ovh/server-control/use-server-install.ts",
+      "lines": 172,
+      "review": "full"
+    },
+    {
+      "file": "src/hooks/ovh/server-control/use-server-network.ts",
+      "lines": 215,
+      "review": "full"
+    },
+    {
+      "file": "src/hooks/ovh/use-account-services.ts",
+      "lines": 98,
+      "review": "full"
+    },
+    {
+      "file": "src/hooks/ovh/use-account.ts",
+      "lines": 189,
+      "review": "full"
+    },
+    {
+      "file": "src/hooks/ovh/use-active-account.ts",
+      "lines": 97,
+      "review": "full"
+    },
+    {
+      "file": "src/hooks/ovh/use-mrtg.ts",
+      "lines": 67,
+      "review": "full"
+    },
+    {
+      "file": "src/hooks/ovh/use-server-control.ts",
+      "lines": 22,
+      "review": "full"
+    },
+    {
+      "file": "src/hooks/ovh/use-tickets.ts",
+      "lines": 239,
+      "review": "full"
+    },
+    {
+      "file": "src/hooks/ovh/use-vps-control.ts",
+      "lines": 620,
+      "review": "full"
+    },
+    {
+      "file": "src/hooks/use-mrtg.ts",
+      "lines": 3,
+      "review": "full"
+    },
+    {
+      "file": "src/lib/http.ts",
+      "lines": 346,
+      "review": "full"
+    },
+    {
+      "file": "src/lib/query.ts",
+      "lines": 184,
+      "review": "full"
+    },
+    {
+      "file": "src/pages/AccountPage.tsx",
+      "lines": 380,
+      "review": "full"
+    },
+    {
+      "file": "src/pages/ServerControlPage.tsx",
+      "lines": 420,
+      "review": "full"
+    },
+    {
+      "file": "src/pages/TicketsPage.tsx",
+      "lines": 309,
+      "review": "full"
+    },
+    {
+      "file": "src/pages/VpsControlPage.tsx",
+      "lines": 163,
+      "review": "full"
+    }
+  ]
+}

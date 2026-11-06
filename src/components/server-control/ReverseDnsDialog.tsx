@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Globe, Trash2, Edit2, Loader2, Plus } from "lucide-react";
 import {
   Dialog,
@@ -44,6 +44,14 @@ export function ReverseDnsDialog({
 
   const records = reverseQ.data || [];
   const serverIps = ipsQ.data || [];
+
+  useEffect(() => {
+    if (open) {
+      setEditingIp(defaultIp || "");
+      setDomain("");
+      setIsEditing(false);
+    }
+  }, [open, serviceName, defaultIp]);
 
   const handleStartEdit = (ip: string, currentReverse?: string) => {
     setEditingIp(ip);
@@ -105,6 +113,12 @@ export function ReverseDnsDialog({
                 </Button>
               </h4>
               <div className="space-y-2">
+                <label className="block text-xs">目标 IP
+                  <select aria-label="目标 IP" className="block w-full bg-background border rounded p-2 mt-1" value={editingIp} onChange={(e) => { setEditingIp(e.target.value); setDomain(""); }}>
+                    <option value="">请选择 IP</option>
+                    {Array.from(new Set([defaultIp, ...serverIps.map((item) => item.ip)].filter(Boolean))).map((ip) => <option key={ip} value={ip}>{ip}</option>)}
+                  </select>
+                </label>
                 <div>
                   <label className="text-[11px] font-medium text-muted-foreground block mb-1">目标域名 (FQDN)</label>
                   <Input
@@ -121,7 +135,7 @@ export function ReverseDnsDialog({
                   <Button
                     size="sm"
                     onClick={handleSave}
-                    disabled={setReverse.isPending}
+                    disabled={setReverse.isPending || !editingIp}
                     className="h-8 text-xs"
                   >
                     {setReverse.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : null}
@@ -136,7 +150,7 @@ export function ReverseDnsDialog({
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  setEditingIp(serverIps[0]?.ip || "");
+                  setEditingIp(defaultIp || serverIps[0]?.ip || "");
                   setDomain("");
                   setIsEditing(true);
                 }}

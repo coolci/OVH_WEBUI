@@ -23,12 +23,12 @@ function Test-BackendUp {
 }
 
 if ($Stop) {
-  Get-Process ovh-webui -ErrorAction SilentlyContinue | Stop-Process -Force
+  Get-Process ovh-webui -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $Exe } | Stop-Process -Force
   Write-Host "backend stopped"
   exit 0
 }
 
-if (Test-BackendUp) {
+if ((Test-BackendUp) -and -not $Rebuild) {
   Write-Host "backend already online: http://127.0.0.1:19998/health"
   Get-Process ovh-webui -ErrorAction SilentlyContinue | Format-Table Id, ProcessName, StartTime -AutoSize
   exit 0
@@ -46,14 +46,18 @@ if ($Rebuild -or -not (Test-Path -LiteralPath $Exe)) {
   Write-Host "building ovh-webui.exe ..."
   Push-Location $Backend
   try {
-    & go build -o ovh-webui.exe .
-    if ($LASTEXITCODE -ne 0) { throw "go build failed" }
+    $BuildExe = Join-Path $Backend ("ovh-webui-build-" + [guid]::NewGuid().ToString("N") + ".exe")
+    & go build -o $BuildExe .
+    if ($LASTEXITCODE -ne 0) { throw "go build failed; existing backend left running" }
+    Get-Process ovh-webui -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $Exe } | Stop-Process -Force
+    Start-Sleep -Milliseconds 400
+    Move-Item -LiteralPath $BuildExe -Destination $Exe -Force
   } finally {
     Pop-Location
   }
 }
 
-Get-Process ovh-webui -ErrorAction SilentlyContinue | Stop-Process -Force
+Get-Process ovh-webui -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $Exe } | Stop-Process -Force
 Start-Sleep -Milliseconds 400
 
 # Fully detached: UseShellExecute=true so process is not killed when this shell exits.

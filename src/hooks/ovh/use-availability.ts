@@ -96,10 +96,11 @@ export function variantsForPlan(
   return items.filter((it) => it.planCode === planCode);
 }
 
-/** FQN 第一段是 planCode,后面才是 addon 段 */
-function fqnAddonParts(fqn: string): string[] {
+/** 以完整型号切除前缀，允许自定义型号包含点号。 */
+function fqnAddonParts(fqn: string, planCode: string): string[] {
   if (!fqn) return [];
-  return fqn.split(".").slice(1);
+  const prefix = planCode + ".";
+  return fqn.startsWith(prefix) ? fqn.slice(prefix.length).split(".").filter(Boolean) : [];
 }
 
 /**
@@ -121,13 +122,13 @@ function partMatchesValue(part: string, value: string): boolean {
 /** variant 的 FQN 是否覆盖所有 required option value */
 export function variantCoversAll(v: AvailabilityItem, required: string[]): boolean {
   if (required.length === 0) return true;
-  const parts = fqnAddonParts(v.fqn);
+  const parts = fqnAddonParts(v.fqn, v.planCode);
   return required.every((val) => parts.some((p) => partMatchesValue(p, val)));
 }
 
 /** 找出 grouped options 里哪个 value 跟这个 FQN 段对得上(返回第一个,通常该组只有一个匹配) */
-export function fqnMatchesOption(fqn: string, optionValue: string): boolean {
-  const parts = fqnAddonParts(fqn);
+export function fqnMatchesOption(fqn: string, optionValue: string, planCode: string): boolean {
+  const parts = fqnAddonParts(fqn, planCode);
   return parts.some((p) => partMatchesValue(p, optionValue));
 }
 
@@ -149,7 +150,7 @@ export function hasStockWithOption(
   if (!variants || variants.length === 0) return true;
   const filter = dcCodes && dcCodes.length > 0 ? new Set(dcCodes.map((c) => c.toLowerCase())) : null;
   for (const v of variants) {
-    if (!fqnMatchesOption(v.fqn, candidate)) continue;
+    if (!fqnMatchesOption(v.fqn, candidate, v.planCode)) continue;
     for (const dc of v.datacenters || []) {
       const code = dc.datacenter?.toLowerCase();
       if (!code) continue;

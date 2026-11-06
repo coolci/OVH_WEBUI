@@ -1,15 +1,9 @@
-import socket
 import os
 import sys
 import time
 import tarfile
-import paramiko
+from ssh_config import connect
 
-SERVER_IP = "160.191.165.198"
-SERVER_PORT = 22
-SERVER_USER = "root"
-SERVER_PASS = "fjCoet1L"
-LOCAL_BIND_IP = "192.168.3.61"
 PKG_PATH = "deploy_package.tar.gz"
 RELEASE_TAG = "20261104-order-metrics-timing"
 
@@ -31,15 +25,8 @@ def create_tar():
     log(f"Created {PKG_PATH} ({size_mb:.2f} MB)")
 
 def get_ssh_client():
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.settimeout(15)
-    s.bind((LOCAL_BIND_IP, 0))
-    s.connect((SERVER_IP, SERVER_PORT))
-    
-    ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect(SERVER_IP, port=SERVER_PORT, username=SERVER_USER, password=SERVER_PASS, sock=s, timeout=15)
-    return ssh
+    return connect()
+
 
 def run_cmd(ssh, cmd, check=True):
     log(f"EXEC: {cmd[:120]}...")
@@ -58,7 +45,7 @@ def run_cmd(ssh, cmd, check=True):
 def main():
     create_tar()
     
-    log(f"=== Starting OVH_WEBUI Deployment ({RELEASE_TAG}) to {SERVER_IP} ===")
+    log(f"=== Starting OVH_WEBUI Deployment ({RELEASE_TAG}) to {os.environ.get('OVH_DEPLOY_HOST', '(unset)')} ===")
     ssh = get_ssh_client()
     log("SSH connected successfully!")
     
@@ -199,17 +186,23 @@ EOF
     log("--- Step 7: Verifying service health ---")
     verify_script = """
     set -e
+    HEALTHY=0
     for i in $(seq 1 15); do
         sleep 2
         BACKEND_STATUS=$(docker inspect --format='{{.State.Health.Status}}' ovh-webui-backend 2>/dev/null || echo "starting")
         FRONTEND_STATUS=$(docker inspect --format='{{.State.Health.Status}}' ovh-webui-frontend 2>/dev/null || echo "starting")
         echo "Check $i: backend=$BACKEND_STATUS, frontend=$FRONTEND_STATUS"
         if [ "$BACKEND_STATUS" = "healthy" ] && [ "$FRONTEND_STATUS" = "healthy" ]; then
+            HEALTHY=1
             echo "All services healthy!"
             break
         fi
     done
     
+    if [ "$HEALTHY" -ne 1 ]; then
+        echo "Service health check timed out" >&2
+        exit 1
+    fi
     docker ps -f "name=ovh-webui"
     """
     run_cmd(ssh, verify_script)

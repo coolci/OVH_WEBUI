@@ -207,14 +207,20 @@ fi
 
 echo ""
 cyn "==> 等待 backend 健康 …"
+backend_healthy=0
 for i in $(seq 1 45); do
   if docker exec ovh-webui-backend wget -qO- http://127.0.0.1:19998/health >/dev/null 2>&1; then
+    backend_healthy=1
     grn "    backend OK"
     break
   fi
   sleep 2
-  [[ "$i" -eq 45 ]] && ylw "    超时，请: docker logs ovh-webui-backend"
+
 done
+if [[ "$backend_healthy" -ne 1 ]]; then
+  echo "Backend health check timed out; deployment failed. Check docker logs ovh-webui-backend" >&2
+  exit 1
+fi
 
 API_KEY="$(grep -E '^API_SECRET_KEY=' .env | head -1 | cut -d= -f2- | tr -d '\r' | tr -d '\"' | tr -d \"\'\")"
 HOST_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"

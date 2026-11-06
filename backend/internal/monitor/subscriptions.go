@@ -232,8 +232,8 @@ func (m *Monitor) SetPaused(planCode string, optionsKey *string, paused bool) (i
 }
 
 // RemoveSubscriptionExact 按 planCode+配置组合精确删除(卡片级删除);
-// optionsKey 传空串 = 删除该 planCode 的第一条(兼容 TG 等按型号的老入口)。
-func (m *Monitor) RemoveSubscriptionExact(planCode, optionsKey string) bool {
+// 不传 optionsKey 删除第一条；显式空串仅匹配“全部配置”订阅。
+func (m *Monitor) RemoveSubscriptionExact(planCode string, optionsKeys ...string) bool {
 	m.subsMu.Lock()
 	defer m.subsMu.Unlock()
 	defer m.publishPausedQueueScopesLocked()
@@ -241,7 +241,7 @@ func (m *Monitor) RemoveSubscriptionExact(planCode, optionsKey string) bool {
 	kept := make([]*Subscription, 0, len(m.subscriptions))
 	removed := false
 	for _, s := range m.subscriptions {
-		if !removed && s.PlanCode == planCode && (optionsKey == "" || OptionsKey(s.Options) == optionsKey) {
+		if !removed && s.PlanCode == planCode && (len(optionsKeys) == 0 || OptionsKey(s.Options) == optionsKeys[0]) {
 			removed = true
 			continue
 		}
@@ -249,7 +249,7 @@ func (m *Monitor) RemoveSubscriptionExact(planCode, optionsKey string) bool {
 	}
 	if removed {
 		m.subscriptions = kept
-		m.state.Logger.Info(fmt.Sprintf("已移除订阅: %s(%s)", planCode, optionsKey), "monitor")
+		m.state.Logger.Info(fmt.Sprintf("已移除订阅: %s(%v)", planCode, optionsKeys), "monitor")
 	}
 	return len(m.subscriptions) < original
 }

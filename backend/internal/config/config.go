@@ -101,13 +101,15 @@ func (s *Store) Get() types.Config {
 // Set 覆盖整个配置并落盘
 func (s *Store) Set(c types.Config) error {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	if c.IAM == "" {
 		c.IAM = "go-ovh-" + strings.ToLower(c.Zone)
 	}
+	if err := s.db.SetKV(kvConfigKey, encryptConfig(c)); err != nil {
+		return err
+	}
 	s.cfg = c
-	snapshot := s.cfg
-	s.mu.Unlock()
-	return s.db.SetKV(kvConfigKey, encryptConfig(snapshot))
+	return nil
 }
 
 // HasCredentials 判断是否已配置 OVH 凭据

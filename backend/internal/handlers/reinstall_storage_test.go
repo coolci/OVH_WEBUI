@@ -145,9 +145,10 @@ func TestNormalizeStorage_diskGroupId为0时不发送(t *testing.T) {
 func TestNormalizeStorage_eraseRules(t *testing.T) {
 	ok, err := normalizeStorageConfig([]interface{}{
 		map[string]interface{}{"diskGroupId": float64(2), "erase": false},
+		map[string]interface{}{"diskGroupId": float64(1), "partitioning": map[string]interface{}{"schemeName": "default"}},
 	})
-	if err != nil || len(ok) != 1 {
-		t.Fatalf("erase-only 条目应放行: %v %v", ok, err)
+	if err != nil || len(ok) != 2 {
+		t.Fatalf("明确安装组加保留组应放行: %v %v", ok, err)
 	}
 	if v, exists := ok[0]["erase"]; !exists || v != false {
 		t.Fatalf("erase 字段应透传: %#v", ok[0])
@@ -199,5 +200,24 @@ func TestInstallCustomizationsPassthrough(t *testing.T) {
 	part := entries[0]["partitioning"].(map[string]interface{})
 	if part["disks"] != int64(2) {
 		t.Fatalf("partitioning.disks 应保留: %#v", part)
+	}
+}
+
+func TestPreservationRejectsAmbiguousTargets(t *testing.T) {
+	keep := map[string]interface{}{"diskGroupId": 2, "erase": false}
+	for _, tc := range []struct {
+		name   string
+		groups []interface{}
+	}{
+		{"keep-only", []interface{}{keep}},
+		{"default-install", []interface{}{keep, map[string]interface{}{"partitioning": map[string]interface{}{"schemeName": "default"}}}},
+		{"duplicate-group", []interface{}{keep, map[string]interface{}{"diskGroupId": 2, "partitioning": map[string]interface{}{"schemeName": "default"}}}},
+		{"duplicate-keep", []interface{}{keep, keep}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := normalizeStorageConfig(tc.groups); err == nil {
+				t.Fatal("ambiguous preservation accepted")
+			}
+		})
 	}
 }

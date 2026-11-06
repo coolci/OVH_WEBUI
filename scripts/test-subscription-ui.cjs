@@ -26,6 +26,7 @@ async function main() {
   const writes = [];
   const errors = [];
   let subscriptions = [];
+  let regionIssues = [];
   await context.route('**/*', async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -35,7 +36,7 @@ async function main() {
     if (!url.pathname.startsWith('/api/') && url.pathname !== '/health') return route.continue();
     if (!['GET', 'HEAD'].includes(request.method())) {
       const body = request.postDataJSON();
-      writes.push({ method: request.method(), path: url.pathname, body });
+      writes.push({ method: request.method(), path: url.pathname, query: url.searchParams.toString(), body });
       if (url.pathname === '/api/monitor/subscriptions') {
         subscriptions = [...subscriptions, { ...body, createdAt: new Date().toISOString(), lastStatus: {} }];
       }
@@ -47,7 +48,7 @@ async function main() {
     if (url.pathname === '/api/accounts') return json({ accounts });
     if (url.pathname === '/api/servers') return json({ servers: [plan] });
     if (url.pathname === '/api/monitor/subscriptions') return json(subscriptions);
-    if (url.pathname === '/api/monitor/status') return json({ running: true, subscriptions_count: subscriptions.length, check_interval: 5 });
+    if (url.pathname === '/api/monitor/status') return json({ running: true, subscriptions_count: subscriptions.length, check_interval: 5, region_issues: regionIssues });
     if (url.pathname === '/api/telegram/verify') return json({ ok: true });
     if (url.pathname === '/api/settings') return json({ endpoint: 'ovh-eu', zone: 'IE' });
     if (url.pathname === '/api/catalog') return json({ plans: [], addons: [], products: [] });
@@ -82,7 +83,7 @@ async function main() {
   try {
     await page.goto(`${base}/monitor`);
     await page.getByRole('button', { name: '添加订阅', exact: true }).click();
-    await selectCustom('custom-unlisted-plan');
+    await selectCustom('custom-unlisted.plan');
     await dialog().getByText('有货时自动下单', { exact: true }).click();
     assert.equal(await dialog().getByText('已选 2 / 2 个账户', { exact: true }).count(), 1);
     assert.equal(await dialog().getByRole('checkbox', { name: /测试账户 A/ }).isChecked(), true);
@@ -92,7 +93,7 @@ async function main() {
     let start = writes.length;
     await dialog().getByRole('button', { name: '确认添加', exact: true }).click();
     const created = await waitForWrite(start, '/api/monitor/subscriptions');
-    assert.equal(created.planCode, 'custom-unlisted-plan');
+    assert.equal(created.planCode, 'custom-unlisted.plan');
     assert.deepEqual(created.autoOrderAccountIds, ['account-a', 'account-b']);
     assert.equal(created.quantity, 2);
     assert.equal(created.autoPay, false);
@@ -194,6 +195,20 @@ async function main() {
     assert.equal(vps.planCode, 'vps-custom-plan');
     assert.ok(!vps.autoOrder, 'VPS monitoring must not silently enable purchases');
     console.log('PASS VPS custom plan remains selected and submits for monitoring');
+
+    subscriptions = [
+      { planCode: 'identity-plan', options: ['ram-64g'], datacenters: ['gra'], lastStatus: {}, createdAt: new Date().toISOString() },
+      { planCode: 'identity-plan', options: [], datacenters: ['gra'], lastStatus: {}, createdAt: new Date().toISOString() },
+    ];
+    regionIssues = [{ planCode: 'identity-plan', accountId: 'account-b', region: 'EU', error: 'mock inventory unavailable' }];
+    await page.goto(`${base}/monitor`);
+    await page.getByText(/mock inventory unavailable/).waitFor();
+    start = writes.length;
+    await page.getByRole('button', { name: '暂停此订阅', exact: true }).last().click();
+    const paused = await waitForWrite(start, '/api/monitor/subscriptions/identity-plan/pause');
+    assert.equal(paused.optionsKey, '');
+    assert.equal(paused.paused, true);
+    console.log('PASS structured region error renders and empty configuration pause preserves identity');
 
     assert.deepEqual(errors, [], `Browser runtime errors: ${errors.join('\n')}`);
     console.log('PASS no browser runtime errors; all network writes were mocked');

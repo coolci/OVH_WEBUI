@@ -16,11 +16,12 @@
     "backend:rebuild": "powershell -ExecutionPolicy Bypass -File scripts/start-backend.ps1 -Rebuild",
     "dev:all": "powershell -ExecutionPolicy Bypass -File scripts/start-dev.ps1",
     "test:unit:backend": "cd backend && go test ./... -count=1",
-    "test:unit:frontend": "node --test scripts/order-inputs.test.mjs",
+    "test:unit:frontend": "node --test scripts/*.test.mjs",
     "verify:ledger": "go run ./tools/status --ledger docs/prd-v2/progress/ledger.csv --verify && go run ./tools/status --ledger progress/ledger.csv --verify",
-    "verify": "npm run typecheck && npm run build && npm run test:unit:frontend && npm run test:unit:backend && npm run verify:ledger",
+    "verify": "npm run typecheck && npm run build && npm run test:unit:frontend && npm run test:unit:backend && npm run test:unit:tooling && npm run verify:ledger",
     "test:smoke": "python scripts/smoke_test.py",
-    "test:full": "python scripts/full_functional_test.py"
+    "test:full": "python scripts/full_functional_test.py",
+    "test:unit:tooling": "go test ./tools/status -count=1 && python scripts/tooling_safety_test.py && python docs/audit-2026-11-06/proofs/tooling-proof.py"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

@@ -1,3 +1,5 @@
+import { LoadFailed, LoadFailedBanner } from "@/components/common/LoadFailed";
+import { PartialNotice } from "@/components/common/PartialNotice";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Helmet } from "react-helmet-async";
 import { User, Mail, RefreshCw, FileText, Inbox, ShieldCheck, ShoppingCart, ExternalLink, CalendarClock, Undo2, type LucideIcon } from "lucide-react";
@@ -152,15 +154,19 @@ function EmailsTab() {
             <span>刷新</span>
           </Button>
         </div>
-        {emails.isPending ? (
+        {emails.isError && emails.data && <LoadFailedBanner title="刷新失败，显示上次读取的记录" error={emails.error} onRetry={() => emails.refetch()} />}
+        <PartialNotice what="邮件" failedCount={emails.data?.failed || 0} />
+        {emails.isError && !emails.data ? (
+          <LoadFailed error={emails.error} onRetry={() => emails.refetch()} />
+        ) : emails.isPending ? (
           <div className="p-4 space-y-2">
             {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-14 rounded-lg" />)}
           </div>
-        ) : (emails.data || []).length === 0 ? (
+        ) : (emails.data?.items || []).length === 0 ? (
           <EmptyState icon={Inbox} title="暂无邮件" />
         ) : (
           <div className="divide-y divide-border/40 max-h-[500px] overflow-y-auto">
-            {(emails.data || []).map((e) => (
+            {(emails.data?.items || []).map((e) => (
               <button
                 key={e.id}
                 type="button"
@@ -225,17 +231,21 @@ function OrdersTab() {
             <span>刷新</span>
           </Button>
         </div>
-        {orders.isPending ? (
+        {orders.isError && orders.data && <LoadFailedBanner title="刷新失败，显示上次读取的记录" error={orders.error} onRetry={() => orders.refetch()} />}
+        <PartialNotice what="订单" failedCount={orders.data?.failed || 0} />
+        {orders.isError && !orders.data ? (
+          <LoadFailed error={orders.error} onRetry={() => orders.refetch()} />
+        ) : orders.isPending ? (
           <div className="space-y-2">
             {Array.from({ length: 4 }).map((_, i) => (
               <Skeleton key={i} className="h-16 rounded-lg" />
             ))}
           </div>
-        ) : (orders.data || []).length === 0 ? (
+        ) : (orders.data?.items || []).length === 0 ? (
           <EmptyState icon={ShoppingCart} title="暂无订单记录" />
         ) : (
           <div className="divide-y divide-border/40">
-            {(orders.data || []).map((o, idx) => {
+            {(orders.data?.items || []).map((o, idx) => {
               const id = o.orderId != null ? o.orderId : idx;
               const priceObj = o.priceWithoutTax?.value != null ? o.priceWithoutTax : o.priceWithTax;
               const priceText =
@@ -330,15 +340,19 @@ function RefundsTab() {
             <span>刷新</span>
           </Button>
         </div>
-        {refunds.isPending ? (
+        {refunds.isError && refunds.data && <LoadFailedBanner title="刷新失败，显示上次读取的记录" error={refunds.error} onRetry={() => refunds.refetch()} />}
+        <PartialNotice what="退款" failedCount={refunds.data?.failed || 0} />
+        {refunds.isError && !refunds.data ? (
+          <LoadFailed error={refunds.error} onRetry={() => refunds.refetch()} />
+        ) : refunds.isPending ? (
           <div className="space-y-2">
             {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-lg" />)}
           </div>
-        ) : (refunds.data || []).length === 0 ? (
+        ) : (refunds.data?.items || []).length === 0 ? (
           <EmptyState icon={Inbox} title="暂无退款记录" />
         ) : (
           <div className="divide-y divide-border">
-            {(refunds.data || []).map((r) => (
+            {(refunds.data?.items || []).map((r) => (
               <div key={r.refundId} className="py-3 flex items-center justify-between gap-4">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 mb-1">

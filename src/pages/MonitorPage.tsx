@@ -147,7 +147,7 @@ function MonitorPage() {
         <div className="border border-warning/40 bg-warning/5 rounded-2xl p-3 space-y-1.5">
           {(status.data?.region_issues ?? []).map((issue, i) => (
             <p key={i} className="text-[12px] text-foreground/80 leading-relaxed">
-              ⚠️ {issue}
+              ⚠️ {typeof issue === "string" ? issue : [issue.planCode, issue.accountId, issue.region, issue.error].filter(Boolean).join(" · ")}
             </p>
           ))}
         </div>
@@ -213,12 +213,12 @@ function MonitorPage() {
                 onTogglePause={() =>
                   pauseSub.mutate({
                     planCode: s.planCode,
-                    optionsKey: optionsKey || undefined,
+                    optionsKey,
                     paused: !s.paused,
                   })
                 }
                 onEdit={() => setEditSub(s)}
-                onDelete={() => setConfirmRemove({ planCode: s.planCode, optionsKey: optionsKey || undefined })}
+                onDelete={() => setConfirmRemove({ planCode: s.planCode, optionsKey })}
               />
             );
           })}

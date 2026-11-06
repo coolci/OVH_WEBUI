@@ -163,8 +163,16 @@ func (s *Server) Run() error {
 	// 捕获系统退出信号 (SIGINT, SIGTERM)
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+	runStopped := make(chan struct{})
+	defer close(runStopped)
 	go func() {
-		sig := <-sigCh
+		var sig os.Signal
+		select {
+		case sig = <-sigCh:
+		case <-runStopped:
+			return
+		}
 		if s.shutdownPending.Load() {
 			select {
 			case <-s.shutdownDone:
@@ -206,6 +214,11 @@ func (s *Server) Run() error {
 	if err := s.httpServer.Serve(ln); err != nil && err != http.ErrServerClosed {
 		s.console.Error("server run", "err", err)
 		return err
+	}
+	if s.shutdownPending.Load() {
+		// Shutdown closes the listener before draining handlers and persistence.
+		// Keep main alive until all shutdown work has actually completed.
+		<-s.shutdownDone
 	}
 
 	if s.restartPending.Load() {

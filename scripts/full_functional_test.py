@@ -62,7 +62,7 @@ class Suite:
 
     def add(self, r: Result) -> None:
         self.results.append(r)
-        mark = "PASS" if r.ok else "FAIL"
+        mark = "SKIP" if r.detail.lower().startswith("skip:") else "PASS" if r.ok else "FAIL"
         print(f"  [{mark}] {r.name} ({r.ms}ms) {r.detail[:160]}")
 
     @property
@@ -71,7 +71,11 @@ class Suite:
 
     @property
     def passed(self) -> list[Result]:
-        return [r for r in self.results if r.ok]
+        return [r for r in self.results if r.ok and not r.detail.lower().startswith("skip:")]
+
+    @property
+    def skipped(self) -> list[Result]:
+        return [r for r in self.results if r.detail.lower().startswith("skip:")]
 
 
 def req(
@@ -339,11 +343,8 @@ def main() -> int:
     def ok_soft(code: int, data: Any) -> tuple[bool, str]:
         if code == 200:
             return True, "ok"
-        if code in (404, 400, 460) or (
-            isinstance(data, dict)
-            and (data.get("error") or data.get("success") is False)
-        ):
-            return True, f"soft-ok code={code} (功能可能未开通)"
+        if code in (404, 460):
+            return True, f"skip: code={code} (功能不可用，未验证成功)"
         return False, f"code={code} {str(data)[:100]}"
 
     if not ALLOWED or not target.get("found"):
@@ -531,7 +532,7 @@ def main() -> int:
     total = len(suite.results)
     passed = len(suite.passed)
     failed = suite.failed
-    print(f"\n总计: {passed}/{total} PASS")
+    print(f"\n总计: {passed}/{total} PASS, {len(suite.skipped)} SKIP, {len(failed)} FAIL")
     if failed:
         print("失败项:")
         for f in failed:
@@ -587,6 +588,7 @@ def main() -> int:
         "allowed_server": ALLOWED,
         "total": total,
         "passed": passed,
+        "skipped": len(suite.skipped),
         "failed": len(failed),
         "failed_items": [{"group": f.group, "name": f.name, "detail": f.detail} for f in failed],
         "catalog_count": catalog_count["n"],
@@ -614,7 +616,7 @@ def main() -> int:
         f"- 时间: {time.strftime('%Y-%m-%d %H:%M:%S')}",
         f"- BASE: `{BASE}`",
         f"- 目标机: `{ALLOWED}`",
-        f"- 结果: **{passed}/{total} PASS**",
+        f"- 结果: **{passed}/{total} PASS**, {len(suite.skipped)} SKIP, {len(failed)} FAIL",
         f"- 硬失败(核心): {len(hard)}",
         f"- Config Sniper: **完全下线**",
         f"- 安全: 未执行暂停/删除/重启/重装/终止",

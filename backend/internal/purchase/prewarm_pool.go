@@ -215,23 +215,22 @@ func AssemblePrewarmedCart(ctx context.Context, state *app.State, accountID, pla
 		filtered := filterHardwareOptions(state, options, true)
 		if len(filtered) > 0 {
 			availableEcoOpts, err := getOrFetchEcoOptions(ctx, client, cartID, subsidiary, planCode)
-			if err == nil {
-				for _, wanted := range filtered {
-					matchedOpt, matchedPC, _ := catalog.MatchEcoOption(availableEcoOpts, wanted)
-					if matchedOpt != nil {
-						duration, pricingMode := pickPricing(matchedOpt["prices"], baseDuration)
-						todo = append(todo, addonPayload{
-							planCode: matchedPC,
-							body: map[string]interface{}{
-								"itemId":      itemID,
-								"planCode":    matchedPC,
-								"duration":    duration,
-								"pricingMode": pricingMode,
-								"quantity":    1,
-							},
-						})
-					}
+			if err != nil {
+				return nil, fmt.Errorf("预热获取硬件选项失败: %w", err)
+			}
+			for _, wanted := range filtered {
+				matchedOpt, matchedPC, _ := catalog.MatchEcoOption(availableEcoOpts, wanted)
+				if matchedOpt == nil {
+					return nil, fmt.Errorf("预热硬件选项 %q 未找到，取消装车", wanted)
 				}
+				duration, pricingMode := pickPricing(matchedOpt["prices"], baseDuration)
+				todo = append(todo, addonPayload{
+					planCode: matchedPC,
+					body: map[string]interface{}{
+						"itemId": itemID, "planCode": matchedPC,
+						"duration": duration, "pricingMode": pricingMode, "quantity": 1,
+					},
+				})
 			}
 		}
 	}
@@ -258,7 +257,9 @@ func AssemblePrewarmedCart(ctx context.Context, state *app.State, accountID, pla
 
 	// 5. 应用优惠码（若有）
 	if cCode := strings.TrimSpace(coupon); cCode != "" {
-		_ = client.PostWithContext(ctx, "/order/cart/"+cartID+"/coupon", map[string]interface{}{"coupon": cCode}, nil)
+		if err := client.PostWithContext(ctx, "/order/cart/"+cartID+"/coupon", map[string]interface{}{"coupon": cCode}, nil); err != nil {
+			return nil, fmt.Errorf("预热应用优惠码失败: %w", err)
+		}
 	}
 
 	cleanOnFail = false
@@ -267,7 +268,7 @@ func AssemblePrewarmedCart(ctx context.Context, state *app.State, accountID, pla
 		AccountID:  accountID,
 		PlanCode:   planCode,
 		Datacenter: datacenter,
-		Options:    options,
+		Options:    append([]string(nil), options...),
 		Coupon:     coupon,
 		CreatedAt:  time.Now(),
 	}

@@ -82,17 +82,7 @@ export function CommandPalette() {
         return;
       }
       if (waiting) {
-        const map: Record<string, string> = {
-          d: "/",
-          s: "/servers",
-          q: "/queue",
-          m: "/monitor",
-          v: "/vps-monitor",
-          c: "/server-control",
-          h: "/history",
-          l: "/logs",
-        };
-        const target = map[e.key.toLowerCase()];
+        const target = NAV_ENTRIES.find((entry) => entry.shortcut?.toLowerCase() === `g ${e.key.toLowerCase()}`)?.to;
         if (target) {
           e.preventDefault();
           navigate(target);

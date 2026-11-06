@@ -9,6 +9,8 @@ import (
 	"github.com/ovh-webui/server/internal/types"
 )
 
+const LegacyAccountMigrationKey = "legacy_account_migration_complete"
+
 type accountRow struct {
 	ID          string `db:"id"`
 	Name        string `db:"name"`
@@ -280,6 +282,35 @@ func (db *DB) DeleteAccount(id string) error {
 	}
 	if _, err := tx.Exec(`DELETE FROM ovh_accounts WHERE id = ?`, id); err != nil {
 		return fmt.Errorf("delete account: %w", err)
+	}
+	// Deletion must revoke the old migration source in the same transaction.
+	if _, err := tx.Exec(`INSERT INTO kv(key,value) VALUES(?, 'true') ON CONFLICT(key) DO UPDATE SET value='true'`, LegacyAccountMigrationKey); err != nil {
+		return err
+	}
+	var remaining int
+	if err := tx.Get(&remaining, `SELECT COUNT(*) FROM ovh_accounts`); err != nil {
+		return err
+	}
+	if remaining == 0 {
+		var raw string
+		if err := tx.Get(&raw, `SELECT value FROM kv WHERE key='config'`); err != nil && err != sql.ErrNoRows {
+			return err
+		} else if err == nil {
+			var cfg map[string]interface{}
+			if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+				return err
+			}
+			for _, key := range []string{"appKey", "appSecret", "consumerKey"} {
+				delete(cfg, key)
+			}
+			encoded, err := json.Marshal(cfg)
+			if err != nil {
+				return err
+			}
+			if _, err := tx.Exec(`UPDATE kv SET value=? WHERE key='config'`, string(encoded)); err != nil {
+				return err
+			}
+		}
 	}
 
 	// 删的是默认账户 + 还有其他账户存活 → 选最早一个补默认

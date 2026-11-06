@@ -38,7 +38,7 @@ export interface MonitorStatus {
   check_interval: number;
   known_servers_count: number;
   /** 后端构造的区域问题提示(查错大区导致监控失效等),web 端必须渲染 */
-  region_issues?: string[];
+  region_issues?: (string | { planCode: string; accountId?: string; region?: string; error: string })[];
 }
 
 export interface MonitorHistoryEntry {
@@ -163,7 +163,7 @@ export function useRemoveMonitorSubscription() {
       const optionsKey = typeof v === "string" ? undefined : v.optionsKey;
       return (
         await api.delete(`/monitor/subscriptions/${encodeURIComponent(planCode)}`, {
-          params: optionsKey ? { optionsKey } : undefined,
+          params: optionsKey === undefined ? undefined : { optionsKey },
         })
       ).data;
     },

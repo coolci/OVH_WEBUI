@@ -1,0 +1,41 @@
+// HISTORICAL defect reproducer for the audit baseline only; current run-* scripts use formal regression tests.
+package telegram
+
+import (
+ "io"
+ "log/slog"
+ "net/http"
+ "path/filepath"
+ "strings"
+ "sync/atomic"
+ "testing"
+ "time"
+ "github.com/ovh-webui/server/internal/app"
+ "github.com/ovh-webui/server/internal/config"
+ "github.com/ovh-webui/server/internal/db"
+ "github.com/ovh-webui/server/internal/logger"
+ "github.com/ovh-webui/server/internal/netfp"
+ "github.com/ovh-webui/server/internal/storage"
+)
+type auditPollTransport func(*http.Request)(*http.Response,error)
+func(f auditPollTransport) RoundTrip(r *http.Request)(*http.Response,error){return f(r)}
+func TestAuditPollerErrorsSpinWithoutHealthUpdate(t *testing.T){
+ dir:=t.TempDir();database,err:=db.Open(dir);if err!=nil{t.Fatal(err)};defer database.Close()
+ lg:=logger.New(filepath.Join(dir,"audit.log"),slog.New(slog.NewTextHandler(io.Discard,nil)))
+ st:=app.NewState(storage.Paths{DataDir:dir},config.New(database),lg,database)
+ cfg:=st.Config.Get();cfg.TgToken="123:test";cfg.TgChatID="123";if err:=st.Config.Set(cfg);err!=nil{t.Fatal(err)}
+ stop:=make(chan struct{});kick:=make(chan struct{});var requests atomic.Int32
+ restore:=netfp.SwapSharedTransportForTesting(auditPollTransport(func(r *http.Request)(*http.Response,error){
+  body:=`{"ok":true,"result":{"username":"auditbot"}}`
+  if strings.HasSuffix(r.URL.Path,"/getUpdates"){
+   body=`{"ok":false,"description":"Unauthorized"}`
+   if requests.Add(1)==5{close(stop)}
+  }
+  return &http.Response{StatusCode:200,Header:http.Header{},Body:io.NopCloser(strings.NewReader(body)),Request:r},nil
+ }));defer restore()
+ patchPoller(func(s *PollerStatus){*s=PollerStatus{}})
+ started:=time.Now();runPoller(st,func(map[string]interface{}){},kick,stop);elapsed:=time.Since(started)
+ status:=SnapshotPoller()
+ if requests.Load()!=5||elapsed>=time.Second||status.LastError!=""||!status.Running{t.Fatalf("bug not reproduced: count=%d elapsed=%s status=%+v",requests.Load(),elapsed,status)}
+ t.Logf("BUG REPRODUCED: %d failed getUpdates in %s; still Running=true LastError empty",requests.Load(),elapsed)
+}

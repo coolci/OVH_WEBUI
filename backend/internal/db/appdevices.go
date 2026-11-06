@@ -74,9 +74,19 @@ func (d *DB) CreatePairingCode() (code string, expiresAt time.Time, err error) {
 		if err == nil {
 			return code, expiresAt, nil
 		}
-		if code, err = generatePairingCode(); err != nil {
+		// Retry only a collision, not a missing table, read-only disk or lock failure.
+		var exists int
+		if lookupErr := d.Get(&exists, `SELECT COUNT(*) FROM app_pairing_codes WHERE code=?`, code); lookupErr != nil || exists == 0 {
 			return "", time.Time{}, err
 		}
+		if i == 1 {
+			break
+		}
+		nextCode, randomErr := generatePairingCode()
+		if randomErr != nil {
+			return "", time.Time{}, randomErr
+		}
+		code = nextCode
 	}
 	return "", time.Time{}, err
 }

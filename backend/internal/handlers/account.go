@@ -142,6 +142,9 @@ func collectDetails(state *app.State, c *gin.Context, details []map[string]inter
 		}
 		state.Logger.Warn(fmt.Sprintf("%s详情有 %d/%d 条拉取失败,返回列表不完整: %s", what, failed, len(details), msg), category)
 		c.Header("X-Partial-Failures", strconv.Itoa(failed))
+		if len(list) == 0 {
+			c.AbortWithStatusJSON(http.StatusBadGateway, gin.H{"error": what + "详情读取失败，请重试", "failed": failed})
+		}
 	}
 	return list
 }
@@ -351,6 +354,9 @@ func GetAccountRefunds(state *app.State) gin.HandlerFunc {
 			return "/me/refund/" + s
 		}, 10)
 		list := collectDetails(state, c, details, failed, firstErr, "退款", "account_management")
+		if c.IsAborted() {
+			return
+		}
 		sortBillingByDateDesc(list)
 		if len(list) > accountBillingListSize {
 			list = list[:accountBillingListSize]
@@ -379,6 +385,9 @@ func GetCreditBalance(state *app.State) gin.HandlerFunc {
 			return "/me/credit/balance/" + n
 		}, 10)
 		balances := collectDetails(state, c, details, failed, firstErr, "信用余额", "account_management")
+		if c.IsAborted() {
+			return
+		}
 		state.Logger.Info(fmt.Sprintf("成功获取 %d 个信用余额(共 %d 个,失败 %d 个)", len(balances), len(names), failed), "account_management")
 		c.JSON(http.StatusOK, gin.H{"status": "success", "data": balances, "total": len(names), "failed": failed})
 	}
@@ -411,6 +420,9 @@ func GetEmailHistory(state *app.State) gin.HandlerFunc {
 			return "/me/notification/email/history/" + idToString(k)
 		}, 10)
 		list := collectDetails(state, c, details, failed, firstErr, "邮件", "account_management")
+		if c.IsAborted() {
+			return
+		}
 		// 口径:请求了 max 封、失败 failed 封。len(ids) 是账户的全量历史(可能上千),
 		// 写成"总共"会让人以为差额是丢了,其实是我们主动只取最近 max 封。
 		state.Logger.Info(fmt.Sprintf("成功获取 %d 封邮件(本次请求最近 %d 封,失败 %d 封;账户历史共 %d 封)",
@@ -490,6 +502,9 @@ func GetContactChangeRequests(state *app.State) gin.HandlerFunc {
 			return "/me/task/contactChange/" + idToString(k)
 		}, 10)
 		list := collectDetails(state, c, details, failed, firstErr, "联系人变更请求", "server_control")
+		if c.IsAborted() {
+			return
+		}
 		sort.SliceStable(list, func(i, j int) bool {
 			a, _ := list[i]["dateRequest"].(string)
 			b, _ := list[j]["dateRequest"].(string)
@@ -646,6 +661,9 @@ func GetSubAccounts(state *app.State) gin.HandlerFunc {
 			return "/me/subAccount/" + idToString(k)
 		}, 10)
 		list := collectDetails(state, c, details, failed, firstErr, "子账户", "account_management")
+		if c.IsAborted() {
+			return
+		}
 		state.Logger.Info(fmt.Sprintf("成功获取 %d 个子账户(共 %d 个,失败 %d 个)", len(list), len(ids), failed), "account_management")
 		c.JSON(http.StatusOK, gin.H{"status": "success", "data": list, "total": len(ids), "failed": failed})
 	}
@@ -677,6 +695,9 @@ func GetAccountBills(state *app.State) gin.HandlerFunc {
 			return "/me/bill/" + s
 		}, 10)
 		list := collectDetails(state, c, details, failed, firstErr, "账单", "account_management")
+		if c.IsAborted() {
+			return
+		}
 		sortBillingByDateDesc(list)
 		if len(list) > accountBillingListSize {
 			list = list[:accountBillingListSize]
@@ -739,6 +760,9 @@ func GetAccountOrders(state *app.State) gin.HandlerFunc {
 			return "/me/order/" + s
 		}, 10)
 		list := collectDetails(state, c, details, failed, firstErr, "订单", "account_management")
+		if c.IsAborted() {
+			return
+		}
 
 		accountOrderStatuses(c.Request.Context(), state, acc.ID, list)
 		// billing.Order.password 是订单口令,页面用不到,不透传。
@@ -770,7 +794,6 @@ func GetAccountOrders(state *app.State) gin.HandlerFunc {
 		})
 	}
 }
-
 
 // GetAccountSSHKeys GET /api/ovh/account/ssh-keys
 // 拉取当前账户在 OVH 登记的全部 SSH 密钥名称列表（GET /me/sshKey）

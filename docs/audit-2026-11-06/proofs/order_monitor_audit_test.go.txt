@@ -1,0 +1,107 @@
+// Audit-only evidence: copy into backend/internal/purchase/zz_order_monitor_audit_test.go,
+// run go test ./internal/purchase -run TestAudit -v, then remove the copied file.
+// Assertions describe the currently observed bug, so PASS means reproduced.
+package purchase
+
+import (
+ "context"
+ "fmt"
+ "io"
+ "net/http"
+ "net/http/httptest"
+ "strings"
+ "sync/atomic"
+ "testing"
+ "time"
+ "github.com/ovh-webui/server/internal/app"
+ "github.com/ovh-webui/server/internal/netfp"
+ "github.com/ovh-webui/server/internal/types"
+)
+
+func auditOrderFixture(t *testing.T, plan, optionResponse string) (*app.State, *types.QueueItem, *atomic.Int32, *atomic.Int32) {
+ t.Helper()
+ s:=quickOrderTestState(t)
+ ClearPrewarmPool(nil)
+ resetEcoOptionsCache()
+ s.Accounts=[]types.OVHAccount{{ID:"audit-account",Endpoint:"ovh-eu",Zone:"FI",AppKey:"test",AppSecret:"test",ConsumerKey:"test"}}
+ checkout, options:= &atomic.Int32{}, &atomic.Int32{}
+ srv:=httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
+  w.Header().Set("Content-Type","application/json")
+  switch {
+  case r.URL.Path=="/auth/time": fmt.Fprint(w,time.Now().Unix())
+  case r.URL.Path=="/me/order": w.WriteHeader(503); io.WriteString(w,`{"message":"reconcile unavailable"}`)
+  case strings.HasPrefix(r.URL.Path,"/me/order/"): w.WriteHeader(404); io.WriteString(w,`{"message":"audit does not expose real orders"}`)
+  case r.URL.Path=="/dedicated/server/datacenter/availabilities": fmt.Fprintf(w,`[{"fqn":%q,"datacenters":[{"datacenter":"gra","availability":"1H"}]}]`,plan+".ram-64g")
+  case r.URL.Path=="/order/cart": io.WriteString(w,`{"cartId":"audit-cart"}`)
+  case strings.HasSuffix(r.URL.Path,"/assign"): io.WriteString(w,`null`)
+  case strings.HasSuffix(r.URL.Path,"/eco"): io.WriteString(w,`{"itemId":1}`)
+  case strings.HasSuffix(r.URL.Path,"/requiredConfiguration"): io.WriteString(w,`[]`)
+  case strings.HasSuffix(r.URL.Path,"/configuration"): io.WriteString(w,`null`)
+  case strings.HasSuffix(r.URL.Path,"/eco/options") && r.Method==http.MethodGet:
+   if optionResponse=="503" {w.WriteHeader(503); io.WriteString(w,`{"message":"temporary option outage"}`)} else {io.WriteString(w,optionResponse)}
+  case strings.HasSuffix(r.URL.Path,"/eco/options"): options.Add(1); io.WriteString(w,`null`)
+  case strings.HasSuffix(r.URL.Path,"/coupon"): w.WriteHeader(400); io.WriteString(w,`{"message":"Coupon is not valid"}`)
+  case strings.HasSuffix(r.URL.Path,"/checkout"): checkout.Add(1); io.WriteString(w,`{"orderId":12345,"url":"https://audit.invalid/order"}`)
+  case r.Method==http.MethodDelete: io.WriteString(w,`null`)
+  default: t.Errorf("unexpected mocked request %s %s",r.Method,r.URL.Path); w.WriteHeader(404)
+  }
+ }))
+ t.Cleanup(srv.Close)
+ swapEndpoint(t,"ovh-eu",srv.URL)
+ base:=http.DefaultTransport
+ transport:=auditTransport(func(r *http.Request)(*http.Response,error){
+  if strings.HasPrefix(r.URL.String(),srv.URL){return base.RoundTrip(r)}
+  if strings.Contains(r.URL.Path,"/order/catalog/public/eco"){
+   body:=fmt.Sprintf(`{"plans":[{"planCode":%q,"configurations":[{"name":"region","values":["europe"]}]}]}`,plan)
+   return &http.Response{StatusCode:200,Header:http.Header{},Body:io.NopCloser(strings.NewReader(body)),Request:r},nil
+  }
+  return nil,fmt.Errorf("external request blocked by audit: %s",r.URL)
+ })
+ http.DefaultTransport=transport
+ restore:=netfp.SwapSharedTransportForTesting(transport)
+ t.Cleanup(func(){restore();http.DefaultTransport=base;ClearPrewarmPool(nil);resetEcoOptionsCache()})
+ return s,&types.QueueItem{ID:"audit-task",AccountID:"audit-account",PlanCode:plan,Datacenter:"gra",Status:"running",Force:true},checkout,options
+}
+
+func TestAuditUncertainReconcileFailureStillCheckouts(t *testing.T){
+ s,item,checkout,_:=auditOrderFixture(t,"audit-uncertain",`[{"planCode":"ram-64g","prices":[]}]`)
+ item.UncertainCheckout=true; item.UncertainTime=types.NowISO()
+ PutPrewarmedCart(&PrewarmedCart{CartID:"audit-cart",AccountID:item.AccountID,PlanCode:item.PlanCode,Datacenter:"gra",CreatedAt:time.Now()})
+ out:=PurchaseServer(context.Background(),s,item)
+ if !out.Success || checkout.Load()!=1 {t.Fatalf("bug not reproduced: outcome=%+v checkout=%d",out,checkout.Load())}
+ t.Log("BUG REPRODUCED: /me/order HTTP 503 was ignored and a new checkout was sent")
+}
+
+func TestAuditPrewarmMissingOptionsStillCheckouts(t *testing.T){
+ for _,response:=range []string{"503",`[]`} {t.Run(response,func(t *testing.T){
+  s,item,checkout,options:=auditOrderFixture(t,"audit-missing-option",response)
+  item.Options=[]string{"ram-64g"}
+  _,err:=AssemblePrewarmedCart(context.Background(),s,item.AccountID,item.PlanCode,item.Datacenter,item.Options,"")
+  if err!=nil{t.Fatalf("bug not reproduced: prewarm rejected: %v",err)}
+  out:=PurchaseServer(context.Background(),s,item)
+  if !out.Success||checkout.Load()!=1||options.Load()!=0{t.Fatalf("bug not reproduced: %+v checkout=%d addonPosts=%d",out,checkout.Load(),options.Load())}
+  t.Log("BUG REPRODUCED: requested RAM addon was never applied, but prewarmed cart checked out")
+ })}
+}
+
+func TestAuditPrewarmRejectedCouponStillAutoPays(t *testing.T){
+ s,item,checkout,_:=auditOrderFixture(t,"audit-coupon",`[{"planCode":"ram-64g","prices":[]}]`)
+ item.Coupon="INVALID";item.AutoPay=true
+ _,err:=AssemblePrewarmedCart(context.Background(),s,item.AccountID,item.PlanCode,item.Datacenter,nil,item.Coupon)
+ if err!=nil{t.Fatalf("bug not reproduced: prewarm rejected: %v",err)}
+ out:=PurchaseServer(context.Background(),s,item)
+ if !out.Success||checkout.Load()!=1 {t.Fatalf("bug not reproduced: %+v checkout=%d",out,checkout.Load())}
+ t.Log("BUG REPRODUCED: HTTP 400 coupon rejection bypassed AutoPay pause via prewarm")
+}
+
+func TestAuditDottedCustomPlanCannotCheckout(t *testing.T){
+ s,item,checkout,options:=auditOrderFixture(t,"custom-NewModel.LZ",`[{"planCode":"ram-64g","prices":[]}]`)
+ out:=PurchaseServer(context.Background(),s,item)
+ if out.Success||checkout.Load()!=0||len(s.History)!=1||s.History[0].ErrorMessage==nil||!strings.Contains(*s.History[0].ErrorMessage,"LZ") {t.Fatalf("bug not reproduced: %+v checkout=%d options=%d history=%+v",out,checkout.Load(),options.Load(),s.History)}
+ t.Logf("BUG REPRODUCED: plan suffix parsed as addon: %s",*s.History[0].ErrorMessage)
+}
+
+func TestAuditReconcileAcceptsAnotherModelPrefix(t *testing.T){
+ if !orderDetailMatchesPlan(map[string]interface{}{"description":"RISE 24sk202 - gra"},"24sk20") {t.Fatal("bug not reproduced")}
+ t.Log("BUG REPRODUCED: target 24sk20 accepts description belonging to 24sk202")
+}

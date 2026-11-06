@@ -676,7 +676,38 @@ func normalizeStorageConfig(raw interface{}) ([]map[string]interface{}, error) {
 	if len(out) == 0 {
 		return nil, serr("STORAGE_EMPTY", nil, "自定义存储配置为空")
 	}
+	if err := validatePreservedStorage(out); err != nil {
+		return nil, err
+	}
 	return out, nil
+}
+
+// A preservation request must never fall back to an unspecified installation
+// group, or be contradicted by another entry for the same group.
+func validatePreservedStorage(storage []map[string]interface{}) error {
+	seen := map[int64]bool{}
+	hasKeep, hasInstall, missingID := false, false, false
+	for _, group := range storage {
+		id, ok := numconv.ToInt64(group["diskGroupId"])
+		if !ok || id <= 0 {
+			missingID = true
+		} else {
+			if seen[id] {
+				return serr("STORAGE_DUPLICATE_GROUP", nil, "同一磁盘组不能重复配置或同时安装与保留数据")
+			}
+			seen[id] = true
+		}
+		if erase, ok := group["erase"].(bool); ok && !erase {
+			hasKeep = true
+		}
+		if group["partitioning"] != nil {
+			hasInstall = true
+		}
+	}
+	if hasKeep && (!hasInstall || missingID) {
+		return serr("PRESERVE_REQUIRES_INSTALL_GROUP", nil, "保留数据时必须为另一磁盘组明确配置安装分区，不能使用默认磁盘组或仅勾选保留数据")
+	}
+	return nil
 }
 
 // InstallOS POST /api/server-control/:service_name/install
@@ -743,6 +774,17 @@ func InstallOS(state *app.State) gin.HandlerFunc {
 		schemeName, _ := body["partitionSchemeName"].(string)
 		schemeName = strings.TrimSpace(schemeName)
 		hasCustomStorage := isNonEmptyStorage(body["storageConfig"])
+		if useZFS && hasCustomStorage {
+			// A preset must never silently override a request to preserve data.
+			groups, _ := body["storageConfig"].([]interface{})
+			for _, raw := range groups {
+				group, _ := raw.(map[string]interface{})
+				if erase, ok := group["erase"].(bool); ok && !erase {
+					c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "保留磁盘数据不能与 ZFS 预设同时启用，请明确配置安装磁盘组"})
+					return
+				}
+			}
+		}
 		// 三条路径都往同一个 storage 字段写，同时给必然互相覆盖。但不能一律 400：
 		// 前端 ReinstallDialog 的 "Proxmox 9 + ZFS" 开关默认就是勾上的（useProxmox9Zfs 只受模板约束），
 		// 和"高级存储配置"/"内置分区方案"在 UI 上并不互斥，一律拒绝会把本来能跑通的 proxmox9 重装打成硬失败。

@@ -1,0 +1,1272 @@
+[
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.ListMyServers.func1",
+    "method": "GET",
+    "path": "/api/server-control/list"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.ListServerAliases.func1",
+    "method": "GET",
+    "path": "/api/server-control/aliases"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetOrderMapping.func1",
+    "method": "GET",
+    "path": "/api/server-control/order-mapping"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetBackupFTP.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/backup-ftp"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetBackupFTPAccess.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/backup-ftp/access"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetBackupFTPAuthorizableBlocks.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/backup-ftp/authorizable-blocks"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetBackupCloud.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/backup-cloud"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetBackupCloudOfferDetails.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/backup-cloud/offer-details"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetBootConfig.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/boot"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetBootModes.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/boot-mode"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetBIOSSettings.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/bios-settings"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetBIOSSettingsSGX.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/bios-settings/sgx"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetBurst.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/burst"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetIPCanBeMovedTo.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/ip/can-be-moved-to"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetIPCountryAvailable.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/ip/country-available"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetServerIPs.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/ips"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetIPMIAccessTypes.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/ipmi-types"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetIPSpecs.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/ip-specs"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetInterventions.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/interventions"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetInterventionDetail.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/interventions/:intervention_id"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetInstallStatus.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/install/status"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetOrderableBandwidth.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/orderable/bandwidth"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetOrderableTraffic.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/orderable/traffic"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetOrderableIP.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/orderable/ip"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetServerOptions.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/options"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetOngoingTasks.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/ongoing"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetServiceInfo.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/serviceinfo"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetSecondaryDNS.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/secondary-dns"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetTrafficStatistics.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/statistics"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetSPLAList.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/spla"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetServerTasks.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/tasks"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetTaskAvailableTimeslots.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/tasks/:task_id/available-timeslots"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetOSTemplates.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/templates"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetRetraction.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/retraction"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetRescueStatus.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/rescue"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetReverseDNS.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/reverse"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetEngagement.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/engagement"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetEngagementAvailable.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/engagement/available"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetEngagementRequest.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/engagement/request"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetHardwareInfo.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/hardware"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetHardwareRaidProfiles.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/hardware-raid-profiles"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetHardwareDiskInfo.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/hardware-disk-info"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetPlannedInterventions.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/planned-interventions"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetPlannedInterventionDetail.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/planned-interventions/:intervention_id"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetPartitionSchemes.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/partition-schemes"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetMonitoringStatus.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/monitoring"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetMitigation.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/mitigation"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetMRTGData.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/mrtg"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetNetworkSpecs.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/network-specs"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetNetworkInterfaceStats.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/network-stats"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetNetworkInterfaces.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/network-interfaces"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetVirtualMACList.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/virtual-mac"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetVirtualNetworkInterfaces.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/virtual-network-interface"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetVRackList.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/vrack"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetCompliantWindowsVersions.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/license/windows/compliant"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetCompliantWindowsSqlVersions.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/license/windows-sql/compliant"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetIPMIConsole.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/console"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetFirewall.func1",
+    "method": "GET",
+    "path": "/api/server-control/:service_name/firewall"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetServers.func1",
+    "method": "GET",
+    "path": "/api/servers"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetSettings.func1",
+    "method": "GET",
+    "path": "/api/settings"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.ListSupportTickets.func1",
+    "method": "GET",
+    "path": "/api/support/tickets"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetSupportTicket.func1",
+    "method": "GET",
+    "path": "/api/support/tickets/:ticket_id"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.ListSupportTicketMessages.func1",
+    "method": "GET",
+    "path": "/api/support/tickets/:ticket_id/messages"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetStats.func1",
+    "method": "GET",
+    "path": "/api/stats"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetSystemMetrics.func1",
+    "method": "GET",
+    "path": "/api/system/metrics"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.ListVps.func1",
+    "method": "GET",
+    "path": "/api/vps-control/list"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetVpsServiceInfo.func1",
+    "method": "GET",
+    "path": "/api/vps-control/:service_name/serviceinfo"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetVpsSecondaryDns.func1",
+    "method": "GET",
+    "path": "/api/vps-control/:service_name/secondary-dns"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetVpsServiceStatus.func1",
+    "method": "GET",
+    "path": "/api/vps-control/:service_name/status"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetAccountSSHKeys.func1",
+    "method": "GET",
+    "path": "/api/vps-control/:service_name/ssh-keys"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetVpsSnapshot.func1",
+    "method": "GET",
+    "path": "/api/vps-control/:service_name/snapshot"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetVpsTasks.func1",
+    "method": "GET",
+    "path": "/api/vps-control/:service_name/tasks"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetVpsTaskDetail.func1",
+    "method": "GET",
+    "path": "/api/vps-control/:service_name/tasks/:task_id"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetVpsTemplates.func1",
+    "method": "GET",
+    "path": "/api/vps-control/:service_name/templates"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetVpsEngagement.func1",
+    "method": "GET",
+    "path": "/api/vps-control/:service_name/engagement"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetVpsEngagementAvailable.func1",
+    "method": "GET",
+    "path": "/api/vps-control/:service_name/engagement/available"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetVpsEngagementRequest.func1",
+    "method": "GET",
+    "path": "/api/vps-control/:service_name/engagement/request"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetVpsInfo.func1",
+    "method": "GET",
+    "path": "/api/vps-control/:service_name/info"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetVpsIps.func1",
+    "method": "GET",
+    "path": "/api/vps-control/:service_name/ips"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetVpsDatacenter.func1",
+    "method": "GET",
+    "path": "/api/vps-control/:service_name/datacenter"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetVpsCurrentOS.func1",
+    "method": "GET",
+    "path": "/api/vps-control/:service_name/current-os"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetVpsOptions.func1",
+    "method": "GET",
+    "path": "/api/vps-control/:service_name/options"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetVpsAutomatedBackup.func1",
+    "method": "GET",
+    "path": "/api/vps-control/:service_name/automated-backup"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetRetraction.func1",
+    "method": "GET",
+    "path": "/api/vps-control/:service_name/retraction"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetVpsMitigation.func1",
+    "method": "GET",
+    "path": "/api/vps-control/:service_name/mitigation"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetVPSSubscriptions.func1",
+    "method": "GET",
+    "path": "/api/vps-monitor/subscriptions"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetVPSSubscriptionHistory.func1",
+    "method": "GET",
+    "path": "/api/vps-monitor/subscriptions/:subscription_id/history"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetVPSMonitorStatus.func1",
+    "method": "GET",
+    "path": "/api/vps-monitor/status"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetVPSModels.func1",
+    "method": "GET",
+    "path": "/api/vps-monitor/models"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetVersion.func1",
+    "method": "GET",
+    "path": "/api/version"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.CheckUpdate.func1",
+    "method": "GET",
+    "path": "/api/version/check-update"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetUpdateStatus.func1",
+    "method": "GET",
+    "path": "/api/version/update/status"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetAccountSSHKeys.func1",
+    "method": "GET",
+    "path": "/api/ovh/account/ssh-keys"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetSubAccounts.func1",
+    "method": "GET",
+    "path": "/api/ovh/account/sub-accounts"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetAccountOrders.func1",
+    "method": "GET",
+    "path": "/api/ovh/account/orders"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetOrderPaymentOptions.func1",
+    "method": "GET",
+    "path": "/api/ovh/account/orders/:order_id/payment"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetAccountInfo.func1",
+    "method": "GET",
+    "path": "/api/ovh/account/info"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetAccountRefunds.func1",
+    "method": "GET",
+    "path": "/api/ovh/account/refunds"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetCreditBalance.func1",
+    "method": "GET",
+    "path": "/api/ovh/account/credit-balance"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetEmailHistory.func1",
+    "method": "GET",
+    "path": "/api/ovh/account/email-history"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetAccountBills.func1",
+    "method": "GET",
+    "path": "/api/ovh/account/bills"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetContactChangeRequests.func1",
+    "method": "GET",
+    "path": "/api/ovh/contact-change-requests"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetContactChangeRequestDetail.func1",
+    "method": "GET",
+    "path": "/api/ovh/contact-change-requests/:task_id"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.ListAccounts.func1",
+    "method": "GET",
+    "path": "/api/accounts"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.ProxyStatus.func1",
+    "method": "GET",
+    "path": "/api/accounts/proxy-status"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetAccountByID.func1",
+    "method": "GET",
+    "path": "/api/accounts/:id"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/router.availabilityHandler.func1",
+    "method": "GET",
+    "path": "/api/availability/*planCode"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.ListAppDevices.func1",
+    "method": "GET",
+    "path": "/api/app/devices"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetSubscriptions.func1",
+    "method": "GET",
+    "path": "/api/monitor/subscriptions"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetSubscriptionHistory.func1",
+    "method": "GET",
+    "path": "/api/monitor/subscriptions/:planCode/history"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetMonitorStatus.func1",
+    "method": "GET",
+    "path": "/api/monitor/status"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.VerifyTelegram.func1",
+    "method": "GET",
+    "path": "/api/telegram/verify"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.TelegramStatus.func1",
+    "method": "GET",
+    "path": "/api/telegram/status"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.TelegramStatus.func1",
+    "method": "GET",
+    "path": "/api/telegram/poller"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetQueue.func1",
+    "method": "GET",
+    "path": "/api/queue"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetPurchaseTimings.func1",
+    "method": "GET",
+    "path": "/api/queue/timings"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.CacheInfo.func1",
+    "method": "GET",
+    "path": "/api/cache/info"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetCatalog.func1",
+    "method": "GET",
+    "path": "/api/catalog"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.Health.func1",
+    "method": "GET",
+    "path": "/api/health"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.EndpointConfig.func1",
+    "method": "GET",
+    "path": "/api/endpoint-config"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetLogs.func1",
+    "method": "GET",
+    "path": "/api/logs"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetPurchaseHistory.func1",
+    "method": "GET",
+    "path": "/api/purchase-history"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.GetNotifyChannels.func1",
+    "method": "GET",
+    "path": "/api/notify/channels"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.Health.func1",
+    "method": "GET",
+    "path": "/health"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.EnterRescue.func1",
+    "method": "POST",
+    "path": "/api/server-control/:service_name/rescue"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.ExitRescue.func1",
+    "method": "POST",
+    "path": "/api/server-control/:service_name/rescue/exit"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.PostRetraction.func1",
+    "method": "POST",
+    "path": "/api/server-control/:service_name/retraction"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.Reboot.func1",
+    "method": "POST",
+    "path": "/api/server-control/:service_name/reboot"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.SetReverseDNS.func1",
+    "method": "POST",
+    "path": "/api/server-control/:service_name/reverse"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.ActivateBackupFTP.func1",
+    "method": "POST",
+    "path": "/api/server-control/:service_name/backup-ftp"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.AddBackupFTPAccess.func1",
+    "method": "POST",
+    "path": "/api/server-control/:service_name/backup-ftp/access"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.ChangeBackupFTPPassword.func1",
+    "method": "POST",
+    "path": "/api/server-control/:service_name/backup-ftp/password"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.ActivateBackupCloud.func1",
+    "method": "POST",
+    "path": "/api/server-control/:service_name/backup-cloud"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.ChangeBackupCloudPassword.func1",
+    "method": "POST",
+    "path": "/api/server-control/:service_name/backup-cloud/password"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.ConfigureOLAAggregation.func1",
+    "method": "POST",
+    "path": "/api/server-control/:service_name/ola/aggregation"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.ResetOLAConfiguration.func1",
+    "method": "POST",
+    "path": "/api/server-control/:service_name/ola/reset"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.OLAGroup.func1",
+    "method": "POST",
+    "path": "/api/server-control/:service_name/ola/group"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.OLAUngroup.func1",
+    "method": "POST",
+    "path": "/api/server-control/:service_name/ola/ungroup"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.InstallOS.func1",
+    "method": "POST",
+    "path": "/api/server-control/:service_name/install"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.MoveIP.func1",
+    "method": "POST",
+    "path": "/api/server-control/:service_name/ip/move"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.ScheduleTaskTimeslot.func1",
+    "method": "POST",
+    "path": "/api/server-control/:service_name/tasks/:task_id/schedule"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.TerminateService.func1",
+    "method": "POST",
+    "path": "/api/server-control/:service_name/terminate"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.ChangeContact.func1",
+    "method": "POST",
+    "path": "/api/server-control/:service_name/change-contact"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.ConfirmTermination.func1",
+    "method": "POST",
+    "path": "/api/server-control/:service_name/confirm-termination"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.AddSecondaryDNS.func1",
+    "method": "POST",
+    "path": "/api/server-control/:service_name/secondary-dns"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.CreateSPLA.func1",
+    "method": "POST",
+    "path": "/api/server-control/:service_name/spla"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.CreateEngagementRequest.func1",
+    "method": "POST",
+    "path": "/api/server-control/:service_name/engagement/request"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.EnableMitigation.func1",
+    "method": "POST",
+    "path": "/api/server-control/:service_name/mitigation/:ip"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.HardwareReplace.func1",
+    "method": "POST",
+    "path": "/api/server-control/:service_name/hardware/replace"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.CreateVirtualMAC.func1",
+    "method": "POST",
+    "path": "/api/server-control/:service_name/virtual-mac"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.ServerPrice.func1",
+    "method": "POST",
+    "path": "/api/servers/:planCode/price"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.SaveSettings.func1",
+    "method": "POST",
+    "path": "/api/settings"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.CreateSupportTicket.func1",
+    "method": "POST",
+    "path": "/api/support/tickets"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.ReplySupportTicket.func1",
+    "method": "POST",
+    "path": "/api/support/tickets/:ticket_id/reply"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.ReopenSupportTicket.func1",
+    "method": "POST",
+    "path": "/api/support/tickets/:ticket_id/reopen"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.CloseSupportTicket.func1",
+    "method": "POST",
+    "path": "/api/support/tickets/:ticket_id/close"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.VpsStart.func1",
+    "method": "POST",
+    "path": "/api/vps-control/:service_name/start"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.VpsStop.func1",
+    "method": "POST",
+    "path": "/api/vps-control/:service_name/stop"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.CreateVpsSnapshot.func1",
+    "method": "POST",
+    "path": "/api/vps-control/:service_name/snapshot"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.RevertVpsSnapshot.func1",
+    "method": "POST",
+    "path": "/api/vps-control/:service_name/snapshot/revert"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.AddVpsSecondaryDns.func1",
+    "method": "POST",
+    "path": "/api/vps-control/:service_name/secondary-dns"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.VpsReboot.func1",
+    "method": "POST",
+    "path": "/api/vps-control/:service_name/reboot"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.ReinstallVps.func1",
+    "method": "POST",
+    "path": "/api/vps-control/:service_name/rebuild"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.ReinstallVps.func1",
+    "method": "POST",
+    "path": "/api/vps-control/:service_name/reinstall"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.PostRetraction.func1",
+    "method": "POST",
+    "path": "/api/vps-control/:service_name/retraction"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.VpsGetConsoleUrl.func1",
+    "method": "POST",
+    "path": "/api/vps-control/:service_name/console"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.ConfirmVpsTermination.func1",
+    "method": "POST",
+    "path": "/api/vps-control/:service_name/confirm-termination"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.ChangeVpsContact.func1",
+    "method": "POST",
+    "path": "/api/vps-control/:service_name/change-contact"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.VpsSetPassword.func1",
+    "method": "POST",
+    "path": "/api/vps-control/:service_name/password"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.TerminateVps.func1",
+    "method": "POST",
+    "path": "/api/vps-control/:service_name/terminate"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.CreateVpsEngagementRequest.func1",
+    "method": "POST",
+    "path": "/api/vps-control/:service_name/engagement/request"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.EnableVpsMitigation.func1",
+    "method": "POST",
+    "path": "/api/vps-control/:service_name/mitigation/:ip"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.AddVPSSubscription.func1",
+    "method": "POST",
+    "path": "/api/vps-monitor/subscriptions"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.BatchAddAllVPS.func1",
+    "method": "POST",
+    "path": "/api/vps-monitor/subscriptions/batch-add-all"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.StartVPSMonitor.func1",
+    "method": "POST",
+    "path": "/api/vps-monitor/start"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.StopVPSMonitor.func1",
+    "method": "POST",
+    "path": "/api/vps-monitor/stop"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.ManualCheckVPS.func1",
+    "method": "POST",
+    "path": "/api/vps-monitor/check/:plan_code"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.VerifyAuth.func1",
+    "method": "POST",
+    "path": "/api/verify-auth"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.SelfUpdate.func1",
+    "method": "POST",
+    "path": "/api/version/update"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.CreateAccount.func1",
+    "method": "POST",
+    "path": "/api/accounts"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.TestAccountProxy.func1",
+    "method": "POST",
+    "path": "/api/accounts/:id/proxy-test"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.CheckAccountProxy.func1",
+    "method": "POST",
+    "path": "/api/accounts/:id/proxy-check"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.SetDefaultAccountByID.func1",
+    "method": "POST",
+    "path": "/api/accounts/:id/set-default"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.VerifyAccount.func1",
+    "method": "POST",
+    "path": "/api/accounts/:id/verify"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.RedeemPairingCode.func1",
+    "method": "POST",
+    "path": "/api/app/pair"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.CreatePairingCode.func1",
+    "method": "POST",
+    "path": "/api/app/pairing-codes"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/router.availabilityHandler.func1",
+    "method": "POST",
+    "path": "/api/availability/*planCode"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.AddSubscription.func1",
+    "method": "POST",
+    "path": "/api/monitor/subscriptions"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.BatchAddAll.func1",
+    "method": "POST",
+    "path": "/api/monitor/subscriptions/batch-add-all"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.PauseSubscription.func1",
+    "method": "POST",
+    "path": "/api/monitor/subscriptions/:planCode/pause"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.StartMonitor.func1",
+    "method": "POST",
+    "path": "/api/monitor/start"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.StopMonitor.func1",
+    "method": "POST",
+    "path": "/api/monitor/stop"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.TestNotification.func1",
+    "method": "POST",
+    "path": "/api/monitor/test-notification"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.RefuseContactChangeRequest.func1",
+    "method": "POST",
+    "path": "/api/ovh/contact-change-requests/:task_id/refuse"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.ResendContactChangeEmail.func1",
+    "method": "POST",
+    "path": "/api/ovh/contact-change-requests/:task_id/resend-email"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.AcceptContactChangeRequest.func1",
+    "method": "POST",
+    "path": "/api/ovh/contact-change-requests/:task_id/accept"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.PayAccountOrder.func1",
+    "method": "POST",
+    "path": "/api/ovh/account/orders/:order_id/pay"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.OfficialChatSession.func1",
+    "method": "POST",
+    "path": "/api/ovh/support/chat/session"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.TelegramQuickOrder.func1",
+    "method": "POST",
+    "path": "/api/telegram/quick-order"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.RegisterTelegramCommands.func1",
+    "method": "POST",
+    "path": "/api/telegram/register-commands"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.AddQueueItem.func1",
+    "method": "POST",
+    "path": "/api/queue"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.QuickOrder.func1",
+    "method": "POST",
+    "path": "/api/queue/quick-order"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.RefreshOrderStatuses.func1",
+    "method": "POST",
+    "path": "/api/purchase-history/refresh-status"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.PrewarmOrder.func1",
+    "method": "POST",
+    "path": "/api/purchase/prewarm"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.FlushLogs.func1",
+    "method": "POST",
+    "path": "/api/logs/flush"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.MonitorPrice.func1",
+    "method": "POST",
+    "path": "/api/internal/monitor/price"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.ClearCache.func1",
+    "method": "POST",
+    "path": "/api/cache/clear"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.DeleteBackupFTP.func1",
+    "method": "DELETE",
+    "path": "/api/server-control/:service_name/backup-ftp"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.DeleteBackupFTPAccess.func1",
+    "method": "DELETE",
+    "path": "/api/server-control/:service_name/backup-ftp/access"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.DeleteBackupFTPAccess.func1",
+    "method": "DELETE",
+    "path": "/api/server-control/:service_name/backup-ftp/access/:ip_block"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.DeleteBackupCloud.func1",
+    "method": "DELETE",
+    "path": "/api/server-control/:service_name/backup-cloud"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.DeleteServerAlias.func1",
+    "method": "DELETE",
+    "path": "/api/server-control/:service_name/alias"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.DeleteReverseDNS.func1",
+    "method": "DELETE",
+    "path": "/api/server-control/:service_name/reverse/:ip"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.DeleteEngagementRequest.func1",
+    "method": "DELETE",
+    "path": "/api/server-control/:service_name/engagement/request"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.DisableMitigation.func1",
+    "method": "DELETE",
+    "path": "/api/server-control/:service_name/mitigation/:ip"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.DeleteSecondaryDNS.func1",
+    "method": "DELETE",
+    "path": "/api/server-control/:service_name/secondary-dns/:domain"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.RemoveFromVRack.func1",
+    "method": "DELETE",
+    "path": "/api/server-control/:service_name/vrack/:vrack"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.DeleteVpsSnapshot.func1",
+    "method": "DELETE",
+    "path": "/api/vps-control/:service_name/snapshot"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.DeleteVpsSecondaryDns.func1",
+    "method": "DELETE",
+    "path": "/api/vps-control/:service_name/secondary-dns/:domain"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.DeleteVpsOption.func1",
+    "method": "DELETE",
+    "path": "/api/vps-control/:service_name/options/:option"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.DeleteVpsEngagementRequest.func1",
+    "method": "DELETE",
+    "path": "/api/vps-control/:service_name/engagement/request"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.DisableVpsMitigation.func1",
+    "method": "DELETE",
+    "path": "/api/vps-control/:service_name/mitigation/:ip"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.ClearVPSSubscriptions.func1",
+    "method": "DELETE",
+    "path": "/api/vps-monitor/subscriptions/clear"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.RemoveVPSSubscription.func1",
+    "method": "DELETE",
+    "path": "/api/vps-monitor/subscriptions/:subscription_id"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.ClearQueue.func1",
+    "method": "DELETE",
+    "path": "/api/queue/clear"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.RemoveQueueItem.func1",
+    "method": "DELETE",
+    "path": "/api/queue/:id"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.ClearSubscriptions.func1",
+    "method": "DELETE",
+    "path": "/api/monitor/subscriptions/clear"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.RemoveSubscription.func1",
+    "method": "DELETE",
+    "path": "/api/monitor/subscriptions/:planCode"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.RevokeAppDevice.func1",
+    "method": "DELETE",
+    "path": "/api/app/devices/:id"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.DeleteAccountByID.func1",
+    "method": "DELETE",
+    "path": "/api/accounts/:id"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.ClearLogs.func1",
+    "method": "DELETE",
+    "path": "/api/logs"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.ClearPurchaseHistory.func1",
+    "method": "DELETE",
+    "path": "/api/purchase-history"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.SetBootConfig.func1",
+    "method": "PUT",
+    "path": "/api/server-control/:service_name/boot/:boot_id"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.ChangeBootMode.func1",
+    "method": "PUT",
+    "path": "/api/server-control/:service_name/boot-mode"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.UpdateBurst.func1",
+    "method": "PUT",
+    "path": "/api/server-control/:service_name/burst"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.SetServerAlias.func1",
+    "method": "PUT",
+    "path": "/api/server-control/:service_name/alias"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.SetMonitoringStatus.func1",
+    "method": "PUT",
+    "path": "/api/server-control/:service_name/monitoring"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.UpdateServiceRenewal.func1",
+    "method": "PUT",
+    "path": "/api/server-control/:service_name/serviceinfo/renewal"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.UpdateEngagementEndRule.func1",
+    "method": "PUT",
+    "path": "/api/server-control/:service_name/engagement/end-rule"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.UpdateFirewall.func1",
+    "method": "PUT",
+    "path": "/api/server-control/:service_name/firewall"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.terminationPolicyHandler.func1",
+    "method": "PUT",
+    "path": "/api/server-control/:service_name/termination-policy"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.UpdateVpsRenewal.func1",
+    "method": "PUT",
+    "path": "/api/vps-control/:service_name/serviceinfo/renewal"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.UpdateVpsSnapshotDescription.func1",
+    "method": "PUT",
+    "path": "/api/vps-control/:service_name/snapshot"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.SetVpsIpReverse.func1",
+    "method": "PUT",
+    "path": "/api/vps-control/:service_name/ips/:ip/reverse"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.terminationPolicyHandler.func1",
+    "method": "PUT",
+    "path": "/api/vps-control/:service_name/termination-policy"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.UpdateVpsEngagementEndRule.func1",
+    "method": "PUT",
+    "path": "/api/vps-control/:service_name/engagement/end-rule"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.UpdateVPSSubscription.func1",
+    "method": "PUT",
+    "path": "/api/vps-monitor/subscriptions/:subscription_id"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.SetVPSMonitorInterval.func1",
+    "method": "PUT",
+    "path": "/api/vps-monitor/interval"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.UpdateQueueItem.func1",
+    "method": "PUT",
+    "path": "/api/queue/:id"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.UpdateQueueStatus.func1",
+    "method": "PUT",
+    "path": "/api/queue/:id/status"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.UpdateQueueInterval.func1",
+    "method": "PUT",
+    "path": "/api/queue/:id/interval"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.UpdateSubscription.func1",
+    "method": "PUT",
+    "path": "/api/monitor/subscriptions/:planCode"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.SetMonitorInterval.func1",
+    "method": "PUT",
+    "path": "/api/monitor/interval"
+  },
+  {
+    "handler": "github.com/ovh-webui/server/internal/handlers.UpdateAccount.func1",
+    "method": "PUT",
+    "path": "/api/accounts/:id"
+  }
+]

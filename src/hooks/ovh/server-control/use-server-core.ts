@@ -15,14 +15,7 @@ export function useOwnedServers() {
     queryFn: async () => {
       const res = await api.get("/server-control/list", { params: { account: accountId } });
       const raw = (res.data?.servers || []) as OwnedServer[];
-      return raw.filter((s) => {
-        const state = s.state?.toLowerCase();
-        if (s.error) return true;
-        const status = s.status?.toLowerCase();
-        if (status === "expired" || status === "suspended") return false;
-        if (state === "error" || state === "suspended") return false;
-        return state === "ok" || state === "active";
-      });
+      return raw;
     },
     staleTime: 60_000,
     enabled: !!accountId,

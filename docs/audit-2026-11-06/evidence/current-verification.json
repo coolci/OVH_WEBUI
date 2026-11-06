@@ -1,0 +1,15 @@
+{
+  "date": "2026-11-06",
+  "source": "Observed current tool exits; summary is not raw stdout",
+  "checks": {
+    "npm run verify": "exit 0; 24 frontend unit cases, all backend packages, tooling unit/mock tests, both 254-route ledgers",
+    "go vet ./backend/... ./tools/status/...": "exit 0",
+    "scripts/test-subscription-ui.cjs": "exit 0; original multi-account/custom-plan regressions; all requests mocked",
+    "proofs/frontend-browser.cjs": "exit 0; UI-01..06 corrected behavior, notification channel matrix, theme system changes, OM-09 rendering",
+    "proofs/platform-browser.cjs": "exit 0; saved 422 account exits gate without duplicate creation",
+    "scripts/test-account-records-ui.cjs": "exit 0; initial error, partial data, cached refresh failure, genuine empty result",
+    "proofs/run-order-monitor.ps1": "exit 0; formal corrected regressions including Telegram error backoff",
+    "tooling": "mock SSH and PowerShell rebuild harness; actual shell health fragments with mock commands; invalid ledger method rejected"
+  },
+  "excluded": "No real OVH writes, SSH, payment, reinstall, production deployment or successful race run; historical credentials not rotated"
+}

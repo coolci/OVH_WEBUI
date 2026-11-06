@@ -55,11 +55,13 @@ func (s *State) AddVPSSubscription(sub types.VPSSubscription) error {
 		return err
 	}
 	s.VPSSubsMu.Lock()
-	s.VPSSubscriptions = append(s.VPSSubscriptions, sub)
-	subs := cloneVPSSubs(s.VPSSubscriptions)
-	s.VPSSubsMu.Unlock()
-
-	return s.DB.ReplaceVPSSubscriptions(subs)
+	defer s.VPSSubsMu.Unlock()
+	next := append(cloneVPSSubs(s.VPSSubscriptions), cloneVPSSub(sub))
+	if err := s.DB.ReplaceVPSSubscriptions(next); err != nil {
+		return err
+	}
+	s.VPSSubscriptions = next
+	return nil
 }
 
 // RemoveVPSSubscription 按 id 删除订阅并落库。
@@ -77,17 +79,16 @@ func (s *State) RemoveVPSSubscription(id string) (bool, bool, error) {
 			kept = append(kept, it)
 		}
 	}
-	s.VPSSubscriptions = kept
-	removed := len(s.VPSSubscriptions) < original
-	empty := len(s.VPSSubscriptions) == 0
-	subs := cloneVPSSubs(s.VPSSubscriptions)
-	s.VPSSubsMu.Unlock()
-
+	defer s.VPSSubsMu.Unlock()
+	removed := len(kept) < original
 	if !removed {
-		return false, empty, nil
+		return false, original == 0, nil
 	}
-	err := s.DB.ReplaceVPSSubscriptions(subs)
-	return true, empty, err
+	if err := s.DB.ReplaceVPSSubscriptions(kept); err != nil {
+		return false, original == 0, err
+	}
+	s.VPSSubscriptions = kept
+	return true, len(kept) == 0, nil
 }
 
 // ClearVPSSubscriptions 清空全部 VPS 订阅并落库。
@@ -97,12 +98,13 @@ func (s *State) ClearVPSSubscriptions() (int, error) {
 		return 0, err
 	}
 	s.VPSSubsMu.Lock()
+	defer s.VPSSubsMu.Unlock()
 	count := len(s.VPSSubscriptions)
+	if _, err := s.DB.ClearVPSSubscriptions(); err != nil {
+		return 0, err
+	}
 	s.VPSSubscriptions = []types.VPSSubscription{}
-	s.VPSSubsMu.Unlock()
-
-	_, err := s.DB.ClearVPSSubscriptions()
-	return count, err
+	return count, nil
 }
 
 // MutateVPSSubscription 查找指定订阅，并在锁保护下通过 mutateFn 更新，最后持久化落库。
@@ -124,32 +126,33 @@ func (s *State) MutateVPSSubscription(id string, mutateFn func(*types.VPSSubscri
 		s.VPSSubsMu.Unlock()
 		return nil, false, nil
 	}
-	if !mutateFn(&s.VPSSubscriptions[idx]) {
+	defer s.VPSSubsMu.Unlock()
+	next := cloneVPSSubs(s.VPSSubscriptions)
+	if !mutateFn(&next[idx]) {
 		cp := cloneVPSSub(s.VPSSubscriptions[idx])
-		s.VPSSubsMu.Unlock()
 		return &cp, true, nil
 	}
-	updated := cloneVPSSub(s.VPSSubscriptions[idx])
-	subs := cloneVPSSubs(s.VPSSubscriptions)
-	s.VPSSubsMu.Unlock()
-
-	err := s.DB.ReplaceVPSSubscriptions(subs)
-	return &updated, true, err
+	if err := s.DB.ReplaceVPSSubscriptions(next); err != nil {
+		return nil, true, err
+	}
+	s.VPSSubscriptions = next
+	updated := cloneVPSSub(next[idx])
+	return &updated, true, nil
 }
 
 // ReloadVPSSubscriptionsFromDB 从数据库重新加载 VPS 订阅列表到内存。
 func (s *State) ReloadVPSSubscriptionsFromDB() error {
+	s.VPSSubsMu.Lock()
+	defer s.VPSSubsMu.Unlock()
 	subs, err := s.DB.ListVPSSubscriptions()
 	if err != nil {
 		return err
 	}
-	s.VPSSubsMu.Lock()
 	if subs == nil {
 		s.VPSSubscriptions = []types.VPSSubscription{}
 	} else {
 		s.VPSSubscriptions = subs
 	}
-	s.VPSSubsMu.Unlock()
 	return nil
 }
 
@@ -163,10 +166,12 @@ func (s *State) VPSMonitorStatus() (count int, interval int) {
 // SetVPSCheckInterval 设置并持久化 VPS 检查间隔。
 func (s *State) SetVPSCheckInterval(interval int) error {
 	s.VPSSubsMu.Lock()
+	defer s.VPSSubsMu.Unlock()
+	if err := s.DB.SetKV("vps_check_interval", interval); err != nil {
+		return err
+	}
 	s.VPSCheckInterval = interval
-	s.VPSSubsMu.Unlock()
-
-	return s.DB.SetKV("vps_check_interval", interval)
+	return nil
 }
 
 // BatchAddVPSSubscriptions 批量添加未存在的订阅并持久化。
@@ -176,6 +181,8 @@ func (s *State) BatchAddVPSSubscriptions(subs []types.VPSSubscription) (int, err
 		return 0, err
 	}
 	s.VPSSubsMu.Lock()
+	defer s.VPSSubsMu.Unlock()
+	next := cloneVPSSubs(s.VPSSubscriptions)
 	existingMap := make(map[string]bool, len(s.VPSSubscriptions))
 	for _, it := range s.VPSSubscriptions {
 		existingMap[it.PlanCode+"@"+strings.ToUpper(strings.TrimSpace(it.OvhSubsidiary))] = true
@@ -186,16 +193,16 @@ func (s *State) BatchAddVPSSubscriptions(subs []types.VPSSubscription) (int, err
 		if existingMap[key] {
 			continue
 		}
-		s.VPSSubscriptions = append(s.VPSSubscriptions, it)
+		next = append(next, cloneVPSSub(it))
 		existingMap[key] = true
 		added++
 	}
-	allSubs := cloneVPSSubs(s.VPSSubscriptions)
-	s.VPSSubsMu.Unlock()
+	allSubs := next
 
 	if err := s.DB.ReplaceVPSSubscriptions(allSubs); err != nil {
-		return added, err
+		return 0, err
 	}
+	s.VPSSubscriptions = next
 	return added, nil
 }
 

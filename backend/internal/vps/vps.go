@@ -340,11 +340,11 @@ func SaveSubscriptions(state *app.State) error {
 	saveSubsMu.Lock()
 	defer saveSubsMu.Unlock()
 	state.VPSSubsMu.Lock()
+	defer state.VPSSubsMu.Unlock()
 	// 同样要深拷贝:ReplaceVPSSubscriptions 会在锁外把 LastStatus 序列化成 JSON,
 	// 浅拷贝的话它读的是和内存里同一个 map。
 	subs := cloneSubs(state.VPSSubscriptions)
 	interval := state.VPSCheckInterval
-	state.VPSSubsMu.Unlock()
 	if err := state.DB.ReplaceVPSSubscriptions(subs); err != nil {
 		state.Logger.Error("保存VPS订阅时出错: "+err.Error(), "")
 		return err

@@ -344,7 +344,7 @@ export function useUpdateVpsSnapshot(svc: string) {
 export function useRevertVpsSnapshot(svc: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async () => (await api.post(`/vps-control/${svc}/snapshot/revert`)).data,
+    mutationFn: async () => (await api.post(`/vps-control/${svc}/snapshot/revert`, { confirm: true })).data,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["vps-control", "list"] });
       qc.invalidateQueries({ queryKey: qk.vpsControl.tasks(svc) });

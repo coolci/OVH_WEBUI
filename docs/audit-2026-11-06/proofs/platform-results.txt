@@ -1,0 +1,26 @@
+=== RUN   TestAuditFailedConfigSavePublishesMemory
+    audit_platform_proof_test.go:60: CONFIRMED: save error=kv set config: constraint failed: audit write rejected (1811); active=new-audit-chat; persisted=old-audit-chat
+--- PASS: TestAuditFailedConfigSavePublishesMemory (0.03s)
+=== RUN   TestAuditPairingDatabaseFailureReturnsSuccess
+    audit_platform_proof_test.go:72: CONFIRMED: missing table gives code="", zeroExpiry=true, error=<nil>
+--- PASS: TestAuditPairingDatabaseFailureReturnsSuccess (0.03s)
+=== RUN   TestAuditFailedVPSSubscriptionSavePublishesAutoOrder
+    audit_platform_proof_test.go:93: CONFIRMED: save error=constraint failed: audit write rejected (1811); active autoOrder/autoPay=true/true; persisted=false/false
+--- PASS: TestAuditFailedVPSSubscriptionSavePublishesAutoOrder (0.04s)
+=== RUN   TestAuditAccountUpdatePersistsInvalidProxy
+[GIN-debug] [WARNING] Running in "debug" mode. Switch to "release" mode in production.
+ - using env:	export GIN_MODE=release
+ - using code:	gin.SetMode(gin.ReleaseMode)
+
+[GIN-debug] POST   /accounts                 --> github.com/ovh-webui/server/internal/handlers.CreateAccount.func1 (1 handlers)
+[GIN-debug] PUT    /accounts/:id             --> github.com/ovh-webui/server/internal/handlers.UpdateAccount.func1 (1 handlers)
+    audit_platform_proof_test.go:120: CONFIRMED: create rejects invalid proxy with 400; update returns 422 after persisting invalid proxy and fingerprint
+--- PASS: TestAuditAccountUpdatePersistsInvalidProxy (0.03s)
+=== RUN   TestAuditDeletedLastAccountResurrectsAtStartup
+    audit_platform_proof_test.go:145: CONFIRMED: deleted final account count 0 -> startup count 1; original credentials restored under new ID
+--- PASS: TestAuditDeletedLastAccountResurrectsAtStartup (0.03s)
+=== RUN   TestAuditRunReturnsBeforeHTTPShutdownDrains
+    audit_platform_proof_test.go:208: CONFIRMED: Run returned while active request and Shutdown were still waiting; main would exit here
+--- PASS: TestAuditRunReturnsBeforeHTTPShutdownDrains (0.03s)
+PASS
+ok  	github.com/ovh-webui/server/internal/server	1.332s

@@ -34,7 +34,7 @@ export interface LogsResult {
   truncated: boolean;
 }
 
-function parseLogsResponse(data: unknown, params: LogsQueryParams): LogsResult {
+export function parseLogsResponse(data: unknown, params: LogsQueryParams): LogsResult {
   let list: LogEntry[] = [];
   let total = 0;
   let truncated = false;
@@ -58,9 +58,8 @@ function parseLogsResponse(data: unknown, params: LogsQueryParams): LogsResult {
     const src = params.source.toLowerCase();
     list = list.filter((l) => (l.source || "").toLowerCase().includes(src));
   }
-  if (params.order === "desc") {
-    list.reverse();
-  }
+  if (Array.isArray(data)) total = list.length;
+  list.sort((a, b) => (Date.parse(a.timestamp) - Date.parse(b.timestamp)) * (params.order === "asc" ? 1 : -1));
   if (params.limit && params.limit > 0 && list.length > params.limit) {
     truncated = true;
     list = list.slice(0, params.limit);

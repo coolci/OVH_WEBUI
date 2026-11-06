@@ -110,10 +110,15 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 			}
 		}
 		state.HistoryMu.Unlock()
-		oidCheck, orderURLCheck, _ := ReconcileRecentOrderEx(client, accCheck.Endpoint, item.PlanCode, attemptStart, ReconcileOptions{
+		oidCheck, orderURLCheck, reconcileErr := ReconcileRecentOrderEx(client, accCheck.Endpoint, item.PlanCode, attemptStart, ReconcileOptions{
 			Datacenter:       item.Datacenter,
 			ExcludedOrderIDs: claimedMap,
 		})
+		if reconcileErr != nil {
+			reason := "上一轮结账结果仍不确定，对账失败，暂停以避免重复下单: " + reconcileErr.Error()
+			state.Logger.Warn(reason, "purchase")
+			return Outcome{PauseTask: true, Reason: reason}
+		}
 		if oidCheck != "" {
 			state.Logger.Warn(fmt.Sprintf("抢购前对账发现上一轮未决结账已在 OVH 成功建单(#%s),按成功处理,不再重复下单", oidCheck), "purchase")
 			item.UncertainCheckout = false
@@ -166,7 +171,7 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 	// dedicated.DatacenterAvailability 的粒度是 fqn（一整套硬件组合），不是 planCode：
 	// "32G+HDD 有货" 不等于 "用户要的 64G+NVMe 有货"。用户指定了硬件选项时，
 	// 只在 FQN 段集合覆盖了这些选项的条目里判有货。
-	wantedHW := fqnRelevantOptions(availabilities, item.Options)
+	wantedHW := fqnRelevantOptions(availabilities, item.Options, item.PlanCode)
 	if item.Preorder {
 		// 预订保存的是原始 FQN 硬件段;参数消失也不能忽略它后改买其他配置。
 		wantedHW = item.Options
@@ -176,9 +181,9 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 		matchedAvs := []map[string]interface{}{}
 		for _, av := range availabilities {
 			fqn, _ := av["fqn"].(string)
-			matches := fqnCoversOptions(fqn, wantedHW)
+			matches := fqnCoversOptions(fqn, wantedHW, item.PlanCode)
 			if item.Preorder {
-				matches = preorderFQNCoversOptions(fqn, wantedHW)
+				matches = preorderFQNCoversOptions(fqn, wantedHW, item.PlanCode)
 			}
 			if matches {
 				matchedAvs = append(matchedAvs, av)
@@ -238,12 +243,11 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 	// - 用户没指定 → 从可用 FQN 推断 addon planCode，确保订单走"实际有货的那套配置"
 	effectiveOptions := item.Options
 	if len(effectiveOptions) == 0 && availableFQN != "" {
-		parts := strings.Split(availableFQN, ".")
-		if len(parts) > 1 {
-			// 第一段是 base planCode，其余是 addon 段。注意这些段是"短前缀"
+		if suffix, ok := strings.CutPrefix(availableFQN, item.PlanCode+"."); ok && suffix != "" {
+			// 完整 planCode 之后才是 addon，型号本身可能包含点号。这些段是"短前缀"
 			// （ram-128g-noecc-2933），不是 eco/options 里带机型后缀的完整 planCode
 			// （ram-128g-noecc-2933-rise），下面匹配 addon 时要允许前缀命中。
-			effectiveOptions = parts[1:]
+			effectiveOptions = strings.Split(suffix, ".")
 			state.Logger.Info(fmt.Sprintf("用户未指定硬件选项，从可用 FQN %s 推断 addon: %v",
 				availableFQN, effectiveOptions), "purchase")
 		}
@@ -274,7 +278,7 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 	}()
 
 	// ⚡ 检查预装车池：若后台已提前组装好满配就绪车，直接跳过装车阶段直达 checkout，装车耗时归零！
-	if prewarmed := TakePrewarmedCart(item.AccountID, item.PlanCode, item.Datacenter, item.Options, item.Coupon); prewarmed != nil {
+	if prewarmed := TakePrewarmedCart(item.AccountID, item.PlanCode, item.Datacenter, effectiveOptions, item.Coupon); prewarmed != nil {
 		cartID = prewarmed.CartID
 		state.Logger.Info(fmt.Sprintf("⚡ 命中预装车池！直接使用预热就绪购物车 %s，装车耗时 0 秒！", cartID), "purchase")
 		tl.mark("预装车就绪")
@@ -840,15 +844,11 @@ func fqnSegmentMatchesOption(seg, opt string) bool {
 //
 // 判定不靠猜命名，而是用"本次 availabilities 里真实出现过的 FQN 段"当白名单：
 // 段里查无此项的选项一律不参与覆盖判定。许可证/OS 类选项同样天然出局。
-func fqnRelevantOptions(availabilities []map[string]interface{}, opts []string) []string {
+func fqnRelevantOptions(availabilities []map[string]interface{}, opts []string, planCode ...string) []string {
 	segs := []string{}
 	for _, av := range availabilities {
 		fqn, _ := av["fqn"].(string)
-		parts := strings.Split(fqn, ".")
-		if len(parts) < 2 {
-			continue
-		}
-		segs = append(segs, parts[1:]...) // 第一段是 base planCode，不是 addon
+		segs = append(segs, fqnHardwareParts(fqn, planCode...)...)
 	}
 	relevant := []string{}
 	for _, opt := range opts {
@@ -867,14 +867,11 @@ func fqnRelevantOptions(availabilities []map[string]interface{}, opts []string) 
 
 // fqnCoversOptions 判断一条 dedicated.DatacenterAvailability 的 fqn
 // （格式 <planCode>.<addon1>.<addon2>...）是否覆盖了用户要的全部硬件选项。
-func fqnCoversOptions(fqn string, opts []string) bool {
+func fqnCoversOptions(fqn string, opts []string, planCode ...string) bool {
 	if fqn == "" {
 		return false
 	}
-	segs := strings.Split(fqn, ".")
-	if len(segs) > 1 {
-		segs = segs[1:] // 第一段是 base planCode
-	}
+	segs := fqnHardwareParts(fqn, planCode...)
 	for _, want := range opts {
 		hit := false
 		for _, seg := range segs {
@@ -890,14 +887,14 @@ func fqnCoversOptions(fqn string, opts []string) bool {
 	return true
 }
 
-func preorderFQNCoversOptions(fqn string, opts []string) bool {
-	parts := strings.Split(fqn, ".")
-	if len(parts) < 2 {
-		return false
+func preorderFQNCoversOptions(fqn string, opts []string, planCode ...string) bool {
+	parts := fqnHardwareParts(fqn, planCode...)
+	if len(parts) == 0 {
+		return len(opts) == 0
 	}
 	for _, wanted := range opts {
 		found := false
-		for _, part := range parts[1:] {
+		for _, part := range parts {
 			if strings.EqualFold(part, wanted) {
 				found = true
 				break
@@ -1313,4 +1310,17 @@ func handleReconciledOrder(state *app.State, client *ovhsdk.Client, endpoint str
 		state.Logger.Warn("对账订单 "+orderID+" 已确认,但成功通知未送达任何通道。", "purchase")
 	}
 	return Outcome{Success: true}
+}
+
+// Explicit planCode keeps punctuation in custom model names out of hardware matching.
+func fqnHardwareParts(fqn string, planCode ...string) []string {
+	if len(planCode) > 0 {
+		suffix, ok := strings.CutPrefix(fqn, planCode[0]+".")
+		if !ok || suffix == "" {
+			return nil
+		}
+		return strings.Split(suffix, ".")
+	}
+	parts := strings.Split(fqn, ".")
+	return parts[1:]
 }

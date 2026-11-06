@@ -73,7 +73,7 @@ export function OperationBanner({
         <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono flex-shrink-0 pl-3 border-l border-border/70">
           <span>盯盘: <strong className="text-primary font-bold">{monitorCount}</strong></span>
           <span className="opacity-40">/</span>
-          <span>现货: <strong className="text-foreground font-medium">{stats?.totalServers ?? 0}</strong></span>
+          <span>现货: <strong className="text-foreground font-medium">{stats?.availableServers ?? 0}</strong></span>
         </div>
       </div>
 
@@ -92,7 +92,7 @@ export function OperationBanner({
           <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-mono">
             <span>盯盘: <strong className="text-primary">{monitorCount}</strong></span>
             <span className="opacity-40">·</span>
-            <span>现货: <strong className="text-foreground">{stats?.totalServers ?? 0}</strong></span>
+            <span>现货: <strong className="text-foreground">{stats?.availableServers ?? 0}</strong></span>
           </div>
         </div>
 

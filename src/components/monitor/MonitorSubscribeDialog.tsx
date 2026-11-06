@@ -20,7 +20,7 @@ import {
   useUpdateMonitorSubscription,
   type MonitorSubscription,
 } from "@/hooks/use-monitor";
-import { useTelegramVerify } from "@/hooks/use-telegram";
+import { useNotifyGate } from "@/hooks/ovh/use-notify-channels";
 import { useServers } from "@/hooks/use-servers";
 import { useAvailability, buildAvailabilityMap } from "@/hooks/use-availability";
 import {
@@ -81,8 +81,7 @@ export function MonitorSubscribeDialog({
 }: MonitorSubscribeDialogProps) {
   const create = useCreateMonitorSubscription();
   const update = useUpdateMonitorSubscription();
-  const tgVerify = useTelegramVerify();
-  const tgBlocked = tgVerify.data ? !tgVerify.data.ok : false;
+  const [notifyBlocked, notifyReason, notifyPending] = useNotifyGate();
   const serversQ = useServers();
   const accountsQ = useAccounts();
   const accountsInitialized = useRef(false);
@@ -176,7 +175,7 @@ export function MonitorSubscribeDialog({
   };
 
   const pending = create.isPending || update.isPending;
-  const blockCreate = mode === "create" && (tgBlocked || tgVerify.isPending);
+  const blockCreate = mode === "create" && (notifyBlocked || notifyPending);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -198,15 +197,15 @@ export function MonitorSubscribeDialog({
 
         <form onSubmit={submit} className="flex-1 flex flex-col min-h-0 overflow-hidden">
           <div className="flex-1 overflow-y-auto -mx-6 px-6 space-y-4 py-1">
-          {mode === "create" && tgBlocked && (
+          {mode === "create" && notifyBlocked && (
             <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3.5 py-2.5">
               <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-600" />
               <div className="min-w-0 flex-1 text-xs">
                 <div className="font-medium text-amber-900 dark:text-amber-200">
-                  Telegram 通知未配置或无效
+                  通知通道未配置或无效
                 </div>
                 <div className="mt-0.5 break-words text-amber-800/80 dark:text-amber-200/80">
-                  {tgVerify.data?.reason || "请先在设置页配置可用的 Telegram Bot Token 和 Chat ID"}
+                  {notifyReason || "请先在设置页配置可用的 Telegram 或 Webhook 通知"}
                 </div>
                 <Link
                   to="/settings"
@@ -310,11 +309,11 @@ export function MonitorSubscribeDialog({
             <Button
               type="submit"
               disabled={pending || blockCreate || (opts.autoOrder && accountsQ.isPending)}
-              title={mode === "create" && tgBlocked ? "Telegram 通知无效,无法添加订阅" : undefined}
+              title={mode === "create" && notifyBlocked ? "通知通道无效,无法添加订阅" : undefined}
             >
               {pending
                 ? "提交中…"
-                : mode === "create" && tgVerify.isPending
+                : mode === "create" && notifyPending
                   ? "校验通知…"
                   : mode === "edit"
                     ? "保存设置"
