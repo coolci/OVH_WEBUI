@@ -105,12 +105,19 @@ const (
 )
 
 type planConfig struct {
+	// product 目录里 addon 对应的原始硬件规格(如 ram-64g-ddr4-ecc-2933),只对 addon 有值
+	product     string
 	regions     []string
 	datacenters []string
 	// addonFamilies: family 名(memory / storage / bandwidth ...) → 该 family 下的 addon planCode。
 	// 监控和快速下单要用它把 availabilities 里的 FQN 段(ram-64g-ecc-2133)映射成
 	// 下单用的 addon planCode(ram-64g-ecc-2133-24sk20-us)。
 	addonFamilies map[string][]string
+	// addonProducts: addon planCode → 原始硬件规格;addonDefaults / mandatoryFamilies:
+	// 每个 family 的默认 addon 与是否必选。预订要靠它们把库存里的硬件段映射到可下单的 addon。
+	addonProducts     map[string]string
+	addonDefaults     map[string]string
+	mandatoryFamilies map[string]bool
 	// monthly / install: 这个 plan 自身的月费与安装费(不含 addon)。
 	// 单位已经从 OVH 的 1e8 定点整数换算成真实金额。
 	monthly PriceParts
@@ -271,13 +278,16 @@ func parseEcoCatalogFull(r io.Reader) (ecoCatalogPayload, error) {
 				Values []string `json:"values"`
 			} `json:"configurations"`
 			AddonFamilies []struct {
-				Name   string   `json:"name"`
-				Addons []string `json:"addons"`
+				Name      string   `json:"name"`
+				Addons    []string `json:"addons"`
+				Default   string   `json:"default"`
+				Mandatory bool     `json:"mandatory"`
 			} `json:"addonFamilies"`
 			Pricings []catalogPricing `json:"pricings"`
 		} `json:"plans"`
 		Addons []struct {
 			PlanCode string           `json:"planCode"`
+			Product  string           `json:"product"`
 			Pricings []catalogPricing `json:"pricings"`
 		} `json:"addons"`
 	}
@@ -297,8 +307,13 @@ func parseEcoCatalogFull(r io.Reader) (ecoCatalogPayload, error) {
 		}
 		if len(p.AddonFamilies) > 0 {
 			pc.addonFamilies = make(map[string][]string, len(p.AddonFamilies))
+			pc.addonDefaults = map[string]string{}
+			pc.mandatoryFamilies = map[string]bool{}
 			for _, f := range p.AddonFamilies {
-				pc.addonFamilies[strings.ToLower(f.Name)] = f.Addons
+				family := strings.ToLower(f.Name)
+				pc.addonFamilies[family] = f.Addons
+				pc.addonDefaults[family] = f.Default
+				pc.mandatoryFamilies[family] = f.Mandatory
 			}
 		}
 		pc.monthly = monthlyOf(p.Pricings)
@@ -308,9 +323,21 @@ func parseEcoCatalogFull(r io.Reader) (ecoCatalogPayload, error) {
 	addons := make(map[string]planConfig, len(payload.Addons))
 	for _, a := range payload.Addons {
 		addons[a.PlanCode] = planConfig{
+			product: a.Product,
 			monthly: monthlyOf(a.Pricings),
 			install: installOf(a.Pricings),
 		}
+	}
+	for code, pc := range out {
+		pc.addonProducts = map[string]string{}
+		for _, codes := range pc.addonFamilies {
+			for _, addon := range codes {
+				if product := addons[addon].product; product != "" {
+					pc.addonProducts[addon] = product
+				}
+			}
+		}
+		out[code] = pc
 	}
 	return ecoCatalogPayload{plans: out, addons: addons, currency: payload.Locale.CurrencyCode}, nil
 }
@@ -433,6 +460,23 @@ func normalizeDCCity(dc string) string {
 //     因为一份两小时前的区域配置远好过没有 —— 后者会让下单退回静态兜底。
 func loadSubsidiaryCatalog(state *app.State, subsidiary string) (*subsidiaryCatalog, error) {
 	return loadSubsidiaryCatalogWithTTL(state, subsidiary, regionCacheTTL)
+}
+
+// loadSubsidiaryCatalogStale 有缓存就立即返回(哪怕已过期),过期时在后台刷新。
+// 预订每一轮都要查目录;同步等一份 10MB 目录会把抢购轮次拖慢几秒,
+// 而预订只把目录当作"可选的映射信息",以真实下单接口是否开放为准。
+func loadSubsidiaryCatalogStale(state *app.State, subsidiary string, ttl time.Duration) (*subsidiaryCatalog, error) {
+	key := strings.ToUpper(strings.TrimSpace(subsidiary))
+	regionCacheMu.Lock()
+	cached := regionCache[key]
+	regionCacheMu.Unlock()
+	if cached == nil {
+		return loadSubsidiaryCatalogWithTTL(state, subsidiary, ttl)
+	}
+	if time.Since(cached.fetchedAt) >= ttl {
+		go func() { _, _ = loadSubsidiaryCatalogWithTTL(state, subsidiary, ttl) }()
+	}
+	return cached, nil
 }
 
 func loadSubsidiaryCatalogWithTTL(state *app.State, subsidiary string, ttl time.Duration) (*subsidiaryCatalog, error) {

@@ -116,7 +116,14 @@ func TestPurchaseCouponBeforeCheckout(t *testing.T) {
 				case strings.HasSuffix(path, "/coupon-cart/checkout") && r.Method == "POST":
 					checkoutCalls++
 					steps = append(steps, "checkout")
-					if tc.coupon != "  " && (len(steps) < 2 || steps[len(steps)-2] != "coupon") {
+					prev := ""
+					for i := len(steps) - 2; i >= 0; i-- {
+						if steps[i] != "verify" {
+							prev = steps[i]
+							break
+						}
+					}
+					if tc.coupon != "  " && prev != "coupon" {
 						t.Errorf("coupon must precede checkout after configuration: %v", steps)
 					}
 					var payload map[string]interface{}
@@ -132,6 +139,12 @@ func TestPurchaseCouponBeforeCheckout(t *testing.T) {
 						status = http.StatusServiceUnavailable
 						body = `{"message":"checkout timeout"}`
 					}
+				case strings.HasSuffix(path, "/order/cart/coupon-cart") && r.Method == "GET":
+					// 预订结账前核对购物车:主机一项,月付
+					steps = append(steps, "verify")
+					body = `{"items":[1]}`
+				case strings.HasSuffix(path, "/order/cart/coupon-cart/item/1") && r.Method == "GET":
+					body = `{"itemId":1,"duration":"P1M","options":[],"settings":{"planCode":"24sk202","quantity":1}}`
 				case strings.HasSuffix(path, "/order/cart/coupon-cart") && r.Method == "DELETE":
 					steps = append(steps, "cleanup")
 				default:

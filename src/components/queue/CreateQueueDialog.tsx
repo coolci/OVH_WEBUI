@@ -21,6 +21,7 @@ import { OptionGroupSection } from "@/components/common/OptionGroupSection";
 import { useServers } from "@/hooks/use-servers";
 import { useCreateQueueItem } from "@/hooks/use-queue";
 import { useOrderDurations } from "@/hooks/use-order-durations";
+import { preorderOptions, preorderVariantCoversAll } from "@/lib/preorder-options";
 import { OrderDurationField } from "@/components/orders/OrderDurationField";
 import { DEFAULT_ORDER_DURATION } from "@/lib/order-duration";
 import { useSettings, RETRY_INTERVAL } from "@/hooks/use-settings";
@@ -139,11 +140,18 @@ export function CreateQueueDialog({
     [matchedServer]
   );
 
+  // 预订:型号只出现在库存里、尚未进入销售目录。按型号 + 内存 + 完整硬盘组合 + 机房严格匹配,
+  // CPU 不参与(预售时常未公布),所以 CPU 选项不随任务提交。
+  const preorder = !!matchedServer?.prerelease;
   const parsedOptions = useMemo(() => {
-    return [...new Set([...(Object.values(picked).filter(Boolean) as string[]), ...parseOptionCodes(extraInput)])];
-  }, [picked, extraInput]);
+    const options = [...new Set([...(Object.values(picked).filter(Boolean) as string[]), ...parseOptionCodes(extraInput)])];
+    return preorder ? preorderOptions(options, grouped?.cpu?.map((o) => o.value)) : options;
+  }, [picked, extraInput, preorder, grouped]);
 
   const variants = matchedServer ? variantIndex[matchedServer.planCode] : undefined;
+  // 只是表单提示:库存里根本没有这套组合时提醒换配置。最终匹配与购物车核对都在后端
+  const preorderMismatch = preorder && parsedOptions.length > 0 && !!variants?.length &&
+    !variants.some((v) => preorderVariantCoversAll(v.fqn, parsedOptions));
   const optionHasStock = (groupKey: OptionGroupKey, value: string): boolean => {
     if (groupKey === "bandwidth" || groupKey === "vrack" || groupKey === "cpu" || groupKey === "other") {
       return true;
@@ -159,7 +167,7 @@ export function CreateQueueDialog({
 
   const qty = Number(quantity) || 1;
   const totalTasks = datacenters.length * qty;
-  const canSubmit = !!accountId && planCode.trim().length > 0 && datacenters.length > 0 && qty > 0;
+  const canSubmit = !!accountId && planCode.trim().length > 0 && datacenters.length > 0 && qty > 0 && !preorderMismatch;
 
   const reset = () => {
     setPlanCode("");
@@ -207,7 +215,7 @@ export function CreateQueueDialog({
       autoPay,
       coupon: coupon.trim() || undefined,
       duration,
-      // preorder: !!matchedServer?.prerelease, // 预订模式已停用。
+      preorder,
       force: isCustom,
     });
     if (result.success > 0) {
@@ -229,7 +237,7 @@ export function CreateQueueDialog({
           autoPay,
           coupon: coupon.trim() || undefined,
           duration,
-          // preorder: !!matchedServer?.prerelease, // 预订模式已停用。
+          preorder,
           force: true,
         });
         if (forceResult.success > 0) {
@@ -279,16 +287,18 @@ export function CreateQueueDialog({
                 {matchedServer.cpu} · {matchedServer.memory} · {matchedServer.storage}
               </p>
             )}
-            {/* 预订提示已停用
-            {matchedServer?.prerelease && (
-              <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-[12px] text-blue-200/90 flex items-start gap-2 mt-1.5">
-                <span className="text-blue-400 font-bold shrink-0">预上架:</span>
+            {preorder && (
+              <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-[12px] flex items-start gap-2 mt-1.5">
+                <span className="text-blue-600 dark:text-blue-400 font-bold shrink-0">预订:</span>
                 <span className="text-muted-foreground text-[11px] leading-relaxed">
-                  仅在库存接口中公开，尚未进入销售目录。将创建本地预订抢购任务，等待官方目录开放后自动下单。
+                  该型号只出现在库存中、尚未进入销售目录。预订按型号、内存、完整硬盘组合和机房严格匹配，CPU 不参与匹配；
+                  以 OVH 实际下单接口开放为准，不会更换型号、内存频率或硬盘。开售前的等待不计失败次数。任务保存在本地，不会预留 OVH 库存。
                 </span>
               </div>
             )}
-            */}
+            {preorderMismatch && (
+              <p role="alert" className="text-[11px] text-destructive mt-1.5">库存记录中没有这套配置组合，请重新选择内存或存储。</p>
+            )}
             {isCustomPlan && !matchedServer?.prerelease && (
               <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-200/90 flex items-start gap-2 mt-1.5">
                 <span className="text-amber-400 font-bold shrink-0">自定义型号:</span>
@@ -347,7 +357,7 @@ export function CreateQueueDialog({
             {grouped ? (
               <div className="space-y-4">
                 {(["cpu", "memory", "systemStorage", "storage", "bandwidth", "vrack", "other"] as OptionGroupKey[])
-                  .filter((g) => grouped[g].length > 0)
+                  .filter((g) => grouped[g].length > 0 && !(preorder && g === "cpu"))
                   .map((g) => (
                     <OptionGroupSection
                       key={g}
@@ -432,8 +442,9 @@ export function CreateQueueDialog({
             ) : (
               <>
                 <Plus className="w-4 h-4" />
-                {/* 预订按钮文案已停用 */}
-                {(datacenters.length > 0 ? `创建 ${totalTasks} 个任务` : "创建任务")}
+                {preorder
+                  ? (datacenters.length > 0 ? `创建 ${totalTasks} 个预订任务` : "创建预订任务")
+                  : (datacenters.length > 0 ? `创建 ${totalTasks} 个任务` : "创建任务")}
               </>
             )}
           </Button>

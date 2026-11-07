@@ -19,33 +19,34 @@ export function matchesServerSearch(server: Pick<ServerPlan, "planCode" | "name"
   return text.includes(wanted) || text.replace(/[\s-]/g, "").includes(wanted.replace(/[\s-]/g, ""));
 }
 
+// 把"只在库存接口出现、尚未进入销售目录"的 Eco 型号并入列表,标记 prerelease,
+// 供创建预订任务。只合并 Eco 系列型号代码;已在目录里的型号保持目录数据不变。
 export function mergeStockPlans(plans: ServerPlan[], stock: AvailabilityItem[] = []): ServerPlan[] {
-  // 预售候选自动发现已停用，保留原实现便于回溯。
-  return plans;
-  //   const known = new Set(plans.map((p) => p.planCode));
-  //   const groups = new Map<string, AvailabilityItem[]>();
-  //   for (const item of stock) {
-  //     if (known.has(item.planCode) || !ecoStockPlanCode.test(item.planCode)) continue;
-  //     const group = groups.get(item.planCode) || [];
-  //     group.push(item);
-  //     groups.set(item.planCode, group);
-  //   }
-  //   return [...plans, ...Array.from(groups, ([planCode, variants]): ServerPlan => ({
-  //     planCode,
-  //     name: variants[0].server || planCode,
-  //     prerelease: true,
-  //     cpu: "—",
-  //     memory: describeOptionCodes([...new Set(variants.map((v) => v.memory).filter(Boolean))]),
-  //     storage: describeOptionCodes([...new Set(variants.map((v) => v.storage).filter(Boolean))]),
-  //     bandwidth: "—",
-  //     vrackBandwidth: "—",
-  //     defaultOptions: [],
-  //     availableOptions: ([
-  //       ["memory", "memory"], ["systemStorage", "system-storage"], ["storage", "storage"],
-  //     ] as const).flatMap(([field, family]) =>
-  //       [...new Set(variants.map((v) => v[field]).filter((v): v is string => !!v))]
-  //         .map((value) => ({ value, family, label: describeOptionCodes([value]) }))
-  //     ),
-  //     datacenters: [],
-  //   }))];
+  const known = new Set(plans.map((p) => p.planCode));
+  const groups = new Map<string, AvailabilityItem[]>();
+  for (const item of stock) {
+    if (known.has(item.planCode) || !ecoStockPlanCode.test(item.planCode)) continue;
+    const group = groups.get(item.planCode) || [];
+    group.push(item);
+    groups.set(item.planCode, group);
+  }
+  if (groups.size === 0) return plans;
+  return [...plans, ...Array.from(groups, ([planCode, variants]): ServerPlan => ({
+    planCode,
+    name: stockPlanName(planCode) || variants[0].server || planCode,
+    prerelease: true,
+    cpu: "—",
+    memory: describeOptionCodes([...new Set(variants.map((v) => v.memory).filter(Boolean))]),
+    storage: describeOptionCodes([...new Set(variants.map((v) => v.storage).filter(Boolean))]),
+    bandwidth: "—",
+    vrackBandwidth: "—",
+    defaultOptions: [],
+    availableOptions: ([
+      ["memory", "memory"], ["systemStorage", "system-storage"], ["storage", "storage"],
+    ] as const).flatMap(([field, family]) =>
+      [...new Set(variants.map((v) => v[field]).filter((v): v is string => !!v))]
+        .map((value) => ({ value, family, label: describeOptionCodes([value]) }))
+    ),
+    datacenters: [],
+  }))];
 }

@@ -40,6 +40,10 @@ var ecoStockPlanCode = regexp.MustCompile(`(?i)^[0-9]{2}(sk|sys|rise)[a-z0-9]*(-
 // 沿用普通目录的两小时缓存会让开售后仍被判成"目录里没有"。
 const preorderCatalogTTL = 30 * time.Second
 
+// PreorderCheckInterval 预订任务的最长轮询间隔,也是预订读取目录映射信息的刷新周期。
+// 开售那一刻能不能抢到取决于多快发现,所以预订不跟随普通任务可能很长的重试间隔。
+const PreorderCheckInterval = 15 * time.Second
+
 // Only known dedicated-only families justify a definitive non-Eco conclusion.
 // A new/custom name alone is not evidence that the live cart cannot sell it.
 var dedicatedOnlyPlanCode = regexp.MustCompile(`(?i)^[0-9]{2}(scale|hci|sds|hg|highgrade)[a-z0-9]*(-|$)`)
@@ -48,7 +52,7 @@ func CanForceCustomPlan(verdict PlanVerdict) bool {
 	return verdict == PlanVerdictNoSuchPlan || verdict == PlanVerdictUnlisted
 }
 
-// PreorderReady 保留为历史工具函数；预订流程已停用，生产购买链路不再调用。
+// PreorderReady 历史工具函数,生产购买链路不再调用:预订改为以真实下单接口是否开放为准(见 purchase.preorderWait)。
 // 原用途：短缓存等上架，避免普通目录缓存错过开售。
 func PreorderReady(state *app.State, accountID, planCode string) (bool, error) {
 	acc, ok := state.FindAccount(accountID)

@@ -17,6 +17,10 @@ import { useCreateQueueItem } from "@/hooks/use-queue";
 import { useDefaultAccount } from "@/hooks/use-accounts";
 import { useSettings, RETRY_INTERVAL } from "@/hooks/use-settings";
 import { usePrewarmOrder } from "@/hooks/use-prewarm";
+import { useOrderDurations } from "@/hooks/use-order-durations";
+import { OrderDurationField } from "@/components/orders/OrderDurationField";
+import { DEFAULT_ORDER_DURATION } from "@/lib/order-duration";
+import { preorderOptions, preorderVariantCoversAll } from "@/lib/preorder-options";
 import {
   type AvailabilityItem,
   type CatalogIndex,
@@ -63,6 +67,8 @@ export function ServerDetailDialog({
   const [quantity, setQuantity] = useState("1");
   const [coupon, setCoupon] = useState("");
   const [autoPay, setAutoPay] = useState(false);
+  const [duration, setDuration] = useState(DEFAULT_ORDER_DURATION);
+  const durations = useOrderDurations(accountId, server.planCode);
   const settingsQ = useSettings();
   const cfgDefault = settingsQ.data?.defaultRetryInterval || RETRY_INTERVAL.defaultTask;
   const [retryInterval, setRetryInterval] = useState("");
@@ -107,10 +113,14 @@ export function ServerDetailDialog({
     return hasStockWithOption(variants, picked as Record<string, string>, groupKey, value);
   };
 
-  const selectedValues = useMemo(
-    () => (Object.values(picked).filter(Boolean) as string[]),
-    [picked]
-  );
+  // 预订(只在库存出现、尚未进入销售目录):CPU 不参与匹配,不随任务提交
+  const preorder = !!server.prerelease;
+  const selectedValues = useMemo(() => {
+    const options = Object.values(picked).filter(Boolean) as string[];
+    return preorder ? preorderOptions(options, grouped.cpu?.map((o) => o.value)) : options;
+  }, [picked, preorder, grouped]);
+  const preorderMismatch = preorder && selectedValues.length > 0 && !!variants?.length &&
+    !variants.some((v) => preorderVariantCoversAll(v.fqn, selectedValues));
 
   const price = useMemo(() => {
     if (selectedValues.length === 0) return defaultPrice;
@@ -123,7 +133,9 @@ export function ServerDetailDialog({
     datacenter: selectedDCs[0],
     options: selectedValues,
     coupon: coupon.trim() || undefined,
-    enabled: selectedDCs.length > 0 && !!accountId,
+    duration,
+    // 预订开售前装不起车,预热只会白刷 OVH;下单时后端会逐项核对购物车
+    enabled: selectedDCs.length > 0 && !!accountId && !preorder,
   });
 
   return (
@@ -154,14 +166,12 @@ export function ServerDetailDialog({
       </DialogHeader>
 
       <div className="overflow-y-auto -mx-6 px-6 space-y-6 flex-1">
-        {/* 预订提示已停用
-        {server.prerelease && (
-          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200/90 flex items-start gap-2">
-            <span className="font-semibold text-amber-400 shrink-0">预售机型提示：</span>
-            <span>仅出现在库存流中，尚未进入当前账户销售目录。创建抢购将作为预订任务在后台挂机轮询，一旦销售目录上架该型号即刻自动下单，等待期间不计入失败重试。</span>
+        {preorder && (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs flex items-start gap-2">
+            <span className="font-semibold text-amber-700 dark:text-amber-400 shrink-0">预订：</span>
+            <span className="text-muted-foreground">该型号只出现在库存中、尚未进入当前账户销售目录。预订按型号、内存、完整硬盘组合和机房严格匹配，CPU 不参与匹配；以 OVH 实际下单接口开放为准，不更换型号、内存频率或硬盘。开售前的等待不计失败次数，任务保存在本地，不会预留 OVH 库存。</span>
           </div>
         )}
-        */}
         {/* 价格 Hero */}
         <div className="border border-border rounded-2xl p-4 bg-secondary/30 flex items-end justify-between gap-3 flex-wrap">
           <div>
@@ -195,7 +205,7 @@ export function ServerDetailDialog({
 
         {/* 硬件配置选择 */}
         {(["cpu", "memory", "systemStorage", "storage", "bandwidth", "vrack", "other"] as OptionGroupKey[])
-          .filter((g) => grouped[g].length > 0)
+          .filter((g) => grouped[g].length > 0 && !(preorder && g === "cpu"))
           .map((g) => (
             <OptionGroupSection
               key={g}
@@ -207,6 +217,10 @@ export function ServerDetailDialog({
               onPick={(value) => setPicked((p) => ({ ...p, [g]: value }))}
             />
           ))}
+
+        {preorderMismatch && (
+          <p role="alert" className="text-xs text-destructive">库存记录中没有这套配置组合，请重新选择内存或存储。</p>
+        )}
 
         <DatacenterPicker value={selectedDCs} onChange={setSelectedDCs} availability={dcMap} />
 
@@ -221,6 +235,7 @@ export function ServerDetailDialog({
               <label className="block text-[11px] text-muted-foreground mb-1">OVH 账户 *</label>
               <AccountSelect value={accountId} onChange={setAccountId} />
             </div>
+            <OrderDurationField value={duration} onChange={setDuration} query={durations} />
             <div>
               <label className="block text-[11px] text-muted-foreground mb-1">优惠码（可选）</label>
               <Input
@@ -310,7 +325,7 @@ export function ServerDetailDialog({
           </Button>
           <Button
             size="sm"
-            disabled={selectedDCs.length === 0 || create.isPending}
+            disabled={selectedDCs.length === 0 || create.isPending || preorderMismatch}
             className="flex-1 sm:flex-none h-9 rounded-lg text-xs font-medium gap-1.5 px-3.5"
             onClick={async () => {
               if (selectedDCs.length === 0) {
@@ -330,7 +345,8 @@ export function ServerDetailDialog({
                 options: selectedValues,
                 autoPay,
                 coupon: coupon.trim() || undefined,
-                // preorder: !!server.prerelease, // 预订模式已停用。
+                duration,
+                preorder,
               });
               if (result.success > 0) {
                 toast.success(`已创建 ${result.success}/${result.total} 个抢购任务`);
@@ -349,7 +365,8 @@ export function ServerDetailDialog({
                     options: selectedValues,
                     autoPay,
                     coupon: coupon.trim() || undefined,
-                    // preorder: !!server.prerelease, // 预订模式已停用。
+                    duration,
+                    preorder,
                     force: true,
                   });
                   if (forceResult.success > 0) {
@@ -372,8 +389,9 @@ export function ServerDetailDialog({
             ) : (
               <>
                 <ShoppingCart className="w-3.5 h-3.5" />
-                {/* 预订按钮文案已停用 */}
-                {(selectedDCs.length > 0 ? `创建 ${totalTasks} 个任务` : "创建抢购任务")}
+                {preorder
+                  ? (selectedDCs.length > 0 ? `创建 ${totalTasks} 个预订任务` : "创建预订任务")
+                  : (selectedDCs.length > 0 ? `创建 ${totalTasks} 个任务` : "创建抢购任务")}
               </>
             )}
           </Button>

@@ -89,20 +89,19 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 		client.Timeout = 60 * time.Second
 	}
 
-	// 预订专用逻辑已停用：不等待销售目录，使用普通抢购流程。
-	// 	if item.Preorder {
-	// 		ready, err := catalog.PreorderReady(state, item.AccountID, item.PlanCode)
-	// 		if ctx.Err() != nil {
-	// 			return cancelledOutcome(state, item, "等上架")
-	// 		}
-	// 		if err != nil || !ready {
-	// 			state.Logger.Info(fmt.Sprintf("预订任务 %s 等待 %s 上架到下单账户的销售目录", item.ID, item.PlanCode), "purchase")
-	// 			if err != nil {
-	// 				state.Logger.Warn("预订任务查询销售目录失败，本轮继续等待: "+err.Error(), "purchase")
-	// 			}
-	// 			return Outcome{WaitingForCatalog: true}
-	// 		}
-	// 	}
+	// 预订(移植上游 4f1c4e6 / 1205120):不再等公开销售目录收录 —— 库存会先于目录公布,
+	// 而目录可能一直不更新。是否开售以真实下单接口为准;在那之前每一步被 OVH 拒都只是
+	// "还没开放",按等待处理,不写失败历史、不计失败次数。
+	// preorderStock 是库存匹配条件(内存/完整硬盘组合/GPU 逐字匹配,CPU 不参与),
+	// preorderOrder 是下单要加的 addon。
+	preorderStock, preorderOrder := item.Options, item.Options
+	if item.Preorder {
+		var resolveErr error
+		preorderStock, preorderOrder, resolveErr = catalog.ResolvePreorderOptions(state, item.AccountID, item.PlanCode, item.Options)
+		if resolveErr != nil {
+			return preorderWait(state, item, resolveErr.Error())
+		}
+	}
 
 	cartID := ""
 	var itemID int64
@@ -188,23 +187,27 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 	// "32G+HDD 有货" 不等于 "用户要的 64G+NVMe 有货"。用户指定了硬件选项时，
 	// 只在 FQN 段集合覆盖了这些选项的条目里判有货。
 	wantedHW := fqnRelevantOptions(availabilities, item.Options, item.PlanCode)
-	// 预订专用逻辑已停用：不等待销售目录，使用普通抢购流程。
-	// 	if item.Preorder {
-	// 		// 预订保存的是原始 FQN 硬件段;参数消失也不能忽略它后改买其他配置。
-	// 		wantedHW = item.Options
-	// 	}
-
 	candidates := availabilities
-	if len(wantedHW) > 0 {
-		matchedAvs := []map[string]interface{}{}
+	if item.Preorder {
+		// 预订保存的是原始 FQN 硬件段;某段这轮没出现也不能忽略它、改买其他配置。
+		// 而且只认型号完全相同的 FQN:同系列的另一个型号(…-v2 / 区域变体)不是同一台机器。
+		wantedHW = preorderStock
+		candidates = nil
 		for _, av := range availabilities {
 			fqn, _ := av["fqn"].(string)
+			if fqnIsPlan(fqn, item.PlanCode) {
+				candidates = append(candidates, av)
+			}
+		}
+	}
+	if len(wantedHW) > 0 {
+		matchedAvs := []map[string]interface{}{}
+		for _, av := range candidates {
+			fqn, _ := av["fqn"].(string)
 			matches := fqnCoversOptions(fqn, wantedHW, item.PlanCode)
-			// 预订专用逻辑已停用：不等待销售目录，使用普通抢购流程。
-			// 			if item.Preorder {
-			// 				matches = preorderFQNCoversOptions(fqn, wantedHW, item.PlanCode)
-			// 			}
-
+			if item.Preorder {
+				matches = preorderFQNCoversOptions(fqn, wantedHW, item.PlanCode)
+			}
 			if matches {
 				matchedAvs = append(matchedAvs, av)
 			}
@@ -262,7 +265,9 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 	// - 用户显式指定了 options → 直接用（fail-fast 由后面的 eco/options 处理）
 	// - 用户没指定 → 从可用 FQN 推断 addon planCode，确保订单走"实际有货的那套配置"
 	effectiveOptions := item.Options
-	if len(effectiveOptions) == 0 && availableFQN != "" {
+	if item.Preorder {
+		effectiveOptions = preorderConfigurationOptions(availableFQN, item.PlanCode, preorderStock, preorderOrder)
+	} else if len(effectiveOptions) == 0 && availableFQN != "" {
 		if suffix, ok := strings.CutPrefix(availableFQN, item.PlanCode+"."); ok && suffix != "" {
 			// 完整 planCode 之后才是 addon，型号本身可能包含点号。这些段是"短前缀"
 			// （ram-128g-noecc-2933），不是 eco/options 里带机型后缀的完整 planCode
@@ -298,7 +303,13 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 	}()
 
 	// ⚡ 检查预装车池：若后台已提前组装好满配就绪车，直接跳过装车阶段直达 checkout，装车耗时归零！
-	if prewarmed := TakePrewarmedCart(item.AccountID, item.PlanCode, item.Datacenter, effectiveOptions, item.Coupon, selectedDuration); prewarmed != nil {
+	var prewarmed *PrewarmedCart
+	if !item.Preorder {
+		prewarmed = TakePrewarmedCart(item.AccountID, item.PlanCode, item.Datacenter, effectiveOptions, item.Coupon, selectedDuration)
+	}
+	// 预订不用预热车:结账前要逐项核对购物车里的实际配置,预热车拿不到基础商品 itemId
+	var orderedOptions []string
+	if prewarmed != nil {
 		cartID = prewarmed.CartID
 		state.Logger.Info(fmt.Sprintf("⚡ 命中预装车池！直接使用预热就绪购物车 %s，装车耗时 0 秒！", cartID), "purchase")
 		tl.mark("预装车就绪")
@@ -392,6 +403,10 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 			// 必须排在 assignErr 之前:eco 协程判定周期不可买后,errgroup 会取消并行的
 			// assign,那个 "context canceled" 不是真正的失败原因 —— 先看它就会把确定性失败
 			// 当成可重试错误,任务按 retryInterval 永远重试。
+			if item.Preorder && (termUnavailable || (postBaseErr != nil && listingNotReady(postBaseErr))) {
+				// 开售前 OVH 不接受这个型号/周期:继续等,不算失败
+				return preorderWait(state, item, ovh.Explain(postBaseErr))
+			}
 			if termUnavailable {
 				// 目录里没有这个周期:重试多少轮都一样,直接判死,别反复建车
 				state.Logger.Error(postBaseErr.Error(), "purchase")
@@ -508,6 +523,9 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 					if ctx.Err() != nil {
 						return cancelledOutcome(state, item, "查硬件选项")
 					}
+					if item.Preorder && listingNotReady(err) {
+						return preorderWait(state, item, ovh.Explain(err))
+					}
 					// 拉 eco/options 失败 → 中止订单。否则会用基础 plan 默认存储（多半是 HDD）下到错误配置
 					errMsg := fmt.Sprintf("获取 Eco 硬件选项列表失败: %s（用户指定了 %d 个选项，无法验证，已取消下单避免下到错误配置）", ovh.Explain(err), len(filtered))
 					state.Logger.Error(errMsg, "purchase")
@@ -522,6 +540,10 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 					// planCode(第①档直接命中);用户没选配置时 filtered 是从 FQN 推来的短前缀,
 					// 精确匹配永远打不中,必须靠前缀/标准化档兜底,否则会被误判成"选项不存在"整单取消。
 					matchedOpt, matchedPC, tier := catalog.MatchEcoOption(availableEcoOpts, wanted)
+					if item.Preorder {
+						// 预订只接受原始规格(加本型号后缀),不按标准化结果换成另一套硬件
+						matchedOpt, matchedPC, tier = catalog.MatchPreorderEcoOption(availableEcoOpts, wanted)
+					}
 					if matchedOpt == nil {
 						missing = append(missing, wanted)
 						continue
@@ -532,6 +554,10 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 					duration, pricingMode, valid := pickPricing(matchedOpt["prices"], baseDuration, basePricingMode)
 					if !valid {
 						errMsg := fmt.Sprintf("硬件选项 %s 不支持购买时长 %s,已取消下单", matchedPC, orderterm.Label(baseDuration))
+						if item.Preorder {
+							invalidateEcoOptions(subsidiary, item.PlanCode)
+							return preorderWait(state, item, fmt.Sprintf("硬件选项 %s 暂未开放 %s 计价", matchedPC, orderterm.Label(baseDuration)))
+						}
 						state.Logger.Error(errMsg, "purchase")
 						recordFailure(state, item, errMsg)
 						return Outcome{Fatal: true, Reason: errMsg}
@@ -546,6 +572,10 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 							"quantity":    1,
 						},
 					})
+				}
+				if len(missing) > 0 && item.Preorder {
+					invalidateEcoOptions(subsidiary, item.PlanCode)
+					return preorderWait(state, item, fmt.Sprintf("等待所选配置开放: %v", missing))
 				}
 				if len(missing) > 0 {
 					errMsg := fmt.Sprintf("用户请求的硬件选项 %v 未在 OVH 可用 Eco 选项中找到（已取消下单避免下到错误配置）", missing)
@@ -600,6 +630,9 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 			if ctx.Err() != nil {
 				return cancelledOutcome(state, item, "配置与选件写入")
 			}
+			if item.Preorder && listingNotReady(err) {
+				return preorderWait(state, item, ovh.Explain(err))
+			}
 			errMsg := err.Error()
 			state.Logger.Error(fmt.Sprintf("购买 %s 时并发装车写入失败: %s", item.PlanCode, errMsg), "purchase")
 			state.Logger.Error("错误发生时的购物车ID: "+cartID, "purchase")
@@ -608,6 +641,9 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 			return attemptOutcome(err)
 		}
 		tl.mark("必需配置与选件")
+		for _, t := range todo {
+			orderedOptions = append(orderedOptions, t.planCode)
+		}
 
 		couponWarning = ""
 		if coupon := strings.TrimSpace(item.Coupon); coupon != "" {
@@ -636,6 +672,20 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 			} else {
 				state.Logger.Info("购物车优惠码已应用", "purchase")
 			}
+		}
+
+		// 预订:结账前逐项核对 OVH 实际存下的购物车 —— 型号、每个选项、全部购买周期。
+		// 放在最后一次改车(优惠码)之后;开售前后 OVH 可能悄悄补上默认配件或换掉选项,
+		// 不核对就会下到另一套硬件。
+		if item.Preorder {
+			expected := append([]string{item.PlanCode}, orderedOptions...)
+			if err := orderterm.VerifyCart(ctx, client, cartID, itemID, selectedDuration, expected...); err != nil {
+				if ctx.Err() != nil {
+					return cancelledOutcome(state, item, "核对购物车")
+				}
+				return preorderWait(state, item, err.Error())
+			}
+			tl.mark("核对购物车")
 		}
 	}
 	// 直接结账 —— 跳过 /summary(它只是日志用的价格,2 秒开销),
@@ -733,6 +783,11 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 					"- 没有:在队列页把任务恢复运行", item.PlanCode, item.Datacenter), nil)
 			return Outcome{Attempted: false, PauseTask: true}
 		}
+		if item.Preorder && listingNotReady(err) {
+			// 明确拒绝(400/404/409),不是超时:订单肯定没建。开售前结账被拒属于"还没开放"
+			state.Logger.Info("预订下单接口暂未接受所选配置，继续等待: "+errMsg, "purchase")
+			return Outcome{WaitingForCatalog: true, Reason: errMsg}
+		}
 		recordFailure(state, item, errMsg)
 		// checkout 这一步最要紧:补货瞬间大家都在下单,429 是常态。
 		// 把它记成一次"真正的失败尝试"会让任务在唯一有货的那一分钟里自己判死。
@@ -756,8 +811,15 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 	if err := saveCheckoutJournal(ctx, cartID, orderID); err != nil {
 		state.Logger.Error("订单已创建但确认凭据保存失败: "+err.Error(), "purchase")
 	}
-	// 立刻记成功 —— 价格和过期时间空着,后台异步补
-	recordSuccess(state, item, orderID, orderURL, "", nil, couponWarning)
+	// 立刻记成功 —— 价格和过期时间空着,后台异步补。
+	// 预订记下实际下单的 addon(库存段已映射成销售选项),历史里看到的就是真实买到的配置。
+	orderedItem := item
+	if item.Preorder && len(orderedOptions) > 0 {
+		copied := *item
+		copied.Options = append([]string(nil), orderedOptions...)
+		orderedItem = &copied
+	}
+	recordSuccess(state, orderedItem, orderID, orderURL, "", nil, couponWarning)
 	recordTimingToHistory(state, item.ID, tl)
 	state.Logger.Info("[耗时] "+item.PlanCode+"@"+item.Datacenter+" 抢购成功 "+tl.String(), "purchase")
 
@@ -782,7 +844,7 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 		extra["timing"] = tl.FormatMetrics()
 	}
 	telegram.NotifyTaskProgress(state, item, "success", extra)
-	message := BuildOrderSuccessMessage(item, orderID, payURL, tl)
+	message := BuildOrderSuccessMessage(orderedItem, orderID, payURL, tl)
 	if couponWarning != "" {
 		message += "\n\n⚠️ " + couponWarning
 	}
@@ -952,6 +1014,45 @@ func fqnCoversOptions(fqn string, opts []string, planCode ...string) bool {
 		}
 	}
 	return true
+}
+
+// preorderWait 预订"还没开放"的统一出口:只打日志,不写失败历史、不计失败次数。
+// 开售前每一轮都会走到这里,写历史的话几分钟就能把抢购历史刷满。
+func preorderWait(state *app.State, item *types.QueueItem, reason string) Outcome {
+	state.Logger.Info(fmt.Sprintf("预订任务 %s(%s@%s)等待开放: %s", item.ID, item.PlanCode, item.Datacenter, reason), "purchase")
+	return Outcome{WaitingForCatalog: true, Reason: reason}
+}
+
+// listingNotReady OVH 明确拒绝(400/404/409)—— 对预订来说是"尚未开放",不是失败。
+// 429 / 5xx / 网络错误不在此列,它们仍按普通瞬时错误处理。
+func listingNotReady(err error) bool {
+	var apiErr *ovhsdk.APIError
+	return errors.As(err, &apiErr) && (apiErr.Code == 400 || apiErr.Code == 404 || apiErr.Code == 409)
+}
+
+// fqnIsPlan FQN 的型号部分与 planCode 完全相同(型号本身可能含点号)
+func fqnIsPlan(fqn, planCode string) bool {
+	f, p := strings.ToLower(fqn), strings.ToLower(planCode)
+	return p != "" && (f == p || strings.HasPrefix(f, p+"."))
+}
+
+// preorderConfigurationOptions 下单选项 = 预订映射出的 addon + 库存 FQN 里其余未被
+// 匹配条件覆盖的段(如带宽)。库存条件本身已经由 order 里的 addon 表达,不重复添加。
+func preorderConfigurationOptions(fqn, planCode string, stock, order []string) []string {
+	options := append([]string(nil), order...)
+	for _, part := range fqnHardwareParts(fqn, planCode) {
+		covered := false
+		for _, wanted := range stock {
+			if strings.EqualFold(part, wanted) {
+				covered = true
+				break
+			}
+		}
+		if !covered {
+			options = append(options, part)
+		}
+	}
+	return catalog.OrderOptions(options)
 }
 
 func preorderFQNCoversOptions(fqn string, opts []string, planCode ...string) bool {

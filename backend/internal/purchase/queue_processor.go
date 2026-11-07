@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ovh-webui/server/internal/app"
+	"github.com/ovh-webui/server/internal/catalog"
 	"github.com/ovh-webui/server/internal/notify"
 	"github.com/ovh-webui/server/internal/telegram"
 	"github.com/ovh-webui/server/internal/types"
@@ -259,6 +260,10 @@ func processQueueLoop(loopCtx context.Context, state *app.State, purchase func(c
 			// 不兜的话 `now - last >= 0` 恒真,任务每秒重试一次把 OVH 刷到 429 ——
 			// 旧库里 retry_interval 列后加的行会是 0,忘了设这个字段的入队路径也会是 0。
 			interval := types.ClampRetryInterval(it.RetryInterval, state.Config.RetryInterval())
+			// 预订:开售那一刻能不能抢到取决于多快发现,轮询间隔封顶 PreorderCheckInterval
+			if it.Preorder && interval > int(catalog.PreorderCheckInterval/time.Second) {
+				interval = int(catalog.PreorderCheckInterval / time.Second)
+			}
 			if it.LastCheckTime == 0 || float64(current)-it.LastCheckTime >= float64(interval) {
 				ready = append(ready, it)
 			}
@@ -345,10 +350,10 @@ func processQueueLoop(loopCtx context.Context, state *app.State, purchase func(c
 					// 用户删除或暂停,不计失败,不覆盖用户选择的队列状态。
 					return
 				}
-				// 预订专用逻辑已停用：不等待销售目录，使用普通抢购流程。
-				// 				if outcome.WaitingForCatalog {
-				// 					return
-				// 				}
+				if outcome.WaitingForCatalog {
+					// 预订尚未开放:不计失败、不写历史,下一轮继续
+					return
+				}
 
 				if outcome.Success {
 					state.QueueMu.Lock()
@@ -524,6 +529,10 @@ func ResetQueuePrewarmCoord() {
 // TriggerPrewarmForQueueItem 为处于运行中（待抢购）的队列任务触发后台预热装车
 func TriggerPrewarmForQueueItem(ctx context.Context, state *app.State, item *types.QueueItem) {
 	if item == nil || item.Status != "running" || item.PlanCode == "" || item.Datacenter == "" {
+		return
+	}
+	// 预订不预热:下单时要逐项核对购物车,而且开售前的预热车装不起来,只会白刷 OVH
+	if item.Preorder {
 		return
 	}
 	if state == nil || state.OVH == nil {

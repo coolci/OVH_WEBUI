@@ -118,7 +118,7 @@ func AddQueueItem(state *app.State) gin.HandlerFunc {
 			LastCheckTime: 0,
 			AutoPay:       body.AutoPay,
 			Force:         body.Force,
-			// Preorder: body.Preorder, // 已停用；兼容旧客户端字段，新任务按普通抢购保存。
+			Preorder:      body.Preorder,
 			Coupon: strings.TrimSpace(body.Coupon),
 		}
 		// 入队 + 落库由 OrderService 统一保证:失败时自动撤回,不存在半成功任务

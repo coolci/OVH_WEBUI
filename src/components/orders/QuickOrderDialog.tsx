@@ -20,6 +20,8 @@ import { usePrewarmOrder } from "@/hooks/use-prewarm";
 import { useOrderDurations } from "@/hooks/use-order-durations";
 import { OrderDurationField } from "@/components/orders/OrderDurationField";
 import { DEFAULT_ORDER_DURATION } from "@/lib/order-duration";
+import { mergeStockPlans } from "@/lib/stock-plans";
+import { preorderOptions, preorderVariantCoversAll } from "@/lib/preorder-options";
 import { useSettings, RETRY_INTERVAL } from "@/hooks/use-settings";
 import { useDefaultAccount, useAccounts, findAccountByID } from "@/hooks/use-accounts";
 import {
@@ -90,7 +92,8 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
   const [coupon, setCoupon] = useState("");
   const [duration, setDuration] = useState(DEFAULT_ORDER_DURATION);
 
-  const servers = serversQ.data || [];
+  // 并入只在库存出现的 Eco 型号(prerelease),输入这类型号时按预订任务创建
+  const servers = useMemo(() => mergeStockPlans(serversQ.data || [], availQ.data), [serversQ.data, availQ.data]);
   const server = useMemo(
     () => servers.find((s) => s.planCode === planCode) || null,
     [servers, planCode]
@@ -124,10 +127,14 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
     [dcMap]
   );
 
-  const selectedValues = useMemo(
-    () => [...new Set([...(Object.values(picked).filter(Boolean) as string[]), ...parseOptionCodes(extraInput)])],
-    [picked, extraInput]
-  );
+  const preorder = !!server?.prerelease;
+  const selectedValues = useMemo(() => {
+    const options = [...new Set([...(Object.values(picked).filter(Boolean) as string[]), ...parseOptionCodes(extraInput)])];
+    // 预订:CPU 不参与匹配(预售时常未公布),不随任务提交
+    return preorder ? preorderOptions(options, grouped?.cpu?.map((o) => o.value)) : options;
+  }, [picked, extraInput, preorder, grouped]);
+  const preorderMismatch = preorder && selectedValues.length > 0 && !!variants?.length &&
+    !variants.some((v) => preorderVariantCoversAll(v.fqn, selectedValues));
 
   const price = useMemo(() => {
     if (!server) return null;
@@ -143,7 +150,8 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
     options: selectedValues,
     coupon: coupon.trim() || undefined,
     duration,
-    enabled: open && selectedDCs.length > 0 && !!targetAccountId && !!planCode,
+    // 预订开售前装不起车,不预热
+    enabled: open && selectedDCs.length > 0 && !!targetAccountId && !!planCode && !preorder,
   });
 
   useEffect(() => {
@@ -190,7 +198,7 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
   const qty = Math.max(1, Number(quantity) || 1);
   const totalTasks = selectedDCs.length * qty;
   const busy = create.isPending;
-  const canSubmit = Boolean(accountId && planCode.trim() && selectedDCs.length > 0) && !busy;
+  const canSubmit = Boolean(accountId && planCode.trim() && selectedDCs.length > 0) && !busy && !preorderMismatch;
   const existingMonitor = planCode
     ? monitorList.data?.find((s) => s.planCode === planCode)
     : undefined;
@@ -227,7 +235,7 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
       force: isCustomPlan,
       coupon: coupon.trim() || undefined,
       duration,
-      // preorder: !!server?.prerelease, // 预订模式已停用。
+      preorder,
     });
     if (result.success > 0) {
       toast.success(`已创建 ${result.success}/${result.total} 个抢购任务`);
@@ -248,7 +256,7 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
           force: true,
           coupon: coupon.trim() || undefined,
           duration,
-          // preorder: !!server?.prerelease, // 预订模式已停用。
+          preorder,
         });
         if (forceResult.success > 0) {
           toast.success(`已强制创建 ${forceResult.success}/${forceResult.total} 个抢购任务`);
@@ -320,6 +328,17 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
                   {[server.cpu, server.memory, server.storage, server.bandwidth].filter(Boolean).join(" · ")}
                 </p>
               )}
+              {preorder && (
+                <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-[12px] flex items-start gap-2">
+                  <span className="text-blue-600 dark:text-blue-400 font-bold shrink-0">预订:</span>
+                  <span className="text-muted-foreground text-[11px] leading-relaxed">
+                    该型号只出现在库存中、尚未进入销售目录。按型号、内存、完整硬盘组合和机房严格匹配，CPU 不参与匹配；OVH 下单接口开放后自动下单，开售前的等待不计失败次数。
+                  </span>
+                </div>
+              )}
+              {preorderMismatch && (
+                <p role="alert" className="text-[11px] text-destructive">库存记录中没有这套配置组合，请重新选择内存或存储。</p>
+              )}
               {isCustomPlan && (
                 <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-200/90 flex items-start gap-2">
                   <span className="text-amber-400 font-bold shrink-0">自定义型号:</span>
@@ -377,7 +396,7 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
             )}
 
             {grouped &&
-              OPTION_GROUP_ORDER.filter((g) => grouped[g].length > 0).map((g) => (
+              OPTION_GROUP_ORDER.filter((g) => grouped[g].length > 0 && !(preorder && g === "cpu")).map((g) => (
                 <OptionGroupSection
                   key={g}
                   groupKey={g}
@@ -481,8 +500,9 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
                 ) : (
                   <ShoppingCart className="h-4 w-4" />
                 )}
-                {/* 预订按钮文案已停用 */}
-                {(selectedDCs.length > 0 ? `创建 ${totalTasks} 个任务` : "创建抢购任务")}
+                {preorder
+                  ? (selectedDCs.length > 0 ? `创建 ${totalTasks} 个预订任务` : "创建预订任务")
+                  : (selectedDCs.length > 0 ? `创建 ${totalTasks} 个任务` : "创建抢购任务")}
               </Button>
             </DialogFooter>
           </div>

@@ -62,11 +62,19 @@ func TestAddQueuePreorderDoesNotBypassValidation(t *testing.T) {
 	}
 	items, err := st.DB.ListQueue()
 	if err != nil || len(items) != 2 {
-		t.Fatalf("expected two ordinary tasks: %d %v", len(items), err)
+		t.Fatalf("expected one ordinary and one preorder task: %d %v", len(items), err)
 	}
+	preorders := 0
 	for _, item := range items {
-		if item.Preorder || item.Coupon != "Save10" {
-			t.Fatalf("legacy preorder flag must be ignored: %+v", item)
+		if item.Coupon != "Save10" {
+			t.Fatalf("coupon must be trimmed and kept: %+v", item)
 		}
+		if item.Preorder {
+			preorders++
+		}
+	}
+	// 预订标记要原样保存(重启后仍是预订任务);跨区、不存在、非 Eco 的型号照样拒绝
+	if preorders != 1 {
+		t.Fatalf("exactly the preorder request must be saved as a preorder task, got %d", preorders)
 	}
 }

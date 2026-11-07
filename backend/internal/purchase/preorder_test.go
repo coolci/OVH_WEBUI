@@ -23,20 +23,27 @@ type preorderTransport func(*http.Request) (*http.Response, error)
 
 func (f preorderTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
-func TestLegacyPreorderUsesNormalPurchaseWithoutCatalogWait(t *testing.T) {
+// 预订不再等公开销售目录:目录未收录、目录拉取失败(429)时照样去试购物车,
+// 以真实下单接口为准。与普通任务的区别只在硬件匹配:预订保存的每个硬件段都必须
+// 原样出现在库存 FQN 里(普通任务会忽略本轮库存里没出现的段)。
+func TestPreorderTriesLiveCartWithoutWaitingForCatalog(t *testing.T) {
 	original := http.DefaultTransport
 	t.Cleanup(func() { http.DefaultTransport = original })
 	for _, tc := range []struct {
 		sub            string
 		listed, outage bool
 		options        []string
+		// 预订/普通任务各自是否应去建车
+		preorderCart, normalCart bool
 	}{
-		{"IE", false, false, nil},
-		{"DE", false, true, nil},
-		{"FR", true, false, nil},
-		{"ES", true, false, []string{"ram-32g"}},
-		{"NL", true, false, []string{"ram-64g"}},
-		{"GB", true, false, []string{"ram-32g", "softraid-2x480ssd"}},
+		{"IE", false, false, nil, true, true},
+		{"DE", false, true, nil, true, true},
+		{"FR", true, false, nil, true, true},
+		{"ES", true, false, []string{"ram-32g"}, true, true},
+		// 库存里根本没有 ram-64g:普通任务忽略这个段照样建车,预订必须继续等
+		{"NL", true, false, []string{"ram-64g"}, false, true},
+		// softraid 段本轮库存里没有:普通任务忽略它照下,预订绝不能改买只有 ram-32g 的那套
+		{"GB", true, false, []string{"ram-32g", "softraid-2x480ssd"}, false, true},
 	} {
 		t.Run(tc.sub, func(t *testing.T) {
 			dir := t.TempDir()
@@ -48,12 +55,11 @@ func TestLegacyPreorderUsesNormalPurchaseWithoutCatalogWait(t *testing.T) {
 			lg := logger.New(filepath.Join(dir, "test.log"), slog.New(slog.NewTextHandler(io.Discard, nil)))
 			st := app.NewState(storage.Paths{DataDir: dir}, config.New(database), lg, database)
 			st.Accounts = []types.OVHAccount{{ID: "eu", Endpoint: "ovh-eu", Zone: tc.sub, AppKey: "test", AppSecret: "test", ConsumerKey: "test"}}
-			carts, checkouts, catalogRequests := 0, 0, 0
+			carts, checkouts := 0, 0
 			transport := preorderTransport(func(r *http.Request) (*http.Response, error) {
 				body, status := "{}", http.StatusOK
 				switch {
 				case strings.Contains(r.URL.Path, "/order/catalog/public/eco"):
-					catalogRequests++
 					body = `{"plans":[]}`
 					if tc.outage {
 						status = http.StatusTooManyRequests
@@ -82,25 +88,19 @@ func TestLegacyPreorderUsesNormalPurchaseWithoutCatalogWait(t *testing.T) {
 				t.Fatal(err)
 			}
 			client.Client = &http.Client{Transport: transport}
-			var normalOutcome Outcome
-			normalCarts := 0
-			for _, legacyFlag := range []bool{false, true} {
+			for _, preorder := range []bool{false, true} {
 				carts = 0
-				item := &types.QueueItem{ID: "pre", AccountID: "eu", PlanCode: "27skle03-v1", Datacenter: "gra", Preorder: legacyFlag, MaxRetries: 1, Options: tc.options}
+				item := &types.QueueItem{ID: "pre", AccountID: "eu", PlanCode: "27skle03-v1", Datacenter: "gra", Preorder: preorder, MaxRetries: 1, Options: tc.options}
 				outcome := PurchaseServer(context.Background(), st, item)
-				if outcome.WaitingForCatalog || catalogRequests != 0 {
-					t.Fatalf("unexpected catalog gate: %+v requests=%d", outcome, catalogRequests)
+				want := tc.normalCart
+				if preorder {
+					want = tc.preorderCart
 				}
-				if len(tc.options) == 0 && carts != 1 {
-					t.Fatalf("unlisted/outage/listed task must try cart: carts=%d outcome=%+v", carts, outcome)
+				if (carts == 1) != want {
+					t.Fatalf("preorder=%v: carts=%d want cart=%v outcome=%+v", preorder, carts, want, outcome)
 				}
-				if legacyFlag {
-					if carts != normalCarts || outcome != normalOutcome {
-						t.Fatalf("legacy flag changed ordinary behavior: carts %d/%d, outcome %+v/%+v", carts, normalCarts, outcome, normalOutcome)
-					}
-				} else {
-					normalCarts = carts
-					normalOutcome = outcome
+				if !want && (outcome.Attempted || outcome.Fatal) {
+					t.Fatalf("preorder=%v: a missing configuration is only 'no stock yet': %+v", preorder, outcome)
 				}
 			}
 			if checkouts != 0 {

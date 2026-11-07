@@ -2,6 +2,21 @@ package catalog
 
 import "strings"
 
+// OrderOptions 去重并保序;每个请求的 addon 都保留,支持与否交给 OVH 的选项列表判断。
+func OrderOptions(options []string) []string {
+	result := []string{}
+	seen := map[string]bool{}
+	for _, option := range options {
+		option = strings.TrimSpace(option)
+		key := strings.ToLower(option)
+		if option != "" && !seen[key] {
+			result = append(result, option)
+			seen[key] = true
+		}
+	}
+	return result
+}
+
 // 预订硬件只接受原始规格加机型后缀,不按标准化结果替换成另一套配置。
 func MatchPreorderEcoOption(opts []map[string]interface{}, wanted string) (map[string]interface{}, string, string) {
 	w := strings.ToLower(strings.TrimSpace(wanted))

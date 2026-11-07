@@ -53,6 +53,14 @@ func getOrFetchEcoOptions(ctx context.Context, client *ovhsdk.Client, cartID, su
 	return availableEcoOpts, nil
 }
 
+// invalidateEcoOptions 丢掉某个 (子公司, 型号) 的选项缓存。预订开售前后选项列表会变,
+// 30 分钟的缓存会让"刚开放的配置"一直显示成缺失。
+func invalidateEcoOptions(subsidiary, planCode string) {
+	ecoOptionsCacheMu.Lock()
+	delete(ecoOptionsCache, subsidiary+":"+planCode)
+	ecoOptionsCacheMu.Unlock()
+}
+
 // resetEcoOptionsCache 清空选项缓存（供测试与重置使用）
 func resetEcoOptionsCache() {
 	ecoOptionsCacheMu.Lock()
