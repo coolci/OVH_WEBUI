@@ -157,6 +157,16 @@ func (db *DB) migrate() error {
 			return err
 		}
 	}
+	// uncertain_checkout / uncertain_time:结账超时未决标记。只在内存的话,重启后任务
+	// 恢复运行时不会先对账,上一单若其实已建成就会再买一台(重复扣款)。
+	for _, c := range [][2]string{
+		{"uncertain_checkout", "INTEGER NOT NULL DEFAULT 0"},
+		{"uncertain_time", "TEXT NOT NULL DEFAULT ''"},
+	} {
+		if err := db.addColumnIfMissing("queue", c[0], c[1]); err != nil {
+			return err
+		}
+	}
 	if err := db.addColumnIfMissing("vps_subscriptions", "auto_order_account_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}

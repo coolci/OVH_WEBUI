@@ -133,15 +133,39 @@ func orderDetailContradictsDC(detail map[string]interface{}, targetDC string) bo
 	blob := strings.ToLower(desc + "\n" + domain)
 
 	knownDCs := []string{"rbx", "gra", "sbg", "bhs", "waw", "fra", "lon", "syd", "sgp", "vin", "hil"}
-	for _, dc := range knownDCs {
-		if dc != target && strings.Contains(blob, dc) {
-			if !strings.Contains(blob, target) {
+	// 必须按完整机房记号匹配,不能用子串:"graphics" 含 gra、"along" 含 lon、
+	// "saving" 含 vin、"frame" 含 fra。子串匹配会把一张真实建成的订单判成"别的机房",
+	// 对账就认不出它,结账超时后的重试会再买一台。
+	if !containsDCToken(blob, target) {
+		for _, dc := range knownDCs {
+			if dc != target && containsDCToken(blob, dc) {
 				return true
 			}
 		}
 	}
 	return false
 }
+
+// containsDCToken 判断 blob 里是否出现独立的机房记号(前后不能紧挨字母;
+// 允许数字后缀,如 gra3 / rbx8)。blob 需已转小写。
+func containsDCToken(blob, dc string) bool {
+	for start := 0; ; {
+		i := strings.Index(blob[start:], dc)
+		if i < 0 {
+			return false
+		}
+		i += start
+		end := i + len(dc)
+		beforeOK := i == 0 || !isASCIILetter(blob[i-1])
+		afterOK := end == len(blob) || !isASCIILetter(blob[end])
+		if beforeOK && afterOK {
+			return true
+		}
+		start = i + 1
+	}
+}
+
+func isASCIILetter(b byte) bool { return b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' }
 
 func listRecentOrders(client *ovhsdk.Client, endpoint string, since time.Time) (ids []int64, objects []map[string]interface{}, err error) {
 	// US 的 /me/order 没有查询参数。其它区用 date.from，被 400 拒绝时再降级成全量，

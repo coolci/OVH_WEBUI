@@ -208,7 +208,7 @@ func sendWebhook(webhookURL, message string) error {
 			origDial = (&net.Dialer{Timeout: 5 * time.Second}).DialContext
 		}
 		cloned.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
-			h, _, err := net.SplitHostPort(addr)
+			h, port, err := net.SplitHostPort(addr)
 			if err != nil {
 				return nil, err
 			}
@@ -224,7 +224,21 @@ func sendWebhook(webhookURL, message string) error {
 					return nil, fmt.Errorf("SSRF 拦截: 目标 IP %s 属于私有或本地网络", ip.String())
 				}
 			}
-			return origDial(ctx, network, addr)
+			// 直接连刚校验过的 IP,而不是把主机名再交给拨号器解析一次:
+			// 两次解析之间 DNS 可以换答案(DNS rebinding),校验就形同虚设。
+			// TLS 的 SNI/证书校验仍按 URL 里的主机名进行,不受影响。
+			var lastErr error
+			for _, ip := range ips {
+				conn, dialErr := origDial(ctx, network, net.JoinHostPort(ip.String(), port))
+				if dialErr == nil {
+					return conn, nil
+				}
+				lastErr = dialErr
+			}
+			if lastErr == nil {
+				lastErr = fmt.Errorf("webhook 主机 %s 没有可用地址", h)
+			}
+			return nil, lastErr
 		}
 		transport = cloned
 	}

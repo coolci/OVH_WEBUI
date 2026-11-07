@@ -69,3 +69,27 @@ func TestDurationSurvivesReopen(t *testing.T) {
 		t.Fatalf("replace lost duration: %+v", subs)
 	}
 }
+
+// 结账超时未决标记必须落库:否则重启后恢复任务不会先对账,可能重复下单。
+func TestUncertainCheckoutSurvivesReopen(t *testing.T) {
+	dir := t.TempDir()
+	d, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := types.NowISO()
+	if err := d.ReplaceQueue([]types.QueueItem{{ID: "u", AccountID: "a", PlanCode: "p", Datacenter: "gra", Options: []string{},
+		Status: "paused", CreatedAt: now, UpdatedAt: now, UncertainCheckout: true, UncertainTime: now}}); err != nil {
+		t.Fatal(err)
+	}
+	d.Close()
+	d, err = Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	q, err := d.ListQueue()
+	if err != nil || len(q) != 1 || !q[0].UncertainCheckout || q[0].UncertainTime != now {
+		t.Fatalf("uncertain checkout lost across restart: %+v err=%v", q, err)
+	}
+}
