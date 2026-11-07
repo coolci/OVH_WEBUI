@@ -56,6 +56,7 @@ func RefreshOrderStatuses(state *app.State, force bool) int {
 	state.HistoryMu.Lock()
 	type target struct {
 		entryID, orderID, accountID, statusAt, status, purchaseTime string
+		needDeadline                                               bool
 	}
 	var targets []target
 	for _, h := range state.History {
@@ -66,7 +67,7 @@ func RefreshOrderStatuses(state *app.State, force bool) int {
 		// VPS 那边一条订阅下的每一单 TaskID 都是 "vps:"+sub.ID,同一个值;
 		// 按 TaskID 回写只会命中第一条,于是第二单的状态被写到第一单头上,
 		// 而第二单自己永远拿不到状态 → 每一轮都重新去查,直到 30 天上限。
-		targets = append(targets, target{h.ID, h.OrderID, h.AccountID, h.OrderStatusAt, h.OrderStatus, h.PurchaseTime})
+		targets = append(targets, target{h.ID, h.OrderID, h.AccountID, h.OrderStatusAt, h.OrderStatus, h.PurchaseTime, h.ExpirationTime == ""})
 	}
 	state.HistoryMu.Unlock()
 
@@ -80,7 +81,7 @@ func RefreshOrderStatuses(state *app.State, force bool) int {
 		if pt, ok := types.ParseTS(t.purchaseTime); ok && now.Sub(pt) > orderStatusMaxAge {
 			continue
 		}
-		if !force && t.statusAt != "" {
+		if !force && t.statusAt != "" && !t.needDeadline {
 			if at, ok := types.ParseTS(t.statusAt); ok && now.Sub(at) < orderStatusMinInterval {
 				continue
 			}
@@ -89,6 +90,13 @@ func RefreshOrderStatuses(state *app.State, force bool) int {
 		if err != nil {
 			// 账户删了 —— 这单的状态永远查不到了,不用每轮都报
 			continue
+		}
+		// 下单后补截止时间失败过的订单,这里再补一次。截止时间完全以 OVH 返回的
+		// billing.Order.expirationDate 为准:促销单可能 15 分钟,普通单可能 15 天,本地不做任何假设。
+		if t.needDeadline {
+			if applyOrderDeadline(state, client, t.entryID, t.orderID) {
+				updated++
+			}
 		}
 		status, err := FetchOrderStatus(client, t.orderID)
 		if err != nil {
@@ -103,6 +111,35 @@ func RefreshOrderStatuses(state *app.State, force bool) int {
 		go state.SaveHistory()
 	}
 	return updated
+}
+
+// applyOrderDeadline 从 GET /me/order/{orderId} 读付款截止时间(expirationDate)和撤销权截止日,
+// 写回缺失的那条历史。OVH 对已付款或无截止时间的订单返回 null,这时什么也不写。
+func applyOrderDeadline(state *app.State, client *ovhsdk.Client, entryID, orderID string) bool {
+	var order struct {
+		ExpirationDate string `json:"expirationDate"`
+		RetractionDate string `json:"retractionDate"`
+	}
+	if err := client.Get("/me/order/"+orderID, &order); err != nil {
+		state.Logger.Warn(fmt.Sprintf("补查订单 %s 付款截止时间失败: %s", orderID, err.Error()), "purchase")
+		return false
+	}
+	if order.ExpirationDate == "" {
+		return false
+	}
+	state.HistoryMu.Lock()
+	defer state.HistoryMu.Unlock()
+	for i := range state.History {
+		if state.History[i].ID != entryID || state.History[i].ExpirationTime != "" {
+			continue
+		}
+		state.History[i].ExpirationTime = order.ExpirationDate
+		if state.History[i].RetractionTime == "" {
+			state.History[i].RetractionTime = order.RetractionDate
+		}
+		return true
+	}
+	return false
 }
 
 // applyOrderStatus 写回一条历史的状态。状态变了才算"更新"(日志用),

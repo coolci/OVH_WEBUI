@@ -175,7 +175,7 @@ function paymentWindow(item: PurchaseHistory, st: { paid: boolean; closed: boole
 function DeadlineChip({ w }: { w: ReturnType<typeof paymentWindow> }) {
   if (!w.deadlineKnown) {
     return (
-      <Chip tone="warning" title="暂未从 OVH 取到付款截止时间。促销订单可能 15 分钟内不付款就作废,请尽快付款">
+      <Chip tone="warning" title="暂未从 OVH 取到付款截止时间(后台每 10 分钟会自动补查,点页面上的「刷新」可立即重查)。促销订单可能 15 分钟内不付款就作废,请尽快付款">
         <Hourglass className="w-3 h-3" />
         截止未知·尽快付款
       </Chip>
