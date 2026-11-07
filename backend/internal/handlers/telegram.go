@@ -286,6 +286,11 @@ func handleTelegramCallback(state *app.State, mon *monitor.Monitor, cb map[strin
 		if claimed {
 			_ = state.TelegramRepo.UnclaimTelegramButton(buttonID)
 		}
+		if app.IsRejected(err) {
+			telegram.AnswerCallback(state, idToString(cb["id"]), "未创建任务", true)
+			telegram.SendReply(state, chatID, "⚠️ 未创建任务："+err.Error(), int64(messageID))
+			return
+		}
 		state.Logger.Error("一键下单落库失败,已撤回: "+err.Error(), "telegram")
 		telegram.AnswerCallback(state, idToString(cb["id"]), "没能保存，请重试", true)
 		telegram.SendReply(state, chatID,

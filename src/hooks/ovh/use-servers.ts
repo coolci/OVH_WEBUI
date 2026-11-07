@@ -69,8 +69,12 @@ export function useServers(showApiServers: boolean = true, explicitAccountId?: s
       failed: !!info?.usingExpiredCache || !!info?.refreshFailed,
     };
   });
+  // 只用来订阅 catalogRefresh 写进缓存的刷新状态,自己从不取数。仍要给 queryFn:
+  // 没有它时,任何按 ["servers", ...] 前缀触发的刷新都会让 react-query 报 "No queryFn"
+  // (控制台里刷屏),返回缓存里的现值即可,不会覆盖真实状态。
   const status = useQuery<CatalogRefreshStatus>({
     queryKey: refresh.statusKey,
+    queryFn: () => qc.getQueryData<CatalogRefreshStatus>(refresh.statusKey) ?? { failures: 0, attemptedAt: 0 },
     enabled: false,
   });
   const q = useQuery({

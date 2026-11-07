@@ -1252,13 +1252,31 @@ func recordFailure(state *app.State, item *types.QueueItem, errMsg string) {
 	state.Logger.Info("创建抢购历史(失败) 任务ID: "+item.ID, "purchase")
 }
 
+// orderDetailRetryDelays 查订单详情失败后的重试间隔(测试可缩短)
+var orderDetailRetryDelays = []time.Duration{2 * time.Second, 5 * time.Second, 10 * time.Second, 15 * time.Second, 30 * time.Second}
+
 // backfillOrderDetail 下单成功后异步补 history 行的 expirationTime + price。
 // 不阻塞 PurchaseServer 主流程,即便这一步失败 history 也已经标 success(只是少了价格 / 过期时间)。
 // 在独立 goroutine 跑,持有 OVH client 引用,只 read /me/order/{orderID}。
+//
+// 付款截止时间(expirationDate)只有这里会写。促销订单可能 15 分钟不付就作废,
+// 而下单那一刻正是 OVH 最容易 429 的时候 —— 只查一次、失败就放弃的话,
+// 历史里就没有截止时间,用户只能干等。所以失败按退避重试,总共约一分钟。
 func backfillOrderDetail(state *app.State, client *ovhsdk.Client, taskID, orderID string) {
 	var orderInfo map[string]interface{}
-	if err := client.Get("/me/order/"+orderID, &orderInfo); err != nil {
-		state.Logger.Warn(fmt.Sprintf("异步查询订单 %s 详情失败: %s", orderID, err.Error()), "purchase")
+	var lastErr error
+	for attempt := 0; attempt <= len(orderDetailRetryDelays); attempt++ {
+		if attempt > 0 {
+			time.Sleep(orderDetailRetryDelays[attempt-1])
+		}
+		orderInfo = nil
+		if lastErr = client.Get("/me/order/"+orderID, &orderInfo); lastErr == nil {
+			break
+		}
+		state.Logger.Warn(fmt.Sprintf("异步查询订单 %s 详情失败(第 %d 次): %s", orderID, attempt+1, lastErr.Error()), "purchase")
+	}
+	if lastErr != nil {
+		state.Logger.Error(fmt.Sprintf("订单 %s 详情多次查询失败,付款截止时间未知 —— 请尽快到 OVH 订单页付款", orderID), "purchase")
 		return
 	}
 

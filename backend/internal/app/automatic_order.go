@@ -49,11 +49,11 @@ func (s *State) checkAutomaticOrderLocked(item types.QueueItem) error {
 		return err
 	}
 	if s.monitorManuallyStopped {
-		return fmt.Errorf("服务器监控已停止,禁止自动建单")
+		return Rejected("服务器监控已停止,禁止自动建单")
 	}
 	for _, scope := range s.pausedMonitorScopes {
 		if s.matchesMonitorScope(item, scope) {
-			return fmt.Errorf("对应的监控订阅已暂停,禁止自动创建抢购任务")
+			return Rejected("对应的监控订阅已暂停,禁止自动创建抢购任务")
 		}
 	}
 	key := s.automaticOrderKey(item)
@@ -66,21 +66,21 @@ func (s *State) checkAutomaticOrderLocked(item types.QueueItem) error {
 		return err
 	}
 	if stopped {
-		return fmt.Errorf("服务器监控已停止,禁止自动建单")
+		return Rejected("服务器监控已停止,禁止自动建单")
 	}
 	var persisted bool
 	if _, err := s.DB.GetKV(key, &persisted); err != nil {
 		return err
 	}
 	if blocked || persisted {
-		return fmt.Errorf("该账户/型号/机房已停止抢购,请手动恢复或新建任务后再自动下单")
+		return Rejected("该账户/型号/机房已停止抢购,请手动恢复或新建任务后再自动下单")
 	}
 	for _, existing := range s.Queue {
 		if (existing.Status == "running" || existing.Status == "pending") && s.automaticOrderKey(existing) == key && s.matchesMonitorScope(item, MonitorQueueScope{PlanCode: existing.PlanCode, Options: existing.Options}) {
-			return fmt.Errorf("该型号已有正在进行的抢购任务,禁止监控重复建单")
+			return Rejected("该型号已有正在进行的抢购任务,禁止监控重复建单")
 		}
 		if existing.Status == "paused" && s.automaticOrderKey(existing) == key && s.matchesMonitorScope(item, MonitorQueueScope{PlanCode: existing.PlanCode, Options: existing.Options}) {
-			return fmt.Errorf("该型号有已暂停的抢购任务,禁止监控重新建单")
+			return Rejected("该型号有已暂停的抢购任务,禁止监控重新建单")
 		}
 	}
 	return nil

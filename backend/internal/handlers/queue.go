@@ -123,6 +123,10 @@ func AddQueueItem(state *app.State) gin.HandlerFunc {
 		}
 		// 入队 + 落库由 OrderService 统一保证:失败时自动撤回,不存在半成功任务
 		if err := state.OrderService.Enqueue(item, false); err != nil {
+			if app.IsRejected(err) {
+				c.JSON(http.StatusConflict, gin.H{"status": "error", "error": err.Error(), "code": "ENQUEUE_REJECTED"})
+				return
+			}
 			state.Logger.Error("添加任务后保存队列失败,已撤回: "+err.Error(), "queue")
 			httperr.InternalError(c, "任务没能写进数据库，已撤回："+err.Error(), "ERR_ENQUEUE_FAILED")
 			return

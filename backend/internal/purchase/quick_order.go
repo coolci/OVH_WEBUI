@@ -354,6 +354,11 @@ func EnqueueQuickOrder(state *app.State, params QuickOrderParams) *QuickOrderRes
 		enqueueErr = commit()
 	}
 	if err := enqueueErr; err != nil {
+		if app.IsRejected(err) {
+			// 业务规则拒绝(重复任务 / 监控已停止或暂停 / 队列超上限…),不是存储故障
+			state.Logger.Info("任务未入队: "+err.Error(), "queue")
+			return &QuickOrderResult{Success: false, Error: err.Error(), Code: "ENQUEUE_REJECTED", HTTPStatus: http.StatusConflict}
+		}
 		state.Logger.Error("自动下单任务落库失败,已撤回: "+err.Error(), "queue")
 		return &QuickOrderResult{
 			Success:    false,

@@ -138,9 +138,6 @@ function HistoryPrice({ item, strike }: { item: PurchaseHistory; strike: boolean
   );
 }
 
-/** 订单有效期 15 天，未提供 expirationTime 时用 purchaseTime + 15d 兜底 */
-const ORDER_VALIDITY_MS = 15 * 24 * 60 * 60 * 1000;
-
 /** 把毫秒倒计时格式化为 `2天5时12分` / `12分` / `已过期` */
 function formatCountdown(remainingMs: number): string {
   if (remainingMs <= 0) return "已过期";
@@ -153,9 +150,46 @@ function formatCountdown(remainingMs: number): string {
   return `${minutes}分`;
 }
 
-function getExpirationMs(item: PurchaseHistory): number {
-  if (item.expirationTime) return new Date(item.expirationTime).getTime();
-  return new Date(item.purchaseTime).getTime() + ORDER_VALIDITY_MS;
+/**
+ * 付款截止时间,只用 OVH 返回的 expirationDate。拿不到就是"未知",绝不自己推算:
+ * 促销订单可能 15 分钟不付就作废,按 15 天推算会让人以为还有两周,其实早就作废了。
+ */
+function getExpirationMs(item: PurchaseHistory): number | null {
+  if (!item.expirationTime) return null;
+  const ms = new Date(item.expirationTime).getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/** 付款窗口:付了、取消了、交付了都不再显示;没有 orderId 就没有 OVH 订单可付 */
+function paymentWindow(item: PurchaseHistory, st: { paid: boolean; closed: boolean }, now: number) {
+  const showCountdown = item.status === "success" && !!item.orderId && !st.paid && !st.closed;
+  const expirationMs = showCountdown ? getExpirationMs(item) : null;
+  const deadlineKnown = expirationMs != null;
+  const remainingMs = deadlineKnown ? expirationMs - now : 0;
+  const isExpired = showCountdown && deadlineKnown && remainingMs <= 0;
+  // 24 小时内进入告警色;截止时间未知时一律按紧急处理
+  const isUrgent = showCountdown && !isExpired && (!deadlineKnown || remainingMs < 24 * 60 * 60 * 1000);
+  return { showCountdown, expirationMs, deadlineKnown, remainingMs, isExpired, isUrgent };
+}
+
+function DeadlineChip({ w }: { w: ReturnType<typeof paymentWindow> }) {
+  if (!w.deadlineKnown) {
+    return (
+      <Chip tone="warning" title="暂未从 OVH 取到付款截止时间。促销订单可能 15 分钟内不付款就作废,请尽快付款">
+        <Hourglass className="w-3 h-3" />
+        截止未知·尽快付款
+      </Chip>
+    );
+  }
+  return (
+    <Chip
+      tone={w.isExpired ? "danger" : w.isUrgent ? "warning" : "info"}
+      title={`到期截止时间: ${new Date(w.expirationMs as number).toLocaleString("zh-CN")}`}
+    >
+      <Hourglass className="w-3 h-3" />
+      {formatCountdown(w.remainingMs)}
+    </Chip>
+  );
 }
 
 function HistoryPage() {
@@ -339,12 +373,8 @@ function HistoryPage() {
 
 function HistoryRow({ item, now }: { item: PurchaseHistory; now: number }) {
   const st = orderStatusView(item);
-  // 倒计时是"付款窗口":付了、取消了、交付了都不再显示。没有 orderId 就没有 OVH 订单可付。
-  const showCountdown = item.status === "success" && !!item.orderId && !st.paid && !st.closed;
-  const remainingMs = showCountdown ? getExpirationMs(item) - now : 0;
-  const isExpired = showCountdown && remainingMs <= 0;
-  // 24 小时内进入告警色
-  const isUrgent = showCountdown && !isExpired && remainingMs < 24 * 60 * 60 * 1000;
+  const w = paymentWindow(item, st, now);
+  const { showCountdown, isExpired } = w;
 
   return (
     <tr className={`text-[13px] hover:bg-muted ${isExpired ? "opacity-60" : ""}`}>
@@ -390,13 +420,7 @@ function HistoryRow({ item, now }: { item: PurchaseHistory; now: number }) {
       </td>
       <td className="px-4 py-3 whitespace-nowrap">
         {showCountdown ? (
-          <Chip
-            tone={isExpired ? "danger" : isUrgent ? "warning" : "info"}
-            title={`到期截止时间: ${new Date(getExpirationMs(item)).toLocaleString("zh-CN")}`}
-          >
-            <Hourglass className="w-3 h-3" />
-            {formatCountdown(remainingMs)}
-          </Chip>
+          <DeadlineChip w={w} />
         ) : (
           <span className="text-muted-foreground">—</span>
         )}
@@ -436,10 +460,8 @@ function HistoryRow({ item, now }: { item: PurchaseHistory; now: number }) {
 /** 手机端的订单卡片渲染。跟 HistoryRow 字段一一对应,但堆叠成卡片。 */
 function HistoryCard({ item, now }: { item: PurchaseHistory; now: number }) {
   const st = orderStatusView(item);
-  const showCountdown = item.status === "success" && !!item.orderId && !st.paid && !st.closed;
-  const remainingMs = showCountdown ? getExpirationMs(item) - now : 0;
-  const isExpired = showCountdown && remainingMs <= 0;
-  const isUrgent = showCountdown && !isExpired && remainingMs < 24 * 60 * 60 * 1000;
+  const w = paymentWindow(item, st, now);
+  const { showCountdown, isExpired } = w;
 
   return (
     <Card className={cn("surface-card rounded-xl border-border hover:border-border/80 transition-all duration-200 shadow-sm", isExpired && "opacity-60")}>
@@ -488,13 +510,7 @@ function HistoryCard({ item, now }: { item: PurchaseHistory; now: number }) {
         </div>
         <div className="flex items-center justify-between gap-2 flex-wrap">
           {showCountdown ? (
-            <Chip
-              tone={isExpired ? "danger" : isUrgent ? "warning" : "info"}
-              title={`到期截止时间: ${new Date(getExpirationMs(item)).toLocaleString("zh-CN")}`}
-            >
-              <Hourglass className="w-3 h-3" />
-              {formatCountdown(remainingMs)}
-            </Chip>
+            <DeadlineChip w={w} />
           ) : (
             <span />
           )}

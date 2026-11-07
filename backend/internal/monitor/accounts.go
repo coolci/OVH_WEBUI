@@ -102,12 +102,12 @@ func (m *Monitor) guardCheckEnqueue(sub *Subscription, cfg subCheckConfig, enque
 		}
 	}
 	if !found {
-		return fmt.Errorf("监控订阅已删除,取消本轮自动下单")
+		return app.Rejected("监控订阅已删除,取消本轮自动下单")
 	}
 	sub.mu.Lock()
 	defer sub.mu.Unlock()
 	if sub.Paused || sub.revision != cfg.Revision {
-		return fmt.Errorf("监控配置已更新或暂停,取消旧配置自动下单")
+		return app.Rejected("监控配置已更新或暂停,取消旧配置自动下单")
 	}
 	return enqueue()
 }

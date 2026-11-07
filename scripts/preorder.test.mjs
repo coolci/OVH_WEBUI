@@ -46,3 +46,13 @@ test("form feedback flags a configuration absent from the stock feed", () => {
   assert.equal(preorderVariantCoversAll(fqn, ["ram-64g-ddr4-ecc-2666"]), false);
   assert.equal(preorderVariantCoversAll(fqn, ["softraid-2x480ssd-2x8000sa"]), false);
 });
+
+test("LE aliases treat a 3-digit number as model + configuration variant", () => {
+  assert.equal(stockPlanName("27skle03-v1"), "KS-LE-3");
+  assert.equal(stockPlanName("25skle042-us"), "KS-LE-4");
+  assert.equal(stockPlanName("25sysle013"), "SYS-LE-1");
+  assert.equal(stockPlanName("25sysle023"), "SYS-LE-2");
+  assert.equal(stockPlanName("25sysle012-v1-us"), "SYS-LE-1");
+  assert.equal(stockPlanName("27sysstorle01-v1"), "SYS-STOR-LE-1");
+  assert.equal(stockPlanName("24sk202"), "");
+});

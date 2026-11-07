@@ -10,7 +10,11 @@ export function stockPlanName(planCode: string): string {
   const match = /^\d{2}(sk|sysstor|sys|rise)le(\d+)(?:-v\d+)?(?:-[a-z]+)?$/i.exec(planCode);
   if (!match) return "";
   const family: Record<string, string> = { sk: "KS", sys: "SYS", sysstor: "SYS-STOR", rise: "RISE" };
-  return `${family[match[1].toLowerCase()]}-LE-${Number(match[2])}`;
+  // 三位数编号的最后一位是同型号的配置版本:25skle042 = KS-LE-4、25sysle013 = SYS-LE-1
+  // (两位数仍是型号本身:27skle03 = KS-LE-3)
+  const digits = match[2];
+  const number = digits.length === 3 ? digits.slice(0, 2) : digits;
+  return `${family[match[1].toLowerCase()]}-LE-${Number(number)}`;
 }
 
 export function matchesServerSearch(server: Pick<ServerPlan, "planCode" | "name"> & Partial<Pick<ServerPlan, "cpu" | "memory" | "storage">>, query: string): boolean {
