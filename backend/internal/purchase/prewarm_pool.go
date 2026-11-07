@@ -2,6 +2,7 @@ package purchase
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -12,6 +13,7 @@ import (
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/catalog"
 	"github.com/ovh-webui/server/internal/numconv"
+	"github.com/ovh-webui/server/internal/orderterm"
 	"github.com/ovh-webui/server/internal/ovh"
 )
 
@@ -25,7 +27,9 @@ type PrewarmedCart struct {
 	Datacenter string
 	Options    []string
 	Coupon     string
-	CreatedAt  time.Time
+	// Duration 购物车里基础商品与配件的购买时长;空值按 P1M 处理
+	Duration  string
+	CreatedAt time.Time
 }
 
 var (
@@ -34,19 +38,29 @@ var (
 	cartTTL      = 90 * time.Minute // OVH 购物车有效期通常为 2 小时，保守设为 90 分钟
 )
 
-func prewarmKey(accountID, planCode, datacenter string, options []string, coupon string) string {
-	return fmt.Sprintf("%s|%s|%s|%s|%s",
+// 购买时长是键的一部分:月付预热车绝不能被年付任务直接结账(反之亦然)。
+func prewarmKey(accountID, planCode, datacenter string, options []string, coupon, duration string) string {
+	return fmt.Sprintf("%s|%s|%s|%s|%s|%s",
 		accountID,
 		planCode,
 		strings.ToLower(datacenter),
 		fingerprint(options),
 		strings.TrimSpace(coupon),
+		normalizedDuration(duration),
 	)
 }
 
+// normalizedDuration 规整购买时长;非法值原样保留,保证它不会和任何合法周期撞键。
+func normalizedDuration(raw string) string {
+	if d, err := orderterm.Normalize(raw); err == nil {
+		return d
+	}
+	return "invalid:" + raw
+}
+
 // TakePrewarmedCart 获取并消费已就绪的预装车。一旦取出，从池中移除。
-func TakePrewarmedCart(accountID, planCode, datacenter string, options []string, coupon string) *PrewarmedCart {
-	key := prewarmKey(accountID, planCode, datacenter, options, coupon)
+func TakePrewarmedCart(accountID, planCode, datacenter string, options []string, coupon, duration string) *PrewarmedCart {
+	key := prewarmKey(accountID, planCode, datacenter, options, coupon, duration)
 	prewarmMu.Lock()
 	defer prewarmMu.Unlock()
 
@@ -66,15 +80,15 @@ func PutPrewarmedCart(cart *PrewarmedCart) {
 	if cart == nil || cart.CartID == "" {
 		return
 	}
-	key := prewarmKey(cart.AccountID, cart.PlanCode, cart.Datacenter, cart.Options, cart.Coupon)
+	key := prewarmKey(cart.AccountID, cart.PlanCode, cart.Datacenter, cart.Options, cart.Coupon, cart.Duration)
 	prewarmMu.Lock()
 	prewarmCarts[key] = cart
 	prewarmMu.Unlock()
 }
 
 // HasPrewarmedCart 检查指定配置是否已有就绪的预热车
-func HasPrewarmedCart(accountID, planCode, datacenter string, options []string, coupon string) bool {
-	key := prewarmKey(accountID, planCode, datacenter, options, coupon)
+func HasPrewarmedCart(accountID, planCode, datacenter string, options []string, coupon, duration string) bool {
+	key := prewarmKey(accountID, planCode, datacenter, options, coupon, duration)
 	prewarmMu.Lock()
 	defer prewarmMu.Unlock()
 	c, ok := prewarmCarts[key]
@@ -104,7 +118,11 @@ func ClearPrewarmPool(state *app.State) {
 
 // AssemblePrewarmedCart 在后台静默组装一辆完整的预热购物车。
 // 组装成功后直接存入预热池，供探测发现有货时以 0ms 装车延迟直接结账。
-func AssemblePrewarmedCart(ctx context.Context, state *app.State, accountID, planCode, datacenter string, options []string, coupon string) (*PrewarmedCart, error) {
+func AssemblePrewarmedCart(ctx context.Context, state *app.State, accountID, planCode, datacenter string, options []string, coupon, duration string) (*PrewarmedCart, error) {
+	selectedDuration, err := orderterm.Normalize(duration)
+	if err != nil {
+		return nil, err
+	}
 	client, err := state.OVH.IsolatedClientFor(accountID)
 	if err != nil {
 		return nil, fmt.Errorf("取 client 失败: %w", err)
@@ -139,7 +157,7 @@ func AssemblePrewarmedCart(ctx context.Context, state *app.State, accountID, pla
 	var itemResult map[string]interface{}
 	var assignErr error
 	var postBaseErr error
-	baseDuration, basePricingMode := "P1M", "default"
+	baseDuration, basePricingMode := selectedDuration, "default"
 
 	g2, ctx2 := errgroup.WithContext(ctx)
 	g2.Go(func() error {
@@ -150,6 +168,15 @@ func AssemblePrewarmedCart(ctx context.Context, state *app.State, accountID, pla
 		return nil
 	})
 	g2.Go(func() error {
+		// 非月付先查 OVH 给这个型号的真实计价;查不到该周期就是买不到,不装车
+		if selectedDuration != orderterm.Default {
+			d, pm, found := lookupEcoPricing(state, client, cartID, planCode, selectedDuration)
+			if !found {
+				postBaseErr = fmt.Errorf("OVH 不支持 %s 按 %s 购买", planCode, orderterm.Label(selectedDuration))
+				return postBaseErr
+			}
+			baseDuration, basePricingMode = d, pm
+		}
 		err := client.PostWithContext(ctx2, "/order/cart/"+cartID+"/eco", map[string]interface{}{
 			"planCode":    planCode,
 			"pricingMode": basePricingMode,
@@ -157,7 +184,7 @@ func AssemblePrewarmedCart(ctx context.Context, state *app.State, accountID, pla
 			"quantity":    1,
 		}, &itemResult)
 		if err != nil {
-			if d, pm, found := lookupEcoPricing(state, client, cartID, planCode); found &&
+			if d, pm, found := lookupEcoPricing(state, client, cartID, planCode, selectedDuration); found &&
 				(d != baseDuration || pm != basePricingMode) {
 				baseDuration, basePricingMode = d, pm
 				err = client.PostWithContext(ctx2, "/order/cart/"+cartID+"/eco", map[string]interface{}{
@@ -176,6 +203,11 @@ func AssemblePrewarmedCart(ctx context.Context, state *app.State, accountID, pla
 	})
 
 	if err := g2.Wait(); err != nil {
+		// 两个协程谁先失败,另一个就会被 errgroup 取消、报 context canceled ——
+		// 报给用户的必须是真正的那个原因
+		if postBaseErr != nil && !errors.Is(postBaseErr, context.Canceled) {
+			return nil, fmt.Errorf("预热加购基础商品失败: %w", postBaseErr)
+		}
 		if assignErr != nil {
 			return nil, fmt.Errorf("绑定预热车失败: %w", assignErr)
 		}
@@ -223,7 +255,10 @@ func AssemblePrewarmedCart(ctx context.Context, state *app.State, accountID, pla
 				if matchedOpt == nil {
 					return nil, fmt.Errorf("预热硬件选项 %q 未找到，取消装车", wanted)
 				}
-				duration, pricingMode := pickPricing(matchedOpt["prices"], baseDuration)
+				duration, pricingMode, valid := pickPricing(matchedOpt["prices"], baseDuration, basePricingMode)
+				if !valid {
+					return nil, fmt.Errorf("预热硬件选项 %s 不支持购买时长 %s,取消装车", matchedPC, orderterm.Label(baseDuration))
+				}
 				todo = append(todo, addonPayload{
 					planCode: matchedPC,
 					body: map[string]interface{}{
@@ -270,6 +305,7 @@ func AssemblePrewarmedCart(ctx context.Context, state *app.State, accountID, pla
 		Datacenter: datacenter,
 		Options:    append([]string(nil), options...),
 		Coupon:     coupon,
+		Duration:   selectedDuration,
 		CreatedAt:  time.Now(),
 	}
 	PutPrewarmedCart(pre)

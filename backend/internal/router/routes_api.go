@@ -115,4 +115,5 @@ func registerAPIRoutes(api *gin.RouterGroup, cfg Config) {
 	// Quick order & Intent prewarm
 	api.POST("/queue/quick-order", handlers.QuickOrder(state))
 	api.POST("/purchase/prewarm", handlers.PrewarmOrder(state))
+	api.GET("/order/durations", handlers.GetOrderDurations(state))
 }

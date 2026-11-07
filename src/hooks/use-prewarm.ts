@@ -7,6 +7,8 @@ export interface PrewarmParams {
   datacenter?: string;
   options?: string[];
   coupon?: string;
+  /** 购买时长;预热车按时长分开,月付车不会被年付任务直接结账 */
+  duration?: string;
   enabled?: boolean;
 }
 
@@ -20,7 +22,7 @@ export function usePrewarmOrder(params: PrewarmParams) {
   const [isReady, setIsReady] = useState(false);
   const lastKeyRef = useRef<string>("");
 
-  const key = `${params.account_id || ""}|${params.planCode || ""}|${params.datacenter || ""}|${(params.options || []).join(",")}|${params.coupon || ""}`;
+  const key = `${params.account_id || ""}|${params.planCode || ""}|${params.datacenter || ""}|${(params.options || []).join(",")}|${params.coupon || ""}|${params.duration || ""}`;
 
   useEffect(() => {
     if (!params.enabled || !params.planCode || !params.datacenter) {
@@ -44,6 +46,7 @@ export function usePrewarmOrder(params: PrewarmParams) {
           datacenter: params.datacenter,
           options: params.options || [],
           coupon: params.coupon,
+          duration: params.duration || undefined,
         });
         if (res.data?.success) {
           setIsReady(true);
@@ -56,7 +59,7 @@ export function usePrewarmOrder(params: PrewarmParams) {
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [key, params.enabled, params.account_id, params.planCode, params.datacenter, params.coupon]);
+  }, [key, params.enabled, params.account_id, params.planCode, params.datacenter, params.coupon, params.duration]);
 
   return { isPrewarming, isReady };
 }

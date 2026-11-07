@@ -12,6 +12,7 @@ import (
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/catalog"
 	"github.com/ovh-webui/server/internal/numconv"
+	"github.com/ovh-webui/server/internal/orderterm"
 	"github.com/ovh-webui/server/internal/ovh"
 	"github.com/ovh-webui/server/internal/price"
 	"github.com/ovh-webui/server/internal/types"
@@ -35,6 +36,8 @@ type QuickOrderParams struct {
 	// Internal monitor generation guard; external HTTP callers cannot supply it.
 	GuardEnqueue func(func() error) error `json:"-"`
 	Coupon       string                   `json:"coupon"`
+	// Duration 购买时长(P1M/P12M...),空 = 1 个月
+	Duration string `json:"duration"`
 }
 
 // QuickOrderResult 快速下单执行结果
@@ -65,6 +68,11 @@ func EnqueueQuickOrder(state *app.State, params QuickOrderParams) *QuickOrderRes
 			HTTPStatus: http.StatusOK,
 		}
 	}
+	duration, termErr := orderterm.Normalize(params.Duration)
+	if termErr != nil {
+		return &QuickOrderResult{Success: false, Error: termErr.Error(), HTTPStatus: http.StatusBadRequest}
+	}
+	params.Duration = duration
 	if params.AccountID == "" {
 		return &QuickOrderResult{
 			Success:    false,
@@ -222,14 +230,14 @@ func EnqueueQuickOrder(state *app.State, params QuickOrderParams) *QuickOrderRes
 	}
 
 	var priceInfo *price.PriceInfo
-	if params.FromMonitor && HasPrewarmedCart(params.AccountID, params.PlanCode, params.Datacenter, options, params.Coupon) {
+	if params.FromMonitor && HasPrewarmedCart(params.AccountID, params.PlanCode, params.Datacenter, options, params.Coupon, params.Duration) {
 		// 命中预热就绪车：跳过耗时建车查价，直接免检入队，由后台 worker 立即唤醒直出 Checkout！
 		state.Logger.Info(fmt.Sprintf("[quick_order] %s@%s 命中预热池有效车，免检极速入队", params.PlanCode, params.Datacenter), "quick_order")
 	} else if params.FromMonitor {
 		// 监控批量入队路径:
 		// 监控已在 check 阶段做过可用性探测，在此切忌重新发起完整的建车删车周期 (消耗 3~6s 且易踩 429 导致任务被拦截弃单)。
 		// 仅尝试从短 TTL 内存缓存获取价格；若无缓存或失败，不阻塞任务直接入队抢购。
-		priceResult := price.GetInternalCached(state, params.AccountID, params.PlanCode, params.Datacenter, options)
+		priceResult := price.GetInternalCached(state, params.AccountID, params.PlanCode, params.Datacenter, options, params.Duration)
 		if priceResult.Success && priceResult.Price != nil && !priceResult.Degraded {
 			priceInfo = priceResult.Price
 		} else {
@@ -237,7 +245,7 @@ func EnqueueQuickOrder(state *app.State, params QuickOrderParams) *QuickOrderRes
 		}
 	} else {
 		// 手动下单: 走新鲜的真实询价, 校验配置合法性与价格
-		priceResult := price.GetInternal(state, params.AccountID, params.PlanCode, params.Datacenter, options)
+		priceResult := price.GetInternal(state, params.AccountID, params.PlanCode, params.Datacenter, options, params.Duration)
 		if !priceResult.Success {
 			err := priceResult.Error
 			if err == "" {
@@ -295,6 +303,7 @@ func EnqueueQuickOrder(state *app.State, params QuickOrderParams) *QuickOrderRes
 	now := types.NowISO()
 	item := types.QueueItem{
 		ID:         uuid.NewString(),
+		Duration:   params.Duration,
 		AccountID:  params.AccountID,
 		PlanCode:   params.PlanCode,
 		Datacenter: params.Datacenter,

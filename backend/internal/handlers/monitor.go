@@ -13,6 +13,7 @@ import (
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/monitor"
 	"github.com/ovh-webui/server/internal/notify"
+	"github.com/ovh-webui/server/internal/orderterm"
 	"github.com/ovh-webui/server/internal/telegram"
 	"github.com/ovh-webui/server/internal/types"
 )
@@ -48,10 +49,18 @@ func AddSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 			// 一个 planCode 底下常有好几套内存/存储组合,而通知和自动下单是
 			// 按配置逐套触发的 —— 不筛的话"抢 1 台"会变成"每套配置各抢 1 台"。
 			Options []string `json:"options"`
+			// Duration 自动下单的购买时长(P1M/P12M...)。不传 = 新订阅按 1 个月、已有订阅保持原值
+			Duration *string `json:"duration"`
 		}
 		if err := c.ShouldBindJSON(&body); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "请求体格式错误"})
 			return
+		}
+		if body.Duration != nil {
+			if _, err := orderterm.Normalize(*body.Duration); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": err.Error()})
+				return
+			}
 		}
 		body.PlanCode = strings.TrimSpace(body.PlanCode)
 		// 一条订阅一个型号(issue #2):整串"plan-a,plan-b"会被当成一个型号存进库,
@@ -111,6 +120,12 @@ func AddSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 		mon.AddSubscription(body.PlanCode, body.Datacenters, notifyAvailable, notifyUnavailable,
 			serverName, nil, nil, body.AutoOrder, body.Quantity, body.AutoOrderAccountID, body.AutoPay,
 			body.Options, accountIDs)
+		if body.Duration != nil {
+			if err := mon.SetSubscriptionDuration(body.PlanCode, monitor.OptionsKey(body.Options), *body.Duration); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "设置购买时长失败: " + err.Error()})
+				return
+			}
+		}
 		if err := mon.SaveToDB(); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "本次运行已添加，但未能保存到数据库: " + err.Error()})
 			return

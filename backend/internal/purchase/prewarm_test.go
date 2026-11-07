@@ -105,14 +105,14 @@ func TestPrewarmedCartAssemblyAndInstantCheckout(t *testing.T) {
 	defer func() { http.DefaultTransport = oldTransport }()
 
 	// 阶段一：后台在等待库存时静默预装车
-	pre, err := AssemblePrewarmedCart(context.Background(), s, item.AccountID, item.PlanCode, item.Datacenter, item.Options, item.Coupon)
+	pre, err := AssemblePrewarmedCart(context.Background(), s, item.AccountID, item.PlanCode, item.Datacenter, item.Options, item.Coupon, "")
 	if err != nil {
 		t.Fatalf("预装车组装失败: %v", err)
 	}
 	if pre.CartID != "pw-cart-999" {
 		t.Fatalf("预装车 cartId 异常: %s", pre.CartID)
 	}
-	if !HasPrewarmedCart(item.AccountID, item.PlanCode, item.Datacenter, item.Options, item.Coupon) {
+	if !HasPrewarmedCart(item.AccountID, item.PlanCode, item.Datacenter, item.Options, item.Coupon, "") {
 		t.Fatalf("预热池应显示已有就绪车")
 	}
 
@@ -156,10 +156,9 @@ func TestPrewarmedCartAssemblyAndInstantCheckout(t *testing.T) {
 	}
 
 	// 预装车已被消费，预热池中不再存在
-	if HasPrewarmedCart(item.AccountID, item.PlanCode, item.Datacenter, item.Options, item.Coupon) {
+	if HasPrewarmedCart(item.AccountID, item.PlanCode, item.Datacenter, item.Options, item.Coupon, "") {
 		t.Errorf("抢购成功后预装车应已被取出消费")
 	}
 
 	t.Log("预装车待命机制验证通过！成功跳过全部装车网络调用，实现 0 秒装车一枪直发结账！")
 }
-

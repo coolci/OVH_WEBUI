@@ -363,7 +363,7 @@ func cmdPrice(state *app.State, args []string, monOpt ...*monitor.Monitor) strin
 		}
 	}
 
-	result := price.GetInternal(state, accountID, planCode, dc, options)
+	result := price.GetInternal(state, accountID, planCode, dc, options, "")
 	if !result.Success {
 		err := result.Error
 		if err == "" {
@@ -1018,4 +1018,3 @@ func cmdCoupon(state *app.State, args []string) string {
 		"🚀 无论是点击 Telegram 监控通知上的抢购按钮，还是发送命令下单，都将自动带入该优惠码！\n\n"+
 		"💡 如需清除，请发送 /coupon clear", telegram.CardDivider, arg)
 }
-

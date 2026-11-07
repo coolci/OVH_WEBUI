@@ -14,6 +14,7 @@ import (
 
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/catalog"
+	"github.com/ovh-webui/server/internal/orderterm"
 	"github.com/ovh-webui/server/internal/platform/httperr"
 	"github.com/ovh-webui/server/internal/purchase"
 	"github.com/ovh-webui/server/internal/service/order"
@@ -38,6 +39,8 @@ func AddQueueItem(state *app.State) gin.HandlerFunc {
 			Force    bool   `json:"force"`
 			Preorder bool   `json:"preorder"`
 			Coupon   string `json:"coupon"`
+			// Duration 购买时长(P1M/P12M...),空 = 1 个月
+			Duration string `json:"duration"`
 		}
 		// 严格解析(移植上游 v0.4.18):未知字段直接拒绝。否则 hwRam / maxPrice 这类
 		// 不支持的约束会被静默丢掉,任务按默认配置下单 —— 用户以为限了价/配置,其实没限。
@@ -45,6 +48,12 @@ func AddQueueItem(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "任务参数格式不正确", "details": err.Error()})
 			return
 		}
+		duration, termErr := orderterm.Normalize(body.Duration)
+		if termErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": termErr.Error()})
+			return
+		}
+		body.Duration = duration
 		if body.AccountID == "" && body.AccountIDCamel != "" {
 			body.AccountID = body.AccountIDCamel
 		}
@@ -97,6 +106,7 @@ func AddQueueItem(state *app.State) gin.HandlerFunc {
 		item := types.QueueItem{
 			ID:            uuid.NewString(),
 			AccountID:     body.AccountID,
+			Duration:      body.Duration,
 			PlanCode:      body.PlanCode,
 			Datacenter:    body.Datacenter,
 			Options:       body.Options,
@@ -154,6 +164,8 @@ func UpdateQueueItem(state *app.State) gin.HandlerFunc {
 			RetryInterval int      `json:"retryInterval"`
 			AutoPay       bool     `json:"autoPay"`
 			Coupon        string   `json:"coupon"`
+			// Duration 不传 = 保持原购买时长
+			Duration *string `json:"duration"`
 		}
 		if err := bindOrderJSON(c, &body); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "任务参数格式不正确", "details": err.Error()})
@@ -163,7 +175,13 @@ func UpdateQueueItem(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "请填写机房及有效的重试间隔"})
 			return
 		}
-		if err := state.UpdateQueueItem(c.Param("id"), strings.TrimSpace(body.Datacenter), body.Options, body.RetryInterval, body.AutoPay, strings.TrimSpace(body.Coupon)); err != nil {
+		if body.Duration != nil {
+			if _, err := orderterm.Normalize(*body.Duration); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": err.Error()})
+				return
+			}
+		}
+		if err := state.UpdateQueueItem(c.Param("id"), strings.TrimSpace(body.Datacenter), body.Options, body.RetryInterval, body.AutoPay, strings.TrimSpace(body.Coupon), body.Duration); err != nil {
 			status := http.StatusInternalServerError
 			if errors.Is(err, app.ErrQueueNotFound) {
 				status = http.StatusNotFound

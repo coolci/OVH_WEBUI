@@ -105,6 +105,8 @@ type Subscription struct {
 	AutoOrderAccountIDs []string          `json:"autoOrderAccountIds,omitempty"`
 	AutoOrderAccountID  string            `json:"autoOrderAccountId,omitempty"` // 空 = 触发时只通知不下单
 	AutoPay             bool              `json:"autoPay,omitempty"`            // 下单后自动付款(显式开关,默认关)
+	// Duration 自动下单的购买时长(P1M/P12M...);空 = 1 个月
+	Duration string `json:"duration,omitempty"`
 	// Paused 暂停监控:检查循环跳过,订阅与历史保留,恢复即继续。
 	// 场景:暂时不想收通知但不想删掉重建(OVH US 已下线手动续费,删了重加门槛更高)
 	Paused bool `json:"paused,omitempty"`
@@ -148,6 +150,7 @@ type subCheckConfig struct {
 	AutoOrderAccountIDs []string
 	AutoPay             bool
 	Options             []string
+	Duration            string
 }
 
 func (s *Subscription) checkConfig() subCheckConfig {
@@ -170,6 +173,7 @@ func (s *Subscription) checkConfig() subCheckConfig {
 		AutoOrderAccountID:  s.AutoOrderAccountID,
 		AutoOrderAccountIDs: cloneAccountIDs(s.AutoOrderAccountIDs),
 		AutoPay:             s.AutoPay,
+		Duration:            s.Duration,
 	}
 }
 
@@ -289,6 +293,7 @@ func (s *Subscription) snapshot() *Subscription {
 		AutoOrderAccountID:  s.AutoOrderAccountID,
 		AutoOrderAccountIDs: cloneAccountIDs(s.AutoOrderAccountIDs),
 		AutoPay:             s.AutoPay,
+		Duration:            s.Duration,
 		Paused:              s.Paused,
 
 		LastCheckAt:         s.LastCheckAt,

@@ -19,6 +19,9 @@ import { OptionGroupSection } from "@/components/common/OptionGroupSection";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useServers } from "@/hooks/use-servers";
 import { useUpdateQueueItem, type QueueItem } from "@/hooks/use-queue";
+import { useOrderDurations } from "@/hooks/use-order-durations";
+import { OrderDurationField } from "@/components/orders/OrderDurationField";
+import { DEFAULT_ORDER_DURATION, normalizeDuration } from "@/lib/order-duration";
 import {
   useAvailability,
   buildAvailabilityMap,
@@ -51,6 +54,8 @@ export function EditQueueDialog({ open, onOpenChange, item }: EditQueueDialogPro
   const [retryInterval, setRetryInterval] = useState("");
   const [autoPay, setAutoPay] = useState(false);
   const [coupon, setCoupon] = useState("");
+  const [duration, setDuration] = useState(DEFAULT_ORDER_DURATION);
+  const durations = useOrderDurations(accountId, item?.planCode, open);
   const [picked, setPicked] = useState<Partial<Record<OptionGroupKey, string>>>({});
   const [extraInput, setExtraInput] = useState("");
 
@@ -65,6 +70,7 @@ export function EditQueueDialog({ open, onOpenChange, item }: EditQueueDialogPro
       setRetryInterval(String(item.retryInterval || 60));
       setAutoPay(!!item.autoPay);
       setCoupon(item.coupon || "");
+      setDuration(normalizeDuration(item.duration));
 
       const wantedList = item.options || [];
       const consumed = new Set<string>();
@@ -138,6 +144,7 @@ export function EditQueueDialog({ open, onOpenChange, item }: EditQueueDialogPro
         retryInterval: intervalNum,
         autoPay,
         coupon: coupon.trim(),
+        duration,
       });
       onOpenChange(false);
     } catch {
@@ -264,6 +271,8 @@ export function EditQueueDialog({ open, onOpenChange, item }: EditQueueDialogPro
               </div>
             )}
           </div>
+
+          <OrderDurationField value={duration} onChange={setDuration} query={durations} />
 
           {/* Coupon */}
           <div>

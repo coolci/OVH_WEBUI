@@ -26,14 +26,15 @@ func TestPickPricingNeverSubstitutesPeriod(t *testing.T) {
 		want         string
 		wantDuration string
 		wantMode     string
+		wantOK       bool
 	}{
-		{"same period preferred", periodPrices([3]string{"P12M", "upfront12", "rental"}, [3]string{"P1M", "default", "rental"}), "P1M", "P1M", "default"},
-		{"only yearly offered", periodPrices([3]string{"P12M", "upfront12", "rental"}), "P1M", "P1M", "default"},
-		{"yearly alias accepted", periodPrices([3]string{"P1Y", "upfront12", "rental"}), "P12M", "P1Y", "upfront12"},
-		{"nothing offered", nil, "P1M", "P1M", "default"},
+		{"same period preferred", periodPrices([3]string{"P12M", "upfront12", "rental"}, [3]string{"P1M", "default", "rental"}), "P1M", "P1M", "default", true},
+		{"only yearly offered", periodPrices([3]string{"P12M", "upfront12", "rental"}), "P1M", "", "", false},
+		{"yearly alias accepted", periodPrices([3]string{"P1Y", "upfront12", "rental"}), "P12M", "P1Y", "upfront12", true},
+		{"nothing offered", nil, "P1M", "P1M", "default", true},
 	} {
-		d, m := pickPricing(tc.prices, tc.want)
-		if d != tc.wantDuration || m != tc.wantMode {
+		d, m, ok := pickPricing(tc.prices, tc.want, "")
+		if d != tc.wantDuration || m != tc.wantMode || ok != tc.wantOK {
 			t.Errorf("%s: got %s/%s want %s/%s", tc.name, d, m, tc.wantDuration, tc.wantMode)
 		}
 	}
@@ -67,7 +68,7 @@ func TestLookupEcoPricingRejectsOtherPeriods(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			d, m, found := lookupEcoPricing(st, client, "c", "24sk202")
+			d, m, found := lookupEcoPricing(st, client, "c", "24sk202", "")
 			if found != tc.found || (found && (d != "P1M" || m != tc.mode)) {
 				t.Fatalf("got %s/%s found=%v", d, m, found)
 			}

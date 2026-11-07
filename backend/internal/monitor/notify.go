@@ -563,7 +563,7 @@ func (m *Monitor) SendAvailabilityAlertGrouped(planCode string, availableDCs []m
 		options := optionsFromConfig(configInfo)
 		for _, item := range availableDCs {
 			if dcCode, ok := item["datacenter"].(string); ok && dcCode != "" {
-				go m.assemblePrewarmedCartAsync(targetAcc, planCode, dcCode, options)
+				go m.assemblePrewarmedCartAsync(targetAcc, planCode, dcCode, options, "") // TG 一键下单按钮按月付
 			}
 		}
 	}

@@ -419,6 +419,20 @@ const pack: CommonLayerPack = {
       close: "Close menu",
     },
   },
+  orderDuration: {
+    label: "Purchase period",
+    default: "default",
+    month: "{{count}} month",
+    months: "{{count}} months",
+    year: "{{count}} year",
+    years: "{{count}} years",
+    loading: "Loading periods offered by OVH…",
+    hint: "Periods come from the selected account's OVH offers.",
+    unverified: "Periods can't be confirmed right now. You can still save; the period is checked before ordering and nothing is ordered if it's unsupported.",
+    unsupported: "This account's offer for this model doesn't support the selected period. Choose another one.",
+    prepaid: "The whole period is charged up front (a yearly order prepays the full year). OVH determines the final amount and renewal terms.",
+    monitorHint: "Purchase period used when a restock triggers an automatic order.",
+  },
 };
 
 export const commonLayerEn = pack;

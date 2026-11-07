@@ -96,7 +96,7 @@ func TestQueueTaskAutoPrewarm(t *testing.T) {
 	deadline := time.Now().Add(3 * time.Second)
 	found := false
 	for time.Now().Before(deadline) {
-		if HasPrewarmedCart(accountID, item.PlanCode, item.Datacenter, item.Options, item.Coupon) {
+		if HasPrewarmedCart(accountID, item.PlanCode, item.Datacenter, item.Options, item.Coupon, "") {
 			found = true
 			break
 		}
@@ -122,4 +122,3 @@ func TestQueueTaskAutoPrewarm(t *testing.T) {
 		t.Fatalf("应当直接直出结账，实际 checkout 次数: %d", checkoutCalls.Load())
 	}
 }
-

@@ -17,6 +17,9 @@ import { useMonitorList } from "@/hooks/use-monitor";
 import { MonitorSubscribeDialog } from "@/components/monitor/MonitorSubscribeDialog";
 import { useCreateQueueItem } from "@/hooks/use-queue";
 import { usePrewarmOrder } from "@/hooks/use-prewarm";
+import { useOrderDurations } from "@/hooks/use-order-durations";
+import { OrderDurationField } from "@/components/orders/OrderDurationField";
+import { DEFAULT_ORDER_DURATION } from "@/lib/order-duration";
 import { useSettings, RETRY_INTERVAL } from "@/hooks/use-settings";
 import { useDefaultAccount, useAccounts, findAccountByID } from "@/hooks/use-accounts";
 import {
@@ -85,6 +88,7 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
   const [extraInput, setExtraInput] = useState("");
   const [autoPay, setAutoPay] = useState(false);
   const [coupon, setCoupon] = useState("");
+  const [duration, setDuration] = useState(DEFAULT_ORDER_DURATION);
 
   const servers = serversQ.data || [];
   const server = useMemo(
@@ -131,12 +135,14 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
   }, [server, selectedValues, catalogIdx]);
 
   const targetAccountId = accountId || defaultAcc?.id || "";
+  const durations = useOrderDurations(targetAccountId, planCode, open);
   const prewarm = usePrewarmOrder({
     account_id: targetAccountId,
     planCode: planCode,
     datacenter: selectedDCs[0],
     options: selectedValues,
     coupon: coupon.trim() || undefined,
+    duration,
     enabled: open && selectedDCs.length > 0 && !!targetAccountId && !!planCode,
   });
 
@@ -151,6 +157,7 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
     setExtraInput("");
     setAutoPay(false);
     setCoupon("");
+    setDuration(DEFAULT_ORDER_DURATION);
     setAccountId(defaultAcc?.id || "");
   }, [open, initialPlanCode]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -219,6 +226,7 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
       autoPay,
       force: isCustomPlan,
       coupon: coupon.trim() || undefined,
+      duration,
       // preorder: !!server?.prerelease, // 预订模式已停用。
     });
     if (result.success > 0) {
@@ -239,6 +247,7 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
           autoPay,
           force: true,
           coupon: coupon.trim() || undefined,
+          duration,
           // preorder: !!server?.prerelease, // 预订模式已停用。
         });
         if (forceResult.success > 0) {
@@ -405,6 +414,8 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
                 />
               </div>
             </div>
+
+            <OrderDurationField value={duration} onChange={setDuration} query={durations} />
 
             <div>
               <label className="mb-1 block text-[11px] text-muted-foreground">优惠码（可选）</label>

@@ -402,4 +402,18 @@ export const commonLayerZh = {
       close: "关闭菜单",
     },
   },
+  orderDuration: {
+    label: "购买时长",
+    default: "默认",
+    month: "{{count}} 个月",
+    months: "{{count}} 个月",
+    year: "{{count}} 年",
+    years: "{{count}} 年",
+    loading: "正在查询 OVH 可选周期…",
+    hint: "可选周期来自当前账户的 OVH 销售目录。",
+    unverified: "暂时无法确认可选周期,可先保存;下单前会按所选时长核验,不支持则不会下单。",
+    unsupported: "该账户的这个型号不支持所选周期,请换一个购买时长。",
+    prepaid: "将按所选周期一次性结算(年付即预付全年),实际金额与续费规则以 OVH 订单为准。",
+    monitorHint: "补货自动下单时使用的购买时长。",
+  },
 };

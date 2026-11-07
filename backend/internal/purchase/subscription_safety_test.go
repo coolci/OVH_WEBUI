@@ -101,8 +101,8 @@ func TestPrewarmMissingOptionsBlocksCheckout(t *testing.T) {
 		t.Run(response, func(t *testing.T) {
 			s, item, checkout, options := auditOrderFixture(t, "audit-missing-option", response)
 			item.Options = []string{"ram-64g"}
-			_, err := AssemblePrewarmedCart(context.Background(), s, item.AccountID, item.PlanCode, item.Datacenter, item.Options, "")
-			if err == nil || HasPrewarmedCart(item.AccountID, item.PlanCode, item.Datacenter, item.Options, "") {
+			_, err := AssemblePrewarmedCart(context.Background(), s, item.AccountID, item.PlanCode, item.Datacenter, item.Options, "", "")
+			if err == nil || HasPrewarmedCart(item.AccountID, item.PlanCode, item.Datacenter, item.Options, "", "") {
 				t.Fatal("incomplete prewarm published")
 			}
 			out := PurchaseServer(context.Background(), s, item)
@@ -117,8 +117,8 @@ func TestPrewarmRejectedCouponBlocksAutoPay(t *testing.T) {
 	item.Coupon = "INVALID"
 	item.AutoPay = true
 	item.Options = []string{"ram-64g"}
-	_, err := AssemblePrewarmedCart(context.Background(), s, item.AccountID, item.PlanCode, item.Datacenter, item.Options, item.Coupon)
-	if err == nil || HasPrewarmedCart(item.AccountID, item.PlanCode, item.Datacenter, item.Options, item.Coupon) {
+	_, err := AssemblePrewarmedCart(context.Background(), s, item.AccountID, item.PlanCode, item.Datacenter, item.Options, item.Coupon, "")
+	if err == nil || HasPrewarmedCart(item.AccountID, item.PlanCode, item.Datacenter, item.Options, item.Coupon, "") {
 		t.Fatal("rejected coupon published")
 	}
 	out := PurchaseServer(context.Background(), s, item)
@@ -143,7 +143,7 @@ func TestCustomDottedPlanWorkerCheckout(t *testing.T) {
 func TestPrewarmCompleteCartReused(t *testing.T) {
 	s, item, checkout, options := auditOrderFixture(t, "custom-NewModel.LZ", `[{"planCode":"ram-64g","prices":[]}]`)
 	item.Options = []string{"ram-64g"}
-	_, err := AssemblePrewarmedCart(context.Background(), s, item.AccountID, item.PlanCode, item.Datacenter, item.Options, "")
+	_, err := AssemblePrewarmedCart(context.Background(), s, item.AccountID, item.PlanCode, item.Datacenter, item.Options, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,13 +151,13 @@ func TestPrewarmCompleteCartReused(t *testing.T) {
 	if !out.Success || checkout.Load() != 1 || options.Load() != 1 {
 		t.Fatalf("%+v checkout=%d options=%d", out, checkout.Load(), options.Load())
 	}
-	if HasPrewarmedCart(item.AccountID, item.PlanCode, item.Datacenter, item.Options, "") {
+	if HasPrewarmedCart(item.AccountID, item.PlanCode, item.Datacenter, item.Options, "", "") {
 		t.Fatal("cart not consumed")
 	}
 }
 func TestPrewarmWithoutOptionsDoesNotOverrideInventoryHardware(t *testing.T) {
 	s, item, checkout, options := auditOrderFixture(t, "custom-NewModel.LZ", `[{"planCode":"ram-64g","prices":[]}]`)
-	_, err := AssemblePrewarmedCart(context.Background(), s, item.AccountID, item.PlanCode, item.Datacenter, nil, "")
+	_, err := AssemblePrewarmedCart(context.Background(), s, item.AccountID, item.PlanCode, item.Datacenter, nil, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}

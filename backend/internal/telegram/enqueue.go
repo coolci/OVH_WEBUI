@@ -56,7 +56,7 @@ func enqueuePrepared(state *app.State, item types.QueueItem, requirePrice bool) 
 		}
 	}
 	if requirePrice {
-		pr := price.GetInternal(state, accountID, planCode, datacenter, options)
+		pr := price.GetInternal(state, accountID, planCode, datacenter, options, "")
 		if !pr.Success {
 			err := pr.Error
 			if err == "" {

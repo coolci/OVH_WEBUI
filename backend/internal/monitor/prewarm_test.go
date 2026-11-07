@@ -164,7 +164,7 @@ func TestMonitorPrewarm_TriggerAndDedupe(t *testing.T) {
 	deadline := time.Now().Add(3 * time.Second)
 	found := false
 	for time.Now().Before(deadline) {
-		if purchase.HasPrewarmedCart(accountID, "24sk-prewarm-auto", "gra", []string{}, "") {
+		if purchase.HasPrewarmedCart(accountID, "24sk-prewarm-auto", "gra", []string{}, "", "") {
 			found = true
 			break
 		}

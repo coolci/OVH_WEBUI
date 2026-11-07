@@ -479,6 +479,10 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 		if sub.checkParent != nil {
 			configInfo["account_id"] = choice.accountID
 		}
+		// 购买时长随配置走:验价、预热车命中、入队都按订阅选的周期
+		if cfg.Duration != "" {
+			configInfo["duration"] = cfg.Duration
+		}
 		priceCfg := copyMap(configInfo)
 		priceCfg["account_id"] = choice.accountID
 

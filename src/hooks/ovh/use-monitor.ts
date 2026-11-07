@@ -19,6 +19,8 @@ export interface MonitorSubscription {
   autoOrderAccountId?: string;
   /** 下单成功后自动付款(显式开关,默认关) */
   autoPay?: boolean;
+  /** 自动下单的购买时长(P1M/P12M...);空 = 1 个月 */
+  duration?: string;
   /**
    * 只盯这套配置(addon planCode 列表)。空 / 缺省 = 盯该型号的全部配置。
    *

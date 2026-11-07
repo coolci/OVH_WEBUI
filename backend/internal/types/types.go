@@ -148,6 +148,8 @@ type OVHAccount struct {
 
 // QueueItem 抢购队列项
 type QueueItem struct {
+	// Duration 购买时长(ISO 8601,如 P1M/P12M);空值兼容旧任务,按 1 个月下单
+	Duration      string   `json:"duration,omitempty"`
 	ID            string   `json:"id"`
 	AccountID     string   `json:"accountId"` // 该任务下单时用的 OVH 账户
 	PlanCode      string   `json:"planCode"`
@@ -194,6 +196,7 @@ type PriceInfo struct {
 
 // PurchaseHistoryEntry 抢购历史
 type PurchaseHistoryEntry struct {
+	Duration       string   `json:"duration,omitempty"` // 购买时长;空值 = 1 个月
 	ID             string   `json:"id"`
 	AccountID      string   `json:"accountId"` // 哪个账户买的
 	TaskID         string   `json:"taskId"`
@@ -275,6 +278,7 @@ type SubscriptionHistoryEntry struct {
 
 // Subscription 监控订阅（跨账户共享列表;auto-order 触发时按 AutoOrderAccountID 下单）
 type Subscription struct {
+	Duration            string                     `json:"duration,omitempty"` // 自动下单的购买时长;空值 = 1 个月
 	PlanCode            string                     `json:"planCode"`
 	Datacenters         []string                   `json:"datacenters"`
 	NotifyAvailable     bool                       `json:"notifyAvailable"`

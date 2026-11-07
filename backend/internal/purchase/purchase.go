@@ -67,6 +67,12 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 		item.AutoPay = false
 	}
 	attemptStart := time.Now() // checkout 对账用:transient 失败后按此时间查 /me/order
+	// 购买时长:空值(旧任务)按 P1M;非法值是确定性失败,重试也不会变
+	selectedDuration, termErr := orderterm.Normalize(item.Duration)
+	if termErr != nil {
+		recordFailure(state, item, termErr.Error())
+		return Outcome{Fatal: true, Reason: termErr.Error()}
+	}
 	client, err := state.OVH.IsolatedClientFor(item.AccountID)
 	if err != nil {
 		// 账户不存在 / 凭据缺失 / endpoint 非法 —— 都是重试一万次也不会变的错。
@@ -292,7 +298,7 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 	}()
 
 	// ⚡ 检查预装车池：若后台已提前组装好满配就绪车，直接跳过装车阶段直达 checkout，装车耗时归零！
-	if prewarmed := TakePrewarmedCart(item.AccountID, item.PlanCode, item.Datacenter, effectiveOptions, item.Coupon); prewarmed != nil {
+	if prewarmed := TakePrewarmedCart(item.AccountID, item.PlanCode, item.Datacenter, effectiveOptions, item.Coupon, selectedDuration); prewarmed != nil {
 		cartID = prewarmed.CartID
 		state.Logger.Info(fmt.Sprintf("⚡ 命中预装车池！直接使用预热就绪购物车 %s，装车耗时 0 秒！", cartID), "purchase")
 		tl.mark("预装车就绪")
@@ -318,10 +324,12 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 		// 并发执行：绑定购物车 (assign) + 添加基础商品 (eco)
 		// OVH API 的 /assign 与 /eco 只依赖 cartId，二者并发可节省 1 次网络 RTT (~450ms)
 		state.Logger.Info(fmt.Sprintf("并发执行绑定购物车与加购基础商品 %s (使用 /assign 与 /eco)", item.PlanCode), "purchase")
-		baseDuration, basePricingMode := "P1M", "default"
+		// 月付走零额外请求的快速路径;其他周期在 eco 协程里先查真实 duration/pricingMode。
+		baseDuration, basePricingMode := selectedDuration, "default"
 		var itemResult map[string]interface{}
 		var assignErr error
 		var postBaseErr error
+		termUnavailable := false
 
 		postBase := func(callCtx context.Context) error {
 			return client.PostWithContext(callCtx, "/order/cart/"+cartID+"/eco", map[string]interface{}{
@@ -348,12 +356,21 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 		// 2. eco
 		g2.Go(func() error {
 			state.Logger.Info(fmt.Sprintf("添加基础商品 %s 到购物车 (使用 /eco)", item.PlanCode), "purchase")
+			if selectedDuration != orderterm.Default {
+				d, pm, found := lookupEcoPricing(state, client, cartID, item.PlanCode, selectedDuration)
+				if !found {
+					termUnavailable = true
+					postBaseErr = fmt.Errorf("OVH 不支持 %s 按 %s 购买,请修改任务的购买时长后重试", item.PlanCode, orderterm.Label(selectedDuration))
+					return postBaseErr
+				}
+				baseDuration, basePricingMode = d, pm
+			}
 			if err := postBase(ctx2); err != nil {
 				if ctx2.Err() != nil {
 					postBaseErr = err
 					return err
 				}
-				if d, pm, found := lookupEcoPricing(state, client, cartID, item.PlanCode); found &&
+				if d, pm, found := lookupEcoPricing(state, client, cartID, item.PlanCode, selectedDuration); found &&
 					(d != baseDuration || pm != basePricingMode) {
 					state.Logger.Warn(fmt.Sprintf("以 %s/%s 加购 %s 失败(%s)，改用目录计价 %s/%s 重试",
 						baseDuration, basePricingMode, item.PlanCode, err.Error(), d, pm), "purchase")
@@ -371,6 +388,15 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 		if err := g2.Wait(); err != nil {
 			if ctx.Err() != nil {
 				return cancelledOutcome(state, item, "建车加购")
+			}
+			// 必须排在 assignErr 之前:eco 协程判定周期不可买后,errgroup 会取消并行的
+			// assign,那个 "context canceled" 不是真正的失败原因 —— 先看它就会把确定性失败
+			// 当成可重试错误,任务按 retryInterval 永远重试。
+			if termUnavailable {
+				// 目录里没有这个周期:重试多少轮都一样,直接判死,别反复建车
+				state.Logger.Error(postBaseErr.Error(), "purchase")
+				recordFailure(state, item, postBaseErr.Error())
+				return Outcome{Fatal: true, Reason: postBaseErr.Error()}
 			}
 			if assignErr != nil {
 				errMsg := assignErr.Error()
@@ -503,7 +529,13 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 					if matchedPC != wanted {
 						state.Logger.Info(fmt.Sprintf("硬件选项 %s 按「%s」匹配到 Eco 选项 %s", wanted, tier, matchedPC), "purchase")
 					}
-					duration, pricingMode := pickPricing(matchedOpt["prices"], baseDuration)
+					duration, pricingMode, valid := pickPricing(matchedOpt["prices"], baseDuration, basePricingMode)
+					if !valid {
+						errMsg := fmt.Sprintf("硬件选项 %s 不支持购买时长 %s,已取消下单", matchedPC, orderterm.Label(baseDuration))
+						state.Logger.Error(errMsg, "purchase")
+						recordFailure(state, item, errMsg)
+						return Outcome{Fatal: true, Reason: errMsg}
+					}
 					todo = append(todo, addonPayload{
 						planCode: matchedPC,
 						body: map[string]interface{}{
@@ -950,14 +982,21 @@ func preorderFQNCoversOptions(fqn string, opts []string, planCode ...string) boo
 // 先按"rental+renew"挑等于取数组里碰巧的第一条，跟主商品 duration 无关；
 // 一旦挑中不同 duration，OVH 直接拒这个 addon，而两处 addon POST 都是 fail-fast
 // （抢购整单取消 / 询价 success:false），代价远大于"少续了一档"。
-func pickPricing(pricesRaw interface{}, preferDuration string) (string, string) {
-	// 只在同一购买周期内挑计价(移植上游 v0.4.16 orderterm.Pick):绝不换成别的周期。
-	// 以前同周期没有就退而求其次,可能让月付主机挂上年付配件,或把整单换成年付。
-	// 目录里没有该周期时原样发出,由 OVH 明确拒绝,而不是悄悄换周期下单。
-	if d, pm, ok := orderterm.Pick(pricesRaw, preferDuration, ""); ok {
-		return d, pm
+func pickPricing(pricesRaw interface{}, duration, preferredMode string) (string, string, bool) {
+	// 只在同一购买周期内挑计价(上游 orderterm.Pick):绝不换成别的周期,
+	// 否则月付主机会挂上年付配件,或整单被悄悄换成年付。
+	if d, pm, ok := orderterm.Pick(pricesRaw, duration, preferredMode); ok {
+		return d, pm, true
 	}
-	return preferDuration, "default"
+	// 选项根本没给价格表:没有依据判断,按主商品周期原样发出,由 OVH 校验。
+	// 给了价格表却没有这个周期 = 确定买不到,返回 false 让调用方取消。
+	if list, _ := pricesRaw.([]interface{}); len(list) == 0 {
+		if preferredMode == "" {
+			preferredMode = "default"
+		}
+		return duration, preferredMode, true
+	}
+	return "", "", false
 }
 
 func hasCapacity(raw interface{}, want string) bool {
@@ -973,7 +1012,8 @@ func hasCapacity(raw interface{}, want string) bool {
 // lookupEcoPricing 查 GET /order/cart/{cartId}/eco（order.cart.GenericProductDefinition[]）
 // 里某个 planCode 的真实可用计价。只在按 P1M/default 加购被 OVH 拒之后才调，
 // 保证正常月付机型的抢购链路上不会多一次请求。
-func lookupEcoPricing(state *app.State, client *ovhsdk.Client, cartID, planCode string) (string, string, bool) {
+// wanted 是要买的周期:月付只在按 P1M/default 加购被拒后才查,非月付在加购前查。
+func lookupEcoPricing(state *app.State, client *ovhsdk.Client, cartID, planCode, wanted string) (string, string, bool) {
 	var defs []map[string]interface{}
 	if err := client.Get("/order/cart/"+cartID+"/eco", &defs); err != nil {
 		state.Logger.Warn("查询 Eco 计价失败: "+err.Error(), "purchase")
@@ -984,7 +1024,7 @@ func lookupEcoPricing(state *app.State, client *ovhsdk.Client, cartID, planCode 
 			continue
 		}
 		// 只认同一周期(P1M)下的其他计价模式;目录里没有月付就是没有,不能改成年付重试
-		d, pm, ok := orderterm.Pick(def["prices"], orderterm.Default, "")
+		d, pm, ok := orderterm.Pick(def["prices"], wanted, "")
 		return d, pm, ok
 	}
 	state.Logger.Warn("在 Eco 目录里未找到 planCode: "+planCode, "purchase")
@@ -1025,6 +1065,7 @@ func recordSuccess(state *app.State, item *types.QueueItem, orderID, orderURL, e
 		if state.History[i].TaskID == item.ID {
 			state.History[i].Status = "success"
 			state.History[i].AccountID = item.AccountID
+			state.History[i].Duration = item.Duration
 			state.History[i].OrderID = orderID
 			state.History[i].OrderURL = orderURL
 			state.History[i].ErrorMessage = nil
@@ -1047,6 +1088,7 @@ func recordSuccess(state *app.State, item *types.QueueItem, orderID, orderURL, e
 		ID:            uuid.NewString(),
 		TaskID:        item.ID,
 		AccountID:     item.AccountID,
+		Duration:      item.Duration,
 		PlanCode:      item.PlanCode,
 		Datacenter:    item.Datacenter,
 		Options:       item.Options,
@@ -1079,6 +1121,7 @@ func recordFailure(state *app.State, item *types.QueueItem, errMsg string) {
 		if state.History[i].TaskID == item.ID {
 			state.History[i].Status = "failed"
 			state.History[i].AccountID = item.AccountID
+			state.History[i].Duration = item.Duration
 			state.History[i].OrderID = ""
 			state.History[i].OrderURL = ""
 			em := errMsg
@@ -1095,6 +1138,7 @@ func recordFailure(state *app.State, item *types.QueueItem, errMsg string) {
 		ID:           uuid.NewString(),
 		TaskID:       item.ID,
 		AccountID:    item.AccountID,
+		Duration:     item.Duration,
 		PlanCode:     item.PlanCode,
 		Datacenter:   item.Datacenter,
 		Options:      item.Options,

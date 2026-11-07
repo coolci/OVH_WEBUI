@@ -18,7 +18,7 @@ func TestSubscriptionIdentityByOptions(t *testing.T) {
 	st := app.NewState(storage.Paths{LogsDir: filepath.Join(dir, "logs")}, nil, logger.New(filepath.Join(dir, "logs.json"), nil), nil)
 	m := New(st)
 
-	m.AddSubscription("26sk50a-v1", nil, true, false, "SK-A", nil, nil, false, 0, "", false, nil)          // 盯全部
+	m.AddSubscription("26sk50a-v1", nil, true, false, "SK-A", nil, nil, false, 0, "", false, nil) // 盯全部
 	m.AddSubscription("26sk50a-v1", []string{"ram-32g-ecc-1333"}, true, false, "SK-A", nil, nil, false, 0, "", false, []string{"ram-32g-ecc-1333"})
 	m.AddSubscription("26sk50a-v1", []string{"ram-64g-ecc-1333"}, true, false, "SK-A", nil, nil, false, 0, "", false, []string{"ram-64g-ecc-1333"})
 

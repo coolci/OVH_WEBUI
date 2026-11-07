@@ -123,7 +123,7 @@ func TestPrewarmOrderAPI(t *testing.T) {
 	deadline := time.Now().Add(3 * time.Second)
 	found := false
 	for time.Now().Before(deadline) {
-		if purchase.HasPrewarmedCart(accountID, "24sk-api-plan", "gra", nil, "") {
+		if purchase.HasPrewarmedCart(accountID, "24sk-api-plan", "gra", nil, "", "") {
 			found = true
 			break
 		}

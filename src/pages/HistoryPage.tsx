@@ -31,6 +31,7 @@ import {
   type PurchaseHistory,
 } from "@/hooks/use-history";
 import { cn } from "@/lib/utils";
+import { OrderDurationBadge } from "@/components/orders/OrderDurationField";
 
 /**
  * 订单支付状态 → 标签。取值是 OVH 的 billing.order.OrderStatusEnum,三区一致。
@@ -352,6 +353,7 @@ function HistoryRow({ item, now }: { item: PurchaseHistory; now: number }) {
           {item.planCode}
           <AccountChip accountId={item.accountId} />
           <TimingChip totalMs={item.totalMs} phases={item.timing} />
+          <OrderDurationBadge value={item.duration} />
           {item.couponWarning && (
             <p className="w-full text-[11px] font-normal text-warning break-words" role="status">
               {item.couponWarning}
@@ -452,6 +454,7 @@ function HistoryCard({ item, now }: { item: PurchaseHistory; now: number }) {
               {item.datacenter.toUpperCase()}
             </Chip>
             <TimingChip totalMs={item.totalMs} phases={item.timing} />
+            <OrderDurationBadge value={item.duration} />
             {item.couponWarning && (
               <p className="w-full text-[11px] font-normal text-warning break-words" role="status">
                 {item.couponWarning}

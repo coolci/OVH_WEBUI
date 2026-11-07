@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/ovh-webui/server/internal/app"
+	"github.com/ovh-webui/server/internal/orderterm"
 	"github.com/ovh-webui/server/internal/purchase"
 )
 
@@ -71,6 +72,7 @@ func PrewarmOrder(state *app.State) gin.HandlerFunc {
 			Datacenter string   `json:"datacenter"`
 			Options    []string `json:"options"`
 			Coupon     string   `json:"coupon"`
+			Duration   string   `json:"duration"`
 		}
 		if err := bindOrderJSON(c, &req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "无效的预热参数: " + err.Error()})
@@ -78,6 +80,11 @@ func PrewarmOrder(state *app.State) gin.HandlerFunc {
 		}
 		if req.PlanCode == "" || req.Datacenter == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "planCode 和 datacenter 必填"})
+			return
+		}
+		duration, termErr := orderterm.Normalize(req.Duration)
+		if termErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": termErr.Error()})
 			return
 		}
 		acc, ok := state.FindAccount(req.AccountID)
@@ -88,7 +95,7 @@ func PrewarmOrder(state *app.State) gin.HandlerFunc {
 		accountID := acc.ID
 
 		// 若池中已就绪，直接返回
-		if purchase.HasPrewarmedCart(accountID, req.PlanCode, req.Datacenter, req.Options, req.Coupon) {
+		if purchase.HasPrewarmedCart(accountID, req.PlanCode, req.Datacenter, req.Options, req.Coupon, duration) {
 			c.JSON(http.StatusOK, gin.H{
 				"success": true,
 				"ready":   true,
@@ -101,7 +108,7 @@ func PrewarmOrder(state *app.State) gin.HandlerFunc {
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 			defer cancel()
-			_, _ = purchase.AssemblePrewarmedCart(ctx, state, accountID, req.PlanCode, req.Datacenter, req.Options, req.Coupon)
+			_, _ = purchase.AssemblePrewarmedCart(ctx, state, accountID, req.PlanCode, req.Datacenter, req.Options, req.Coupon, duration)
 		}()
 
 		c.JSON(http.StatusOK, gin.H{

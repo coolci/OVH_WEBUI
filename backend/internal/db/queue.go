@@ -32,6 +32,7 @@ type queueRow struct {
 	ForceOrder         int     `db:"force_order"`
 	Preorder           int     `db:"preorder"`
 	Coupon             string  `db:"coupon"`
+	Duration           string  `db:"duration"`
 }
 
 func rowToQueueItem(r queueRow) (types.QueueItem, error) {
@@ -68,6 +69,7 @@ func rowToQueueItem(r queueRow) (types.QueueItem, error) {
 		Force:              r.ForceOrder == 1,
 		Preorder:           r.Preorder == 1,
 		Coupon:             r.Coupon,
+		Duration:           r.Duration,
 	}, nil
 }
 
@@ -109,6 +111,7 @@ func queueItemToRow(q types.QueueItem) (queueRow, error) {
 		ForceOrder:         bi(q.Force),
 		Preorder:           bi(q.Preorder),
 		Coupon:             q.Coupon,
+		Duration:           q.Duration,
 	}, nil
 }
 
@@ -150,12 +153,12 @@ func (db *DB) ReplaceQueue(items []types.QueueItem) error {
 			(id, account_id, plan_code, datacenter, options, status, created_at, updated_at,
 			 retry_interval, retry_count, failure_count, max_retries, last_check_time,
 			 quick_order, priority, from_telegram, config_sniper_task_id, auto_pay,
-			 telegram_chat_id, telegram_message_id, force_order, preorder, coupon)
+			 telegram_chat_id, telegram_message_id, force_order, preorder, coupon, duration)
 			VALUES
 			(:id, :account_id, :plan_code, :datacenter, :options, :status, :created_at, :updated_at,
 			 :retry_interval, :retry_count, :failure_count, :max_retries, :last_check_time,
 			 :quick_order, :priority, :from_telegram, :config_sniper_task_id, :auto_pay,
-			 :telegram_chat_id, :telegram_message_id, :force_order, :preorder, :coupon)
+			 :telegram_chat_id, :telegram_message_id, :force_order, :preorder, :coupon, :duration)
 		`, r)
 		if err != nil {
 			return fmt.Errorf("insert queue %s: %w", q.ID, err)

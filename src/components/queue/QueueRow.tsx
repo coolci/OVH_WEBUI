@@ -7,6 +7,7 @@ import { AccountChip } from "@/components/common/AccountChip";
 import { IntervalEditor } from "./IntervalEditor";
 import { describeOptionCodes } from "@/lib/option-groups";
 import type { QueueItem } from "@/hooks/use-queue";
+import { OrderDurationBadge } from "@/components/orders/OrderDurationField";
 
 interface QueueRowProps {
   item: QueueItem;
@@ -69,6 +70,7 @@ export function QueueRow({ item, onToggle, onDelete, onEdit }: QueueRowProps) {
             {item.quickOrder && (
               <Chip tone="default">极速抢购</Chip>
             )}
+            <OrderDurationBadge value={item.duration} />
             {item.autoPay && (
               <Chip tone="default">自动扣款</Chip>
             )}

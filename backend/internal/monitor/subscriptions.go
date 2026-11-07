@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/ovh-webui/server/internal/app"
+	"github.com/ovh-webui/server/internal/orderterm"
 	"sort"
 	"strings"
 	"time"
@@ -471,6 +472,7 @@ func (m *Monitor) SubscriptionConfig(planCode string, optionsKey ...string) Subs
 			AutoOrderAccountID:  s.AutoOrderAccountID,
 			AutoOrderAccountIDs: cloneAccountIDs(s.AutoOrderAccountIDs),
 			AutoPay:             s.AutoPay,
+			Duration:            s.Duration,
 			Options:             append([]string(nil), s.Options...),
 		}
 		s.mu.Unlock()
@@ -491,8 +493,45 @@ type SubscriptionConfig struct {
 	AutoOrderAccountID  string
 	AutoOrderAccountIDs []string
 	AutoPay             bool
+	// Duration 自动下单的购买时长;空 = 1 个月
+	Duration string
 	// Options 只盯这套配置。空 = 全部配置。
 	Options []string
+}
+
+// SetSubscriptionDuration 设置订阅自动下单的购买时长(按型号 + 配置键定位)。
+// 单独成一个方法,而不是再给 AddSubscription 加一个位置参数:那个签名已经被
+// 网页、TG、批量添加多处调用,TG 路径不设时长就保持原值(新订阅为 1 个月)。
+func (m *Monitor) SetSubscriptionDuration(planCode, optionsKey, duration string) error {
+	normalized, err := orderterm.Normalize(duration)
+	if err != nil {
+		return err
+	}
+	m.subsMu.Lock()
+	var target *Subscription
+	for _, s := range m.subscriptions {
+		if s.PlanCode == planCode && OptionsKey(s.Options) == optionsKey {
+			target = s
+			break
+		}
+	}
+	m.subsMu.Unlock()
+	if target == nil {
+		return ErrSubscriptionNotFound
+	}
+	target.mu.Lock()
+	changed := target.Duration != normalized
+	if changed {
+		target.revision++
+		target.Duration = normalized
+	}
+	autoOrder := target.AutoOrder
+	target.mu.Unlock()
+	if changed && autoOrder {
+		// 预热车按时长分键,改了时长要按新时长重新备车
+		go m.TriggerPrewarmForSubscription(target)
+	}
+	return nil
 }
 
 // ClearAccountRefs 把内存订阅里对某账户的引用清掉。

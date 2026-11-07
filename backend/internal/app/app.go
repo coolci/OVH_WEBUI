@@ -15,6 +15,7 @@ import (
 	"github.com/ovh-webui/server/internal/db"
 	"github.com/ovh-webui/server/internal/logger"
 	"github.com/ovh-webui/server/internal/netfp"
+	"github.com/ovh-webui/server/internal/orderterm"
 	"github.com/ovh-webui/server/internal/ovh"
 	"github.com/ovh-webui/server/internal/repository"
 	"github.com/ovh-webui/server/internal/service/account"
@@ -616,6 +617,15 @@ func (s *State) enqueueItems(items []types.QueueItem, prepend, automatic bool) e
 	if len(items) == 0 {
 		return nil
 	}
+	// 购买时长在入队这一个共同入口统一规整:空值落成 P1M,非法值整批拒绝,
+	// 不让各个入口(网页/TG/监控)各自猜默认值。
+	for i := range items {
+		duration, err := orderterm.Normalize(items[i].Duration)
+		if err != nil {
+			return err
+		}
+		items[i].Duration = duration
+	}
 	if err := s.SaveBlocked("queue"); err != nil {
 		return err
 	}
@@ -691,7 +701,16 @@ var ErrQueueNotFound = errors.New("任务不存在")
 var ErrQueueNotEditable = errors.New("请先暂停任务再修改；已完成的任务不能修改")
 
 // UpdateQueueItem 仅编辑暂停/失败任务,落库成功后才发布新配置。
-func (s *State) UpdateQueueItem(id, datacenter string, options []string, retryInterval int, autoPay bool, coupon string) error {
+// duration 为 nil 表示不改购买时长(旧客户端不传该字段)。
+func (s *State) UpdateQueueItem(id, datacenter string, options []string, retryInterval int, autoPay bool, coupon string, duration *string) error {
+	var selectedDuration string
+	if duration != nil {
+		d, err := orderterm.Normalize(*duration)
+		if err != nil {
+			return err
+		}
+		selectedDuration = d
+	}
 	if err := s.SaveBlocked("queue"); err != nil {
 		return err
 	}
@@ -712,6 +731,9 @@ func (s *State) UpdateQueueItem(id, datacenter string, options []string, retryIn
 		next[i].RetryInterval = retryInterval
 		next[i].AutoPay = autoPay
 		next[i].Coupon = coupon
+		if duration != nil {
+			next[i].Duration = selectedDuration
+		}
 		next[i].Status = "paused"
 		next[i].FailureCount = 0
 		next[i].LastCheckTime = 0

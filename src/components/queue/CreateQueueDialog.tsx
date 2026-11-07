@@ -20,6 +20,9 @@ import { parseOptionCodes } from "@/lib/order-inputs";
 import { OptionGroupSection } from "@/components/common/OptionGroupSection";
 import { useServers } from "@/hooks/use-servers";
 import { useCreateQueueItem } from "@/hooks/use-queue";
+import { useOrderDurations } from "@/hooks/use-order-durations";
+import { OrderDurationField } from "@/components/orders/OrderDurationField";
+import { DEFAULT_ORDER_DURATION } from "@/lib/order-duration";
 import { useSettings, RETRY_INTERVAL } from "@/hooks/use-settings";
 import { useAccounts, findAccountByID } from "@/hooks/use-accounts";
 import { useActiveServerControlAccount } from "@/hooks/use-active-account";
@@ -80,6 +83,8 @@ export function CreateQueueDialog({
   const [picked, setPicked] = useState<Partial<Record<OptionGroupKey, string>>>({});
   const [extraInput, setExtraInput] = useState("");
   const [autoPay, setAutoPay] = useState(false);
+  const [duration, setDuration] = useState(DEFAULT_ORDER_DURATION);
+  const durations = useOrderDurations(accountId, planCode, open);
 
   useEffect(() => {
     if (open) {
@@ -166,6 +171,7 @@ export function CreateQueueDialog({
     setExtraInput("");
     setAutoPay(false);
     setCoupon("");
+    setDuration(DEFAULT_ORDER_DURATION);
     prevPlanCodeRef.current = "";
   };
 
@@ -200,6 +206,7 @@ export function CreateQueueDialog({
       options: parsedOptions,
       autoPay,
       coupon: coupon.trim() || undefined,
+      duration,
       // preorder: !!matchedServer?.prerelease, // 预订模式已停用。
       force: isCustom,
     });
@@ -221,6 +228,7 @@ export function CreateQueueDialog({
           options: parsedOptions,
           autoPay,
           coupon: coupon.trim() || undefined,
+          duration,
           // preorder: !!matchedServer?.prerelease, // 预订模式已停用。
           force: true,
         });
@@ -379,6 +387,8 @@ export function CreateQueueDialog({
               </div>
             )}
           </div>
+
+          <OrderDurationField value={duration} onChange={setDuration} query={durations} />
 
           <div>
             <label className="block text-[13px] font-medium mb-1.5">优惠码（可选）</label>

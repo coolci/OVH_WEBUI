@@ -57,6 +57,8 @@ export interface HistoryEntry {
   retractionTime?: string | null;
   errorMessage?: string | null;
   couponWarning?: string | null;
+  /** 购买时长(P1M/P12M...);空 = 1 个月 */
+  duration?: string;
   purchaseTime: string;
   attemptCount?: number;
   timing?: HistoryPhaseTiming[];

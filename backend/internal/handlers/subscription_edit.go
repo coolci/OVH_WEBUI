@@ -8,6 +8,7 @@ import (
 
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/monitor"
+	"github.com/ovh-webui/server/internal/orderterm"
 	"github.com/ovh-webui/server/internal/ovh"
 	"github.com/ovh-webui/server/internal/platform/httperr"
 	"github.com/ovh-webui/server/internal/types"
@@ -50,10 +51,18 @@ func UpdateSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc 
 			AutoPay             *bool     `json:"autoPay"`
 			// Options 只盯这套配置。空数组 = 改回"盯全部配置"。
 			Options *[]string `json:"options"`
+			// Duration 自动下单的购买时长;不传 = 保持原值
+			Duration *string `json:"duration"`
 		}
 		if err := c.ShouldBindJSON(&body); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "请求体格式错误: " + err.Error()})
 			return
+		}
+		if body.Duration != nil {
+			if _, err := orderterm.Normalize(*body.Duration); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": err.Error()})
+				return
+			}
 		}
 
 		// 先取当前值作为默认,再用 body 里给了的字段覆盖
@@ -125,6 +134,12 @@ func UpdateSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc 
 			}
 			c.JSON(status, gin.H{"status": "error", "message": err.Error()})
 			return
+		}
+		if body.Duration != nil {
+			if err := mon.SetSubscriptionDuration(planCode, monitor.OptionsKey(options), *body.Duration); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "设置购买时长失败: " + err.Error()})
+				return
+			}
 		}
 		if err := mon.SaveToDB(); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "本次运行已修改，但未能保存到数据库: " + err.Error()})

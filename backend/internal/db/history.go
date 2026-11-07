@@ -20,6 +20,7 @@ type historyRow struct {
 	OrderURL       string         `db:"order_url"`
 	ErrorMessage   sql.NullString `db:"error_message"`
 	CouponWarning  string         `db:"coupon_warning"`
+	Duration       string         `db:"duration"`
 	PurchaseTime   string         `db:"purchase_time"`
 	AttemptCount   int            `db:"attempt_count"`
 	ExpirationTime string         `db:"expiration_time"`
@@ -68,6 +69,7 @@ func rowToHistory(r historyRow) types.PurchaseHistoryEntry {
 		OrderURL:       r.OrderURL,
 		ErrorMessage:   errMsg,
 		CouponWarning:  r.CouponWarning,
+		Duration:       r.Duration,
 		PurchaseTime:   r.PurchaseTime,
 		AttemptCount:   r.AttemptCount,
 		ExpirationTime: r.ExpirationTime,
@@ -99,6 +101,7 @@ func historyToRow(h types.PurchaseHistoryEntry) (historyRow, error) {
 		OrderID:        h.OrderID,
 		OrderURL:       h.OrderURL,
 		CouponWarning:  h.CouponWarning,
+		Duration:       h.Duration,
 		PurchaseTime:   h.PurchaseTime,
 		AttemptCount:   h.AttemptCount,
 		ExpirationTime: h.ExpirationTime,
@@ -157,11 +160,11 @@ func (db *DB) ReplaceHistory(items []types.PurchaseHistoryEntry) error {
 			INSERT INTO history
 			(id, account_id, task_id, plan_code, datacenter, options, status, order_id, order_url,
 			 error_message, purchase_time, attempt_count, expiration_time, retraction_time, price,
-			 order_status, order_status_at, timing, total_ms, coupon_warning)
+			 order_status, order_status_at, timing, total_ms, coupon_warning, duration)
 			VALUES
 			(:id, :account_id, :task_id, :plan_code, :datacenter, :options, :status, :order_id, :order_url,
 			 :error_message, :purchase_time, :attempt_count, :expiration_time, :retraction_time, :price,
-			 :order_status, :order_status_at, :timing, :total_ms, :coupon_warning)
+			 :order_status, :order_status_at, :timing, :total_ms, :coupon_warning, :duration)
 		`, r)
 		if err != nil {
 			return fmt.Errorf("insert history %s: %w", h.ID, err)

@@ -535,7 +535,7 @@ func TriggerPrewarmForQueueItem(ctx context.Context, state *app.State, item *typ
 	}
 	accountID := acc.ID
 
-	key := prewarmKey(accountID, item.PlanCode, item.Datacenter, item.Options, item.Coupon)
+	key := prewarmKey(accountID, item.PlanCode, item.Datacenter, item.Options, item.Coupon, item.Duration)
 
 	globalQueuePrewarmCoord.mu.Lock()
 	if globalQueuePrewarmCoord.inFlight[key] {
@@ -556,7 +556,7 @@ func TriggerPrewarmForQueueItem(ctx context.Context, state *app.State, item *typ
 			}
 		}
 	}
-	if HasPrewarmedCart(accountID, item.PlanCode, item.Datacenter, item.Options, item.Coupon) {
+	if HasPrewarmedCart(accountID, item.PlanCode, item.Datacenter, item.Options, item.Coupon, item.Duration) {
 		globalQueuePrewarmCoord.mu.Unlock()
 		return
 	}
@@ -578,7 +578,7 @@ func TriggerPrewarmForQueueItem(ctx context.Context, state *app.State, item *typ
 		pwCtx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 		defer cancel()
 
-		cart, err := AssemblePrewarmedCart(pwCtx, state, accountID, item.PlanCode, item.Datacenter, item.Options, item.Coupon)
+		cart, err := AssemblePrewarmedCart(pwCtx, state, accountID, item.PlanCode, item.Datacenter, item.Options, item.Coupon, item.Duration)
 		if err != nil {
 			globalQueuePrewarmCoord.mu.Lock()
 			globalQueuePrewarmCoord.failedCounts[key]++

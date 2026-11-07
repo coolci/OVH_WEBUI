@@ -150,6 +150,13 @@ func (db *DB) migrate() error {
 	if err := db.addColumnIfMissing("monitor_subscriptions", "auto_order_account_ids", "TEXT NOT NULL DEFAULT 'null'"); err != nil {
 		return err
 	}
+	// duration:购买时长(空 = 1 个月,兼容旧数据)。必须排在 migrateMonitorIdentity 之后:
+	// 那一步按固定列重建订阅表,先加的列会被它丢掉。
+	for _, table := range []string{"queue", "history", "monitor_subscriptions"} {
+		if err := db.addColumnIfMissing(table, "duration", "TEXT NOT NULL DEFAULT ''"); err != nil {
+			return err
+		}
+	}
 	if err := db.addColumnIfMissing("vps_subscriptions", "auto_order_account_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}

@@ -351,6 +351,7 @@ func (m *Monitor) batchOrder(planCode string, configInfo map[string]interface{},
 			FromMonitor:        true,
 			SkipDuplicateCheck: true,
 			AutoPay:            autoPay,
+			Duration:           durationFromConfig(configInfo),
 		})
 
 		if res.Success {

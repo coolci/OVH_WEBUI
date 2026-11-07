@@ -34,6 +34,15 @@ func optionsFromConfig(configInfo map[string]interface{}) []string {
 // 账户随 configInfo 走而不是加参数,是为了让 notify.go 里那条"通知时兜底再查一次价格"的
 // 路径也能拿到同一个账户 —— 询价账户决定 endpoint 和 ovhSubsidiary,
 // 用默认账户验价、却用订阅指定账户下单,两边的可售性和币种都可能对不上。
+// durationFromConfig 取订阅的购买时长;空 = 1 个月
+func durationFromConfig(configInfo map[string]interface{}) string {
+	if configInfo == nil {
+		return ""
+	}
+	d, _ := configInfo["duration"].(string)
+	return d
+}
+
 func accountIDFromConfig(configInfo map[string]interface{}) string {
 	if configInfo == nil {
 		return ""
@@ -136,18 +145,20 @@ func formatAmount(currency string, v float64) string {
 func (m *Monitor) verifyPriceAvailable(planCode, datacenter string, configInfo map[string]interface{}) (bool, string) {
 	options := optionsFromConfig(configInfo)
 	accountID := accountIDFromConfig(configInfo)
+	duration := durationFromConfig(configInfo)
 
 	// 预热就绪车直通校验闸门：
 	// 若预热池中已存在该机型与配置的预装车，说明此前已在 OVH 侧完成装车验证，
 	// 直接放行，避免在抢购黄金窗口因现场建车删车询价浪费 3.5s~5.0s 甚至踩 429 导致丢单！
-	if purchase.HasPrewarmedCart(accountID, planCode, datacenter, options, "") {
+	if purchase.HasPrewarmedCart(accountID, planCode, datacenter, options, "", duration) {
 		m.state.Logger.Info(fmt.Sprintf("[monitor/prewarm] %s@%s 命中预热就绪车，跳过二次建车验价直通放行", planCode, datacenter), "monitor")
 		return true, ""
 	}
 
 	// 监控轮询验价: 直接进程内调用带有短 TTL 缓存的 price.GetInternalCached,
 	// 避免 HTTP 回环网络开销与 429 抖动。
-	result := price.GetInternalCached(m.state, accountID, planCode, datacenter, options)
+	// 验价按订阅要买的周期:目录里没有年付的型号,年付订阅不该被判成"可下单"
+	result := price.GetInternalCached(m.state, accountID, planCode, datacenter, options, duration)
 	if !result.Success {
 		errMsg := result.Error
 		if errMsg == "" {
@@ -248,7 +259,8 @@ func (m *Monitor) GetPriceInfoText(planCode, datacenter string, configInfo map[s
 	m.state.Logger.Debug(fmt.Sprintf("开始获取价格(回退购物车询价): plan_code=%s, datacenter=%s, options=%v",
 		planCode, datacenter, options), "monitor")
 
-	result := price.GetInternalCached(m.state, accountID, planCode, datacenter, options)
+	// 通知里展示的是月费,固定按月付询价
+	result := price.GetInternalCached(m.state, accountID, planCode, datacenter, options, "")
 	if !result.Success {
 		m.state.Logger.Warn("价格获取失败: "+result.Error, "monitor")
 		return ""

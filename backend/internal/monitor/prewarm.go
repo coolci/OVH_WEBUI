@@ -23,8 +23,8 @@ var globalPrewarmCoord = &prewarmCoordinator{
 	failedCounts: map[string]int{},
 }
 
-func prewarmCoordKey(accountID, planCode, datacenter string, options []string) string {
-	return fmt.Sprintf("%s|%s|%s|%s", accountID, planCode, strings.ToLower(datacenter), OptionsKey(options))
+func prewarmCoordKey(accountID, planCode, datacenter string, options []string, duration string) string {
+	return fmt.Sprintf("%s|%s|%s|%s|%s", accountID, planCode, strings.ToLower(datacenter), OptionsKey(options), duration)
 }
 
 // ResetPrewarmCoordinator 重置预热协调器状态（供测试与重置使用）
@@ -60,7 +60,7 @@ func (m *Monitor) TriggerPrewarmForSubscription(sub *Subscription) {
 			continue
 		}
 		for _, accountID := range NormalizeOrderAccounts(cfg.AutoOrderAccountID, cfg.AutoOrderAccountIDs) {
-			go m.assemblePrewarmedCartAsync(accountID, planCode, dcTrimmed, options)
+			go m.assemblePrewarmedCartAsync(accountID, planCode, dcTrimmed, options, cfg.Duration)
 		}
 	}
 }
@@ -77,7 +77,7 @@ func (m *Monitor) EnsureAllPrewarmedCarts() {
 	}
 }
 
-func (m *Monitor) assemblePrewarmedCartAsync(accountID, planCode, datacenter string, options []string) {
+func (m *Monitor) assemblePrewarmedCartAsync(accountID, planCode, datacenter string, options []string, duration string) {
 	if m.state == nil || m.state.OVH == nil {
 		return
 	}
@@ -85,7 +85,7 @@ func (m *Monitor) assemblePrewarmedCartAsync(accountID, planCode, datacenter str
 		return
 	}
 
-	key := prewarmCoordKey(accountID, planCode, datacenter, options)
+	key := prewarmCoordKey(accountID, planCode, datacenter, options, duration)
 
 	globalPrewarmCoord.mu.Lock()
 	if globalPrewarmCoord.inFlight[key] {
@@ -108,7 +108,7 @@ func (m *Monitor) assemblePrewarmedCartAsync(accountID, planCode, datacenter str
 		}
 	}
 	// 检查预热池中是否已有有效车
-	if purchase.HasPrewarmedCart(accountID, planCode, datacenter, options, "") {
+	if purchase.HasPrewarmedCart(accountID, planCode, datacenter, options, "", duration) {
 		globalPrewarmCoord.mu.Unlock()
 		return
 	}
@@ -129,7 +129,7 @@ func (m *Monitor) assemblePrewarmedCartAsync(accountID, planCode, datacenter str
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 
-	cart, err := purchase.AssemblePrewarmedCart(ctx, m.state, accountID, planCode, datacenter, options, "")
+	cart, err := purchase.AssemblePrewarmedCart(ctx, m.state, accountID, planCode, datacenter, options, "", duration)
 	if err != nil {
 		globalPrewarmCoord.mu.Lock()
 		globalPrewarmCoord.failedCounts[key]++

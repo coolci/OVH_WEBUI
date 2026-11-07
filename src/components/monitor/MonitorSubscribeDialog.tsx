@@ -1,4 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
+import { useOrderDurations } from "@/hooks/use-order-durations";
+import { OrderDurationField } from "@/components/orders/OrderDurationField";
+import { DEFAULT_ORDER_DURATION, normalizeDuration } from "@/lib/order-duration";
 import { Link } from "react-router-dom";
 import { AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
@@ -93,6 +97,10 @@ export function MonitorSubscribeDialog({
   const [opts, setOpts] = useState<MonitorNotifyOptions>(DEFAULT_MONITOR_OPTIONS);
   const [restrictHw, setRestrictHw] = useState(false);
   const [optionsInput, setOptionsInput] = useState("");
+  const [duration, setDuration] = useState(DEFAULT_ORDER_DURATION);
+  const { t } = useTranslation();
+  // 周期按第一个下单账户查;多账户同区下单时 OVH 给的周期一致,下单前后端仍逐单核验
+  const durations = useOrderDurations(opts.autoOrderAccountIds[0], planCode, open && opts.autoOrder);
 
   const planLocked = mode === "edit" || !!lockPlanCode;
   const matchedServer = useMemo(
@@ -119,6 +127,7 @@ export function MonitorSubscribeDialog({
     accountsInitialized.current = mode === "edit" || monitorAccountIds(initial).length > 0;
     setRestrictHw(!!(initial?.options && initial.options.length > 0));
     setOptionsInput((initial?.options || []).join(", "));
+    setDuration(normalizeDuration(initial?.duration));
     // 只在打开瞬间快照，避免父组件每次 render 把正在改的表单冲掉
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -166,6 +175,8 @@ export function MonitorSubscribeDialog({
       autoOrderAccountIds: opts.autoOrder ? opts.autoOrderAccountIds : [],
       autoOrderAccountId: opts.autoOrder ? opts.autoOrderAccountIds[0] || "" : "",
       autoPay: opts.autoOrder ? opts.autoPay : false,
+      // 只在自动下单时提交;关掉自动下单不冲掉已保存的时长
+      duration: opts.autoOrder ? duration : undefined,
     };
 
     const pending = mode === "edit" ? update : create;
@@ -300,6 +311,9 @@ export function MonitorSubscribeDialog({
                 next.autoOrderAccountIds, (accountsQ.data || []).map((account) => account.id)),
             }));
           }} />
+          {opts.autoOrder && (
+            <OrderDurationField value={duration} onChange={setDuration} query={durations} hint={t("orderDuration.monitorHint")} />
+          )}
           </div>
 
           <DialogFooter className="pt-3">

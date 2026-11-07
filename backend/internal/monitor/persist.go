@@ -57,6 +57,7 @@ func toDBSub(s *Subscription) types.Subscription {
 		AutoOrderAccountID:  s.AutoOrderAccountID,
 		AutoOrderAccountIDs: cloneAccountIDs(s.AutoOrderAccountIDs),
 		AutoPay:             s.AutoPay,
+		Duration:            s.Duration,
 		Paused:              s.Paused,
 		Options:             s.Options,
 	}
@@ -96,6 +97,7 @@ func fromDBSub(s types.Subscription) *Subscription {
 		AutoOrderAccountID:  s.AutoOrderAccountID,
 		AutoOrderAccountIDs: cloneAccountIDs(s.AutoOrderAccountIDs),
 		AutoPay:             s.AutoPay,
+		Duration:            s.Duration,
 		Paused:              s.Paused,
 		Options:             s.Options,
 	}

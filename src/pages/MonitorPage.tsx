@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/dialog";
 import { describeOptionCodes } from "@/lib/option-groups";
 import { toast } from "sonner";
+import { OrderDurationBadge } from "@/components/orders/OrderDurationField";
 import {
   useMonitorList,
   useMonitorStatus,
@@ -342,6 +343,7 @@ function SubRow({
                     自动下单
                     {` · ${orderAccountIds.length} 个账户 · 每账户 ×${sub.quantity || 1}`}
                   </Chip>
+                  <OrderDurationBadge value={sub.duration} />
                   <span className="text-[11px] text-muted-foreground">→</span>
                   {orderAccountIds.map((accountId) => <AccountChip key={accountId} accountId={accountId} />)}
                 </>

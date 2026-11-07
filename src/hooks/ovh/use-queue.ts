@@ -32,6 +32,8 @@ export interface QueueItem {
   fromTelegram?: boolean;
   configSniperTaskId?: string;
   coupon?: string;
+  /** 购买时长(P1M/P12M...);空 = 1 个月 */
+  duration?: string;
   preorder?: boolean;
   /** 已下单(completed)任务对应的 OVH 订单号,由 GET /api/queue 从购买历史补上 */
   orderId?: string;
@@ -98,6 +100,8 @@ export function useCreateQueueItem() {
       force?: boolean;
       preorder?: boolean;
       coupon?: string;
+      /** 购买时长(P1M/P12M...),不传 = 1 个月 */
+      duration?: string;
     }) => {
       const dcs = payload.datacenters;
       // 上界以前完全没有:填 9999 × 5 个机房 = 近 5 万次串行 POST。
@@ -133,6 +137,7 @@ export function useCreateQueueItem() {
               force: payload.force ?? false,
               // preorder: payload.preorder ?? false, // 预订模式已停用，不发送此开关。
               coupon: payload.coupon?.trim() || undefined,
+              duration: payload.duration || undefined,
             });
             success++;
           } catch (e: any) {
@@ -157,7 +162,7 @@ export function useCreateQueueItem() {
 export function useUpdateQueueItem() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, ...patch }: { id: string; datacenter: string; options: string[]; retryInterval: number; autoPay: boolean; coupon: string }) =>
+    mutationFn: async ({ id, ...patch }: { id: string; datacenter: string; options: string[]; retryInterval: number; autoPay: boolean; coupon: string; duration?: string }) =>
       (await api.put(`/queue/${encodeURIComponent(id)}`, patch)).data,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.queue.list() });
