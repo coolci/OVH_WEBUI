@@ -34,6 +34,9 @@ export interface QueueItem {
   coupon?: string;
   /** 购买时长(P1M/P12M...);空 = 1 个月 */
   duration?: string;
+  /** 结账超时且对账未能确认:任务已暂停,恢复运行时后端会先对账,不会直接再下一单 */
+  uncertainCheckout?: boolean;
+  uncertainTime?: string;
   preorder?: boolean;
   /** 已下单(completed)任务对应的 OVH 订单号,由 GET /api/queue 从购买历史补上 */
   orderId?: string;

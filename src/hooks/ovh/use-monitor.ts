@@ -32,6 +32,10 @@ export interface MonitorSubscription {
   lastStatus: Record<string, string>;
   createdAt: string;
   paused?: boolean;
+  /** 最近一次库存查询时间(后端运行时字段,重启后首轮检查前为空) */
+  lastCheckAt?: string;
+  /** 非空 = 最近一轮查询有问题(区域错配 / 等待销售目录收录 / 拿不到数据),中文说明 */
+  lastCheckError?: string;
 }
 
 export interface MonitorStatus {

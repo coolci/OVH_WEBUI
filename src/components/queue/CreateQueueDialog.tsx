@@ -86,6 +86,10 @@ export function CreateQueueDialog({
   const [autoPay, setAutoPay] = useState(false);
   const [duration, setDuration] = useState(DEFAULT_ORDER_DURATION);
   const durations = useOrderDurations(accountId, planCode, open);
+  // 换了型号就回到 1 个月:上一个型号选的周期不一定适用于这个型号,不能悄悄带过去
+  useEffect(() => {
+    setDuration(DEFAULT_ORDER_DURATION);
+  }, [planCode]);
 
   useEffect(() => {
     if (open) {

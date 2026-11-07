@@ -91,6 +91,10 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
   const [autoPay, setAutoPay] = useState(false);
   const [coupon, setCoupon] = useState("");
   const [duration, setDuration] = useState(DEFAULT_ORDER_DURATION);
+  // 换了型号就回到 1 个月:上一个型号选的周期不一定适用于这个型号,不能悄悄带过去
+  useEffect(() => {
+    setDuration(DEFAULT_ORDER_DURATION);
+  }, [planCode]);
 
   // 并入只在库存出现的 Eco 型号(prerelease),输入这类型号时按预订任务创建
   const servers = useMemo(() => mergeStockPlans(serversQ.data || [], availQ.data), [serversQ.data, availQ.data]);

@@ -101,6 +101,13 @@ export function MonitorSubscribeDialog({
   const { t } = useTranslation();
   // 周期按第一个下单账户查;多账户同区下单时 OVH 给的周期一致,下单前后端仍逐单核验
   const durations = useOrderDurations(opts.autoOrderAccountIds[0], planCode, open && opts.autoOrder);
+  // 新建时换了型号就回到 1 个月;编辑时型号锁定,不会触发
+  const lastPlanRef = useRef("");
+  useEffect(() => {
+    const code = planCode.trim();
+    if (lastPlanRef.current && code !== lastPlanRef.current) setDuration(DEFAULT_ORDER_DURATION);
+    lastPlanRef.current = code;
+  }, [planCode]);
 
   const planLocked = mode === "edit" || !!lockPlanCode;
   const matchedServer = useMemo(
@@ -128,6 +135,8 @@ export function MonitorSubscribeDialog({
     setRestrictHw(!!(initial?.options && initial.options.length > 0));
     setOptionsInput((initial?.options || []).join(", "));
     setDuration(normalizeDuration(initial?.duration));
+    // 打开时的型号就是基准,不算"换型号",否则会把刚载入的已保存时长冲掉
+    lastPlanRef.current = (initial?.planCode || planCodeProp || "").trim();
     // 只在打开瞬间快照，避免父组件每次 render 把正在改的表单冲掉
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);

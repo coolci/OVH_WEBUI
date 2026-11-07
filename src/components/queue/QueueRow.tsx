@@ -56,6 +56,9 @@ export function QueueRow({ item, onToggle, onDelete, onEdit }: QueueRowProps) {
           <div className="flex items-center gap-2 mb-1.5 flex-wrap">
             <span className="font-mono font-semibold text-sm text-foreground tracking-tight">{item.planCode}</span>
             <AccountChip accountId={item.accountId} />
+            {item.uncertainCheckout && (
+              <Chip tone="danger" title="结账超时，无法确认订单是否已创建">结果待核对</Chip>
+            )}
             {item.preorder && (
               <Chip tone="warning" title="预订抢购：按型号、内存、完整硬盘和机房严格匹配，OVH 下单接口开放后自动下单；等待不计失败次数">预订抢购</Chip>
             )}
@@ -97,9 +100,19 @@ export function QueueRow({ item, onToggle, onDelete, onEdit }: QueueRowProps) {
                 )}
               </span>
             )}
+            {item.preorder && item.status === "running" && item.retryInterval > 15 && (
+              <span>（预订最长每 15 秒检查一次）</span>
+            )}
             <span>·</span>
             <span>{new Date(item.createdAt).toLocaleString()}</span>
           </div>
+          {item.uncertainCheckout && (
+            <p role="alert" className="mt-2 rounded-lg border border-destructive/30 bg-destructive/10 px-2.5 py-1.5 text-[11px] leading-relaxed text-destructive">
+              上次结账超时，无法确认订单是否已创建
+              {item.uncertainTime ? `（${new Date(item.uncertainTime).toLocaleString()}）` : ""}。
+              请先到 OVH 订单页查看是否已有未付订单：有就不用恢复；没有再恢复运行——恢复时会先自动核对订单，不会直接再下一单。
+            </p>
+          )}
         </div>
         <div className="flex items-center justify-between sm:justify-end gap-2 flex-shrink-0 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-border/40">
           {chip}

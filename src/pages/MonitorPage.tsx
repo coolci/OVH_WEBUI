@@ -355,6 +355,12 @@ function SubRow({
                 <Chip tone="default">仅跟踪库存</Chip>
               )}
             </div>
+            {/* 检查问题(lastCheckError)已在页首 region_issues 横幅里逐条列出,这里只补最近检查时间 */}
+            {sub.lastCheckAt && (
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                最近检查：{new Date(sub.lastCheckAt).toLocaleString()}
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-1 flex-shrink-0">
             <Button
