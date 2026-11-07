@@ -28,7 +28,7 @@ func TestMonitorLoopOrdersOnlyOnRestock(t *testing.T) {
 
 	var stock atomic.Value
 	stock.Store("available") // 第一轮:已有存量(不算补货)
-	var checks atomic.Int32
+	var checks, singleChecks atomic.Int32
 	orderHost := ""
 	if u, err := url.Parse(ovhsdk.Endpoints["ovh-eu"]); err == nil {
 		orderHost = u.Host
@@ -38,7 +38,15 @@ func TestMonitorLoopOrdersOnlyOnRestock(t *testing.T) {
 		if r.URL.Host == orderHost || r.URL.Hostname() == "127.0.0.1" {
 			return base.RoundTrip(r)
 		}
+		if strings.HasSuffix(r.URL.Path, "/vps/order/rule/datacenter/aggregated") {
+			// 监控循环用聚合接口一次查完
+			checks.Add(1)
+			body := fmt.Sprintf(`{"models":[{"planCode":"vps-auto","datacenters":[{"datacenter":"GRA","code":"eu-west-gra","remoteStorage":false,"status":%q,"linuxStatus":%q}]}]}`,
+				stock.Load(), stock.Load())
+			return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+		}
 		if strings.Contains(r.URL.Path, "/vps/order/rule/datacenter") {
+			singleChecks.Add(1)
 			checks.Add(1)
 			body := fmt.Sprintf(`{"datacenters":[{"datacenter":"GRA","code":"eu-west-gra","status":%q,"linuxStatus":%q}]}`,
 				stock.Load(), stock.Load())
@@ -100,6 +108,9 @@ func TestMonitorLoopOrdersOnlyOnRestock(t *testing.T) {
 	}
 	if persistedSub(t, state, sub.ID).AutoOrder {
 		t.Fatal("auto-order must be off after the order")
+	}
+	if singleChecks.Load() != 0 {
+		t.Fatalf("the loop must use the aggregated stock request, per-model requests made: %d", singleChecks.Load())
 	}
 }
 

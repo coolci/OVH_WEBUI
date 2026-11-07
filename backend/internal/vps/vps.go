@@ -487,6 +487,7 @@ func monitorLoopGen(state *app.State, gen int64) {
 
 		if len(subs) > 0 {
 			state.Logger.Info(fmt.Sprintf("开始检查 %d 个VPS订阅...", len(subs)), "vps_monitor")
+			prefetched := prefetchAggregated(state, subs)
 			for idx := range subs {
 				isRunning = stillMine(gen)
 				if !isRunning {
@@ -499,10 +500,14 @@ func monitorLoopGen(state *app.State, gen int64) {
 				if ovhSub == "" {
 					ovhSub = DefaultSubsidiary(state, sub.AutoOrderAccountID)
 				}
-				currentData, err := checkVPSDCAvailabilityOS(state, sub.PlanCode, ovhSub, sub.OS, sub.AutoOrderAccountID)
-				if err != nil {
-					logCheckFailure(state, sub.ID, sub.PlanCode, ovhSub, err)
-					continue
+				currentData, fromAggregate := prefetched[aggregatedKey{ovhSub, sub.AutoOrderAccountID, strings.TrimSpace(sub.PlanCode)}]
+				if !fromAggregate {
+					var err error
+					currentData, err = checkVPSDCAvailabilityOS(state, sub.PlanCode, ovhSub, sub.OS, sub.AutoOrderAccountID)
+					if err != nil {
+						logCheckFailure(state, sub.ID, sub.PlanCode, ovhSub, err)
+						continue
+					}
 				}
 				clearCheckFailure(sub.ID)
 				dcsRaw, _ := currentData["datacenters"].([]interface{})
@@ -664,7 +669,10 @@ func monitorLoopGen(state *app.State, gen int64) {
 				if len(sub.History) > 100 {
 					sub.History = sub.History[len(sub.History)-100:]
 				}
-				time.Sleep(time.Second)
+				// 逐个查询之间留 1 秒,避免连发打进限流;聚合结果已在手,不必等
+				if !fromAggregate {
+					time.Sleep(time.Second)
+				}
 			}
 			// 按 ID 合并写回：保留循环中对 LastStatus/History 的更新，不覆盖循环期间用户新增/删除的订阅
 			state.VPSSubsMu.Lock()

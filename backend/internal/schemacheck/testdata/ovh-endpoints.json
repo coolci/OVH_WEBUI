@@ -2529,6 +2529,32 @@
       ]
     }
   },
+  "GET /vps/order/rule/datacenter/aggregated": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "vps.order.rule.AggregatedDatacenters",
+      "params": [
+        "query:ovhSubsidiary:nichandle.OvhSubsidiaryEnum:true",
+        "query:planCodes:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "vps.order.rule.AggregatedDatacenters",
+      "params": [
+        "query:ovhSubsidiary:nichandle.OvhSubsidiaryEnum:true",
+        "query:planCodes:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "vps.order.rule.AggregatedDatacenters",
+      "params": [
+        "query:ovhSubsidiary:nichandle.OvhSubsidiaryEnum:true",
+        "query:planCodes:string:true"
+      ]
+    }
+  },
   "GET /vps/{serviceName}": {
     "CA": {
       "status": "PRODUCTION",
