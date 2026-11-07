@@ -26,20 +26,33 @@ type monitorSubRow struct {
 	OptionsJSON             string `db:"options"`
 }
 
-func rowToMonitorSub(r monitorSubRow) types.Subscription {
+func rowToMonitorSub(r monitorSubRow) (types.Subscription, error) {
 	var dcs []string
-	_ = json.Unmarshal([]byte(r.DatacentersJSON), &dcs)
+	if err := decodeJSONColumn(r.DatacentersJSON, &dcs, "monitor "+r.PlanCode+" datacenters"); err != nil {
+		return types.Subscription{}, err
+	}
 	if dcs == nil {
 		dcs = []string{}
 	}
 	last := map[string]string{}
-	_ = json.Unmarshal([]byte(r.LastStatusJSON), &last)
+	if err := decodeJSONColumn(r.LastStatusJSON, &last, "monitor "+r.PlanCode+" last_status"); err != nil {
+		return types.Subscription{}, err
+	}
+	if last == nil {
+		last = map[string]string{}
+	}
 	hist := []types.SubscriptionHistoryEntry{}
-	_ = json.Unmarshal([]byte(r.HistoryJSON), &hist)
+	if err := decodeJSONColumn(r.HistoryJSON, &hist, "monitor "+r.PlanCode+" history"); err != nil {
+		return types.Subscription{}, err
+	}
 	var opts []string
-	_ = json.Unmarshal([]byte(r.OptionsJSON), &opts)
+	if err := decodeJSONColumn(r.OptionsJSON, &opts, "monitor "+r.PlanCode+" options"); err != nil {
+		return types.Subscription{}, err
+	}
 	var accountIDs []string
-	_ = json.Unmarshal([]byte(r.AutoOrderAccountIDsJSON), &accountIDs)
+	if err := decodeJSONColumn(r.AutoOrderAccountIDsJSON, &accountIDs, "monitor "+r.PlanCode+" auto_order_account_ids"); err != nil {
+		return types.Subscription{}, err
+	}
 	return types.Subscription{
 		PlanCode:            r.PlanCode,
 		Datacenters:         dcs,
@@ -56,7 +69,7 @@ func rowToMonitorSub(r monitorSubRow) types.Subscription {
 		AutoPay:             r.AutoPay == 1,
 		Paused:              r.Paused == 1,
 		Options:             opts,
-	}
+	}, nil
 }
 
 func monitorSubToRow(s types.Subscription) (monitorSubRow, error) {
@@ -127,7 +140,11 @@ func (db *DB) ListMonitorSubscriptions() ([]types.Subscription, error) {
 	}
 	out := make([]types.Subscription, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, rowToMonitorSub(r))
+		item, err := rowToMonitorSub(r)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, item)
 	}
 	return out, nil
 }
@@ -254,7 +271,11 @@ func (db *DB) migrateMonitorIdentity() error {
 		return err
 	}
 	for _, old := range rows {
-		normalized, e := monitorSubToRow(rowToMonitorSub(old))
+		item, e := rowToMonitorSub(old)
+		if e != nil {
+			return e
+		}
+		normalized, e := monitorSubToRow(item)
 		if e != nil {
 			return e
 		}

@@ -10,6 +10,7 @@ import (
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/catalog"
 	"github.com/ovh-webui/server/internal/numconv"
+	"github.com/ovh-webui/server/internal/orderterm"
 	"github.com/ovh-webui/server/internal/ovh"
 	"github.com/ovh-webui/server/internal/types"
 	"sort"
@@ -492,48 +493,13 @@ func pickAllowedRegion(allowed []string, prefer string) string {
 // (整次询价 success:false),代价远大于"少续了一档"。
 // 与 purchase.go 的 pickPricing 必须保持同一份逻辑。
 func pickPricing(pricesRaw interface{}, preferDuration string) (string, string) {
-	list, _ := pricesRaw.([]interface{})
-	type cand struct{ duration, pricingMode string }
-	var sameDurRenew, sameDur, anyRenew, first *cand
-	for _, pRaw := range list {
-		p, ok := pRaw.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		d, _ := p["duration"].(string)
-		pm, _ := p["pricingMode"].(string)
-		if d == "" || pm == "" {
-			continue
-		}
-		c := &cand{duration: d, pricingMode: pm}
-		pt, _ := p["pricingType"].(string)
-		isRenew := pt == "rental" && hasCapacity(p["capacities"], "renew")
-		if first == nil {
-			first = c
-		}
-		if isRenew && anyRenew == nil {
-			anyRenew = c
-		}
-		if d == preferDuration {
-			if sameDur == nil {
-				sameDur = c
-			}
-			if isRenew && sameDurRenew == nil {
-				sameDurRenew = c
-			}
-		}
+	// 只在同一购买周期内挑计价(移植上游 v0.4.16 orderterm.Pick):绝不换成别的周期。
+	// 以前同周期没有就退而求其次,可能让月付主机挂上年付配件,或把整单换成年付。
+	// 目录里没有该周期时原样发出,由 OVH 明确拒绝,而不是悄悄换周期下单。
+	if d, pm, ok := orderterm.Pick(pricesRaw, preferDuration, ""); ok {
+		return d, pm
 	}
-	switch {
-	case sameDurRenew != nil:
-		return sameDurRenew.duration, sameDurRenew.pricingMode
-	case sameDur != nil:
-		return sameDur.duration, sameDur.pricingMode
-	case anyRenew != nil:
-		return anyRenew.duration, anyRenew.pricingMode
-	case first != nil:
-		return first.duration, first.pricingMode
-	}
-	return "P1M", "default"
+	return preferDuration, "default"
 }
 
 // filterHardwareOptions 剔除许可证 / OS / 控制面板类选项,只留真正决定机器配置的 addon。
@@ -588,8 +554,9 @@ func lookupEcoPricing(state *app.State, client *ovhsdk.Client, cartID, planCode,
 		if pc, _ := def["planCode"].(string); pc != planCode {
 			continue
 		}
-		d, pm := pickPricing(def["prices"], preferDuration)
-		return d, pm, true
+		// 只认同一周期下的其他计价模式;没有该周期就是买不到,不能换周期重试
+		d, pm, ok := orderterm.Pick(def["prices"], preferDuration, "")
+		return d, pm, ok
 	}
 	state.Logger.Warn("在 Eco 目录里未找到 planCode: "+planCode, "price")
 	return "", "", false

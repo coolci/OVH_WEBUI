@@ -12,6 +12,7 @@ import (
 	"github.com/joho/godotenv"
 
 	"github.com/ovh-webui/server/internal/app"
+	"github.com/ovh-webui/server/internal/auth"
 	"github.com/ovh-webui/server/internal/config"
 	"github.com/ovh-webui/server/internal/db"
 	"github.com/ovh-webui/server/internal/handlers"
@@ -84,12 +85,20 @@ func main() {
 	lg := logger.New(paths.LogFile("app.log.json"), console)
 	cfgStore := config.New(sqliteDB)
 	state := app.NewState(paths, cfgStore, lg, sqliteDB)
-	state.APIKey = os.Getenv("API_SECRET_KEY")
-	usingDefaultAPIKey := false
-	if state.APIKey == "" {
-		state.APIKey = "123456"
-		usingDefaultAPIKey = true
+	// 没配置 API_SECRET_KEY 时生成随机密钥并持久化到数据目录(.api-secret,0600),
+	// 不再退回固定的 123456 —— 那等于任何能访问端口的人都能用你的 OVH 账户下单、重装。
+	// 密钥文件读写失败时停止启动,绝不退回弱密钥。
+	apiKey, generatedAPIKey, err := auth.ResolveAPIKey(paths.DataDir, os.Getenv("API_SECRET_KEY"))
+	if err != nil {
+		console.Error("无法安全初始化 API 密钥,已停止启动", "err", err)
+		os.Exit(1)
 	}
+	state.APIKey = apiKey
+	if generatedAPIKey {
+		console.Info("已生成随机 API 密钥,请从数据目录的 .api-secret 文件读取后登录", "dataDir", paths.DataDir)
+	}
+	// 显式配置成 123456 仍然告警
+	usingDefaultAPIKey := apiKey == "123456"
 	state.Port = os.Getenv("PORT")
 	if state.Port == "" {
 		state.Port = "19998"

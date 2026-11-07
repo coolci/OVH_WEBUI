@@ -1,6 +1,7 @@
 package app
 
 import (
+	"database/sql"
 	"errors"
 	"strings"
 
@@ -119,6 +120,60 @@ func (s *State) MutateQueueItem(id string, fn func(*types.QueueItem)) (types.Que
 		return types.QueueItem{}, false, nil
 	}
 	return out, true, s.SaveQueue()
+}
+
+// ErrQueueAlreadyOrdered 已下单(completed)的任务不能再恢复运行,否则就是再买一台。
+var ErrQueueAlreadyOrdered = errors.New("该任务已下单,不能再次启动。如需再买,请新建任务。")
+
+// ResumeQueueItem 把暂停/失败的任务恢复成 running 或 pending:先在一个事务里落库
+// (状态 + 自动建单许可),成功后才发布到内存队列;落库失败时任务保持原状态。
+//
+// 从暂停/失败恢复时清零重试计时;从 failed 恢复时清零失败计数(否则立刻又撞上限)。
+func (s *State) ResumeQueueItem(id, status string) (types.QueueItem, error) {
+	if status != "running" && status != "pending" {
+		return types.QueueItem{}, errors.New("无效的恢复状态")
+	}
+	if err := s.SaveBlocked("queue"); err != nil {
+		return types.QueueItem{}, err
+	}
+	if s.DB == nil {
+		return types.QueueItem{}, errors.New("数据库不可用,不能恢复任务")
+	}
+	s.saveQueueMu.Lock()
+	defer s.saveQueueMu.Unlock()
+	s.QueueMu.Lock()
+	defer s.QueueMu.Unlock()
+	for i, item := range s.Queue {
+		if item.ID != id {
+			continue
+		}
+		if item.Status == "completed" {
+			return types.QueueItem{}, ErrQueueAlreadyOrdered
+		}
+		next := item
+		next.Status, next.UpdatedAt = status, types.NowISO()
+		if item.Status != "running" && item.Status != "pending" {
+			next.LastCheckTime = 0
+		}
+		if item.Status == "failed" {
+			next.FailureCount = 0
+		}
+		key := s.automaticOrderKey(item)
+		if err := s.DB.ResumeQueueItem(next, key); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return types.QueueItem{}, ErrQueueNotFound
+			}
+			return types.QueueItem{}, err
+		}
+		if s.automaticOrderBlocks == nil {
+			s.automaticOrderBlocks = map[string]bool{}
+		}
+		s.automaticOrderBlocks[key] = false
+		s.Queue[i] = next
+		s.WakeQueueProcessor()
+		return next, nil
+	}
+	return types.QueueItem{}, ErrQueueNotFound
 }
 
 // HistorySnapshot 返回购买历史副本(永不为 nil)。

@@ -2087,6 +2087,32 @@
       ]
     }
   },
+  "GET /order/cart/{cartId}/item/{itemId}": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "order.cart.Item",
+      "params": [
+        "path:cartId:string:true",
+        "path:itemId:long:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "order.cart.Item",
+      "params": [
+        "path:cartId:string:true",
+        "path:itemId:long:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "order.cart.Item",
+      "params": [
+        "path:cartId:string:true",
+        "path:itemId:long:true"
+      ]
+    }
+  },
   "GET /order/cart/{cartId}/item/{itemId}/requiredConfiguration": {
     "CA": {
       "status": "PRODUCTION",
@@ -2156,6 +2182,32 @@
       "response": "order.cart.GenericProductDefinition[]",
       "params": [
         "path:cartId:string:true"
+      ]
+    }
+  },
+  "GET /order/cart/{cartId}/vps/options": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "order.cart.GenericOptionDefinition[]",
+      "params": [
+        "path:cartId:string:true",
+        "query:planCode:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "order.cart.GenericOptionDefinition[]",
+      "params": [
+        "path:cartId:string:true",
+        "query:planCode:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "order.cart.GenericOptionDefinition[]",
+      "params": [
+        "path:cartId:string:true",
+        "query:planCode:string:true"
       ]
     }
   },
@@ -3727,6 +3779,32 @@
       "response": "order.cart.Item",
       "params": [
         "body::order.cart.GenericProductCreation:true",
+        "path:cartId:string:true"
+      ]
+    }
+  },
+  "POST /order/cart/{cartId}/vps/options": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "order.cart.Item",
+      "params": [
+        "body::order.cart.GenericOptionCreation:true",
+        "path:cartId:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "order.cart.Item",
+      "params": [
+        "body::order.cart.GenericOptionCreation:true",
+        "path:cartId:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "order.cart.Item",
+      "params": [
+        "body::order.cart.GenericOptionCreation:true",
         "path:cartId:string:true"
       ]
     }

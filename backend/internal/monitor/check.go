@@ -404,9 +404,25 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 		return
 	}
 
+	// 库存可能在开售前就显示有货,而销售目录还没收录这个 Eco 型号(上游 issue #12)。
+	// 给订阅留一条可见诊断;这类配置只有购物车验价通过才会通知/下单(见下方 CatalogMissing 分支)。
+	// 必须在"已恢复"之前判断,否则每轮"设诊断→清诊断"来回刷日志。
+	catalogWarning := ""
+	for _, configData := range currentAvailability {
+		if configData.AwaitingCatalog(planCode) {
+			catalogWarning = fmt.Sprintf("当前账户的销售目录尚未收录机型 %s；库存可用性不代表已开售,"+
+				"需购物车验价通过后才会发送有货通知或自动下单。请确认账户地区及产品系列", planCode)
+			break
+		}
+	}
 	// 走到这里说明本轮真正拿到了库存 —— 现在才允许说"已恢复"(issue #2:
 	// 以前在查询前就报恢复,持续失败的型号每轮"恢复→又失败"刷屏)。
-	if prevErr != "" {
+	if catalogWarning != "" {
+		sub.setCheckError(catalogWarning)
+		if catalogWarning != prevErr {
+			m.state.Logger.Warn(catalogWarning, "monitor")
+		}
+	} else if prevErr != "" {
 		sub.clearCheckError()
 		m.state.Logger.Info(fmt.Sprintf("[monitor/region] 订阅 %s 的区域问题已恢复,改用 %s 站点(子公司 %s)查询",
 			planCode, choice.region, choice.subsidiary), "monitor")
@@ -541,7 +557,15 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 				} else if v, ok := priceCheckResults[dc]; ok {
 					okBool, _ := v[0].(bool)
 					errStr, _ := v[1].(string)
-					if !okBool {
+					if !okBool && configData.CatalogMissing {
+						// 销售目录尚未收录(常见于预上架:库存先于目录公布)。购物车也验不过 = 还不能买,
+						// 按无货处理:不发"验价失败"提醒、不下单。以前记成 price_check_failed,
+						// 库存每次抖动(无货→验价失败)都会再发一条,刷屏(上游 issue #12)。
+						// 基准留在 unavailable,上架后购物车验价通过仍会触发一次正常补货与自动下单。
+						actualStatus = "unavailable"
+						m.state.Logger.Debug(fmt.Sprintf("%s@%s [%s] 销售目录未收录且购物车验价未通过,按无货处理: %s",
+							planCode, dc, configDisplay, errStr), "monitor")
+					} else if !okBool {
 						actualStatus = "price_check_failed"
 						priceCheckFailed = true
 						priceCheckError = errStr

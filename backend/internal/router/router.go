@@ -47,6 +47,8 @@ func New(cfg Config, console *slog.Logger) *gin.Engine {
 
 	// 核心安全与恢复中间件
 	r.Use(gin.Recovery())
+	// 请求体上限 4 MB,覆盖免鉴权的配对接口:防止超大请求体耗尽内存
+	r.Use(auth.LimitRequestBody(4 << 20))
 	r.Use(NewCORSMiddleware())
 
 	// API 鉴权中间件

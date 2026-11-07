@@ -36,6 +36,10 @@ const (
 // 只识别本工具支持的 Eco 系列候选;是否存在仍须由库存接口确认。
 var ecoStockPlanCode = regexp.MustCompile(`(?i)^[0-9]{2}(sk|sys|rise)[a-z0-9]*(-v[0-9]+)?(-[a-z]+)?$`)
 
+// preorderCatalogTTL 预上架/目录未收录的型号用短缓存:库存会先于销售目录公布,
+// 沿用普通目录的两小时缓存会让开售后仍被判成"目录里没有"。
+const preorderCatalogTTL = 30 * time.Second
+
 // Only known dedicated-only families justify a definitive non-Eco conclusion.
 // A new/custom name alone is not evidence that the live cart cannot sell it.
 var dedicatedOnlyPlanCode = regexp.MustCompile(`(?i)^[0-9]{2}(scale|hci|sds|hg|highgrade)[a-z0-9]*(-|$)`)
@@ -51,7 +55,7 @@ func PreorderReady(state *app.State, accountID, planCode string) (bool, error) {
 	if !ok {
 		return false, fmt.Errorf("下单账户不存在")
 	}
-	cat, err := loadSubsidiaryCatalogWithTTL(state, SubsidiaryOfAccount(acc), 30*time.Second)
+	cat, err := loadSubsidiaryCatalogWithTTL(state, SubsidiaryOfAccount(acc), preorderCatalogTTL)
 	if err != nil {
 		return false, err
 	}

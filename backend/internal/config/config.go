@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 
@@ -14,6 +15,8 @@ type Store struct {
 	mu  sync.RWMutex
 	cfg types.Config
 	db  *db.DB
+	// loadErr 启动时读配置失败:可以用默认值运行,但禁止拿默认值覆盖库里那份没读出来的配置
+	loadErr error
 }
 
 const kvConfigKey = "config"
@@ -54,8 +57,10 @@ func New(database *db.DB) *Store {
 		db:  database,
 	}
 	if _, err := s.db.GetKV(kvConfigKey, &s.cfg); err != nil {
-		// 加载失败时退回默认值（避免阻塞启动）
+		// 读取失败时用默认值运行(不阻塞启动),但记下错误:Set 会拒绝覆盖原配置。
+		// 否则下一次保存设置就会把真实的 Telegram Token / Webhook 等用默认值抹掉。
 		s.cfg = types.DefaultConfig()
+		s.loadErr = err
 	} else {
 		s.cfg = decryptConfig(s.cfg)
 	}
@@ -102,6 +107,9 @@ func (s *Store) Get() types.Config {
 func (s *Store) Set(c types.Config) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.loadErr != nil {
+		return fmt.Errorf("原配置读取失败,禁止覆盖保存,请先恢复数据库并重启: %w", s.loadErr)
+	}
 	if c.IAM == "" {
 		c.IAM = "go-ovh-" + strings.ToLower(c.Zone)
 	}

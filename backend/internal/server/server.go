@@ -139,7 +139,7 @@ func (s *Server) Run() error {
 	if !s.enableAuth {
 		s.console.Error("⚠️  API 密钥校验已关闭(ENABLE_API_KEY_AUTH=false):任何人都能调用全部接口,包括下单和重装。仅限本地调试")
 	} else if s.usingDefaultAPIKey {
-		s.console.Error("⚠️  正在使用默认 API 密钥 123456 —— 请立刻在 .env 里设置 API_SECRET_KEY")
+		s.console.Error("⚠️  API 密钥被设置成了弱密钥 123456 —— 请在 .env 里改成长随机串,或留空让程序自动生成")
 		if host == "" {
 			s.console.Error("⚠️  并且监听所有网卡(LISTEN_HOST 为空):同网段任何人都能用默认密钥操作你的 OVH 账户")
 		}

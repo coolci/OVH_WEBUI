@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ovh-webui/server/internal/app"
@@ -132,6 +133,17 @@ func ProcessQueueLoopWithContext(ctx context.Context, state *app.State) {
 
 // processQueueLoop 支持停止后台循环,购买入口可用离线替身验证恰好执行一次。
 func processQueueLoop(loopCtx context.Context, state *app.State, purchase func(context.Context, *app.State, *types.QueueItem) Outcome) {
+	// 每个任务独立派发(移植上游 v0.4.13 去掉批次屏障):以前每批 10 个要等最慢的一个
+	// (一次结账最长 60 秒)结束、整轮也要等全部结束,别的任务这期间一枪都打不出去。
+	// 现在任务到点且不在执行中就派发,并发上限仍是 concurrentBatchSize。
+	// 循环退出前等全部在途任务返回:Supervisor.Stop 依赖它保证"没有在途结账"再关库。
+	var workers sync.WaitGroup
+	defer workers.Wait()
+	var inFlightMu sync.Mutex
+	inFlight := map[string]bool{}
+	slots := make(chan struct{}, concurrentBatchSize)
+	var finished atomic.Int64
+	var savedAt int64
 	for loopCtx.Err() == nil {
 		// 历史未读出时不能确认是否已下单,停止调度以免重复购买。
 		if state.SaveBlocked("history") != nil || state.SaveBlocked("queue") != nil {
@@ -436,29 +448,45 @@ func processQueueLoop(loopCtx context.Context, state *app.State, purchase func(c
 					it.ID, it.PlanCode, it.Datacenter, stopReason), "queue")
 			}
 
-			// 分批并发
-			totalBatches := (len(ready) + concurrentBatchSize - 1) / concurrentBatchSize
-			for batchIdx := 0; batchIdx < totalBatches; batchIdx++ {
-				start := batchIdx * concurrentBatchSize
-				end := start + concurrentBatchSize
-				if end > len(ready) {
-					end = len(ready)
+			for _, it := range ready {
+				inFlightMu.Lock()
+				busy := inFlight[it.ID]
+				if !busy {
+					inFlight[it.ID] = true
 				}
-				batch := ready[start:end]
-				var wg sync.WaitGroup
-				for _, it := range batch {
-					wg.Add(1)
-					go func(item types.QueueItem) {
-						defer wg.Done()
-						processSingle(item)
-					}(it)
+				inFlightMu.Unlock()
+				if busy {
+					continue // 上一枪还没回来,不能并发打同一个任务
 				}
-				wg.Wait()
-				state.Logger.Debug("批次完成", "queue")
+				select {
+				case slots <- struct{}{}:
+				default:
+					// 并发已满:留到有任务返回时(会唤醒循环)再派发
+					inFlightMu.Lock()
+					delete(inFlight, it.ID)
+					inFlightMu.Unlock()
+					continue
+				}
+				workers.Add(1)
+				go func(item types.QueueItem) {
+					defer func() {
+						<-slots
+						inFlightMu.Lock()
+						delete(inFlight, item.ID)
+						inFlightMu.Unlock()
+						finished.Add(1)
+						workers.Done()
+						state.WakeQueueProcessor()
+					}()
+					processSingle(item)
+				}(it)
 			}
 
 			// 已下单任务留在队列,处理入口只调度 running 状态,不会重复下单。
-
+		}
+		// 有任务返回才落库一次(重试计数、检查时间);成功/暂停在任务内部已即时落库
+		if n := finished.Load(); n != savedAt {
+			savedAt = n
 			_ = state.SaveQueue()
 		}
 

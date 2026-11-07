@@ -16,8 +16,9 @@ import (
 func QuickOrder(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var params purchase.QuickOrderParams
-		if err := c.ShouldBindJSON(&params); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "任务参数格式不正确"})
+		// 严格解析:未知字段直接拒绝,不能把不支持的下单约束静默当成默认值
+		if err := bindOrderJSON(c, &params); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "任务参数格式不正确", "details": err.Error()})
 			return
 		}
 		// 监控已在进程内直接调用 purchase.EnqueueQuickOrder;HTTP 入口不能声称自己来自监控,
@@ -71,7 +72,7 @@ func PrewarmOrder(state *app.State) gin.HandlerFunc {
 			Options    []string `json:"options"`
 			Coupon     string   `json:"coupon"`
 		}
-		if err := c.ShouldBindJSON(&req); err != nil {
+		if err := bindOrderJSON(c, &req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "无效的预热参数: " + err.Error()})
 			return
 		}

@@ -28,7 +28,7 @@ import {
 } from "@/hooks/use-availability";
 import { OVH_DATACENTERS } from "@/lib/datacenters";
 import { comparePrices } from "@/lib/money";
-import { mergeStockPlans } from "@/lib/stock-plans";
+import { mergeStockPlans, matchesServerSearch } from "@/lib/stock-plans";
 import { cn } from "@/lib/utils";
 
 const SUB_LS_KEY = "ovh_sniper_price_subsidiary";
@@ -114,9 +114,7 @@ function ServersPage() {
     const s = search.trim().toLowerCase();
     let out = list;
     if (s) {
-      out = out.filter((srv) =>
-        `${srv.planCode} ${srv.name} ${srv.cpu} ${srv.memory} ${srv.storage}`.toLowerCase().includes(s)
-      );
+      out = out.filter((srv) => matchesServerSearch(srv, s));
     }
     if (onlyAvailable) {
       out = out.filter((srv) => {

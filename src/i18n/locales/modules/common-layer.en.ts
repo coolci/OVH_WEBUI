@@ -236,7 +236,7 @@ const pack: CommonLayerPack = {
       unreachable:
         "Cannot reach the backend service ({{reason}}). Make sure the backend is running and the address/port are correct, then retry.",
       badKey:
-        "Wrong key. It is the API_SECRET_KEY from the backend's .env file; if it was never set the default is 123456 (strongly recommended to change).",
+        "Wrong key. It is the API_SECRET_KEY from the backend's .env file; if it was never set, the backend generated a random key and saved it in the data directory's .api-secret file.",
       rateLimited: "Too many consecutive wrong keys — try again in about {{secs}}s.",
       unexpectedStatus:
         "The backend answered with HTTP {{status}}, which is not the expected response. Make sure no reverse proxy or login page is intercepting it.",

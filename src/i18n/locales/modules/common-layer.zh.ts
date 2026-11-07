@@ -224,7 +224,7 @@ export const commonLayerZh = {
       networkError: "网络错误",
       unreachable: "连不上后端服务({{reason}})。确认后端已启动、地址和端口正确后重试。",
       badKey:
-        "密钥不对。它是后端 .env 文件里的 API_SECRET_KEY;没设置过的话默认是 123456(强烈建议改掉)。",
+        "密钥不对。它是后端 .env 文件里的 API_SECRET_KEY;没设置过的话，后端会自动生成随机密钥，保存在数据目录的 .api-secret 文件中。",
       rateLimited: "密钥连续错误次数过多,请约 {{secs}} 秒后再试。",
       unexpectedStatus: "后端返回了 HTTP {{status}},不是预期的响应。确认前面没有挡着反向代理或登录页。",
     },

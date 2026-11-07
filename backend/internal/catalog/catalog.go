@@ -38,6 +38,12 @@ type ConfigAvailability struct {
 	OptionsNote string `json:"optionsNote,omitempty"`
 }
 
+// AwaitingCatalog 库存里有这个 Eco 型号、但销售目录还没收录(典型是预上架)。
+// 与预订判定使用同一 Eco 系列范围;其他系列不受影响。
+func (c *ConfigAvailability) AwaitingCatalog(planCode string) bool {
+	return c != nil && c.CatalogMissing && ecoStockPlanCode.MatchString(planCode)
+}
+
 // ErrPlanNotInRegion:该 planCode 在这个账户所属站点没有任何可用性记录。
 // OVH 对"不属于本站点的 planCode"返回的是 HTTP 200 + 空数组(实测:欧区 24rise01-v1
 // 查 api.us.ovhcloud.com、美区 24rise01-v1-us 查 eu.api.ovh.com,两边都是 []),
@@ -792,8 +798,14 @@ func LoadServerList(state *app.State, accountID string) ([]types.ServerPlan, int
 			continue
 		}
 
-		prodKey := getString(plan, "product", "")
-		linkedProd := productByName[prodKey]
+		// plan.product 通常是指向顶层 products 的外键(字符串),个别目录直接内联对象
+		var linkedProd map[string]interface{}
+		switch ref := plan["product"].(type) {
+		case string:
+			linkedProd = productByName[ref]
+		case map[string]interface{}:
+			linkedProd = ref
+		}
 
 		// 从预拉结果取（保持串行解析以确保 1:1）
 		datacenters := []types.Datacenter{}
@@ -843,79 +855,10 @@ func LoadServerList(state *app.State, accountID string) ([]types.ServerPlan, int
 			AvailableOptions: []types.ServerOption{},
 		}
 
-		// 优先从关联的 product 顶层技术规格中提取权威 CPU 型号 (如 KS-5-B 对应的 26sk50b -> Intel Xeon E5-1650v4)
-		if linkedProd != nil {
-			if cpu := extractCPUFromProduct(linkedProd); cpu != "" {
-				serverInfo.CPU = cpu
-			}
-		}
-
-		// 特殊系列：SYSLE / SK 兜底逻辑（若上一步未能提取到 CPU 时）
-		lcPlan := strings.ToLower(planCode)
-		if strings.Contains(lcPlan, "sysle") {
-			if serverInfo.CPU == "N/A" {
-				state.Logger.Info(fmt.Sprintf("检测到SYSLE系列服务器: %s", planCode), "")
-				switch {
-				case strings.Contains(planCode, "011"):
-					serverInfo.CPU = "SYSLE 011系列 (入门级服务器CPU)"
-				case strings.Contains(planCode, "021"):
-					serverInfo.CPU = "SYSLE 021系列 (中端服务器CPU)"
-				case strings.Contains(planCode, "031"):
-					serverInfo.CPU = "SYSLE 031系列 (高端服务器CPU)"
-				default:
-					serverInfo.CPU = "SYSLE系列CPU"
-				}
-				extractCPUFromNames(plan, &serverInfo, state)
-			}
-		} else if strings.Contains(lcPlan, "sk") {
-			if serverInfo.CPU == "N/A" {
-				state.Logger.Info(fmt.Sprintf("检测到SK系列服务器: %s", planCode), "")
-				displayName := getString(plan, "displayName", "")
-				invoiceName := getString(plan, "invoiceName", "")
-				description := getString(plan, "description", "")
-				foundCPU := false
-				for _, name := range []string{displayName, invoiceName, description} {
-					if name == "" {
-						continue
-					}
-					if strings.Contains(name, "|") {
-						parts := strings.SplitN(name, "|", 2)
-						if len(parts) > 1 {
-							cpuPart := strings.TrimSpace(parts[1])
-							lc := strings.ToLower(cpuPart)
-							if strings.Contains(lc, "intel") || strings.Contains(lc, "amd") || strings.Contains(lc, "xeon") || strings.Contains(lc, "i7") {
-								serverInfo.CPU = cpuPart
-								state.Logger.Info(fmt.Sprintf("从名称中提取CPU型号: %s 给 %s", cpuPart, planCode), "")
-								foundCPU = true
-							}
-						}
-					}
-					if foundCPU {
-						break
-					}
-				}
-				if !foundCPU {
-					serverInfo.CPU = "SK系列专用CPU"
-				}
-			}
-		}
-
-		if serverInfo.CPU == "N/A" {
-			state.Logger.Info(fmt.Sprintf("服务器 %s 无法从API提取CPU信息，尝试从名称提取", planCode), "")
-			extractCPUFromNames(plan, &serverInfo, state)
-			if serverInfo.CPU == "N/A" {
-				switch {
-				case strings.Contains(lcPlan, "sysle"):
-					serverInfo.CPU = "SYSLE系列专用CPU"
-				case strings.Contains(lcPlan, "rise"):
-					serverInfo.CPU = "RISE系列专用CPU"
-				case strings.Contains(lcPlan, "game"):
-					serverInfo.CPU = "GAME系列专用CPU"
-				default:
-					serverInfo.CPU = "专用服务器CPU"
-				}
-			}
-		}
+		// 优先从关联 product 的硬件表读 CPU(品牌 + 型号 + 物理处理器数量,移植上游 v0.4.17)。
+		// 读不到就留 N/A,最后再从名称里找;不再编造"SK系列专用CPU"一类的系列标签 ——
+		// 那会盖住后面从 details / configurations 读到的真实型号。
+		serverInfo.CPU = productCPU(linkedProd)
 
 		if serverInfo.Name == "" {
 			serverInfo.Name = getString(plan, "displayName", "")
@@ -1070,12 +1013,6 @@ func LoadServerList(state *app.State, accountID string) ([]types.ServerPlan, int
 				if part == "" {
 					continue
 				}
-				hasCPU := strings.Contains(part, "cpu") || strings.Contains(part, "core") ||
-					strings.Contains(part, "i7") || strings.Contains(part, "i9") ||
-					strings.Contains(part, "xeon") || strings.Contains(part, "epyc") || strings.Contains(part, "ryzen")
-				if serverInfo.CPU == "N/A" && hasCPU {
-					serverInfo.CPU = part
-				}
 				if serverInfo.Memory == "N/A" && (strings.Contains(part, "ram") || strings.Contains(part, "gb") || strings.Contains(part, "memory")) {
 					serverInfo.Memory = part
 				}
@@ -1149,6 +1086,9 @@ func LoadServerList(state *app.State, accountID string) ([]types.ServerPlan, int
 			}
 		}
 
+		if serverInfo.CPU == "N/A" {
+			extractCPUFromNames(plan, &serverInfo, state)
+		}
 		result = append(result, serverInfo)
 	}
 
@@ -1212,61 +1152,16 @@ func parseBandwidthValue(defaultValue string, sv *types.ServerPlan) string {
 	return defaultValue
 }
 
-// extractCPUFromProduct 从目录关联的 product 顶层对象中提取 CPU 型号
-func extractCPUFromProduct(prod map[string]interface{}) string {
-	if prod == nil {
-		return ""
-	}
-	// 优先从 blobs.technical.server.cpu 提取 (含 brand 和 model)
-	if blobs, ok := prod["blobs"].(map[string]interface{}); ok {
-		if tech, ok := blobs["technical"].(map[string]interface{}); ok {
-			if srv, ok := tech["server"].(map[string]interface{}); ok {
-				if cpuMap, ok := srv["cpu"].(map[string]interface{}); ok {
-					brand := strings.TrimSpace(getString(cpuMap, "brand", ""))
-					model := strings.TrimSpace(getString(cpuMap, "model", ""))
-					if brand != "" && model != "" {
-						if strings.Contains(strings.ToLower(model), strings.ToLower(brand)) {
-							return model
-						}
-						return brand + " " + model
-					} else if model != "" {
-						return model
-					}
-				}
-			}
-		}
-	}
-	// 降级从 product.description 提取
-	if desc := strings.TrimSpace(getString(prod, "description", "")); desc != "" {
-		return desc
-	}
-	return ""
-}
-
 func extractCPUFromNames(plan map[string]interface{}, info *types.ServerPlan, state *app.State) {
 	displayName := getString(plan, "displayName", "")
 	invoiceName := getString(plan, "invoiceName", "")
 	description := getString(plan, "description", "")
-	cpuKeywords := []string{"i7-", "i9-", "i5-", "xeon", "epyc", "ryzen"}
 	for _, name := range []string{displayName, invoiceName, description} {
-		if name == "" {
-			continue
-		}
-		lcName := strings.ToLower(name)
-		for _, kw := range cpuKeywords {
-			if strings.Contains(lcName, kw) {
-				pos := strings.Index(lcName, kw)
-				end := pos + 30
-				if end > len(name) {
-					end = len(name)
-				}
-				cpuInfo := strings.TrimSpace(strings.Split(name[pos:end], ",")[0])
-				if cpuInfo != "" {
-					info.CPU = cpuInfo
-					state.Logger.Info(fmt.Sprintf("从关键词中提取CPU型号: %s 给 %s", cpuInfo, info.PlanCode), "")
-					return
-				}
-			}
+		// 从品牌/系列关键词起取到分隔符为止,保留完整型号与品牌,不截断
+		if cpu := cpuFromText(name); cpu != "" {
+			info.CPU = cpu
+			state.Logger.Info(fmt.Sprintf("从名称中提取CPU型号: %s 给 %s", cpu, info.PlanCode), "")
+			return
 		}
 	}
 }

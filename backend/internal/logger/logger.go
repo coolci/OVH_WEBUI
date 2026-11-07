@@ -79,16 +79,10 @@ func (l *Logger) Add(level, message, source string) {
 	}
 	l.writeCounter++
 	shouldWrite := l.writeCounter >= writeThreshold || level == "ERROR"
-	var snapshot []types.LogEntry
-	if shouldWrite {
-		l.writeCounter = 0
-		snapshot = make([]types.LogEntry, len(l.entries))
-		copy(snapshot, l.entries)
-	}
 	l.mu.Unlock()
 
 	if shouldWrite {
-		l.flush(snapshot)
+		l.Flush()
 	}
 
 	// 控制台输出
@@ -115,21 +109,25 @@ func (l *Logger) Audit(action, actor, resource, detail string) {
 	l.Add("INFO", msg, "audit")
 }
 
-// Flush 强制刷盘
+// Flush 强制刷盘。
+//
+// 快照必须在 flushMu 内取(移植自上游 v0.4.14):以前先取快照再排队等写盘锁,
+// 两个并发刷盘可能"新快照先写、旧快照后写",文件停在旧内容上,新日志丢失。
+// 写盘失败时把计数还回去,下一条日志会再触发刷盘。
 func (l *Logger) Flush() {
+	l.flushMu.Lock()
+	defer l.flushMu.Unlock()
 	l.mu.Lock()
 	snapshot := make([]types.LogEntry, len(l.entries))
 	copy(snapshot, l.entries)
+	writes := l.writeCounter
 	l.writeCounter = 0
 	l.mu.Unlock()
-	l.flush(snapshot)
-}
-
-func (l *Logger) flush(entries []types.LogEntry) {
-	l.flushMu.Lock()
-	defer l.flushMu.Unlock()
-	if err := storage.WriteJSON(l.logsFile, entries); err != nil {
+	if err := storage.WriteJSON(l.logsFile, snapshot); err != nil {
 		l.stdlog.Error("write logs file", "err", err)
+		l.mu.Lock()
+		l.writeCounter += writes
+		l.mu.Unlock()
 	}
 }
 
@@ -144,11 +142,17 @@ func (l *Logger) Snapshot() []types.LogEntry {
 
 // Clear 清空所有日志（含文件）
 func (l *Logger) Clear() error {
+	// 与 Flush 串行:否则清空后,一个持有旧快照的刷盘会把旧日志写回文件
+	l.flushMu.Lock()
+	defer l.flushMu.Unlock()
 	l.mu.Lock()
+	defer l.mu.Unlock()
+	if err := storage.WriteJSON(l.logsFile, []types.LogEntry{}); err != nil {
+		return err
+	}
 	l.entries = l.entries[:0]
 	l.writeCounter = 0
-	l.mu.Unlock()
-	return storage.WriteJSON(l.logsFile, []types.LogEntry{})
+	return nil
 }
 
 // MarshalEntries 调试用：序列化全部条目

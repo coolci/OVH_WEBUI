@@ -39,8 +39,10 @@ func AddQueueItem(state *app.State) gin.HandlerFunc {
 			Preorder bool   `json:"preorder"`
 			Coupon   string `json:"coupon"`
 		}
-		if err := c.ShouldBindJSON(&body); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "任务参数格式不正确"})
+		// 严格解析(移植上游 v0.4.18):未知字段直接拒绝。否则 hwRam / maxPrice 这类
+		// 不支持的约束会被静默丢掉,任务按默认配置下单 —— 用户以为限了价/配置,其实没限。
+		if err := bindOrderJSON(c, &body); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "任务参数格式不正确", "details": err.Error()})
 			return
 		}
 		if body.AccountID == "" && body.AccountIDCamel != "" {
@@ -153,7 +155,11 @@ func UpdateQueueItem(state *app.State) gin.HandlerFunc {
 			AutoPay       bool     `json:"autoPay"`
 			Coupon        string   `json:"coupon"`
 		}
-		if err := c.ShouldBindJSON(&body); err != nil || strings.TrimSpace(body.Datacenter) == "" || body.RetryInterval < types.MinRetryInterval || body.RetryInterval > types.MaxRetryInterval {
+		if err := bindOrderJSON(c, &body); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "任务参数格式不正确", "details": err.Error()})
+			return
+		}
+		if strings.TrimSpace(body.Datacenter) == "" || body.RetryInterval < types.MinRetryInterval || body.RetryInterval > types.MaxRetryInterval {
 			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "请填写机房及有效的重试间隔"})
 			return
 		}
@@ -235,6 +241,31 @@ func UpdateQueueStatus(state *app.State) gin.HandlerFunc {
 		case "pending", "running", "paused", "completed", "failed":
 		default:
 			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "error": "无效的任务状态"})
+			return
+		}
+		if body.Status == "running" || body.Status == "pending" {
+			// 恢复前先用购买历史修正"已下单但状态没落库"的任务,再走先落库后生效的恢复路径
+			if err := state.RestoreCompletedQueue(); err != nil {
+				httperr.InternalError(c, "无法核对已下单记录,未恢复任务: "+err.Error(), "ERR_DB_SAVE")
+				return
+			}
+			resumed, err := state.ResumeQueueItem(id, body.Status)
+			if err != nil {
+				switch {
+				case errors.Is(err, app.ErrQueueAlreadyOrdered):
+					c.JSON(http.StatusConflict, gin.H{"status": "error", "error": err.Error(), "code": "QUEUE_ALREADY_ORDERED"})
+				case errors.Is(err, app.ErrQueueNotFound):
+					c.JSON(http.StatusNotFound, gin.H{"status": "error", "error": "任务不存在", "code": "E10FEEC40"})
+				default:
+					state.Logger.Error("恢复任务落库失败,任务保持原状态: "+err.Error(), "queue")
+					httperr.InternalError(c, "恢复失败,任务保持原状态: "+err.Error(), "ERR_DB_SAVE")
+				}
+				return
+			}
+			state.Logger.Info("Updated "+resumed.PlanCode+" status to "+resumed.Status, "")
+			// 云下单:网页端恢复同步到 Telegram 进度卡片
+			telegram.NotifyTaskProgress(state, &resumed, "queued", nil)
+			c.JSON(http.StatusOK, gin.H{"status": "success"})
 			return
 		}
 		found := false

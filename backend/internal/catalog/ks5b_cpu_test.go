@@ -115,7 +115,7 @@ func TestExtractCPUFromProduct(t *testing.T) {
 
 	for _, tc := range testCases {
 		prod := productByName[tc.prodKey]
-		actual := extractCPUFromProduct(prod)
+		actual := productCPU(prod)
 		if actual != tc.expected {
 			t.Errorf("[%s] 期望 %q, 得到 %q", tc.desc, tc.expected, actual)
 		} else {
