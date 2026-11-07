@@ -3,6 +3,7 @@ package handlers
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -210,10 +211,32 @@ func UpdateVPSSubscription(state *app.State) gin.HandlerFunc {
 		if body.NotifyUnavailable != nil {
 			next.NotifyUnavailable = *body.NotifyUnavailable
 		}
-		next.AutoOrderAccountID = ""
-		next.AutoOrder = false
-		next.AutoPay = false
-		next.Quantity = 0
+		if body.OS != nil {
+			next.OS = strings.TrimSpace(*body.OS)
+		}
+		if body.AutoOrderAccountID != nil {
+			next.AutoOrderAccountID = strings.TrimSpace(*body.AutoOrderAccountID)
+		}
+		if body.AutoOrder != nil {
+			next.AutoOrder = *body.AutoOrder
+		}
+		if body.Quantity != nil {
+			next.Quantity = *body.Quantity
+		}
+		if body.AutoPay != nil {
+			next.AutoPay = *body.AutoPay
+		}
+		if next.AutoOrder {
+			if next.AutoOrderAccountID == "" {
+				httperr.BadRequest(c, "开启自动下单必须选择下单账户", "")
+				return
+			}
+			next.Quantity = clampVPSQuantity(next.Quantity)
+		} else {
+			// 自动付款依附于自动下单:不下单就谈不上付款
+			next.Quantity = 0
+			next.AutoPay = false
+		}
 		if body.OvhSubsidiary != nil {
 			next.OvhSubsidiary = vps.NormalizeSubsidiary(*body.OvhSubsidiary)
 			if next.OvhSubsidiary == "" {

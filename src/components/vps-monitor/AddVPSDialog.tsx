@@ -29,6 +29,9 @@ import {
   type VPSSubscription,
 } from "@/hooks/use-vps-monitor";
 import { useNotifyGate } from "@/hooks/ovh/use-notify-channels";
+import { AccountSelect } from "@/components/common/AccountSelect";
+import { useAccounts } from "@/hooks/use-accounts";
+import { MAX_ORDER_QUANTITY } from "@/lib/order-limits";
 import { SUBSIDIARIES } from "./types";
 
 interface AddVPSDialogProps {
@@ -52,6 +55,17 @@ export function AddVPSDialog({ open, onOpenChange, initial }: AddVPSDialogProps)
   const [monitorWindows, setMonitorWindows] = useState(true);
   const [notifyAvailable, setNotifyAvailable] = useState(true);
   const [notifyUnavailable, setNotifyUnavailable] = useState(false);
+  // 自动下单:补货(无货→有货)时用所选账户下单,只买 1 个月;抢到一次后自动关闭
+  const [autoOrder, setAutoOrder] = useState(false);
+  const [autoOrderAccountId, setAutoOrderAccountId] = useState("");
+  const [quantity, setQuantity] = useState("1");
+  const [os, setOs] = useState("");
+  const [autoPay, setAutoPay] = useState(false);
+  const accountsQ = useAccounts();
+  const osChoices = useMemo(
+    () => models.find((m) => m.planCode === vpsModel.trim())?.osChoices || [],
+    [models, vpsModel]
+  );
 
   useEffect(() => {
     if (isEdit) return;
@@ -69,6 +83,11 @@ export function AddVPSDialog({ open, onOpenChange, initial }: AddVPSDialogProps)
     setMonitorWindows(true);
     setNotifyAvailable(true);
     setNotifyUnavailable(false);
+    setAutoOrder(false);
+    setAutoOrderAccountId("");
+    setQuantity("1");
+    setOs("");
+    setAutoPay(false);
   };
 
   useEffect(() => {
@@ -81,6 +100,11 @@ export function AddVPSDialog({ open, onOpenChange, initial }: AddVPSDialogProps)
       setMonitorWindows(initial.monitorWindows);
       setNotifyAvailable(initial.notifyAvailable);
       setNotifyUnavailable(initial.notifyUnavailable);
+      setAutoOrder(!!initial.autoOrder);
+      setAutoOrderAccountId(initial.autoOrderAccountId || "");
+      setQuantity(String(initial.quantity && initial.quantity > 0 ? initial.quantity : 1));
+      setOs(initial.os || "");
+      setAutoPay(!!initial.autoPay);
       return;
     }
     reset();
@@ -98,6 +122,11 @@ export function AddVPSDialog({ open, onOpenChange, initial }: AddVPSDialogProps)
       .map((d) => d.trim())
       .filter(Boolean);
 
+    if (autoOrder && !autoOrderAccountId) {
+      toast.error("开启自动下单需要选择下单账户");
+      return;
+    }
+    const qty = Math.min(Math.max(Number(quantity) || 1, 1), MAX_ORDER_QUANTITY);
     const payload = {
       ovhSubsidiary,
       datacenters: dcs,
@@ -105,6 +134,11 @@ export function AddVPSDialog({ open, onOpenChange, initial }: AddVPSDialogProps)
       monitorWindows,
       notifyAvailable,
       notifyUnavailable,
+      os: os.trim(),
+      autoOrder,
+      autoOrderAccountId: autoOrder ? autoOrderAccountId : "",
+      quantity: autoOrder ? qty : 0,
+      autoPay: autoOrder && autoPay,
     };
     const onSuccess = () => {
       reset();
@@ -240,6 +274,69 @@ export function AddVPSDialog({ open, onOpenChange, initial }: AddVPSDialogProps)
                 <span className="text-sm">无货时提醒</span>
               </label>
             </div>
+          </div>
+
+          <div className="rounded-xl border border-border p-3.5 space-y-3">
+            <label className="flex items-start gap-2.5 cursor-pointer">
+              <Checkbox checked={autoOrder} onCheckedChange={(v) => setAutoOrder(!!v)} className="mt-0.5" />
+              <div>
+                <div className="text-sm font-medium">补货时自动下单</div>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  只在「无货 → 有货」时下单（订阅时已有的存量不算），按 1 个月购买。
+                  抢到一次或出现确定性失败后会自动关闭，需要再抢时回到这里重新打开。
+                </p>
+              </div>
+            </label>
+            {autoOrder && (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1.5">
+                    下单账户 <span className="text-destructive">*</span>
+                  </label>
+                  <AccountSelect value={autoOrderAccountId} onChange={setAutoOrderAccountId} placeholder="选择与子公司同区的账户" />
+                  {accountsQ.data && accountsQ.data.length === 0 && (
+                    <p className="text-[11px] text-destructive mt-1">还没有 OVH 账户，请先在账户页添加</p>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-muted-foreground mb-1.5">每次下单台数</label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={MAX_ORDER_QUANTITY}
+                      value={quantity}
+                      onChange={(e) => setQuantity(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-muted-foreground mb-1.5">系统（可选）</label>
+                    {osChoices.length > 0 ? (
+                      <Select value={os || "__default"} onValueChange={(v) => setOs(v === "__default" ? "" : v)}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__default">自动选择（Debian 优先）</SelectItem>
+                          {osChoices.map((o) => (
+                            <SelectItem key={o} value={o}>{o}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Input value={os} onChange={(e) => setOs(e.target.value)} placeholder="留空自动选择（Debian 优先）" />
+                    )}
+                  </div>
+                </div>
+                <label className="flex items-center gap-2.5 cursor-pointer">
+                  <Checkbox checked={autoPay} onCheckedChange={(v) => setAutoPay(!!v)} />
+                  <div>
+                    <div className="text-sm">下单后自动付款</div>
+                    <p className="text-[11px] text-muted-foreground">默认关闭。开启后用 OVH 账户默认支付方式扣款。</p>
+                  </div>
+                </label>
+              </div>
+            )}
           </div>
 
           <DialogFooter>

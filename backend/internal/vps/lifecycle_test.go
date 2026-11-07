@@ -72,23 +72,10 @@ func TestAuditVPSRestartMustNotDeadlock(t *testing.T) {
 	}
 }
 
-func TestAuditVPSAutoOrderDisabled(t *testing.T) {
-	sub := types.VPSSubscription{
-		ID:                 "sub-audit",
-		PlanCode:           "vps-starter-1-2-20",
-		OvhSubsidiary:      "IE",
-		AutoOrder:          true,
-		AutoPay:            true,
-		AutoOrderAccountID: "acc-1",
-	}
-	out := PurchaseVPS(nil, sub, "GRA")
-	if out.Success {
-		t.Fatal("PurchaseVPS should not succeed: VPS auto-order has been removed")
-	}
-	if !out.Fatal {
-		t.Fatal("PurchaseVPS must return Fatal failure to immediately stop auto order attempts")
-	}
-	if !strings.Contains(out.Reason, "仅支持库存监控与通知") {
-		t.Fatalf("unexpected reason: %q", out.Reason)
+// VPS 自动下单已重新开启:PurchaseVPS 走真实下单链路,缺下单账户是确定性失败
+func TestPurchaseVPSRequiresOrderAccount(t *testing.T) {
+	out := PurchaseVPS(nil, types.VPSSubscription{ID: "sub-audit", PlanCode: "vps-starter-1-2-20", OvhSubsidiary: "IE", AutoOrder: true}, "GRA")
+	if out.Success || !out.Fatal || !strings.Contains(out.Reason, "下单账户") {
+		t.Fatalf("missing account must be a fatal failure: %+v", out)
 	}
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/notify"
 	"github.com/ovh-webui/server/internal/numconv"
+	"github.com/ovh-webui/server/internal/orderterm"
 	"github.com/ovh-webui/server/internal/ovh"
 	"github.com/ovh-webui/server/internal/purchase"
 	"github.com/ovh-webui/server/internal/types"
@@ -61,8 +62,7 @@ var dcRegion = map[string]string{
 // PurchaseVPS 在指定机房下单一台 VPS。
 // dcCode 是 OVH 的机房代码(GRA / BHS / US-EAST-VA ...),来自可用性接口。
 func PurchaseVPS(state *app.State, sub types.VPSSubscription, dcCode string) Outcome {
-	// 用户已确认 VPS 订阅仅支持库存监控与通知，不包含自动下单；此功能已下线。
-	return Outcome{Fatal: true, Reason: "VPS 订阅仅支持库存监控与通知，不包含自动下单"}
+	return purchaseVPSInternal(state, sub, dcCode)
 }
 
 func purchaseVPSInternal(state *app.State, sub types.VPSSubscription, dcCode string) Outcome {
@@ -129,12 +129,15 @@ func purchaseVPSInternal(state *app.State, sub types.VPSSubscription, dcCode str
 	}
 
 	// 3) 加商品。duration / pricingMode 是必填,合法组合来自 GET /order/cart/{id}/vps
-	duration, pricingMode := lookupVPSPricing(state, client, cartID, sub.PlanCode)
-	if duration == "" {
-		// 拉不到就用最常见的月付。硬编码只作为兜底 ——
-		// 真正的取值永远优先问 OVH,因为它会变。
-		duration, pricingMode = "P1M", "default"
-		state.Logger.Warn("[VPS下单] 拉不到计价组合，退回月付 P1M/default", "vps_purchase")
+	duration, pricingMode, found := lookupVPSPricing(state, client, cartID, sub.PlanCode)
+	switch {
+	case found && duration == "":
+		// 这个型号在本区只卖非月付周期:自动下单只买月付,绝不替用户换成年付
+		return Outcome{Fatal: true, Reason: fmt.Sprintf("%s 在 %s 不提供按月购买,自动下单只购买 1 个月,已停止", sub.PlanCode, subsidiary)}
+	case !found:
+		// 拉不到计价表就按月付提交,周期不对 OVH 会直接拒绝,不会悄悄换周期
+		duration, pricingMode = orderterm.Default, "default"
+		state.Logger.Warn("[VPS下单] 拉不到计价组合，按月付 P1M/default 提交", "vps_purchase")
 	}
 
 	var itemResult map[string]interface{}
@@ -394,56 +397,39 @@ func containsFold(list []string, want string) bool {
 	return false
 }
 
-// lookupVPSPricing 从 GET /order/cart/{id}/vps 里找这个 planCode 的月付组合。
-// 优先月付(mode=default):抢购要的是尽快拿到机器,不是替用户决定包年。
-func lookupVPSPricing(state *app.State, client *ovhsdk.Client, cartID, planCode string) (string, string) {
-	var defs []struct {
-		PlanCode string `json:"planCode"`
-		Prices   []struct {
-			Duration    string   `json:"duration"`
-			PricingMode string   `json:"pricingMode"`
-			Capacities  []string `json:"capacities"`
-		} `json:"prices"`
-	}
+// lookupVPSPricing 从 GET /order/cart/{id}/vps 里找这个 planCode 的月付计价。
+// 只在 1 个月这个周期内挑计价模式(优先 default),**绝不换成别的周期**:
+// 以前月付找不到就退到"第一个能续费的",自动下单可能悄悄买成年付、一次扣一整年。
+// 目录里拉到了这个型号却没有月付 → 返回 found=true + 空 duration,调用方判定失败。
+func lookupVPSPricing(state *app.State, client *ovhsdk.Client, cartID, planCode string) (duration, pricingMode string, found bool) {
+	var defs []map[string]interface{}
 	if err := client.Get("/order/cart/"+cartID+"/vps", &defs); err != nil {
 		state.Logger.Debug("[VPS下单] 拉计价失败: "+err.Error(), "vps_purchase")
-		return "", ""
+		return "", "", false
 	}
 	for _, d := range defs {
-		if !strings.EqualFold(d.PlanCode, planCode) {
+		if pc, _ := d["planCode"].(string); !strings.EqualFold(pc, planCode) {
 			continue
 		}
-		// 先找月付
-		for _, p := range d.Prices {
-			if p.PricingMode == "default" && p.Duration == "P1M" {
-				return p.Duration, p.PricingMode
-			}
+		if dur, mode, ok := orderterm.Pick(d["prices"], orderterm.Default, "default"); ok {
+			return dur, mode, true
 		}
-		// 没有就用第一个能续费的
-		for _, p := range d.Prices {
-			for _, c := range p.Capacities {
-				if c == "renew" {
-					return p.Duration, p.PricingMode
-				}
-			}
-		}
-		if len(d.Prices) > 0 {
-			return d.Prices[0].Duration, d.Prices[0].PricingMode
-		}
+		return "", "", true
 	}
-	return "", ""
+	return "", "", false
 }
 
 // recordVPSPurchase 把下单结果写进抢购历史,和独服共用一张表 ——
 // 用户不关心"这是独服还是 VPS 的历史",只关心"我到底买到了什么"。
-func recordVPSPurchase(state *app.State, sub types.VPSSubscription, dcCode string, out Outcome) {
-	state.HistoryMu.Lock()
-	defer state.HistoryMu.Unlock()
+// 同步落库:120 秒防抖闸门和"这条订阅已经买到过"的判断都靠这份历史,
+// 只留在内存里的话,下单后崩溃重启就会对同一次补货再买一台。
+func recordVPSPurchase(state *app.State, sub types.VPSSubscription, dcCode string, out Outcome) error {
 	entry := types.PurchaseHistoryEntry{
 		ID:           uuid.NewString(),
 		TaskID:       "vps:" + sub.ID,
 		AccountID:    sub.AutoOrderAccountID,
 		PlanCode:     sub.PlanCode,
+		Duration:     orderterm.Default,
 		Datacenter:   dcCode,
 		Options:      []string{},
 		PurchaseTime: types.NowISO(),
@@ -458,48 +444,137 @@ func recordVPSPurchase(state *app.State, sub types.VPSSubscription, dcCode strin
 		reason := out.Reason
 		entry.ErrorMessage = &reason
 	}
+	state.HistoryMu.Lock()
 	state.History = append(state.History, entry)
-	// 注意:defer 的 Unlock 先执行,SaveHistory 在锁外(它自己拿 HistoryMu 快照,
-	// 持锁同步调会死锁 —— 见独服 recordSuccess 的同款修复)。这里保持异步:
-	// VPS 购买路径一次只一条,上面的 120s 闸门在崩溃重放时兜底
+	state.HistoryMu.Unlock()
+	return state.SaveHistory()
+}
+
+// subscriptionCurrent 订阅仍存在,且自动下单相关配置与快照一致。
+// 补货检查和下单之间用户可能删了订阅、关了自动下单、换了账户或机型 ——
+// 那时继续下单就是替用户做了他刚刚取消的决定。
+func subscriptionCurrent(state *app.State, snapshot types.VPSSubscription) bool {
+	live, ok := state.FindVPSSubscription(snapshot.ID)
+	if !ok || live == nil {
+		return false
+	}
+	return live.AutoOrder && live.AutoOrderAccountID == snapshot.AutoOrderAccountID &&
+		live.PlanCode == snapshot.PlanCode && effectiveSubsidiary(state, *live) == effectiveSubsidiary(state, snapshot) &&
+		live.OS == snapshot.OS && live.Quantity == snapshot.Quantity && live.AutoPay == snapshot.AutoPay
+}
+
+// effectiveSubsidiary 老订阅可能没存子公司,监控循环会按下单账户推一个;比较时两边用同一口径
+func effectiveSubsidiary(state *app.State, sub types.VPSSubscription) string {
+	if s := NormalizeSubsidiary(sub.OvhSubsidiary); s != "" {
+		return s
+	}
+	return DefaultSubsidiary(state, sub.AutoOrderAccountID)
+}
+
+// disableAutoOrder 关掉这条订阅的自动下单(落库)。成功、结果不确定、确定性失败之后都调用:
+// 订阅的语义是"补货时替我抢一次",不是"每次补货都再买一遍"。
+func disableAutoOrder(state *app.State, sub types.VPSSubscription, reason string) {
+	_, _, err := state.MutateVPSSubscription(sub.ID, func(s *types.VPSSubscription) bool {
+		if !s.AutoOrder && !s.AutoPay {
+			return false
+		}
+		s.AutoOrder, s.AutoPay = false, false
+		return true
+	})
+	if err != nil {
+		state.Logger.Error("保存 VPS 自动下单停止状态失败: "+err.Error(), "vps_purchase")
+		return
+	}
+	state.Logger.Info(fmt.Sprintf("[VPS下单] 已关闭订阅 %s(%s)的自动下单: %s", sub.ID, sub.PlanCode, reason), "vps_purchase")
+}
+
+// saveObservation 下单前先把这一轮的库存观察(LastStatus / History)落库。
+// 不先存的话:下单成功 → 进程在本轮末尾保存前崩溃 → 重启后基准还是"无货",
+// 同一次补货再被判成"无货→有货",又买一台。
+func saveObservation(state *app.State, sub *types.VPSSubscription) error {
+	history := sub.History
+	if len(history) > 100 {
+		history = history[len(history)-100:]
+	}
+	_, found, err := state.MutateVPSSubscription(sub.ID, func(s *types.VPSSubscription) bool {
+		s.LastStatus = make(map[string]string, len(sub.LastStatus))
+		for k, v := range sub.LastStatus {
+			s.LastStatus[k] = v
+		}
+		s.History = append([]map[string]interface{}(nil), history...)
+		return true
+	})
+	if err != nil {
+		return err
+	}
+	if !found {
+		return fmt.Errorf("订阅已被删除")
+	}
+	return nil
 }
 
 // autoOrderOnRestock 补货时自动下单。
 // 只对"从无货变成有货"的机房下单 —— 首次检查发现的存量不算补货,
 // 那可能是一台挂了几个月的订阅刚启动,用户并没打算现在就买。
+// 抢到一次就关掉自动下单;确定性失败或结果不确定也关掉,等用户确认后再手动打开。
 func autoOrderOnRestock(state *app.State, sub types.VPSSubscription, dcs []map[string]interface{}) {
-	// 用户已确认 VPS 订阅仅支持库存监控与通知，不包含自动下单；此功能已下线。
-	return
-}
-
-func autoOrderOnRestockInternal(state *app.State, sub types.VPSSubscription, dcs []map[string]interface{}) {
+	if !sub.AutoOrder || strings.TrimSpace(sub.AutoOrderAccountID) == "" || !subscriptionCurrent(state, sub) {
+		return
+	}
 	// 同独服 quick-order 的 120 秒近期成功闸门:VPS 库存自然抖动
 	// (有货→抢光→再放货)每个回摆都会重新触发无货→有货跳变,
 	// 不挡的话同一窗口反复买 quantity 台直到用户肉眼发现。
-	// 状态机表达不了"这个窗口已经买过",唯一能表达的就是近期成功史
+	// 另外:这条订阅只要成功买到过一次,就不再自动下单(关闭开关并返回)。
 	state.HistoryMu.Lock()
 	nowTS := time.Now().Unix()
+	alreadyBought := false
+	recent := false
 	for i := len(state.History) - 1; i >= 0; i-- {
 		h := &state.History[i]
-		if h.PlanCode == sub.PlanCode && h.Status == "success" && h.AccountID == sub.AutoOrderAccountID {
+		if h.Status != "success" {
+			continue
+		}
+		if h.TaskID == "vps:"+sub.ID && h.OrderID != "" {
+			alreadyBought = true
+			break
+		}
+		if h.PlanCode == sub.PlanCode && h.AccountID == sub.AutoOrderAccountID {
 			if t, ok := types.ParseTS(h.PurchaseTime); ok && nowTS-t.Unix() < 120 {
-				state.HistoryMu.Unlock()
-				state.Logger.Info("[VPS下单] 同配置 120 秒内已成功下过单,跳过本次补货(防抖动重复下单): "+sub.PlanCode, "vps_purchase")
-				return
+				recent = true
+				break
 			}
 		}
 	}
 	state.HistoryMu.Unlock()
+	if alreadyBought {
+		disableAutoOrder(state, sub, "该订阅此前已成功下单")
+		return
+	}
+	if recent {
+		state.Logger.Info("[VPS下单] 同配置 120 秒内已成功下过单,跳过本次补货(防抖动重复下单): "+sub.PlanCode, "vps_purchase")
+		return
+	}
 	for _, dc := range dcs {
+		if !subscriptionCurrent(state, sub) {
+			state.Logger.Info("[VPS下单] 订阅在下单过程中被修改或删除,停止本次自动下单: "+sub.PlanCode, "vps_purchase")
+			return
+		}
 		code := restockOrderDatacenter(dc)
 		if code == "" {
 			continue
 		}
 		out := PurchaseVPS(state, sub, code)
-		recordVPSPurchase(state, sub, code, out)
+		if err := recordVPSPurchase(state, sub, code, out); err != nil {
+			state.Logger.Error("保存 VPS 下单结果失败,已停止自动下单: "+err.Error(), "vps_purchase")
+			out.Fatal = true
+			out.Reason += "；结果保存失败,自动下单已停止,请人工核对订单"
+		}
+		if out.Success || out.Fatal {
+			disableAutoOrder(state, sub, out.Reason)
+		}
 
 		if out.Success {
-			// 同独服:checkout 是 autoPayWithPreferredPaymentMethod:false,
+			// 同独服:checkout 默认 autoPayWithPreferredPaymentMethod:false,
 			// "成功"= 订单已创建、未付款、逾期作废。通知里必须说清楚。
 			payNote := "⚠️ 订单尚未付款：请尽快打开订单链接完成付款,逾期未付订单会自动作废。\n" +
 				"(订单未付款前处于 14 天撤销期内,可在 OVH 订单页撤回)"
@@ -509,23 +584,27 @@ func autoOrderOnRestockInternal(state *app.State, sub types.VPSSubscription, dcs
 			}
 			// 同独服:通知里发需要登录的控制面板深链,不发 checkout 那个带凭证的 url。
 			// 带凭证那份存在本地历史里,界面上照样一键可付。
-			linkURL := out.OrderURL
+			linkURL := "请在 OVH 控制台 → 账单 → 订单 中查看"
 			if acc, ok := state.FindAccount(sub.AutoOrderAccountID); ok {
 				if u := ovh.ManagerOrderURL(acc.Endpoint, out.OrderID); u != "" {
 					linkURL = u
 				}
 			}
-			msg := fmt.Sprintf("🎉 VPS 下单成功\n\n型号: %s\n机房: %s\n订单: %s\n%s\n\n%s",
-				sub.PlanCode, code, out.OrderID, linkURL, payNote)
+			msg := fmt.Sprintf("🎉 VPS 下单成功\n\n型号: %s\n机房: %s\n数量: %d\n订单: %s\n%s\n\n%s\n\n该订阅的自动下单已自动关闭,如需再抢请到 VPS 监控页重新打开。",
+				sub.PlanCode, code, max(sub.Quantity, 1), out.OrderID, linkURL, payNote)
 			notify.Broadcast(state, msg, nil)
 			// 抢到就停:订阅是"盯着补货",不是"把所有机房都买一遍"
 			return
 		}
 		state.Logger.Error(fmt.Sprintf("[VPS下单] %s @ %s 失败: %s", sub.PlanCode, code, out.Reason), "vps_purchase")
-		notify.Broadcast(state, fmt.Sprintf("⚠️ VPS 自动下单失败\n\n型号: %s\n机房: %s\n原因: %s",
-			sub.PlanCode, code, out.Reason), nil)
+		tail := ""
 		if out.Fatal {
-			// 确定性失败:换个机房也是同样结果,别再刷了
+			tail = "\n\n该订阅的自动下单已关闭,请核对后到 VPS 监控页重新打开。"
+		}
+		notify.Broadcast(state, fmt.Sprintf("⚠️ VPS 自动下单失败\n\n型号: %s\n机房: %s\n原因: %s%s",
+			sub.PlanCode, code, out.Reason, tail), nil)
+		if out.Fatal {
+			// 确定性失败 / 结果不确定:换个机房也是同样结果,或者可能已经买到,别再刷了
 			return
 		}
 		time.Sleep(500 * time.Millisecond)

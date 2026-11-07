@@ -153,6 +153,16 @@ func AddVPSSubscription(state *app.State) gin.HandlerFunc {
 			notifyUnavailable = *body.NotifyUnavailable
 		}
 
+		// 自动下单:必须指定同区下单账户;数量夹到 [1, MaxOrderQuantity];自动付款依附于自动下单
+		if body.AutoOrder && strings.TrimSpace(body.AutoOrderAccountID) == "" {
+			httperr.BadRequest(c, "开启自动下单必须选择下单账户", "")
+			return
+		}
+		quantity := 0
+		if body.AutoOrder {
+			quantity = clampVPSQuantity(body.Quantity)
+		}
+
 		if state.HasVPSSubscription(body.PlanCode, body.OvhSubsidiary) {
 			httperr.BadRequest(c, "该VPS套餐已订阅", "ED6C28779")
 			return
@@ -169,11 +179,11 @@ func AddVPSSubscription(state *app.State) gin.HandlerFunc {
 			LastStatus:         map[string]string{},
 			History:            []map[string]interface{}{},
 			CreatedAt:          types.NowISO(),
-			AutoOrderAccountID: "",
-			AutoOrder:          false,
-			Quantity:           0,
+			AutoOrderAccountID: strings.TrimSpace(body.AutoOrderAccountID),
+			AutoOrder:          body.AutoOrder,
+			Quantity:           quantity,
 			OS:                 strings.TrimSpace(body.OS),
-			AutoPay:            false,
+			AutoPay:            body.AutoOrder && body.AutoPay,
 		}
 		if err := state.AddVPSSubscription(sub); err != nil {
 			httperr.Internal(c, "保存VPS订阅失败: "+err.Error())
@@ -192,6 +202,18 @@ func AddVPSSubscription(state *app.State) gin.HandlerFunc {
 		}
 		c.JSON(http.StatusOK, resp)
 	}
+}
+
+// clampVPSQuantity 每次补货下单台数夹到 [1, MaxOrderQuantity]:数量直接进购物车,
+// 不设上界时一个手滑的 100 就是一次买 100 台
+func clampVPSQuantity(q int) int {
+	if q < 1 {
+		return 1
+	}
+	if q > types.MaxOrderQuantity {
+		return types.MaxOrderQuantity
+	}
+	return q
 }
 
 // RemoveVPSSubscription DELETE /api/vps-monitor/subscriptions/:subscription_id

@@ -7,6 +7,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/common/Chip";
+import { AccountChip } from "@/components/common/AccountChip";
 import { OsIcon } from "@/components/server-control/OsIcon";
 import { type VPSSubscription } from "@/hooks/use-vps-monitor";
 import { VPSHistoryPanel } from "./VPSHistoryPanel";
@@ -60,6 +61,12 @@ export function VPSRow({
               )}
               {sub.notifyAvailable && <Chip tone="success">有货提醒</Chip>}
               {sub.notifyUnavailable && <Chip tone="warning">无货提醒</Chip>}
+              {sub.autoOrder && sub.autoOrderAccountId && (
+                <Chip tone="solid" title="补货时按 1 个月自动下单;抢到一次后自动关闭">
+                  自动下单 ×{sub.quantity || 1}{sub.autoPay ? " · 自动付款" : ""}
+                </Chip>
+              )}
+              {sub.autoOrder && sub.autoOrderAccountId && <AccountChip accountId={sub.autoOrderAccountId} />}
             </div>
           </div>
           <div className="flex items-center gap-1 flex-shrink-0">

@@ -249,7 +249,7 @@ func checkVPSDCAvailabilityOS(state *app.State, planCode, ovhSubsidiary, osFilte
 
 	req, _ := http.NewRequest(http.MethodGet, fullURL, nil)
 	req.Header.Set("accept", "application/json")
-	client, cerr := state.HTTPClientFor(accountID, 10*time.Second)
+	client, cerr := availabilityHTTPClient(state, accountID, 10*time.Second)
 	if cerr != nil {
 		// 配了代理却建不出来 —— 不退回直连。退回的表现是一切正常、
 		// 隔离却已经没了,而用户无从察觉。
@@ -288,6 +288,12 @@ func checkVPSDCAvailabilityOS(state *app.State, planCode, ovhSubsidiary, osFilte
 	}
 	state.Logger.Info("VPS "+planCode+" 数据中心信息获取成功 ("+sub+")", "vps_monitor")
 	return data, nil
+}
+
+// availabilityHTTPClient 查 VPS 库存用的 HTTP 客户端(跟随账户的代理与指纹)。
+// 包级变量只为测试能把库存接口换成本地 fixture,生产代码不改它。
+var availabilityHTTPClient = func(state *app.State, accountID string, timeout time.Duration) (*http.Client, error) {
+	return state.HTTPClientFor(accountID, timeout)
 }
 
 // cloneSubs 深拷贝订阅快照。
@@ -634,6 +640,19 @@ func monitorLoopGen(state *app.State, gen int64) {
 					if len(newAvailable) > 0 && sub.NotifyAvailable {
 						state.Logger.Info(fmt.Sprintf("VPS %s 补货：%d个数据中心", sub.PlanCode, len(newAvailable)), "vps_monitor")
 						SendSummaryNotification(state, sub.PlanCode, ovhSub, newAvailable, "available")
+					}
+					// 补货了就下单。放在通知之后:先让用户知道有货,下单本身要走五六次 OVH 往返。
+					// 只认"无货→有货"这一种跳变(首次检查的存量不算,见上面的 isFirstCheckOverall)。
+					// 下单前先把本轮库存观察落库,否则下单后崩溃重启会把同一次补货再判一次跳变。
+					if len(newAvailable) > 0 && sub.AutoOrder && strings.TrimSpace(sub.AutoOrderAccountID) != "" && stillMine(gen) {
+						sub.LastStatus = lastStatus
+						if err := saveObservation(state, sub); err != nil {
+							state.Logger.Error("保存 VPS 库存状态失败,跳过本次自动下单: "+err.Error(), "vps_monitor")
+						} else {
+							toOrder := *sub
+							toOrder.OvhSubsidiary = ovhSub
+							autoOrderOnRestock(state, toOrder, newAvailable)
+						}
 					}
 					if len(newUnavailable) > 0 && sub.NotifyUnavailable {
 						state.Logger.Info(fmt.Sprintf("VPS %s 下架：%d个数据中心", sub.PlanCode, len(newUnavailable)), "vps_monitor")
