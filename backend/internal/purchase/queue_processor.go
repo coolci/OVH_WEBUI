@@ -550,7 +550,27 @@ func TriggerPrewarmForQueueItem(ctx context.Context, state *app.State, item *typ
 	}
 	accountID := acc.ID
 
-	key := prewarmKey(accountID, item.PlanCode, item.Datacenter, item.Options, item.Coupon, item.Duration)
+	// 没指定配件:下单时会从有货的 FQN 推断配件,预热也按同样口径推断,否则永远对不上号
+	if len(item.Options) == 0 {
+		itemCopy := *item
+		sets, ready := inferredPrewarmOptions(state, accountID, item, func() {
+			// 库存列表一拉回来就立刻按推断出的配件预热,不等下一轮
+			TriggerPrewarmForQueueItem(ctx, state, &itemCopy)
+		})
+		if !ready {
+			return
+		}
+		for _, opts := range sets {
+			prewarmQueueItemWith(state, item, accountID, opts)
+		}
+		return
+	}
+	prewarmQueueItemWith(state, item, accountID, item.Options)
+}
+
+// prewarmQueueItemWith 按给定配件为队列任务预热一辆车(已有 / 正在装 / 失败冷却中则跳过)
+func prewarmQueueItemWith(state *app.State, item *types.QueueItem, accountID string, options []string) {
+	key := prewarmKey(accountID, item.PlanCode, item.Datacenter, options, item.Coupon, item.Duration)
 
 	globalQueuePrewarmCoord.mu.Lock()
 	if globalQueuePrewarmCoord.inFlight[key] {
@@ -571,7 +591,7 @@ func TriggerPrewarmForQueueItem(ctx context.Context, state *app.State, item *typ
 			}
 		}
 	}
-	if HasPrewarmedCart(accountID, item.PlanCode, item.Datacenter, item.Options, item.Coupon, item.Duration) {
+	if HasPrewarmedCart(accountID, item.PlanCode, item.Datacenter, options, item.Coupon, item.Duration) {
 		globalQueuePrewarmCoord.mu.Unlock()
 		return
 	}
@@ -593,7 +613,7 @@ func TriggerPrewarmForQueueItem(ctx context.Context, state *app.State, item *typ
 		pwCtx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 		defer cancel()
 
-		cart, err := AssemblePrewarmedCart(pwCtx, state, accountID, item.PlanCode, item.Datacenter, item.Options, item.Coupon, item.Duration)
+		cart, err := AssemblePrewarmedCart(pwCtx, state, accountID, item.PlanCode, item.Datacenter, options, item.Coupon, item.Duration)
 		if err != nil {
 			globalQueuePrewarmCoord.mu.Lock()
 			globalQueuePrewarmCoord.failedCounts[key]++

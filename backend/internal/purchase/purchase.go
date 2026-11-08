@@ -269,11 +269,8 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 	if item.Preorder {
 		effectiveOptions = preorderConfigurationOptions(availableFQN, item.PlanCode, preorderStock, preorderOrder)
 	} else if len(effectiveOptions) == 0 && availableFQN != "" {
-		if suffix, ok := strings.CutPrefix(availableFQN, item.PlanCode+"."); ok && suffix != "" {
-			// 完整 planCode 之后才是 addon，型号本身可能包含点号。这些段是"短前缀"
-			// （ram-128g-noecc-2933），不是 eco/options 里带机型后缀的完整 planCode
-			// （ram-128g-noecc-2933-rise），下面匹配 addon 时要允许前缀命中。
-			effectiveOptions = strings.Split(suffix, ".")
+		if inferred := optionsFromFQN(availableFQN, item.PlanCode); len(inferred) > 0 {
+			effectiveOptions = inferred
 			state.Logger.Info(fmt.Sprintf("用户未指定硬件选项，从可用 FQN %s 推断 addon: %v",
 				availableFQN, effectiveOptions), "purchase")
 		}
@@ -1088,6 +1085,19 @@ func listingNotReady(err error) bool {
 }
 
 // fqnIsPlan FQN 的型号部分与 planCode 完全相同(型号本身可能含点号)
+// optionsFromFQN 从库存条目 FQN(<planCode>.<addon1>.<addon2>…)推断要加购的 addon。
+// 完整 planCode 之后才是 addon,型号本身可能包含点号。这些段是"短前缀"
+// (ram-128g-noecc-2933),不是 eco/options 里带机型后缀的完整 planCode
+// (ram-128g-noecc-2933-rise),匹配 addon 时要允许前缀命中。
+// 下单和预热都用它 —— 两边推断口径必须一致,预热车才对得上号。
+func optionsFromFQN(fqn, planCode string) []string {
+	suffix, ok := strings.CutPrefix(fqn, planCode+".")
+	if !ok || suffix == "" {
+		return nil
+	}
+	return strings.Split(suffix, ".")
+}
+
 func fqnIsPlan(fqn, planCode string) bool {
 	f, p := strings.ToLower(fqn), strings.ToLower(planCode)
 	return p != "" && (f == p || strings.HasPrefix(f, p+"."))
