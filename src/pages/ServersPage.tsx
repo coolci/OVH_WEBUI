@@ -29,6 +29,7 @@ import {
 import { OVH_DATACENTERS } from "@/lib/datacenters";
 import { comparePrices } from "@/lib/money";
 import { mergeStockPlans, matchesServerSearch } from "@/lib/stock-plans";
+import { sortServersForSniping } from "@/lib/server-sort";
 import { cn } from "@/lib/utils";
 
 const SUB_LS_KEY = "ovh_sniper_price_subsidiary";
@@ -125,10 +126,13 @@ function ServersPage() {
         return srv.datacenters?.some((dc) => dc.availability && dc.availability !== "unavailable" && dc.availability !== "unknown") ?? false;
       });
     }
-    if (priceSort !== "default") {
-      out = [...out].sort((a, b) => comparePrices(priceMap[a.planCode]?.total, priceMap[b.planCode]?.total, priceSort));
-    }
-    return out;
+    // 预订置顶,正式销售的新上架在上;点了按价格排序时非预订部分按价格排
+    return sortServersForSniping(
+      out,
+      priceSort === "default"
+        ? undefined
+        : (a, b) => comparePrices(priceMap[a.planCode]?.total, priceMap[b.planCode]?.total, priceSort),
+    );
   }, [list, search, onlyAvailable, availMap, priceSort, priceMap]);
 
   const detailServer = detailPlanCode ? list.find((s) => s.planCode === detailPlanCode) || null : null;

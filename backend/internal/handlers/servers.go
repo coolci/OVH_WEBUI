@@ -194,8 +194,10 @@ func GetServers(state *app.State) gin.HandlerFunc {
 		}
 
 		// 验证并补全字段
+		firstSeen := stampPlanFirstSeen(state, cacheKey, serverPlans)
 		validated := make([]types.ServerPlan, 0, len(serverPlans))
 		for _, s := range serverPlans {
+			s.FirstSeen = firstSeen[s.PlanCode]
 			if s.Name == "" {
 				s.Name = "未命名服务器"
 			}

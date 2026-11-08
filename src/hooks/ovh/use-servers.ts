@@ -34,6 +34,8 @@ export interface ServerPlan {
     countryCode: string;
   }[];
   prerelease?: boolean;
+  /** 本程序首次在目录里看到它的 unix 秒;0 / 缺省 = 开始记录前就已在售 */
+  firstSeen?: number;
 }
 
 /** 目录到期后在可见页面自动刷新；旧缓存回退和网络失败均自动退避重试。 */

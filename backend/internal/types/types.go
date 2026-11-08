@@ -264,6 +264,9 @@ type ServerPlan struct {
 	Datacenters      []Datacenter   `json:"datacenters"`
 	DefaultOptions   []ServerOption `json:"defaultOptions"`
 	AvailableOptions []ServerOption `json:"availableOptions"`
+	// FirstSeen 本程序第一次在目录里看到这个型号的时间(unix 秒)。只在 /api/servers 响应里填,
+	// 不落库;0 = 开始记录之前就已在售(不算新品)。服务器列表按它把新上架的排在前面。
+	FirstSeen int64 `json:"firstSeen,omitempty"`
 }
 
 // SubscriptionHistoryEntry 监控订阅的历史记录条目

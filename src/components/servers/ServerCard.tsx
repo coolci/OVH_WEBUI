@@ -8,6 +8,7 @@ import { type ServerPlan } from "@/hooks/use-servers";
 import { type PriceInfo, formatPrice } from "@/hooks/use-availability";
 import { OVH_DATACENTERS, isDcInStock, lookupDcStatus, mergeDcAvailability } from "@/lib/datacenters";
 import { cn } from "@/lib/utils";
+import { isNewPlan } from "@/lib/server-sort";
 
 interface ServerCardProps {
   server: ServerPlan;
@@ -50,6 +51,15 @@ export function ServerCard({
             {server.prerelease && (
               <Chip tone="warning" className="h-4 px-1 text-[10px] shrink-0 font-medium" title="只在库存中出现、尚未进入销售目录,可创建预订任务">
                 预订
+              </Chip>
+            )}
+            {!server.prerelease && isNewPlan(server.firstSeen) && (
+              <Chip
+                tone="info"
+                className="h-4 px-1 text-[10px] shrink-0 font-medium"
+                title={server.firstSeen ? `首次上架: ${new Date(server.firstSeen * 1000).toLocaleString()}` : undefined}
+              >
+                新上架
               </Chip>
             )}
           </div>
