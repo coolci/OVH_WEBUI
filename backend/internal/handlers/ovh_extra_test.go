@@ -160,3 +160,46 @@ func TestOrderFollowUpReturnsStepsAndDeliveredService(t *testing.T) {
 		t.Fatalf("non-numeric order id must be rejected: %d", w.Code)
 	}
 }
+
+func TestOSAvailabilityIsAnonymousAndCached(t *testing.T) {
+	var calls, signed int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/auth/time" {
+			fmt.Fprint(w, time.Now().Unix())
+			return
+		}
+		if r.Header.Get("X-Ovh-Signature") != "" {
+			signed++
+		}
+		if r.URL.Path == "/dedicated/server/osAvailabilities" && r.URL.Query().Get("hardware") == "24sk202" {
+			calls++
+			fmt.Fprint(w, `["debian12_64","proxmox9_64"]`)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+	orig := ovhsdk.Endpoints["ovh-eu"]
+	ovhsdk.Endpoints["ovh-eu"] = srv.URL
+	t.Cleanup(func() { ovhsdk.Endpoints["ovh-eu"] = orig })
+	st := newTestState(t)
+	st.Accounts = []types.OVHAccount{{ID: "acc-os", Endpoint: "ovh-eu", Zone: "IE", AppKey: "k", AppSecret: "s", ConsumerKey: "c", IsDefault: true}}
+	r := gin.New()
+	r.GET("/os", GetOSAvailability(st))
+	for i := 0; i < 2; i++ {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/os?planCode=24sk202", nil))
+		if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "proxmox9_64") {
+			t.Fatalf("status %d %s", w.Code, w.Body.String())
+		}
+	}
+	if calls != 1 || signed != 0 {
+		t.Fatalf("second lookup must hit the cache and requests must be unsigned: calls=%d signed=%d", calls, signed)
+	}
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/os?planCode=a%2Fb", nil))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("plan codes with path characters must be rejected: %d", w.Code)
+	}
+}

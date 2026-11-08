@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -192,5 +193,76 @@ func GetOrderFollowUp(state *app.State) gin.HandlerFunc {
 			services = []string{}
 		}
 		c.JSON(http.StatusOK, gin.H{"steps": steps, "services": services})
+	}
+}
+
+var osAvailabilityCache = struct {
+	sync.Mutex
+	m map[string]struct {
+		at  time.Time
+		oss []string
+	}
+}{m: map[string]struct {
+	at  time.Time
+	oss []string
+}{}}
+
+// GetOSAvailability GET /api/ovh/os-availability?planCode=&account_id=
+// 某个独服型号能装哪些系统(GET /dedicated/server/osAvailabilities?hardware=,免登录,hardware 取型号代码)。
+// 按账户所在站点(EU/CA/US)查,结果缓存 1 小时。
+func GetOSAvailability(state *app.State) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		plan := strings.TrimSpace(c.Query("planCode"))
+		if plan == "" || strings.ContainsAny(plan, " /?&#") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "缺少有效型号"})
+			return
+		}
+		accountID := strings.TrimSpace(c.Query("account_id"))
+		if accountID == "" {
+			if acc, ok := state.FindAccount(""); ok {
+				accountID = acc.ID
+			}
+		}
+		account, ok := state.FindAccount(accountID)
+		if !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "缺少有效账户"})
+			return
+		}
+		key := account.Endpoint + "|" + plan
+		osAvailabilityCache.Lock()
+		if e, hit := osAvailabilityCache.m[key]; hit && time.Since(e.at) < time.Hour {
+			osAvailabilityCache.Unlock()
+			c.JSON(http.StatusOK, gin.H{"os": e.oss})
+			return
+		}
+		osAvailabilityCache.Unlock()
+		client, err := state.OVH.IsolatedClientFor(account.ID)
+		if err != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+			return
+		}
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 20*time.Second)
+		defer cancel()
+		var oss []string
+		if err := client.GetUnAuthWithContext(ctx, "/dedicated/server/osAvailabilities?hardware="+url.QueryEscape(plan), &oss); err != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"error": "无法读取可安装系统: " + ovh.Explain(err)})
+			return
+		}
+		if oss == nil {
+			oss = []string{}
+		}
+		osAvailabilityCache.Lock()
+		if len(osAvailabilityCache.m) > 512 {
+			osAvailabilityCache.m = map[string]struct {
+				at  time.Time
+				oss []string
+			}{}
+		}
+		osAvailabilityCache.m[key] = struct {
+			at  time.Time
+			oss []string
+		}{time.Now(), oss}
+		osAvailabilityCache.Unlock()
+		c.JSON(http.StatusOK, gin.H{"os": oss})
 	}
 }

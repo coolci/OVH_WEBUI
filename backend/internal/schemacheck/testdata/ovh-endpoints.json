@@ -445,6 +445,29 @@
       ]
     }
   },
+  "GET /dedicated/server/osAvailabilities": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "string[]",
+      "params": [
+        "query:hardware:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "string[]",
+      "params": [
+        "query:hardware:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "string[]",
+      "params": [
+        "query:hardware:string:true"
+      ]
+    }
+  },
   "GET /dedicated/server/{serviceName}": {
     "CA": {
       "status": "PRODUCTION",

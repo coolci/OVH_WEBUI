@@ -57,3 +57,15 @@ export function useOrderFollowUp(accountId: string | undefined, orderId: string 
     retry: false,
   });
 }
+
+/** 某个独服型号能装的系统(OVH osAvailabilities,免登录;后端缓存 1 小时) */
+export function useOSAvailability(planCode: string | undefined, accountId: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: ["ovh", "os-availability", planCode || "", accountId || ""],
+    queryFn: async () =>
+      (await api.get<{ os: string[] }>("/ovh/os-availability", { params: { planCode, account_id: accountId || undefined } })).data.os,
+    enabled: enabled && !!planCode,
+    staleTime: 60 * 60_000,
+    retry: false,
+  });
+}

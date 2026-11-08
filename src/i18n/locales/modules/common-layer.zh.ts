@@ -403,6 +403,14 @@ export const commonLayerZh = {
     },
   },
   ovhExtra: {
+    os: {
+      title: "可安装系统",
+      show: "查看可安装系统",
+      loading: "正在读取…",
+      failed: "读取失败：{{reason}}",
+      empty: "OVH 未返回该型号的系统列表",
+      count: "共 {{count}} 个",
+    },
     followUp: {
       button: "进度",
       title: "订单进度 #{{orderId}}",

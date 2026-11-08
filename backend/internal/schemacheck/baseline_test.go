@@ -212,6 +212,7 @@ var usedEndpoints = []string{
 
 	// —— VPS ——
 	"GET /vps",
+	"GET /dedicated/server/osAvailabilities",
 	"GET /vps/order/rule/datacenter",
 	"GET /vps/order/rule/datacenter/aggregated",
 	"GET /vps/{serviceName}",

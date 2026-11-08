@@ -32,6 +32,7 @@ import {
 import { groupOptions, type OptionGroupKey } from "@/lib/option-groups";
 import { OVH_DATACENTERS, isDcInStock, lookupDcStatus, mergeDcAvailability } from "@/lib/datacenters";
 import { AutoPayCheck } from "@/components/orders/AutoPayCheck";
+import { OSAvailabilityList } from "@/components/servers/OSAvailabilityList";
 
 interface ServerDetailDialogProps {
   server: ServerPlan;
@@ -224,6 +225,8 @@ export function ServerDetailDialog({
         )}
 
         <DatacenterPicker value={selectedDCs} onChange={setSelectedDCs} availability={dcMap} />
+
+        {!preorder && <OSAvailabilityList planCode={server.planCode} accountId={accountId} />}
 
         {/* 抢购参数 */}
         <div className="border-t border-border pt-4">

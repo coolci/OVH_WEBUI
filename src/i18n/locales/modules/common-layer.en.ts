@@ -420,6 +420,14 @@ const pack: CommonLayerPack = {
     },
   },
   ovhExtra: {
+    os: {
+      title: "Installable operating systems",
+      show: "Show installable operating systems",
+      loading: "Loading…",
+      failed: "Failed to load: {{reason}}",
+      empty: "OVH returned no OS list for this model",
+      count: "{{count}} in total",
+    },
     followUp: {
       button: "Progress",
       title: "Order progress #{{orderId}}",
