@@ -7,7 +7,7 @@ import { Radio, RefreshCw, CheckCircle2, AlertTriangle } from "lucide-react";
 import { LoadFailedBanner } from "@/components/common/LoadFailed";
 import { Section } from "./Section";
 import { Field } from "./Field";
-import { useTelegramPoller, type SettingsConfig } from "@/hooks/use-settings";
+import { useTelegramPoller, type SettingsConfig, type TelegramRejectedActor } from "@/hooks/use-settings";
 import { fmtDateTime } from "@/i18n/format";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +25,46 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
     <div className="flex justify-between items-start gap-3">
       <span className="text-muted-foreground flex-shrink-0">{label}</span>
       <span className="font-medium text-right min-w-0">{value}</span>
+    </div>
+  );
+}
+
+/** 有人给 Bot 发了消息但被拒:说清原因,给出该填的 Chat ID(私聊 = 自己的 user id) */
+function RejectedHint({
+  rejected,
+  current,
+  onUse,
+}: {
+  rejected: TelegramRejectedActor;
+  current: string;
+  onUse: (chatId: string) => void;
+}) {
+  const { t } = useTranslation();
+  // 群聊缺白名单时,最省事的是改用自己的私聊(chat id = user id);其余情况就用发消息的那个 chat
+  const suggest = rejected.reason === "group_user_not_allowed" ? rejected.userId || "" : rejected.chatId;
+  const who = rejected.username ? `@${rejected.username}` : rejected.userId || rejected.chatId;
+  const reasonKey =
+    rejected.reason === "no_chat_id"
+      ? "rejectNoChatId"
+      : rejected.reason === "group_user_not_allowed"
+        ? "rejectGroup"
+        : "rejectMismatch";
+  return (
+    <div role="alert" className="rounded-xl border border-warning/40 bg-warning/5 px-3 py-2 text-[12px] space-y-1.5">
+      <div className="flex items-start gap-2">
+        <AlertTriangle className="w-4 h-4 text-warning flex-shrink-0 mt-0.5" />
+        <div className="min-w-0 space-y-1">
+          <p className="font-medium">
+            {t("settings.telegram.rejectedTitle", { who, chatId: rejected.chatId, time: fmtDateTime(rejected.at) })}
+          </p>
+          <p className="text-muted-foreground">{t(`settings.telegram.${reasonKey}`)}</p>
+        </div>
+      </div>
+      {suggest && suggest !== current && (
+        <Button size="sm" variant="outline" className="h-7 text-[12px]" onClick={() => onUse(suggest)}>
+          {t("settings.telegram.useChatId", { chatId: suggest })}
+        </Button>
+      )}
     </div>
   );
 }
@@ -150,12 +190,14 @@ export function TelegramSection({ form, set }: TelegramSectionProps) {
           placeholder="123456:ABCdef..."
         />
       </Field>
+      {poller?.lastRejected && <RejectedHint rejected={poller.lastRejected} current={form.tgChatId || ""} onUse={(v) => set("tgChatId", v)} />}
       <Field label="Chat ID">
         <Input
           value={form.tgChatId || ""}
           onChange={(e) => set("tgChatId", e.target.value)}
-          placeholder="-1001234567890"
+          placeholder={t("settings.telegram.chatIdPlaceholder")}
         />
+        <p className="text-[11px] text-muted-foreground mt-1">{t("settings.telegram.chatIdHint")}</p>
       </Field>
     </Section>
   );

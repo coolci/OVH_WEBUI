@@ -98,6 +98,15 @@ export const settingsPagesZh = {
         "：两边会互相把对方踢下线，表现就是「一键下单」按钮时灵时不灵、消息随机丢。先停掉另一份程序（另一台机器 / 另一个容器 / 本地调试进程），或者给这一份换一个 Bot Token。",
       errorState: "错误状态",
       normal: "正常",
+      chatIdPlaceholder: "例如 123456789（私聊填你自己的 user id）",
+      chatIdHint:
+        "推荐私聊：Chat ID 填你自己的 user id（不知道就先给 Bot 发一条消息，这里会提示）。填群 ID（负数）时，群里发命令的人还要写进服务器环境变量 TG_ALLOWED_USER_IDS，否则 Bot 一律不理。",
+      rejectedTitle: "{{time}} 收到 {{who}}（chat {{chatId}}）的消息，但没有授权，Bot 没有回复。",
+      rejectNoChatId: "还没填 Chat ID —— 所有消息都会被丢弃。",
+      rejectMismatch: "这个 chat 和下面填的 Chat ID 不一致。如果是你本人，换成它并保存即可。",
+      rejectGroup:
+        "这是群聊：群里下单还需要把发送者的 user id 写进服务器环境变量 TG_ALLOWED_USER_IDS 并重启。更简单的做法是改用私聊。",
+      useChatId: "填入 {{chatId}}（记得点「保存设置」）",
       notRunningWarning: "收取器没在跑 —— 现在一条命令、一个按钮都收不到。看上面的报错，或者重启程序。",
     },
     cache: {

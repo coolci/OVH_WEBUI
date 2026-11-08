@@ -37,9 +37,22 @@ const (
 //
 // 这层挡的是「secret 泄漏 / 兼容模式」下的越权，不是伪造来源 —— 伪造来源由 secret 挡。
 func IsAuthorizedActor(state *app.State, chatID, userID interface{}) bool {
+	ok, _ := AuthorizeActor(state, chatID, userID)
+	return ok
+}
+
+// 拒绝原因(给日志和设置页看,让用户知道该填什么)
+const (
+	RejectNoChatID        = "no_chat_id"             // 设置里还没填 Chat ID
+	RejectChatMismatch    = "chat_mismatch"          // 发消息的 chat 不是设置里那个
+	RejectGroupNotAllowed = "group_user_not_allowed" // 群聊匹配,但发送者不在 TG_ALLOWED_USER_IDS 白名单
+)
+
+// AuthorizeActor 同 IsAuthorizedActor,另外返回拒绝原因(放行时为空)。
+func AuthorizeActor(state *app.State, chatID, userID interface{}) (bool, string) {
 	want := normalizeID(state.Config.Get().TgChatID)
 	if want == "" {
-		return false
+		return false, RejectNoChatID
 	}
 	gotChat := normalizeID(idToString(chatID))
 	gotUser := normalizeID(idToString(userID))
@@ -47,18 +60,40 @@ func IsAuthorizedActor(state *app.State, chatID, userID interface{}) bool {
 	if gotChat != "" && gotChat == want {
 		if strings.HasPrefix(gotChat, "-") {
 			allow := strings.TrimSpace(os.Getenv("TG_ALLOWED_USER_IDS"))
-			if allow == "" {
-				return false
+			if allow == "" || !idInCSV(gotUser, allow) {
+				return false, RejectGroupNotAllowed
 			}
-			return idInCSV(gotUser, allow)
 		}
-		return true
+		return true, ""
 	}
 	// 兼容：配置里填的是 user id，私聊时 chat_id 与之相等
 	if gotUser != "" && gotUser == want && (gotChat == "" || gotChat == gotUser) {
-		return true
+		return true, ""
 	}
-	return false
+	return false, RejectChatMismatch
+}
+
+// unboundHintAt 每个 chat 上次收到"未绑定"提示的时间,避免反复刷屏
+var (
+	unboundHintMu sync.Mutex
+	unboundHintAt = map[string]time.Time{}
+)
+
+// ShouldHintUnbound 同一个 chat 10 分钟内只提示一次"Bot 还没绑定 Chat ID"。
+func ShouldHintUnbound(chatID string) bool {
+	if chatID == "" {
+		return false
+	}
+	unboundHintMu.Lock()
+	defer unboundHintMu.Unlock()
+	if t, ok := unboundHintAt[chatID]; ok && time.Since(t) < 10*time.Minute {
+		return false
+	}
+	if len(unboundHintAt) > 1000 {
+		unboundHintAt = map[string]time.Time{}
+	}
+	unboundHintAt[chatID] = time.Now()
+	return true
 }
 
 func idInCSV(id, csv string) bool {

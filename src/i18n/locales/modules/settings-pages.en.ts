@@ -109,6 +109,15 @@ const pack: SettingsPagesPack = {
         ": the two sides keep kicking each other offline, which shows up as the “one-click order” button working intermittently and messages being dropped at random. Stop the other copy of the program (another machine / another container / a local debug process), or give this one a different Bot Token.",
       errorState: "Error status",
       normal: "Normal",
+      chatIdPlaceholder: "e.g. 123456789 (for a private chat, your own user id)",
+      chatIdHint:
+        "Recommended: private chat — enter your own user id (if you don't know it, send the bot a message and it will show up here). With a group id (negative), everyone sending commands must also be listed in the server env var TG_ALLOWED_USER_IDS, otherwise the bot ignores them.",
+      rejectedTitle: "At {{time}} a message from {{who}} (chat {{chatId}}) arrived but wasn't authorized, so the bot didn't reply.",
+      rejectNoChatId: "No Chat ID set yet — every message is dropped.",
+      rejectMismatch: "This chat doesn't match the Chat ID below. If it's you, switch to it and save.",
+      rejectGroup:
+        "This is a group: ordering from a group also needs the sender's user id in the server env var TG_ALLOWED_USER_IDS (then restart). Simpler: use a private chat.",
+      useChatId: "Use {{chatId}} (then click “Save settings”)",
       notRunningWarning:
         "The poller isn't running — right now no command or button will get through. Check the error above, or restart the program.",
     },

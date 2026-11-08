@@ -121,6 +121,10 @@ func SaveSettings(state *app.State) gin.HandlerFunc {
 			state.Logger.Info("Telegram 配置已变更，唤醒并重启长轮询", "telegram")
 			go RestartPoller(state)
 		}
+		if newCfg.TgChatID != prev.TgChatID || newCfg.TgToken != prev.TgToken {
+			// 旧的"未授权"提示是按旧配置算的,改完就不再适用
+			telegram.ClearRejected()
+		}
 
 		// TG 配置变更 → 同步发一条测试消息
 		if newCfg.TgToken != "" && newCfg.TgChatID != "" {

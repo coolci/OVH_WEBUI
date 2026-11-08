@@ -25,6 +25,30 @@ type PollerStatus struct {
 	LastError    string `json:"lastError,omitempty"`
 	LastUpdateAt string `json:"lastUpdateAt,omitempty"`
 	Offset       int64  `json:"offset"`
+	// LastRejected 最近一条因未授权被丢弃的消息。以前这类消息只打一行不带 ID 的日志,
+	// 用户只看到"Bot 不理人",不知道该在 Chat ID 里填什么。
+	LastRejected *RejectedActor `json:"lastRejected,omitempty"`
+}
+
+// RejectedActor 被拒绝的发送者
+type RejectedActor struct {
+	ChatID   string `json:"chatId"`
+	UserID   string `json:"userId,omitempty"`
+	Username string `json:"username,omitempty"`
+	ChatType string `json:"chatType,omitempty"`
+	Reason   string `json:"reason"`
+	At       string `json:"at"`
+}
+
+// RecordRejected 记下最近一次被拒绝的发送者(设置页据此提示"该填哪个 Chat ID")。
+func RecordRejected(r RejectedActor) {
+	r.At = time.Now().UTC().Format(time.RFC3339)
+	patchPoller(func(s *PollerStatus) { s.LastRejected = &r })
+}
+
+// ClearRejected Chat ID 改过之后清掉旧的拒绝记录,避免设置页继续显示过时的提示。
+func ClearRejected() {
+	patchPoller(func(s *PollerStatus) { s.LastRejected = nil })
 }
 
 var (
@@ -38,6 +62,44 @@ var (
 )
 
 const kvPollOffset = "telegram_poll_offset"
+
+// savedOffset 落库的 getUpdates 进度。update_id 是每个 Bot 各自的序列,
+// 必须连同 Bot ID 一起存:换了 Bot Token 再重启时,若沿用旧 Bot 的 offset,
+// 新 Bot 的 update_id 全部小于它,Telegram 会把它们当成"已确认"直接丢掉 —— Bot 永远不回话。
+type savedOffset struct {
+	BotID  string `json:"botId"`
+	Offset int64  `json:"offset"`
+}
+
+// botIDOf Token 冒号前的数字就是 Bot 的 user id
+func botIDOf(token string) string {
+	if i := strings.Index(token, ":"); i > 0 {
+		return token[:i]
+	}
+	return ""
+}
+
+func loadOffset(state *app.State, token string) int64 {
+	if state.DB == nil {
+		return 0
+	}
+	var saved savedOffset
+	if ok, err := state.DB.GetKV(kvPollOffset, &saved); err != nil || !ok {
+		// 老版本存的是裸数字,不知道属于哪个 Bot,不能用
+		return 0
+	}
+	if saved.BotID == "" || saved.BotID != botIDOf(token) || saved.Offset < 0 {
+		return 0
+	}
+	return saved.Offset
+}
+
+func storeOffset(state *app.State, token string, offset int64) {
+	if state.DB == nil || offset <= 0 {
+		return
+	}
+	_ = state.DB.SetKV(kvPollOffset, savedOffset{BotID: botIDOf(token), Offset: offset})
+}
 
 // SnapshotPoller 返回轮询状态副本。
 func SnapshotPoller() PollerStatus {
@@ -152,16 +214,7 @@ func runPoller(state *app.State, onUpdate func(map[string]interface{}), kick <-c
 			} else {
 				state.Logger.Info("已清除 Telegram Webhook，改用 getUpdates 轮询入站", "telegram")
 			}
-			if lastToken == "" && state.DB != nil {
-				var saved int64
-				if ok, _ := state.DB.GetKV(kvPollOffset, &saved); ok && saved > 0 {
-					offset = saved
-				} else {
-					offset = 0
-				}
-			} else {
-				offset = 0
-			}
+			offset = loadOffset(state, token)
 			lastToken = token
 			if u, err := fetchBotUsername(client, token); err == nil {
 				patchPoller(func(s *PollerStatus) { s.BotUsername = u })
@@ -239,9 +292,7 @@ func runPoller(state *app.State, onUpdate func(map[string]interface{}), kick <-c
 				s.LastUpdateAt = time.Now().UTC().Format(time.RFC3339)
 			})
 		}
-		if state.DB != nil && offset > 0 {
-			_ = state.DB.SetKV(kvPollOffset, offset)
-		}
+		storeOffset(state, token, offset)
 	}
 }
 

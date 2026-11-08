@@ -80,7 +80,19 @@ export function useClearCache() {
 /**
  * 长轮询收取器的运行快照。
  */
+/** 最近一条因未授权被丢弃的消息(后端 telegram.RejectedActor) */
+export interface TelegramRejectedActor {
+  chatId: string;
+  userId?: string;
+  username?: string;
+  chatType?: string;
+  /** no_chat_id / chat_mismatch / group_user_not_allowed */
+  reason: string;
+  at: string;
+}
+
 export interface TelegramPollerStatus {
+  lastRejected?: TelegramRejectedActor | null;
   running?: boolean;
   configured?: boolean;
   botUsername?: string;
@@ -122,6 +134,7 @@ export function useTelegramPoller(enabled = true) {
       const lastUpdateAt = data.lastUpdateAt || snap.lastUpdateAt || snap.lastPollAt;
 
       const pollerObj: TelegramPollerStatus = {
+        lastRejected: snap.lastRejected ?? null,
         running,
         configured,
         botUsername,

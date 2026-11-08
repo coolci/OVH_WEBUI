@@ -47,9 +47,9 @@ func ProcessTelegramUpdate(state *app.State, mon *monitor.Monitor, data map[stri
 	}
 	// 发送者授权 —— 必须排在幂等写入之前。
 	// 以前顺序是「幂等 → 授权」,于是未授权请求也会先往 telegram_updates 写一行。
-	authorized := telegram.IsAuthorizedActor(state, actorChatID(data), actorUserID(data))
+	authorized, reason := telegram.AuthorizeActor(state, actorChatID(data), actorUserID(data))
 	if !authorized {
-		state.Logger.Warn("拒绝未授权的 Telegram 请求(未写入幂等表)", "telegram")
+		rejectTelegramActor(state, data, reason)
 		return
 	}
 
@@ -435,6 +435,49 @@ func toStringSlice(v interface{}) []string {
 // actorChatID / actorUserID 从 update 里取出发送者标识,
 // callback_query 和 message 两种形态各取各的位置。
 // 提前取是为了把授权判断挪到幂等写入之前(见 webhook handler 里的说明)。
+// rejectTelegramActor 处理未授权的消息:日志里写清是谁、为什么被拒、该填什么,
+// 并记到长轮询状态里让设置页能直接提示。以前这里只有一句不带 ID 的日志,
+// 用户看到的就是"Bot 不理人",完全不知道 Chat ID 填错了还是群聊缺白名单。
+func rejectTelegramActor(state *app.State, data map[string]interface{}, reason string) {
+	chatID := telegram.ChatIDString(actorChatID(data))
+	userID := telegram.ChatIDString(actorUserID(data))
+	username, chatType := actorProfile(data)
+	telegram.RecordRejected(telegram.RejectedActor{
+		ChatID: chatID, UserID: userID, Username: username, ChatType: chatType, Reason: reason,
+	})
+	hint := map[string]string{
+		telegram.RejectNoChatID:        "设置里还没填 Chat ID",
+		telegram.RejectChatMismatch:    "该 chat 与设置里的 Chat ID 不一致",
+		telegram.RejectGroupNotAllowed: "群聊下单需要在环境变量 TG_ALLOWED_USER_IDS 里加入发送者 user id",
+	}[reason]
+	state.Logger.Warn(fmt.Sprintf("拒绝未授权的 Telegram 请求(未写入幂等表): chat_id=%s user_id=%s @%s 类型=%s 原因=%s",
+		chatID, userID, username, chatType, hint), "telegram")
+
+	// 还没绑定 Chat ID 时,私聊回一句"你的 Chat ID 是多少",省得用户去别处查。
+	// 已绑定(只是不是这个人)时不回话 —— 不给陌生人暴露这个 Bot 在干什么。
+	if reason == telegram.RejectNoChatID && chatType == "private" && telegram.ShouldHintUnbound(chatID) {
+		msg, _ := data["message"].(map[string]interface{})
+		msgID, _ := getNumOrFloat(msg["message_id"])
+		telegram.SendReply(state, actorChatID(data), "👋 这个 Bot 还没有绑定 Chat ID。\n你的 Chat ID 是："+chatID+
+			"\n请在 OVH WebUI「设置 → Telegram」里填入并保存，然后再发一次命令。", int64(msgID))
+	}
+}
+
+// actorProfile 发送者用户名与 chat 类型(private / group / supergroup / channel)
+func actorProfile(data map[string]interface{}) (username, chatType string) {
+	var msg, from map[string]interface{}
+	if cb, ok := data["callback_query"].(map[string]interface{}); ok {
+		msg, _ = cb["message"].(map[string]interface{})
+		from, _ = cb["from"].(map[string]interface{})
+	} else if m, ok := data["message"].(map[string]interface{}); ok {
+		msg = m
+		from, _ = m["from"].(map[string]interface{})
+	}
+	username, _ = from["username"].(string)
+	chatType, _ = getNested(msg, "chat", "type").(string)
+	return username, chatType
+}
+
 func actorChatID(data map[string]interface{}) interface{} {
 	if cb, ok := data["callback_query"].(map[string]interface{}); ok {
 		msg, _ := cb["message"].(map[string]interface{})
