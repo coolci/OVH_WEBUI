@@ -78,6 +78,11 @@ func GetOrderDurations(state *app.State) gin.HandlerFunc {
 	}
 }
 
+// fetchOrderDurations 用免登录购物车读 OVH 对这个型号的计价周期。
+// 2026-11 在 EU 正式环境实测:建车、列型号计价都不需要登录,只有绑定账户/结账/删车需要。
+// 只读周期不涉及税额(匿名车按子公司默认税率,与账户实际税率可能不同),所以这里可以放心匿名;
+// 匿名车删不掉,OVH 约 24 小时后自动过期,且不挂在任何账户名下。
+// 客户端仍取自该账户:沿用它的站点(EU/CA/US)和出站代理,只是请求不签名。
 func fetchOrderDurations(ctx context.Context, state *app.State, accountID, subsidiary, plan string) ([]string, error) {
 	client, err := state.OVH.IsolatedClientFor(accountID)
 	if err != nil {
@@ -86,21 +91,14 @@ func fetchOrderDurations(ctx context.Context, state *app.State, accountID, subsi
 	var cart struct {
 		ID string `json:"cartId"`
 	}
-	if err := client.PostWithContext(ctx, "/order/cart", ovh.CartCreateBody(subsidiary), &cart); err != nil {
+	if err := client.PostUnAuthWithContext(ctx, "/order/cart", ovh.CartCreateBody(subsidiary), &cart); err != nil {
 		return nil, err
 	}
 	if cart.ID == "" {
 		return nil, context.DeadlineExceeded
 	}
-	ovh.TrackCart(cart.ID)
-	defer func() {
-		// 不挂请求 ctx:请求超时/取消后也要把临时车删掉
-		cleanup, done := context.WithTimeout(context.Background(), 5*time.Second)
-		defer done()
-		_ = client.DeleteWithContext(cleanup, "/order/cart/"+cart.ID, nil)
-	}()
-	offers, err := orderterm.Offers(ctx, client, cart.ID, "eco")
-	if err != nil {
+	var offers []map[string]interface{}
+	if err := client.GetUnAuthWithContext(ctx, "/order/cart/"+cart.ID+"/eco", &offers); err != nil {
 		return nil, err
 	}
 	for _, offer := range offers {

@@ -82,3 +82,46 @@ func TestDefaultPaymentCheck(t *testing.T) {
 		})
 	}
 }
+
+// 查可选购买时长走免登录购物车:请求不带签名头,也不尝试删车(匿名车删不掉)
+func TestOrderDurationsUseAnonymousCart(t *testing.T) {
+	var signed, deletes int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/auth/time" {
+			fmt.Fprint(w, time.Now().Unix())
+			return
+		}
+		if r.Header.Get("X-Ovh-Signature") != "" || r.Header.Get("X-Ovh-Consumer") != "" {
+			signed++
+		}
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/order/cart":
+			fmt.Fprint(w, `{"cartId":"anon"}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/order/cart/anon/eco":
+			fmt.Fprint(w, `[{"planCode":"24sk202","prices":[{"duration":"P1M","pricingMode":"default"},{"duration":"P1Y","pricingMode":"upfront12"},{"duration":"P0D","pricingMode":"default"}]}]`)
+		case r.Method == http.MethodDelete:
+			deletes++
+			w.WriteHeader(http.StatusUnauthorized)
+			fmt.Fprint(w, `{"message":"You must login first"}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	orig := ovhsdk.Endpoints["ovh-eu"]
+	ovhsdk.Endpoints["ovh-eu"] = srv.URL
+	t.Cleanup(func() { ovhsdk.Endpoints["ovh-eu"] = orig })
+	st := newTestState(t)
+	st.Accounts = []types.OVHAccount{{ID: "acc", Endpoint: "ovh-eu", Zone: "IE", AppKey: "k", AppSecret: "s", ConsumerKey: "c"}}
+	got, err := fetchOrderDurations(t.Context(), st, "acc", "IE", "24sk202")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(got, ",") != "P1M,P12M" {
+		t.Fatalf("periods (P0D install entries dropped, P1Y normalized): %v", got)
+	}
+	if signed != 0 || deletes != 0 {
+		t.Fatalf("anonymous lookup must not sign requests or try to delete: signed=%d deletes=%d", signed, deletes)
+	}
+}
