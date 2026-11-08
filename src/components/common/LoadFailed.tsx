@@ -1,7 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import { AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { apiMessage } from "@/lib/api-error";
+import { errorMessage } from "@/lib/api-error";
 import i18n from "@/i18n";
 
 /**
@@ -43,12 +43,6 @@ export function LoadFailed({
       )}
     </div>
   );
-}
-
-/** 从 axios / fetch / Error 里挖出一句能给用户看的话。
- *  走 apiMessage 翻译层:后端带 code 的消息按当前语言出译文 */
-export function errorMessage(error: unknown): string {
-  return apiMessage(error) || i18n.t("common.checkNetwork");
 }
 
 /**

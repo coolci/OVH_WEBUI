@@ -16,21 +16,22 @@ import { toast } from "sonner";
 import { formatMoney } from "@/lib/money";
 import { Trans, useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import { errorMessage } from "@/components/common/LoadFailed";
+import { errorMessage } from "@/lib/api-error";
 import { fmtDate, fmtDateTime } from "@/i18n/format";
+import type { EngagementInfo, EngagementRequest } from "@/hooks/ovh/server-control/types";
 
 /** EngagementDialog 钩子绑定 —— dedicated / vps 各自传入。
  *  类型上接受 (svc, enabled?) → query / mutation 形状即可。 */
 export type EngagementHooks = {
   // isError 必须进契约：后端不再把 401/403/5xx/超时吞成 engagement:null 了，
   // 前端如果只看 data==null，就会把"读取失败"渲染成"该服务未签合同期"——照样是误导。
-  useEngagement: (svc: string | null) => { data: any; isPending: boolean; isError: boolean; error: unknown };
-  useEngagementAvailable: (svc: string | null, enabled?: boolean) => { data: any; isPending: boolean; isError: boolean };
-  useEngagementRequest: (svc: string | null) => { data: any; isPending: boolean; isError: boolean };
-  useCreateEngagementRequest: (svc: string) => { mutateAsync: (vars: { pricingMode: string }) => Promise<any>; isPending: boolean };
-  useDeleteEngagementRequest: (svc: string) => { mutateAsync: () => Promise<any>; isPending: boolean };
+  useEngagement: (svc: string | null) => { data: EngagementInfo | null | undefined; isPending: boolean; isError: boolean; error: unknown };
+  useEngagementAvailable: (svc: string | null, enabled?: boolean) => { data: EngagementPricing[] | undefined; isPending: boolean; isError: boolean };
+  useEngagementRequest: (svc: string | null) => { data: EngagementRequest | null | undefined; isPending: boolean; isError: boolean };
+  useCreateEngagementRequest: (svc: string) => { mutateAsync: (vars: { pricingMode: string }) => Promise<{ request?: EngagementRequest } | null | undefined>; isPending: boolean };
+  useDeleteEngagementRequest: (svc: string) => { mutateAsync: () => Promise<unknown>; isPending: boolean };
   /** CANCEL_SERVICE 不可撤销，后端要求带 confirm:true，组件必须先弹二次确认 */
-  useUpdateEngagementEndRule: (svc: string) => { mutateAsync: (vars: { strategy: string; confirm?: boolean }) => Promise<any>; isPending: boolean };
+  useUpdateEngagementEndRule: (svc: string) => { mutateAsync: (vars: { strategy: string; confirm?: boolean }) => Promise<unknown>; isPending: boolean };
 };
 
 const DEFAULT_HOOKS: EngagementHooks = {
@@ -101,7 +102,7 @@ export function EngagementDialog({
       } else {
         toast.success(t("maint.engagement.toast.requestSubmitted"));
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(errorMessage(e));
     }
   };
@@ -110,7 +111,7 @@ export function EngagementDialog({
     try {
       await deleteReq.mutateAsync();
       toast.success(t("maint.engagement.toast.requestCancelled"));
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(errorMessage(e));
     }
   };
@@ -131,7 +132,7 @@ export function EngagementDialog({
       );
       toast.success(t("maint.engagement.toast.endRuleUpdated"));
       setConfirmStrategy(null);
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(errorMessage(e));
     }
   };

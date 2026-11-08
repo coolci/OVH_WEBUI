@@ -1,4 +1,4 @@
-import { detectOsKind } from "@/components/server-control/OsIcon";
+import { detectOsKind } from "@/lib/os-kind";
 
 /** OS 分组(标签走 i18n key,渲染处 t())+ 显示顺序(按用户使用频率排) */
 export const OS_GROUPS: { kind: ReturnType<typeof detectOsKind>; label: string }[] = [

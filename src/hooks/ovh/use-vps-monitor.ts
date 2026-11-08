@@ -3,7 +3,7 @@ import { api } from "@/lib/http";
 import { qk } from "@/lib/query";
 import { toast } from "sonner";
 import i18n from "@/i18n";
-import { apiMessage, bodyMessage } from "@/lib/api-error";
+import { apiMessage, bodyMessage, type BodyMessage } from "@/lib/api-error";
 
 export interface VPSSubscription {
   id: string;
@@ -74,7 +74,7 @@ export function useToggleVPSMonitor() {
       qc.invalidateQueries({ queryKey: qk.vpsMonitor.status() });
       toast.success(i18n.t(running ? "hooksMsg.vpsMonitor.stopped" : "hooksMsg.vpsMonitor.started"));
     },
-    onError: (e: any) => toast.error(apiMessage(e)),
+    onError: (e: unknown) => toast.error(apiMessage(e)),
   });
 }
 
@@ -100,7 +100,7 @@ export function useAddVPSSubscription() {
       qc.invalidateQueries({ queryKey: qk.vpsMonitor.status() });
       toast.success(i18n.t("hooksMsg.vpsMonitor.subAdded"));
     },
-    onError: (e: any) => toast.error(apiMessage(e)),
+    onError: (e: unknown) => toast.error(apiMessage(e)),
   });
 }
 
@@ -118,7 +118,7 @@ export function useRemoveVPSSubscription() {
       qc.invalidateQueries({ queryKey: qk.vpsMonitor.status() });
       toast.success(i18n.t("hooksMsg.vpsMonitor.subDeleted"));
     },
-    onError: (e: any) => toast.error(apiMessage(e)),
+    onError: (e: unknown) => toast.error(apiMessage(e)),
   });
 }
 
@@ -128,12 +128,12 @@ export function useUpdateVPSSubscription() {
   return useMutation({
     mutationFn: async ({ id, ...patch }: Partial<VPSSubscription> & { id: string }) =>
       (await api.put(`/vps-monitor/subscriptions/${encodeURIComponent(id)}`, patch)).data,
-    onSuccess: (data: any) => {
+    onSuccess: (data: BodyMessage) => {
       qc.invalidateQueries({ queryKey: qk.vpsMonitor.list() });
       qc.invalidateQueries({ queryKey: qk.vpsMonitor.status() });
       toast.success(bodyMessage(data) || i18n.t("hooksMsg.vpsMonitor.subUpdated"));
     },
-    onError: (e: any) =>
+    onError: (e: unknown) =>
       toast.error(apiMessage(e)),
   });
 }
@@ -148,7 +148,7 @@ export function useClearVPSMonitor() {
       qc.invalidateQueries({ queryKey: qk.vpsMonitor.status() });
       toast.success(i18n.t("hooksMsg.vpsMonitor.subsCleared"));
     },
-    onError: (e: any) => toast.error(apiMessage(e)),
+    onError: (e: unknown) => toast.error(apiMessage(e)),
   });
 }
 

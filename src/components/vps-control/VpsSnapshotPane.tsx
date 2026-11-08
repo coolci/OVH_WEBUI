@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/common/Skeleton";
 import { EmptyState } from "@/components/common/EmptyState";
-import { LoadFailed, errorMessage } from "@/components/common/LoadFailed";
+import { LoadFailed } from "@/components/common/LoadFailed";
+import { errorMessage } from "@/lib/api-error";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
@@ -54,7 +55,7 @@ export function VpsSnapshotPane({ serviceName }: { serviceName: string }) {
       toast.success(t("vps.snapshot.toast.created"));
       setCreateOpen(false);
       setCreateDesc("");
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(errorMessage(e));
     }
   };
@@ -69,7 +70,7 @@ export function VpsSnapshotPane({ serviceName }: { serviceName: string }) {
       toast.success(t("vps.snapshot.toast.reverted"));
       setRevertOpen(false);
       setRevertConfirm("");
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(errorMessage(e));
     }
   };
@@ -79,7 +80,7 @@ export function VpsSnapshotPane({ serviceName }: { serviceName: string }) {
     try {
       await remove.mutateAsync();
       toast.success(t("vps.snapshot.toast.deleted"));
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(errorMessage(e));
     }
   };
@@ -89,7 +90,7 @@ export function VpsSnapshotPane({ serviceName }: { serviceName: string }) {
       await update.mutateAsync({ description: editDesc });
       toast.success(t("vps.snapshot.toast.descUpdated"));
       setEditOpen(false);
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(errorMessage(e));
     }
   };

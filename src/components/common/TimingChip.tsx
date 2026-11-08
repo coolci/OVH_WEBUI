@@ -69,7 +69,7 @@ export function TimingChip({
 }
 
 /** 1832 → "1.83s"；210 → "210ms"。抢购的量级跨度大，统一单位不如各自可读 */
-export function fmtMs(ms: number): string {
+function fmtMs(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
   return `${(ms / 1000).toFixed(2)}s`;
 }

@@ -9,7 +9,7 @@ import { useTaskTimeslots, useScheduleTask, type ServerTask } from "@/hooks/use-
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { fmtDateTime } from "@/i18n/format";
-import { errorMessage } from "@/components/common/LoadFailed";
+import { errorMessage } from "@/lib/api-error";
 
 /** Date → YYYY-MM-DD（按本地时区取"那一天"，跟后端 normalizeAPIDate 的取法一致） */
 function toDateInput(d: Date): string {
@@ -68,7 +68,7 @@ export function TimeslotsDialog({
       onOpenChange(false);
       setPicked(null);
       setHasBackup(false);
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(errorMessage(e));
     }
   };
@@ -121,8 +121,8 @@ export function TimeslotsDialog({
           ) : (
             <>
               <div className="border border-border rounded-2xl max-h-[40vh] overflow-y-auto divide-y divide-border">
-                {(q.data?.timeslots || []).map((ts: any, idx: number) => {
-                  const startDate: string | undefined = ts.startDate;
+                {(q.data?.timeslots || []).map((ts, idx) => {
+                  const startDate = ts.startDate;
                   const active = !!startDate && picked === startDate;
                   return (
                     <button

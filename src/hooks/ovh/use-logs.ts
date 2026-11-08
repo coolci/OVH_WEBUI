@@ -144,6 +144,6 @@ export function useClearLogs() {
       qc.invalidateQueries({ queryKey: ["logs"] });
       toast.success(i18n.t("hooksMsg.logs.cleared"));
     },
-    onError: (e: any) => toast.error(apiMessage(e)),
+    onError: (e: unknown) => toast.error(apiMessage(e)),
   });
 }

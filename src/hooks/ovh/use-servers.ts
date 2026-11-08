@@ -114,6 +114,6 @@ export function useAddToMonitor() {
       qc.invalidateQueries({ queryKey: qk.monitor.list() });
       toast.success(i18n.t("hooksMsg.servers.monitorAdded"));
     },
-    onError: (e: any) => toast.error(apiMessage(e)),
+    onError: (e: unknown) => toast.error(apiMessage(e)),
   });
 }

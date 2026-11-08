@@ -5,6 +5,7 @@ import { api } from "@/lib/http";
 import { useSelfUpdate, useUpdateProgress, type UpdateCheck } from "@/hooks/use-system-metrics";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
+import { errorField } from "@/lib/api-error";
 
 /**
  * 在线更新按钮。
@@ -35,7 +36,7 @@ export function UpdateButton({ check }: { check?: UpdateCheck }) {
       setFailed(progress.data?.error || t("commons.update.failed"));
       setStarted(false);
     }
-  }, [progress.data?.phase, progress.data?.error]);
+  }, [progress.data?.phase, progress.data?.error, t]);
 
   // 等待重启：轮询 /api/version，等到版本号变了就刷新整页
   useEffect(() => {
@@ -75,7 +76,7 @@ export function UpdateButton({ check }: { check?: UpdateCheck }) {
     }, 1000);
     pollRef.current = timer;
     return () => window.clearInterval(timer);
-  }, [waitingRestart, check?.latest]);
+  }, [waitingRestart, check?.latest, t]);
 
   const start = async () => {
     setFailed(null);
@@ -87,8 +88,8 @@ export function UpdateButton({ check }: { check?: UpdateCheck }) {
       }
       setStarted(true);
       toast.info(res.message || t("commons.update.started"));
-    } catch (e: any) {
-      setFailed(e?.response?.data?.error || t("commons.update.cannotStart"));
+    } catch (e: unknown) {
+      setFailed(errorField(e, "error") || t("commons.update.cannotStart"));
     }
   };
 

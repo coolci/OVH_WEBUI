@@ -3,8 +3,8 @@ import { api } from "@/lib/http";
 import { toast } from "sonner";
 import i18n from "@/i18n";
 import { qk } from "@/lib/query";
-import { apiMessage, bodyMessage } from "@/lib/api-error";
-import type { BootMode, ServerTask, RescueStatus } from "./types";
+import { apiMessage, bodyMessage, type BodyMessage } from "@/lib/api-error";
+import type { BootMode, ServerTask, RescueStatus, TaskTimeslot } from "./types";
 
 export function useServerBootModes(serviceName: string | null, enabled = true) {
   return useQuery({
@@ -80,12 +80,12 @@ export function useEnterRescue(serviceName: string) {
           confirm: true,
         })
       ).data,
-    onSuccess: (d: any) => {
+    onSuccess: (d: BodyMessage) => {
       qc.invalidateQueries({ queryKey: qk.serverControl.bootModes(serviceName) });
       toast.success(bodyMessage(d) || i18n.t("hooksMsg.server.rescueEntered"));
       qc.invalidateQueries({ queryKey: qk.serverControl.rescue(serviceName) });
     },
-    onError: (e: any) => toast.error(apiMessage(e) || i18n.t("hooksMsg.server.rescueEnterFailed")),
+    onError: (e: unknown) => toast.error(apiMessage(e) || i18n.t("hooksMsg.server.rescueEnterFailed")),
   });
 }
 
@@ -94,12 +94,12 @@ export function useExitRescue(serviceName: string) {
   return useMutation({
     mutationFn: async (expectedBoot?: number) =>
       (await api.post(`/server-control/${serviceName}/rescue/exit`, { confirm: true, expectedBoot })).data,
-    onSuccess: (d: any) => {
+    onSuccess: (d: BodyMessage) => {
       qc.invalidateQueries({ queryKey: qk.serverControl.bootModes(serviceName) });
       toast.success(bodyMessage(d) || i18n.t("hooksMsg.server.rescueExited"));
       qc.invalidateQueries({ queryKey: qk.serverControl.rescue(serviceName) });
     },
-    onError: (e: any) => toast.error(apiMessage(e) || i18n.t("hooksMsg.server.rescueExitFailed")),
+    onError: (e: unknown) => toast.error(apiMessage(e) || i18n.t("hooksMsg.server.rescueExitFailed")),
   });
 }
 
@@ -117,7 +117,7 @@ export function useTaskTimeslots(
         `/server-control/${serviceName}/tasks/${taskId}/available-timeslots?periodStart=${encodeURIComponent(periodStart)}&periodEnd=${encodeURIComponent(periodEnd)}`
       );
       return {
-        timeslots: (res.data?.timeslots || []) as any[],
+        timeslots: (res.data?.timeslots || []) as TaskTimeslot[],
         scheduleNotRequired: !!res.data?.scheduleNotRequired,
       };
     },

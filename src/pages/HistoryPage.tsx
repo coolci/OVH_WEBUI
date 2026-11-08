@@ -269,7 +269,7 @@ function HistoryPage() {
                 className="pl-9 rounded-lg h-8 text-xs bg-background/50 border-border/80 focus-visible:ring-1 focus-visible:ring-primary/40"
               />
             </div>
-            <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as any)}>
+            <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}>
               <SelectTrigger className="rounded-lg h-8 text-xs bg-background/50 border-border/80">
                 <SelectValue placeholder="所有状态" />
               </SelectTrigger>

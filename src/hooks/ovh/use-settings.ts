@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/http";
 import { qk } from "@/lib/query";
-import { errorMessage } from "@/components/common/LoadFailed";
+import { errorMessage } from "@/lib/api-error";
 import { toast } from "sonner";
 import i18n from "@/i18n";
 import { apiMessage } from "@/lib/api-error";
@@ -52,7 +52,7 @@ export function useSaveSettings() {
       qc.invalidateQueries({ queryKey: ["telegram"] });
       toast.success(i18n.t("hooksMsg.settings.saved"));
     },
-    onError: (e: any) => toast.error(apiMessage(e) || i18n.t("hooksMsg.settings.saveFailed")),
+    onError: (e: unknown) => toast.error(apiMessage(e) || i18n.t("hooksMsg.settings.saveFailed")),
   });
 }
 
@@ -73,7 +73,7 @@ export function useClearCache() {
       qc.invalidateQueries({ queryKey: qk.settings.cacheInfo() });
       toast.success(i18n.t("hooksMsg.settings.cacheCleared"));
     },
-    onError: (e: any) => toast.error(apiMessage(e) || i18n.t("hooksMsg.settings.cacheClearFailed")),
+    onError: (e: unknown) => toast.error(apiMessage(e) || i18n.t("hooksMsg.settings.cacheClearFailed")),
   });
 }
 
@@ -104,7 +104,13 @@ export function useTelegramPoller(enabled = true) {
   return useQuery({
     queryKey: qk.settings.telegramPoller(),
     queryFn: async (): Promise<TelegramPollerInfo> => {
-      const res = await api.get<any>("/telegram/poller");
+      // 新后端把状态平铺在顶层,老后端包在 polling / poller 里,两种都认
+      const res = await api.get<Partial<TelegramPollerStatus> & {
+        polling?: TelegramPollerStatus;
+        poller?: TelegramPollerStatus;
+        hasToken?: boolean;
+        success?: boolean;
+      }>("/telegram/poller");
       const data = res.data || {};
       const snap: TelegramPollerStatus = data.polling || data.poller || {};
       const running = data.running ?? snap.running ?? false;

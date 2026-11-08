@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { useCreateIntervention, type FaultyDisk } from "@/hooks/use-server-control";
 import { toast } from "sonner";
 import { useTranslation, Trans } from "react-i18next";
-import { errorMessage } from "@/components/common/LoadFailed";
+import { errorMessage } from "@/lib/api-error";
 
 type HardwareType = "hardDiskDrive" | "memory" | "cooling" | "";
 
@@ -100,7 +100,7 @@ export function HardwareReplaceDialog({
       if (res?.notice) toast.info(res.notice, { duration: 12000 });
       onOpenChange(false);
       reset();
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(errorMessage(e));
     }
   };

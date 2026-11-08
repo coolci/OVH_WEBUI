@@ -384,33 +384,3 @@ export function StatusBadge({
     </span>
   );
 }
-
-// 辅助函数：根据后端状态获取对应的StatusBadge状态
-export function getStatusFromBackend(backendStatus: string): StatusType | string {
-  // 统一转换为小写进行匹配
-  const normalizedStatus = backendStatus?.toLowerCase() || "unknown";
-  
-  // 直接返回如果已经是支持的状态
-  if (statusConfig[normalizedStatus]) {
-    return normalizedStatus;
-  }
-  
-  // 状态映射（后端可能返回的变体）
-  const statusMap: Record<string, string> = {
-    "active": "online",
-    "inactive": "offline",
-    "in_progress": "processing",
-    "waiting": "pending",
-    "success": "success",
-    "succeed": "success",
-    "fail": "failed",
-    "err": "error",
-    "complete": "complete",
-    "not_paid": "notPaid",
-    "not-paid": "notPaid",
-    "hacked_blocked": "hackedBlocked",
-    "hacked-blocked": "hackedBlocked",
-  };
-  
-  return statusMap[normalizedStatus] || normalizedStatus;
-}

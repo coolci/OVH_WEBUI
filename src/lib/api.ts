@@ -35,6 +35,18 @@ import type {
 
 export type * from "./types";
 
+/** 未建模的后端 JSON 响应:读字段前先收窄类型 */
+export type ApiJson = Record<string, unknown>;
+
+/** Telegram 云下单 / 注册命令等接口的统一结果 */
+export interface TelegramActionResult {
+  success: boolean;
+  message?: string;
+  error?: string;
+  mode?: string;
+  command?: string;
+}
+
 // 存储 / 传输 helpers（兼容 `import { getApiSecretKey } from "@/lib/api"`）
 export {
   API_KEY_STORAGE,
@@ -229,7 +241,7 @@ export const api = {
   },
   removeQueueItem: (id: string) => apiRequest(`/api/queue/${id}`, { method: "DELETE" }),
   clearQueue: () =>
-    apiRequest<Record<string, any>>("/api/queue/clear", { method: "DELETE" }),
+    apiRequest<ApiJson>("/api/queue/clear", { method: "DELETE" }),
   updateQueueStatus: (id: string, status: string) =>
     apiRequest(`/api/queue/${id}/status`, {
       method: "PUT",
@@ -250,7 +262,7 @@ export const api = {
       ...order,
       account_id: order.account_id || order.accountId,
     };
-    return apiRequest<any>("/api/queue/quick-order", {
+    return apiRequest<ApiJson>("/api/queue/quick-order", {
       method: "POST",
       body: JSON.stringify(payload),
     });
@@ -305,23 +317,23 @@ export const api = {
     return asArray<Subscription>(raw, ["subscriptions"]);
   },
   addSubscription: (sub: Record<string, unknown>) =>
-    apiRequest<Record<string, any>>("/api/monitor/subscriptions", {
+    apiRequest<ApiJson>("/api/monitor/subscriptions", {
       method: "POST",
       body: JSON.stringify(sub),
     }),
   removeSubscription: (planCode: string) =>
-    apiRequest<Record<string, any>>(`/api/monitor/subscriptions/${encodeURIComponent(planCode)}`, {
+    apiRequest<ApiJson>(`/api/monitor/subscriptions/${encodeURIComponent(planCode)}`, {
       method: "DELETE",
     }),
   clearSubscriptions: () =>
-    apiRequest<Record<string, any>>("/api/monitor/subscriptions/clear", { method: "DELETE" }),
+    apiRequest<ApiJson>("/api/monitor/subscriptions/clear", { method: "DELETE" }),
   batchAddAllServers: (options?: Record<string, unknown>) =>
-    apiRequest<Record<string, any>>("/api/monitor/subscriptions/batch-add-all", {
+    apiRequest<ApiJson>("/api/monitor/subscriptions/batch-add-all", {
       method: "POST",
       body: JSON.stringify(options || {}),
     }),
   getSubscriptionHistory: (planCode: string) =>
-    apiRequest<Record<string, any>>(
+    apiRequest<ApiJson>(
       `/api/monitor/subscriptions/${encodeURIComponent(planCode)}/history`
     ),
   startMonitor: () => apiRequest("/api/monitor/start", { method: "POST" }),
@@ -333,7 +345,7 @@ export const api = {
       body: JSON.stringify({ interval }),
     }),
   testNotification: () =>
-    apiRequest<any>("/api/monitor/test-notification", { method: "POST" }),
+    apiRequest<ApiJson>("/api/monitor/test-notification", { method: "POST" }),
 
   // ==================== VPS 监控 ====================
   getVpsSubscriptions: async (): Promise<VpsSubscription[]> => {
@@ -346,24 +358,24 @@ export const api = {
       body: JSON.stringify(sub),
     }),
   removeVpsSubscription: (id: string) =>
-    apiRequest<any>(`/api/vps-monitor/subscriptions/${id}`, { method: "DELETE" }),
+    apiRequest<ApiJson>(`/api/vps-monitor/subscriptions/${id}`, { method: "DELETE" }),
   clearVpsSubscriptions: () =>
-    apiRequest<any>("/api/vps-monitor/subscriptions/clear", { method: "DELETE" }),
-  startVpsMonitor: () => apiRequest<any>("/api/vps-monitor/start", { method: "POST" }),
-  stopVpsMonitor: () => apiRequest<any>("/api/vps-monitor/stop", { method: "POST" }),
+    apiRequest<ApiJson>("/api/vps-monitor/subscriptions/clear", { method: "DELETE" }),
+  startVpsMonitor: () => apiRequest<ApiJson>("/api/vps-monitor/start", { method: "POST" }),
+  stopVpsMonitor: () => apiRequest<ApiJson>("/api/vps-monitor/stop", { method: "POST" }),
   getVpsMonitorStatus: () => apiRequest<MonitorStatus>("/api/vps-monitor/status"),
   updateVpsMonitorInterval: (interval: number) =>
-    apiRequest<any>("/api/vps-monitor/interval", {
+    apiRequest<ApiJson>("/api/vps-monitor/interval", {
       method: "PUT",
       body: JSON.stringify({ interval }),
     }),
   manualCheckVps: (planCode: string, ovhSubsidiary?: string) =>
-    apiRequest<any>(`/api/vps-monitor/check/${encodeURIComponent(planCode)}`, {
+    apiRequest<ApiJson>(`/api/vps-monitor/check/${encodeURIComponent(planCode)}`, {
       method: "POST",
       body: JSON.stringify({ ovhSubsidiary: ovhSubsidiary || "IE" }),
     }),
   getVpsSubscriptionHistory: (id: string) =>
-    apiRequest<any>(`/api/vps-monitor/subscriptions/${id}/history`),
+    apiRequest<ApiJson>(`/api/vps-monitor/subscriptions/${id}/history`),
 
   // ==================== 服务器控制 ====================
   getMyServers: () =>
@@ -372,76 +384,76 @@ export const api = {
     ),
 
   getServerHardware: (serviceName: string) =>
-    apiRequest<Record<string, any>>(`/api/server-control/${encodeURIComponent(serviceName)}/hardware`),
+    apiRequest<ApiJson>(`/api/server-control/${encodeURIComponent(serviceName)}/hardware`),
   getServerTemplates: (serviceName: string) =>
-    apiRequest<Record<string, any>>(`/api/server-control/${encodeURIComponent(serviceName)}/templates`),
+    apiRequest<ApiJson>(`/api/server-control/${encodeURIComponent(serviceName)}/templates`),
   getServerIps: (serviceName: string) =>
-    apiRequest<Record<string, any>>(`/api/server-control/${encodeURIComponent(serviceName)}/ips`),
+    apiRequest<ApiJson>(`/api/server-control/${encodeURIComponent(serviceName)}/ips`),
   getServiceInfo: (serviceName: string) =>
-    apiRequest<Record<string, any>>(`/api/server-control/${encodeURIComponent(serviceName)}/serviceinfo`),
+    apiRequest<ApiJson>(`/api/server-control/${encodeURIComponent(serviceName)}/serviceinfo`),
   getServerTasks: (serviceName: string) =>
-    apiRequest<Record<string, any>>(`/api/server-control/${encodeURIComponent(serviceName)}/tasks`),
+    apiRequest<ApiJson>(`/api/server-control/${encodeURIComponent(serviceName)}/tasks`),
   rebootServer: (serviceName: string, type?: "hardware" | "soft") =>
-    apiRequest<Record<string, any>>(`/api/server-control/${encodeURIComponent(serviceName)}/reboot`, {
+    apiRequest<ApiJson>(`/api/server-control/${encodeURIComponent(serviceName)}/reboot`, {
       method: "POST",
       body: JSON.stringify({ type: type || "soft" }),
     }),
   reinstallServer: (serviceName: string, templateName: string, options?: Record<string, unknown>) =>
-    apiRequest<Record<string, any>>(`/api/server-control/${encodeURIComponent(serviceName)}/install`, {
+    apiRequest<ApiJson>(`/api/server-control/${encodeURIComponent(serviceName)}/install`, {
       method: "POST",
       body: JSON.stringify({ templateName, ...options }),
     }),
   getInstallStatus: (serviceName: string) =>
-    apiRequest<Record<string, any>>(`/api/server-control/${encodeURIComponent(serviceName)}/install/status`),
+    apiRequest<ApiJson>(`/api/server-control/${encodeURIComponent(serviceName)}/install/status`),
   changeContact: (
     serviceName: string,
     contacts: { contactAdmin?: string; contactTech?: string; contactBilling?: string }
   ) =>
-    apiRequest<Record<string, any>>(`/api/server-control/${encodeURIComponent(serviceName)}/change-contact`, {
+    apiRequest<ApiJson>(`/api/server-control/${encodeURIComponent(serviceName)}/change-contact`, {
       method: "POST",
       body: JSON.stringify(contacts),
     }),
   getInterventions: (serviceName: string) =>
-    apiRequest<Record<string, any>>(`/api/server-control/${encodeURIComponent(serviceName)}/interventions`),
+    apiRequest<ApiJson>(`/api/server-control/${encodeURIComponent(serviceName)}/interventions`),
   getPlannedInterventions: (serviceName: string) =>
-    apiRequest<Record<string, any>>(`/api/server-control/${encodeURIComponent(serviceName)}/planned-interventions`),
+    apiRequest<ApiJson>(`/api/server-control/${encodeURIComponent(serviceName)}/planned-interventions`),
   getIpmiAccess: (serviceName: string, type?: "html5" | "jnlp" | "sol") => {
     const q = type ? `?type=${encodeURIComponent(type)}` : "";
-    return apiRequest<Record<string, any>>(
+    return apiRequest<ApiJson>(
       `/api/server-control/${encodeURIComponent(serviceName)}/console${q}`
     );
   },
   getBurstStatus: (serviceName: string) =>
-    apiRequest<Record<string, any>>(`/api/server-control/${encodeURIComponent(serviceName)}/burst`),
+    apiRequest<ApiJson>(`/api/server-control/${encodeURIComponent(serviceName)}/burst`),
   toggleBurst: (serviceName: string, enable: boolean) =>
-    apiRequest<Record<string, any>>(`/api/server-control/${encodeURIComponent(serviceName)}/burst`, {
+    apiRequest<ApiJson>(`/api/server-control/${encodeURIComponent(serviceName)}/burst`, {
       method: "PUT",
       body: JSON.stringify({ enabled: enable }),
     }),
   getFirewallStatus: (serviceName: string) =>
-    apiRequest<Record<string, any>>(`/api/server-control/${encodeURIComponent(serviceName)}/firewall`),
+    apiRequest<ApiJson>(`/api/server-control/${encodeURIComponent(serviceName)}/firewall`),
   toggleFirewall: (serviceName: string, enable: boolean) =>
-    apiRequest<Record<string, any>>(`/api/server-control/${encodeURIComponent(serviceName)}/firewall`, {
+    apiRequest<ApiJson>(`/api/server-control/${encodeURIComponent(serviceName)}/firewall`, {
       method: "PUT",
       body: JSON.stringify({ enabled: enable }),
     }),
   getBackupFtp: (serviceName: string) =>
-    apiRequest<Record<string, any>>(`/api/server-control/${encodeURIComponent(serviceName)}/backup-ftp`),
+    apiRequest<ApiJson>(`/api/server-control/${encodeURIComponent(serviceName)}/backup-ftp`),
   activateBackupFtp: (serviceName: string) =>
-    apiRequest<Record<string, any>>(`/api/server-control/${encodeURIComponent(serviceName)}/backup-ftp`, {
+    apiRequest<ApiJson>(`/api/server-control/${encodeURIComponent(serviceName)}/backup-ftp`, {
       method: "POST",
     }),
   getBackupFtpPassword: (serviceName: string) =>
-    apiRequest<Record<string, any>>(`/api/server-control/${encodeURIComponent(serviceName)}/backup-ftp/password`, {
+    apiRequest<ApiJson>(`/api/server-control/${encodeURIComponent(serviceName)}/backup-ftp/password`, {
       method: "POST",
     }),
   getBiosSettings: (serviceName: string) =>
-    apiRequest<Record<string, any>>(`/api/server-control/${encodeURIComponent(serviceName)}/bios-settings`),
+    apiRequest<ApiJson>(`/api/server-control/${encodeURIComponent(serviceName)}/bios-settings`),
   getServerStatistics: (
     serviceName: string,
     period?: "daily" | "hourly" | "weekly" | "monthly" | "yearly"
   ) =>
-    apiRequest<Record<string, any>>(
+    apiRequest<ApiJson>(
       `/api/server-control/${encodeURIComponent(serviceName)}/statistics${period ? `?period=${period}` : ""}`
     ),
   getMrtg: (serviceName: string, params?: Record<string, string>) => {
@@ -449,23 +461,23 @@ export const api = {
     return apiRequest(`/api/server-control/${encodeURIComponent(serviceName)}/mrtg${q}`);
   },
   terminateServer: (serviceName: string) =>
-    apiRequest<any>(`/api/server-control/${encodeURIComponent(serviceName)}/terminate`, {
+    apiRequest<ApiJson>(`/api/server-control/${encodeURIComponent(serviceName)}/terminate`, {
       method: "POST",
     }),
   confirmTermination: (serviceName: string, token: string) =>
-    apiRequest<any>(`/api/server-control/${encodeURIComponent(serviceName)}/confirm-termination`, {
+    apiRequest<ApiJson>(`/api/server-control/${encodeURIComponent(serviceName)}/confirm-termination`, {
       method: "POST",
       body: JSON.stringify({ token }),
     }),
   moveIp: (serviceName: string, ip: string, targetService: string) =>
-    apiRequest<any>(`/api/server-control/${encodeURIComponent(serviceName)}/ip/move`, {
+    apiRequest<ApiJson>(`/api/server-control/${encodeURIComponent(serviceName)}/ip/move`, {
       method: "POST",
       body: JSON.stringify({ ip, to: targetService }),
     }),
 
-  getCacheInfo: () => apiRequest<any>("/api/cache/info"),
+  getCacheInfo: () => apiRequest<ApiJson>("/api/cache/info"),
   clearCache: (type?: "all" | "memory" | "sqlite" | "files") =>
-    apiRequest<any>("/api/cache/clear", {
+    apiRequest<ApiJson>("/api/cache/clear", {
       method: "POST",
       body: JSON.stringify({ type: type === "files" ? "sqlite" : type || "all" }),
     }),
@@ -559,7 +571,7 @@ export const api = {
     ),
 
   // ==================== Telegram ====================
-  getTelegramStatus: () => apiRequest<any>("/api/telegram/status"),
+  getTelegramStatus: () => apiRequest<ApiJson>("/api/telegram/status"),
   verifyTelegram: () => apiRequest("/api/telegram/verify"),
 
   getOvhBalance: async () => {
@@ -577,12 +589,12 @@ export const api = {
   manualCheckDedicated: (planCode: string) =>
     apiRequest(`/api/availability/${encodeURIComponent(planCode)}`, { method: "POST" }),
   updateSubscription: (planCode: string, options: Record<string, unknown>) =>
-    apiRequest<any>(`/api/monitor/subscriptions/${encodeURIComponent(planCode)}`, {
+    apiRequest<ApiJson>(`/api/monitor/subscriptions/${encodeURIComponent(planCode)}`, {
       method: "PUT",
       body: JSON.stringify(options),
     }),
   updateVpsSubscription: (id: string, options: Record<string, unknown>) =>
-    apiRequest<any>(`/api/vps-monitor/subscriptions/${id}`, {
+    apiRequest<ApiJson>(`/api/vps-monitor/subscriptions/${id}`, {
       method: "PUT",
       body: JSON.stringify(options),
     }),
@@ -600,18 +612,18 @@ export const api = {
     }),
   /** 网页端执行与 Bot 相同的 /stock /queue /buy /monitor /price /watch 语义 */
   telegramQuickOrder: (order: Record<string, unknown>) =>
-    apiRequest<any>("/api/telegram/quick-order", {
+    apiRequest<TelegramActionResult>("/api/telegram/quick-order", {
       method: "POST",
       body: JSON.stringify(order),
     }),
   /** 向 Telegram 注册 Bot 命令菜单（setMyCommands） */
   registerTelegramCommands: () =>
-    apiRequest<any>("/api/telegram/register-commands", {
+    apiRequest<TelegramActionResult>("/api/telegram/register-commands", {
       method: "POST",
       body: "{}",
     }),
   batchAddAllVps: (options?: Record<string, unknown>) =>
-    apiRequest<any>("/api/vps-monitor/subscriptions/batch-add-all", {
+    apiRequest<ApiJson>("/api/vps-monitor/subscriptions/batch-add-all", {
       method: "POST",
       body: JSON.stringify(options || {}),
     }),
@@ -627,7 +639,7 @@ export const api = {
     datacenter: string,
     options?: string[],
     accountId?: string
-  ): Promise<any> => {
+  ): Promise<ApiJson> => {
     const qs = accountId ? `?account=${encodeURIComponent(accountId)}` : "";
     return apiRequest(`/api/servers/${encodeURIComponent(planCode)}/price${qs}`, {
       method: "POST",

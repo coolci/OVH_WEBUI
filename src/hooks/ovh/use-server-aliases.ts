@@ -44,7 +44,7 @@ export function useSetServerAlias() {
       }
       toast.success(i18n.t(alias === "" ? "hooksMsg.aliases.cleared" : "hooksMsg.aliases.saved"));
     },
-    onError: (e: any) => {
+    onError: (e: unknown) => {
       toast.error(apiMessage(e));
     },
   });

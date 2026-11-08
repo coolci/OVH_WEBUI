@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/http";
 import { toast } from "sonner";
 import i18n from "@/i18n";
-import { apiMessage } from "@/lib/api-error";
+import { apiMessage, errorBody } from "@/lib/api-error";
 
 export interface NotifyChannel {
   name: string;
@@ -96,8 +96,8 @@ export function useTestNotification() {
         toast.success(d.message || i18n.t("hooksMsg.notify.sentToChannels", { count: d.delivered }));
       }
     },
-    onError: (e: any) => {
-      const channels: NotifyChannel[] | undefined = e?.response?.data?.channels;
+    onError: (e: unknown) => {
+      const channels = errorBody(e).channels as NotifyChannel[] | undefined;
       saveResult(channels);
       const reason = Array.isArray(channels)
         ? channels.filter((c) => c.configured && !c.ok).map((c) => c.detail).filter(Boolean).join(i18n.t("hooksMsg.notify.channelSeparator"))

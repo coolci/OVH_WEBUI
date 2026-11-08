@@ -12,7 +12,7 @@ import { qk } from "@/lib/query";
 import { useSplaList, hasActiveSpla } from "@/hooks/use-server-control";
 import { toast } from "sonner";
 import { Trans, useTranslation } from "react-i18next";
-import { errorMessage } from "@/components/common/LoadFailed";
+import { errorMessage } from "@/lib/api-error";
 
 /**
  * 登记 SPLA 许可证 + 一键解锁 Windows 安装。
@@ -79,7 +79,7 @@ export function SplaDialog({
       });
       toast.success(t("maint.spla.toast.unlocked"), { duration: 7000 });
       qc.invalidateQueries({ queryKey: qk.serverControl.spla(serviceName) });
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(errorMessage(e), { duration: 8000 });
     } finally {
       setUnlocking(false);
@@ -100,7 +100,7 @@ export function SplaDialog({
       setSerial("");
       qc.invalidateQueries({ queryKey: qk.serverControl.spla(serviceName) });
       onOpenChange(false);
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(errorMessage(e), { duration: 8000 });
     } finally {
       setBusy(false);

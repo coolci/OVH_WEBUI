@@ -52,10 +52,37 @@ export function useServerTemplates(serviceName: string | null, enabled = true) {
   });
 }
 
+/** 发给后端 /install 的 OVH storage 配置(每个磁盘组一项) */
+interface OvhPartition {
+  mountPoint: string;
+  fileSystem: string;
+  size: number;
+  raidLevel?: number;
+  extras?: { lv?: { name: string }; zp?: { name: string } };
+}
+
+interface StorageGroup {
+  diskGroupId?: number;
+  erase?: boolean;
+  partitioning?: { layout: OvhPartition[]; disks?: number };
+  hardwareRaid?: { raidLevel: number; disks?: number; arrays?: number; spares?: number }[];
+}
+
+interface InstallPayload {
+  templateName: string;
+  customHostname?: string;
+  customizations?: ReinstallArgs["customizations"];
+  useProxmox9Zfs: boolean;
+  zfsRaidLevel?: ReinstallArgs["zfsRaidLevel"];
+  zfsVzSize?: ReinstallArgs["zfsVzSize"];
+  storageConfig?: StorageGroup[];
+  partitionSchemeName?: string;
+}
+
 export function useReinstallServer() {
   return useMutation({
     mutationFn: async (args: ReinstallArgs) => {
-      const installData: any = {
+      const installData: InstallPayload = {
         templateName: args.templateName,
         customHostname: args.customHostname || undefined,
         customizations: args.customizations && Object.keys(args.customizations).length > 0 ? args.customizations : undefined,
@@ -72,7 +99,7 @@ export function useReinstallServer() {
       );
 
       if (useCustom) {
-        const groups = new Map<string, any>();
+        const groups = new Map<string, StorageGroup>();
         let partitions = args.customPartitions || [];
         if (args.useSoftwareRaid && partitions.length === 0) {
           partitions = [
@@ -91,12 +118,13 @@ export function useReinstallServer() {
         partitions.forEach((p) => {
           const gid = gidKey(p.diskGroupId);
           if (!groups.has(gid)) {
-            const entry: any = { partitioning: { layout: [] } };
+            const entry: StorageGroup = { partitioning: { layout: [] } };
             if (gid !== DEFAULT_GID) entry.diskGroupId = Number(gid);
             groups.set(gid, entry);
           }
-          const g = groups.get(gid);
-          const ovhP: any = { mountPoint: p.mountpoint, fileSystem: p.filesystem, size: p.size || 0 };
+          // 上面刚按 gid 建过组,这里必然取得到
+          const g = groups.get(gid)!;
+          const ovhP: OvhPartition = { mountPoint: p.mountpoint, fileSystem: p.filesystem, size: p.size || 0 };
           if (p.raid) {
             const m = p.raid.match(/raid(\d+)/);
             if (m) ovhP.raidLevel = parseInt(m[1]);
@@ -105,7 +133,7 @@ export function useReinstallServer() {
           if (p.filesystem === "zfs" && p.zpoolName?.trim()) {
             ovhP.extras = { ...(ovhP.extras || {}), zp: { name: p.zpoolName.trim() } };
           }
-          g.partitioning.layout.push(ovhP);
+          g.partitioning!.layout.push(ovhP);
         });
 
         if (args.useSoftwareRaid && args.softwareRaidDisks && args.softwareRaidDisks > 0) {
@@ -124,11 +152,11 @@ export function useReinstallServer() {
                 ? DEFAULT_GID
                 : parsedKey;
             if (!groups.has(gid)) {
-              const entry: any = {};
+              const entry: StorageGroup = {};
               if (gid !== DEFAULT_GID) entry.diskGroupId = Number(gid);
               groups.set(gid, entry);
             }
-            const g = groups.get(gid);
+            const g = groups.get(gid)!;
             if (!g.hardwareRaid) g.hardwareRaid = [];
             const level = parseInt(raidMode.replace("raid", ""), 10);
             if (Number.isNaN(level)) return;
@@ -150,7 +178,7 @@ export function useReinstallServer() {
           if (!storageArray.some(g => g.partitioning) || storageArray.some(g => !g.diskGroupId)) {
             throw new Error("保留数据时必须为另一磁盘组明确配置安装分区，不能使用默认磁盘组或仅勾选保留数据。");
           }
-          if (storageArray.some(g => keep.has(g.diskGroupId))) throw new Error("同一磁盘组不能同时安装系统和保留数据。");
+          if (storageArray.some(g => g.diskGroupId !== undefined && keep.has(g.diskGroupId))) throw new Error("同一磁盘组不能同时安装系统和保留数据。");
         }
         for (const keepGid of args.keepDiskGroups ?? []) {
           storageArray.push({ diskGroupId: keepGid, erase: false });

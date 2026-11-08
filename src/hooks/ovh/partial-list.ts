@@ -15,6 +15,18 @@ export interface PartialList<T> {
   failedCount: number;
 }
 
+/** 读 body 里带 partial / failedCount 的列表响应(listKey 指明列表字段) */
+export function readPartialList<T>(data: unknown, listKey: string): PartialList<T> {
+  const d = (data && typeof data === "object" ? data : {}) as Record<string, unknown>;
+  const failedCount = Number(d.failedCount) || 0;
+  const items = d[listKey];
+  return {
+    items: Array.isArray(items) ? (items as T[]) : [],
+    partial: d.partial === true || failedCount > 0,
+    failedCount,
+  };
+}
+
 /**
  * 读 X-Partial-Failures 响应头。
  * refunds / email-history 这类接口的 body 是裸数组，后端没法往 body 里加字段，只能放响应头。

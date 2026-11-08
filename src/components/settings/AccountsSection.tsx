@@ -29,7 +29,8 @@ import {
 } from "@/components/ui/dialog";
 import { Section } from "./Section";
 import { cn } from "@/lib/utils";
-import { AccountDialog, endpointForZone } from "./AccountDialog";
+import { AccountDialog } from "./AccountDialog";
+import { endpointForZone } from "@/lib/ovh-subsidiaries";
 import { LinkCheckDialog } from "./LinkCheckDialog";
 import {
   useAccounts,
@@ -325,4 +326,4 @@ function AccountCard({
   );
 }
 
-export { AccountDialog, endpointForZone };
+export { AccountDialog };

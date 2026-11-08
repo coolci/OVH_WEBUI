@@ -28,7 +28,8 @@ import { PurchaseSection } from "@/components/settings/PurchaseSection";
 import { TelegramSection } from "@/components/settings/TelegramSection";
 import { NotifySection } from "@/components/settings/NotifySection";
 import { CacheSection } from "@/components/settings/CacheSection";
-import { AccountsSection, endpointForZone } from "@/components/settings/AccountsSection";
+import { AccountsSection } from "@/components/settings/AccountsSection";
+import { endpointForZone } from "@/lib/ovh-subsidiaries";
 import {
   useSettings,
   useSaveSettings,

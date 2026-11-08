@@ -11,6 +11,7 @@ import {
   Power, AlertCircle, Plus, Trash2, KeyRound, Cloud, Loader2,
 } from "lucide-react";
 import type { OwnedServer } from "@/hooks/use-server-control";
+import type { BackupFtpInfo, BackupCloudInfo, OrderableIpBlock } from "@/hooks/ovh/server-control/types";
 import {
   useServerBurst, useSetBurst,
   useServerFirewall, useSetFirewall,
@@ -37,7 +38,7 @@ import { PartialNotice, DetailErrorTag } from "@/components/common/PartialNotice
 import { useActiveAccountEndpoint } from "@/components/common/active-endpoint";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
-import { errorMessage } from "@/components/common/LoadFailed";
+import { errorMessage } from "@/lib/api-error";
 
 /** 高级 Tab：独服运维管理（Burst, 防火墙, FTP备份, 云备份, DNS, vMAC, vRack, 可选配等） */
 export function AdvancedTab({ server }: { server: OwnedServer }) {
@@ -78,7 +79,7 @@ function BurstPane({ serviceName }: { serviceName: string }) {
   const q = useServerBurst(serviceName);
   const mut = useSetBurst();
   if (q.isPending) return <PaneSkeleton />;
-  const data: any = q.data;
+  const data = q.data;
   if (!data || data.notAvailable) return <NotAvailable icon={Zap} title={t("maint.advanced.burst.unavailable")} message={data?.error} />;
   const burst = data.burst;
   if (!burst) return <EmptyState icon={Zap} title={t("maint.advanced.burst.empty")} />;
@@ -102,7 +103,7 @@ function BurstPane({ serviceName }: { serviceName: string }) {
             try {
               await mut.mutateAsync({ serviceName, status: next });
               toast.success(active ? t("maint.advanced.burst.toastOff") : t("maint.advanced.burst.toastOn"));
-            } catch (e: any) {
+            } catch (e: unknown) {
               toast.error(errorMessage(e));
             }
           }}
@@ -122,7 +123,7 @@ function FirewallPane({ serviceName }: { serviceName: string }) {
   const q = useServerFirewall(serviceName);
   const mut = useSetFirewall();
   if (q.isPending) return <PaneSkeleton />;
-  const data: any = q.data;
+  const data = q.data;
   if (!data || data.notAvailable) return <NotAvailable icon={Shield} title={t("maint.advanced.firewall.unavailable")} message={data?.error} />;
   const fw = data.firewall;
   if (!fw) return <EmptyState icon={Shield} title={t("maint.advanced.firewall.empty")} />;
@@ -142,7 +143,7 @@ function FirewallPane({ serviceName }: { serviceName: string }) {
             try {
               await mut.mutateAsync({ serviceName, enabled: !enabled });
               toast.success(enabled ? t("maint.advanced.firewall.toastOff") : t("maint.advanced.firewall.toastOn"));
-            } catch (e: any) {
+            } catch (e: unknown) {
               toast.error(errorMessage(e));
             }
           }}
@@ -212,7 +213,7 @@ function BackupFtpPane({ serviceName }: { serviceName: string }) {
               try {
                 await act.mutateAsync(serviceName);
                 toast.success(t("maint.advanced.ftp.activateSent"));
-              } catch (e: any) {
+              } catch (e: unknown) {
                 toast.error(errorMessage(e));
               }
             }}
@@ -223,7 +224,7 @@ function BackupFtpPane({ serviceName }: { serviceName: string }) {
       </Pane>
     );
   }
-  const ftp: Record<string, any> = data.backupFtp || {};
+  const ftp: BackupFtpInfo = data.backupFtp || {};
   const accessList = data.accessList || [];
   // 旧前端：quota 和 usage 都是 { value, unit } 对象
   const quotaText =
@@ -243,7 +244,7 @@ function BackupFtpPane({ serviceName }: { serviceName: string }) {
       setNewBlock("");
       setNfs(false);
       setCifs(false);
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(errorMessage(e));
     }
   };
@@ -263,7 +264,7 @@ function BackupFtpPane({ serviceName }: { serviceName: string }) {
             try {
               await resetPwd.mutateAsync(serviceName);
               toast.success(t("maint.advanced.ftp.pwdToast"));
-            } catch (e: any) {
+            } catch (e: unknown) {
               toast.error(errorMessage(e));
             }
           }}
@@ -282,7 +283,7 @@ function BackupFtpPane({ serviceName }: { serviceName: string }) {
             try {
               await del.mutateAsync(serviceName);
               toast.success(t("maint.advanced.ftp.closedToast"));
-            } catch (e: any) {
+            } catch (e: unknown) {
               toast.error(errorMessage(e));
             }
           }}
@@ -362,7 +363,7 @@ function BackupFtpPane({ serviceName }: { serviceName: string }) {
                     try {
                       await delAccess.mutateAsync({ serviceName, ipBlock: a.ipBlock });
                       toast.success(t("maint.advanced.ftp.deletedToast"));
-                    } catch (e: any) {
+                    } catch (e: unknown) {
                       toast.error(errorMessage(e));
                     }
                   }}
@@ -429,7 +430,7 @@ function BackupCloudPane({ serviceName }: { serviceName: string }) {
               try {
                 await act.mutateAsync({ serviceName, cloudProjectId: cloudProjectId.trim() || undefined });
                 toast.success(t("maint.advanced.cloud.activateSent", "云备份激活请求已发送"));
-              } catch (e: any) {
+              } catch (e: unknown) {
                 toast.error(errorMessage(e));
               }
             }}
@@ -441,7 +442,7 @@ function BackupCloudPane({ serviceName }: { serviceName: string }) {
     );
   }
 
-  const cloud: Record<string, any> = data.backupCloud || {};
+  const cloud: BackupCloudInfo = data.backupCloud || {};
   return (
     <Pane title="Backup Cloud" icon={Cloud}>
       <Row label={t("maint.advanced.cloud.status", "状态")} value={<Chip tone="success">{t("maint.advanced.cloud.active", "已激活")}</Chip>} />
@@ -477,7 +478,7 @@ function BackupCloudPane({ serviceName }: { serviceName: string }) {
                 setNewPassword(pwd);
               }
               toast.success(t("maint.advanced.cloud.pwdResetToast", "密码已重置"));
-            } catch (e: any) {
+            } catch (e: unknown) {
               toast.error(errorMessage(e));
             }
           }}
@@ -495,7 +496,7 @@ function BackupCloudPane({ serviceName }: { serviceName: string }) {
             try {
               await del.mutateAsync(serviceName);
               toast.success(t("maint.advanced.cloud.delToast", "云备份已停用"));
-            } catch (e: any) {
+            } catch (e: unknown) {
               toast.error(errorMessage(e));
             }
           }}
@@ -535,7 +536,7 @@ function SecondaryDnsPane({ serviceName }: { serviceName: string }) {
       toast.success(`二级 DNS 域名 ${d} 添加成功`);
       setAddOpen(false);
       setDomain("");
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(errorMessage(e));
     }
   };
@@ -545,7 +546,7 @@ function SecondaryDnsPane({ serviceName }: { serviceName: string }) {
     try {
       await delDns.mutateAsync(domainName);
       toast.success(`二级 DNS 域名 ${domainName} 已删除`);
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(errorMessage(e));
     }
   };
@@ -757,7 +758,7 @@ function NotOrderable() {
 
 // ─────────────────────────────── IP Specs / IP 块通用 ───────────────────────────────
 
-function IpBlockList({ ipv4, ipv6 }: { ipv4?: any[]; ipv6?: any[] }) {
+function IpBlockList({ ipv4, ipv6 }: { ipv4?: OrderableIpBlock[]; ipv6?: OrderableIpBlock[] }) {
   const { t } = useTranslation();
   const has4 = ipv4 && ipv4.length > 0;
   const has6 = ipv6 && ipv6.length > 0;
@@ -786,7 +787,7 @@ function IpBlockList({ ipv4, ipv6 }: { ipv4?: any[]; ipv6?: any[] }) {
   );
 }
 
-function IpBlock({ ip, family }: { ip: any; family: "v4" | "v6" }) {
+function IpBlock({ ip, family }: { ip: OrderableIpBlock; family: "v4" | "v6" }) {
   const { t } = useTranslation();
   const typeLabel =
     ip.type === "failover"

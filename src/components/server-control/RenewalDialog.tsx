@@ -13,7 +13,7 @@ import {
 } from "@/hooks/use-server-control";
 import { toast } from "sonner";
 import { useTranslation, Trans } from "react-i18next";
-import { errorMessage } from "@/components/common/LoadFailed";
+import { errorMessage } from "@/lib/api-error";
 import { fmtDate } from "@/i18n/format";
 
 type RenewMode = "auto" | "manual" | "delete";
@@ -35,7 +35,7 @@ const TERM_BASE_BY_ACTION: Record<string, string> = {
 
 /** 用 VPS / dedicated 各自的 update hook 都行,Dialog 只关心 mutation 接口形状 */
 export type RenewalMutation = {
-  mutateAsync: (vars: { mode: RenewMode; period?: number }) => Promise<any>;
+  mutateAsync: (vars: { mode: RenewMode; period?: number }) => Promise<unknown>;
   isPending: boolean;
 };
 
@@ -43,7 +43,7 @@ export type RenewalMutation = {
  *  所以必须由调用方注入 —— 写死一边会让另一边打到错误的端点上。 */
 export type TerminationMutations = {
   policy: {
-    mutateAsync: (vars: { policy: string }) => Promise<any>;
+    mutateAsync: (vars: { policy: string }) => Promise<{ message?: string } | null | undefined>;
     isPending: boolean;
   };
 };
@@ -124,7 +124,7 @@ export function RenewalDialog({
         const res = await policyMut.mutateAsync({ policy: "terminateAtExpirationDate" });
         toast.success(res?.message || t("maint.renewal.toast.setDelete"), { duration: 6000 });
         onOpenChange(false);
-      } catch (e: any) {
+      } catch (e: unknown) {
         toast.error(errorMessage(e), { duration: 8000 });
       }
       return;
@@ -140,7 +140,7 @@ export function RenewalDialog({
         currentMode === "delete" ? t("maint.renewal.toast.cancelAndUpdated") : t("maint.renewal.toast.updated")
       );
       onOpenChange(false);
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(errorMessage(e), { duration: 6000 });
     }
   };

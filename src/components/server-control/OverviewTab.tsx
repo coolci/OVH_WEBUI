@@ -50,7 +50,7 @@ export function OverviewTab({ server }: { server: OwnedServer }) {
   const diskText =
     hw.data?.diskGroups && hw.data.diskGroups.length > 0
       ? hw.data.diskGroups
-          .map((g: any) => {
+          .map((g) => {
             const count = g.numberOfDisks ?? 1;
             const type = g.diskType ?? "";
             const size = g.diskSize ? `${g.diskSize.value} ${g.diskSize.unit}` : "";

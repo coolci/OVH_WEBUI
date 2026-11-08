@@ -12,8 +12,9 @@ import { RetractionDialog } from "@/components/server-control/RetractionDialog";
 import { HardwareReplaceDialog } from "./HardwareReplaceDialog";
 import { ChangeContactDialog } from "./ChangeContactDialog";
 import { useTranslation } from "react-i18next";
-import { errorMessage } from "@/components/common/LoadFailed";
+import { errorMessage } from "@/lib/api-error";
 import { fmtDateTime } from "@/i18n/format";
+import type { ServerIntervention } from "@/hooks/ovh/server-control/types";
 
 /** 维护 Tab：维护记录列表 + 硬件更换工单 + 变更联系人 + 14 天撤单 */
 export function MaintenanceTab({ server }: { server: OwnedServer }) {
@@ -76,7 +77,7 @@ export function MaintenanceTab({ server }: { server: OwnedServer }) {
             </div>
           ) : (
             <div className="border border-border rounded-2xl divide-y divide-border">
-              {(interventions.data || []).slice(0, 20).map((iv: any) => (
+              {(interventions.data || []).slice(0, 20).map((iv) => (
                 <InterventionRow key={iv.id} intervention={iv} />
               ))}
             </div>
@@ -149,7 +150,7 @@ export function MaintenanceTab({ server }: { server: OwnedServer }) {
 }
 
 /** 单条维护记录：对齐旧前端字段（id / interventionId / type / status / description / expectedEndDate） */
-function InterventionRow({ intervention: iv }: { intervention: any }) {
+function InterventionRow({ intervention: iv }: { intervention: ServerIntervention }) {
   const { t } = useTranslation();
   const status = String(iv.status || "").toLowerCase();
   const tone = status === "done" ? "success" : status === "doing" ? "warning" : "default";

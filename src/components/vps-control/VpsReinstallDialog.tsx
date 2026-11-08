@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { PartialNotice } from "@/components/common/PartialNotice";
-import { errorMessage } from "@/components/common/LoadFailed";
+import { errorMessage } from "@/lib/api-error";
 import { useVpsTemplates, useReinstallVps, useVpsCurrentOS, type VpsTemplate } from "@/hooks/use-vps-control";
 import { useAccountSshKeys } from "@/hooks/use-account";
 import { useActiveVpsControlAccount } from "@/hooks/use-active-account";
@@ -44,7 +44,7 @@ export function VpsReinstallDialog({
   const [customSshKey, setCustomSshKey] = useState<string>("");
   const [confirmName, setConfirmName] = useState("");
 
-  const tplItems: VpsTemplate[] = templates.data?.items || [];
+  const tplItems: VpsTemplate[] = useMemo(() => templates.data?.items || [], [templates.data]);
   const selected: VpsTemplate | null = useMemo(
     () => tplItems.find((tpl) => String(tpl.id) === String(templateId)) || null,
     [tplItems, templateId],
@@ -93,7 +93,7 @@ export function VpsReinstallDialog({
       setConfirmName("");
       setSelectedSshKey("__none__");
       setCustomSshKey("");
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(errorMessage(e));
     }
   };

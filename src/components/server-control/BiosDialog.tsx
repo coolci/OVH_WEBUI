@@ -53,7 +53,7 @@ export function BiosDialog({
                       {keys.map((k) => (
                         <tr key={k} className="border-b border-border last:border-b-0">
                           <td className="py-2 px-4 font-mono text-[12px] text-muted-foreground w-1/3">{k}</td>
-                          <td className="py-2 px-4 font-mono break-all">{formatValue((settings as any)[k])}</td>
+                          <td className="py-2 px-4 font-mono break-all">{formatValue(settings[k])}</td>
                         </tr>
                       ))}
                     </tbody>

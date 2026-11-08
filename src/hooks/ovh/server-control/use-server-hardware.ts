@@ -9,7 +9,9 @@ import type {
   DiskGroup,
   PartitionScheme,
   FaultyDisk,
+  ServerIntervention,
 } from "./types";
+import { errorStatus } from "@/lib/api-error";
 
 export function serverHardwareQueryOptions(serviceName: string, accountId: string) {
   return queryOptions({
@@ -85,12 +87,12 @@ export function useServerRaidProfiles(serviceName: string | null, enabled = true
         const res = await api.get(`/server-control/${serviceName}/hardware-raid-profiles`);
         return {
           supported: res.data?.supported !== false,
-          profiles: (res.data?.profiles || []) as any[],
+          profiles: (res.data?.profiles || []) as Record<string, unknown>[],
         };
-      } catch (e: any) {
-        const status = e?.response?.status;
+      } catch (e: unknown) {
+        const status = errorStatus(e);
         if (status === 404 || status === 501) {
-          return { supported: false, profiles: [] as any[] };
+          return { supported: false, profiles: [] as Record<string, unknown>[] };
         }
         throw e;
       }
@@ -122,13 +124,13 @@ export function useServerBiosSettings(serviceName: string | null, enabled = true
         const res = await api.get(`/server-control/${serviceName}/bios-settings`);
         const sgxRes = await api.get(`/server-control/${serviceName}/bios-settings/sgx`).catch(() => null);
         return {
-          settings: (res.data || {}) as any,
+          settings: (res.data || {}) as Record<string, unknown>,
           sgx: sgxRes?.data?.sgx ?? sgxRes?.data?.data ?? sgxRes?.data ?? null,
         };
-      } catch (e: any) {
-        const status = e?.response?.status;
+      } catch (e: unknown) {
+        const status = errorStatus(e);
         if (status === 404 || status === 501) {
-          return { settings: {} as any, sgx: null };
+          return { settings: {} as Record<string, unknown>, sgx: null };
         }
         throw e;
       }
@@ -175,7 +177,7 @@ export function useServerInterventions(serviceName: string | null) {
     queryKey: qk.serverControl.interventions(serviceName || ""),
     queryFn: async () => {
       const res = await api.get(`/server-control/${serviceName}/interventions`);
-      return (res.data?.interventions || []) as any[];
+      return (res.data?.interventions || []) as ServerIntervention[];
     },
     enabled: !!serviceName,
   });

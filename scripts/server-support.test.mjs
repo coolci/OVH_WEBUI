@@ -18,6 +18,8 @@ function loadHook(file, api) {
     if (id.endsWith('use-active-account')) return { useActiveAccount: () => ['fixture'], useActiveVpsControlAccount: () => ['fixture'] };
     if (id.endsWith('use-accounts')) return { useDefaultAccount: () => ({id: 'fixture'}) };
     if (id === '@/i18n') return { default: { t: x => x } };
+    // 纯函数模块,用真实实现
+    if (id.endsWith('/partial-list')) return loadHook('src/hooks/ovh/partial-list.ts', api);
     throw Error(`Unexpected import ${id}`);
   };
   vm.runInNewContext(js, { exports, require, console }, { filename: file });
@@ -88,7 +90,7 @@ test('SS-05: rDNS dialog preserves selected secondary IP', async () => {
       useDeleteServerReverseDns: () => ({}),
     };
     if (id === 'sonner') return {toast: {success() {}, error() {}}};
-    if (id === '@/components/common/LoadFailed') return {errorMessage: String};
+    if (id === '@/lib/api-error') return {errorMessage: String};
     if (id.startsWith('@/components/') || id === 'lucide-react') return new Proxy({}, {get: (_, name) => name});
     throw Error(`Unexpected import ${id}`);
   };

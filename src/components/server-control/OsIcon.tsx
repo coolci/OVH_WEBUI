@@ -7,40 +7,9 @@
  *      byoi / byolinux(无品牌,字母徽章),其它归 linux。
  */
 
-export type OsKind =
-  | "debian"
-  | "ubuntu"
-  | "windows"
-  | "rocky"
-  | "alma"
-  | "proxmox"
-  | "fedora"
-  | "esxi"
-  | "byoi"
-  | "byolinux"
-  | "centos"
-  | "opensuse"
-  | "freebsd"
-  | "linux";
+import { detectOsKind, OS_BRANDS, type OsKind } from "@/lib/os-kind";
 
-/** 按 templateName 推断 OS 类型。优先级靠 if 顺序,把更具体的(byolinux)放前面。 */
-export function detectOsKind(templateName: string, distribution?: string, family?: string): OsKind {
-  const s = `${templateName} ${distribution || ""} ${family || ""}`.toLowerCase();
-  if (s.includes("byolinux")) return "byolinux";
-  if (s.includes("byoi")) return "byoi";
-  if (s.includes("proxmox")) return "proxmox";
-  if (s.includes("esxi") || s.includes("vmware")) return "esxi";
-  if (s.includes("windows") || s.includes("win-")) return "windows";
-  if (s.includes("debian")) return "debian";
-  if (s.includes("ubuntu")) return "ubuntu";
-  if (s.includes("rocky")) return "rocky";
-  if (s.includes("alma")) return "alma";
-  if (s.includes("fedora")) return "fedora";
-  if (s.includes("centos")) return "centos";
-  if (s.includes("suse")) return "opensuse";
-  if (s.includes("freebsd")) return "freebsd";
-  return "linux";
-}
+export type { OsKind };
 
 /** simple-icons CC0 品牌 SVG path (viewBox 0 0 24 24)。Windows 用自绘 4 方块(simple-icons 已删 ms 商标)。 */
 const SVG_PATHS: Record<OsKind, string | null> = {
@@ -73,46 +42,6 @@ const SVG_PATHS: Record<OsKind, string | null> = {
   linux: null,
 };
 
-interface OsBrand {
-  bg: string;
-  fallback: string; // 没 SVG 时的字母 badge 内容
-}
-
-/** 取某个 OS 类型的品牌色,用来给分组标题做带色背景。 */
-export function osBrandColor(kind: OsKind): string {
-  return BRANDS[kind]?.bg || "#6B7280";
-}
-
-/** 深色底上当**文字色**用的品牌色:向白混合 45%。
- *  品牌色是按白底设计的,Debian #A80030 在近黑底上只有约 2:1,
- *  计数徽章这类"品牌色当字"的场合深色下必须提亮,否则看不清。 */
-export function osBrandTextColor(kind: OsKind, dark: boolean): string {
-  const hex = BRANDS[kind]?.bg || "#6B7280";
-  if (!dark) return hex;
-  const mix = (v: number) => Math.round(v + (255 - v) * 0.45);
-  const r = mix(parseInt(hex.slice(1, 3), 16));
-  const g = mix(parseInt(hex.slice(3, 5), 16));
-  const b = mix(parseInt(hex.slice(5, 7), 16));
-  return `rgb(${r}, ${g}, ${b})`;
-}
-
-const BRANDS: Record<OsKind, OsBrand> = {
-  debian:   { bg: "#A80030", fallback: "D"    },
-  ubuntu:   { bg: "#E95420", fallback: "U"    },
-  windows:  { bg: "#0078D4", fallback: "W"    },
-  rocky:    { bg: "#10B981", fallback: "R"    },
-  alma:     { bg: "#0E4F88", fallback: "A"    },
-  proxmox:  { bg: "#E57000", fallback: "PVE"  },
-  fedora:   { bg: "#294172", fallback: "F"    },
-  esxi:     { bg: "#697582", fallback: "ESX"  },
-  byoi:     { bg: "#7C3AED", fallback: "BYOI" },
-  byolinux: { bg: "#7C3AED", fallback: "BYO"  },
-  centos:   { bg: "#932279", fallback: "C"    },
-  opensuse: { bg: "#73BA25", fallback: "S"    },
-  freebsd:  { bg: "#AB2B28", fallback: "B"    },
-  linux:    { bg: "#6B7280", fallback: "L"    },
-};
-
 /** OS 图标徽章。size 控制宽高(默认 24 px)。
  *  有品牌 SVG 时渲染 SVG;否则用字母兜底。 */
 export function OsIcon({
@@ -129,7 +58,7 @@ export function OsIcon({
   className?: string;
 }) {
   const kind = detectOsKind(templateName, distribution, family);
-  const brand = BRANDS[kind];
+  const brand = OS_BRANDS[kind];
   const path = SVG_PATHS[kind];
   // SVG 占色块的 65% 留 padding,字母占 50%
   const innerScale = path ? 0.65 : 0.5;

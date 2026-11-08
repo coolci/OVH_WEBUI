@@ -9,6 +9,7 @@ import { Chip } from "@/components/common/Chip";
 import { useServerNetworkSpecs } from "@/hooks/use-server-control";
 import { useTranslation } from "react-i18next";
 import { fmtDate } from "@/i18n/format";
+import type { OvhQuantity } from "@/hooks/ovh/server-control/types";
 
 /**
  * Network specs：完全按 OVH 实际字段渲染
@@ -281,7 +282,7 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 /** OVH 字段格式：{ value, unit } | number | null */
-function fmtBandwidth(v: any): string {
+function fmtBandwidth(v: OvhQuantity): string {
   if (v == null) return "—";
   if (typeof v === "object" && v?.value != null) {
     return `${v.value} ${v.unit || ""}`.trim();
@@ -297,7 +298,7 @@ function fmtBandwidth(v: any): string {
 /** 字节数格式化:最小单位 GB,1024 二进制进位 (GB → TB → PB)。
  *  接受裸数字 或 OVH 形式 { value, unit }(unit="B"/"KB"/"MB"/"GB"/"TB" 都先归一到字节再换算)。
  *  流量配额这种用,不要用 fmtBandwidth(bps 进位 1000 + 最小 bps,数值大时含义不对)。 */
-function fmtBytes(v: any): string {
+function fmtBytes(v: OvhQuantity): string {
   if (v == null) return "—";
   let bytes: number;
   if (typeof v === "object") {

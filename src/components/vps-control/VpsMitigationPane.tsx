@@ -10,6 +10,7 @@ import {
 } from "@/hooks/use-vps-control";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
+import { errorField, errorText } from "@/lib/api-error";
 
 /** VPS DDoS Mitigation 管理。逻辑跟 server-control 的 MitigationPane 相同 —— OVH
  *  自动缓解默认开,我们只暴露「永久缓解」手动开关。VPS 一般只 1 个 IP,UI 比 dedicated 简单。 */
@@ -49,8 +50,8 @@ export function VpsMitigationPane({ serviceName }: { serviceName: string }) {
         await enable.mutateAsync({ ip, block });
         toast.success(t("vps.mitigation.toast.enabled"));
       }
-    } catch (e: any) {
-      const raw = String(e?.response?.data?.error || e?.message || "");
+    } catch (e: unknown) {
+      const raw = String(errorField(e, "error") || errorText(e) || "");
       // OVH 在 mitigation 处理中 / 攻击进行中时,state 必须是 "ok" 才允许操作
       if (/state need to be ok/i.test(raw)) {
         toast.error(t("vps.mitigation.toast.stateNotOk"), { duration: 6000 });

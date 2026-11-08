@@ -4,10 +4,11 @@ import { toast } from "sonner";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import type { TelegramActionResult } from "@/lib/api";
 
 interface TerminalConsoleProps {
   selectedMode: string;
-  lastResult: any;
+  lastResult: TelegramActionResult | null;
   currentCommand: string;
 }
 
@@ -79,23 +80,6 @@ export function TerminalConsole({ selectedMode, lastResult, currentCommand }: Te
               </p>
             </div>
 
-            {lastResult.price && (
-              <div className="p-3 bg-secondary/30 rounded-xl border border-border/60 flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">价格信息</span>
-                <span className="text-base font-bold font-mono text-foreground">
-                  {lastResult.price.prices?.withoutTax?.toFixed(2) ||
-                    lastResult.price.prices?.withTax?.toFixed(2) ||
-                    lastResult.price} €
-                </span>
-              </div>
-            )}
-
-            {lastResult.orderId && (
-              <div className="p-3 bg-secondary/30 rounded-xl border border-border/60 flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">订单 ID</span>
-                <span className="font-mono text-xs font-semibold text-primary">{lastResult.orderId}</span>
-              </div>
-            )}
           </div>
         ) : (
           <div className="text-center py-12 text-muted-foreground font-mono">

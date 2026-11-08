@@ -17,7 +17,7 @@ import {
   useServerIps,
 } from "@/hooks/use-server-control";
 import { toast } from "sonner";
-import { errorMessage } from "@/components/common/LoadFailed";
+import { errorMessage } from "@/lib/api-error";
 import { Skeleton } from "@/components/common/Skeleton";
 
 interface ReverseDnsDialogProps {
@@ -75,7 +75,7 @@ export function ReverseDnsDialog({
       toast.success(`IP ${ip} 反向 DNS 已更新为 ${rev}`);
       setIsEditing(false);
       setDomain("");
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(errorMessage(e));
     }
   };
@@ -85,7 +85,7 @@ export function ReverseDnsDialog({
     try {
       await delReverse.mutateAsync(ip);
       toast.success(`IP ${ip} 反向 DNS 解析已删除`);
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(errorMessage(e));
     }
   };

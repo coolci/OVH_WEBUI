@@ -4,7 +4,7 @@ import { MetricRing } from "@/components/common/MetricRing";
 import type { SystemMetrics } from "@/hooks/use-system-metrics";
 
 /** 字节短格式: 1.5 GB / 11.4 GB */
-export function formatBytesShort(n: number): string {
+function formatBytesShort(n: number): string {
   if (!n || n < 1024) return `${n} B`;
   const units = ["KB", "MB", "GB", "TB", "PB"];
   let v = n / 1024;

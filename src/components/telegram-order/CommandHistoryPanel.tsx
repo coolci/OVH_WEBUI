@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { CommandHistory } from "./types";
-import { ORDER_MODES } from "./OrderModeGrid";
+import { ORDER_MODES } from "./order-modes";
 
 interface CommandHistoryPanelProps {
   history: CommandHistory[];

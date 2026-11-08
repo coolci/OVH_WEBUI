@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { api } from "@/lib/http";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
-import { errorMessage } from "@/components/common/LoadFailed";
+import { errorMessage } from "@/lib/api-error";
 
 /**
  * IPMI / KVM 控制台对话框：
@@ -60,7 +60,7 @@ export function IpmiDialog({
           activated: res.data?.activated !== false,
         });
         setChosen(res.data?.defaultType || "");
-      } catch (e: any) {
+      } catch (e: unknown) {
         setError(errorMessage(e));
       } finally {
         setTypesLoading(false);
@@ -110,7 +110,7 @@ export function IpmiDialog({
         } else {
           setResult({ url: value, accessType });
         }
-      } catch (e: any) {
+      } catch (e: unknown) {
         clearInterval(interval);
         setLoading(false);
         setError(errorMessage(e));

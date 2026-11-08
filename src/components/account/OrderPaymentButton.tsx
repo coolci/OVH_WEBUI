@@ -19,7 +19,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { LoadFailed, errorMessage } from "@/components/common/LoadFailed";
+import { LoadFailed } from "@/components/common/LoadFailed";
+import { errorMessage } from "@/lib/api-error";
 import { useOrderPaymentInfo, usePayAccountOrder } from "@/hooks/use-account";
 
 /** 付款窗口只展示只读预检结果;明确确认后才调用付款 mutation。 */

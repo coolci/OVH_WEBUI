@@ -41,6 +41,7 @@ import { DeviceMetaCapsules } from "@/components/common/DeviceMetaCapsules";
 import { DeviceSwitcherCard } from "@/components/common/DeviceSwitcherCard";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { errorField } from "@/lib/api-error";
 
 const EMPTY_SERVERS: OwnedServer[] = [];
 
@@ -275,8 +276,8 @@ function ServerTabs({ server }: { server: OwnedServer }) {
     try {
       await toggleMon.mutateAsync({ serviceName: server.serviceName, enabled: !monitoring.data });
       toast.success(monitoring.data ? "OVH 监控已关闭" : "OVH 监控已开启");
-    } catch (e: any) {
-      toast.error(e?.response?.data?.error || "操作失败");
+    } catch (e: unknown) {
+      toast.error(errorField(e, "error") || "操作失败");
     }
   };
 

@@ -3,9 +3,10 @@ import { api } from "@/lib/http";
 import { toast } from "sonner";
 import i18n from "@/i18n";
 import { qk } from "@/lib/query";
-import { apiMessage, bodyMessage } from "@/lib/api-error";
+import { apiMessage, bodyMessage, errorStatus, errorField, type BodyMessage } from "@/lib/api-error";
+import type { ContactChangeRequest } from "@/lib/types";
 import { useActiveAccount } from "@/hooks/use-active-account";
-import type { PartialList } from "../partial-list";
+import { readPartialList, type PartialList } from "../partial-list";
 import type {
   EngagementInfo,
   EngagementPricing,
@@ -16,15 +17,6 @@ import type {
   RetractionInfo,
   SplaListResult,
 } from "./types";
-
-function readPartialList<T>(data: any, listKey: string): PartialList<T> {
-  const failedCount = Number(data?.failedCount) || 0;
-  return {
-    items: (data?.[listKey] || []) as T[],
-    partial: data?.partial === true || failedCount > 0,
-    failedCount,
-  };
-}
 
 export function useEngagement(serviceName: string | null) {
   return useQuery({
@@ -150,16 +142,16 @@ export function useContactChangeRequests(enabled = true) {
       try {
         const res = await api.get(`/ovh/contact-change-requests`);
         return {
-          requests: (res.data?.data || res.data?.requests || []) as any[],
+          requests: (res.data?.data || res.data?.requests || []) as ContactChangeRequest[],
           unsupported: false,
           failedCount: Number(res.data?.failed) || 0,
         };
-      } catch (e: any) {
-        if (e?.response?.status === 501) {
+      } catch (e: unknown) {
+        if (errorStatus(e) === 501) {
           return {
             requests: [],
             unsupported: true,
-            message: e?.response?.data?.message || i18n.t("hooksMsg.server.contactUnsupported"),
+            message: errorField(e, "message") || i18n.t("hooksMsg.server.contactUnsupported"),
             failedCount: 0,
           };
         }
@@ -216,12 +208,12 @@ export function useRequestRetraction(serviceName: string, isVps = false) {
           confirm: true,
         })
       ).data,
-    onSuccess: (d: any) => {
+    onSuccess: (d: BodyMessage) => {
       qc.invalidateQueries({ queryKey: [domain, "retraction"] });
       qc.invalidateQueries({ queryKey: [domain, "list"] });
       toast.success(bodyMessage(d) || i18n.t("hooksMsg.server.retractionSubmitted"));
     },
-    onError: (e: any) => toast.error(apiMessage(e) || i18n.t("hooksMsg.server.retractionFailed")),
+    onError: (e: unknown) => toast.error(apiMessage(e) || i18n.t("hooksMsg.server.retractionFailed")),
   });
 }
 

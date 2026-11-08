@@ -2,23 +2,16 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/http";
 import { qk } from "@/lib/query";
 import { useActiveAccount } from "@/hooks/use-active-account";
-import type { PartialList } from "../partial-list";
+import { readPartialList, type PartialList } from "../partial-list";
 import type {
   MitigationBlock,
   NetworkInterface,
   SecondaryDnsDomain,
   VirtualMacEntry,
   VrackEntry,
+  IpSpecs,
+  NetworkSpecs,
 } from "./types";
-
-function readPartialList<T>(data: any, listKey: string): PartialList<T> {
-  const failedCount = Number(data?.failedCount) || 0;
-  return {
-    items: (data?.[listKey] || []) as T[],
-    partial: data?.partial === true || failedCount > 0,
-    failedCount,
-  };
-}
 
 export function useMitigation(serviceName: string | null) {
   const [accountId] = useActiveAccount();
@@ -33,7 +26,7 @@ export function useMitigation(serviceName: string | null) {
       const data = q.state.data as MitigationBlock[] | undefined;
       if (!data) return false;
       const hasTransition = data.some((b) =>
-        b.mitigations.some((m: any) => m.state === "creationPending" || m.state === "removalPending"),
+        b.mitigations.some((m) => m.state === "creationPending" || m.state === "removalPending"),
       );
       return hasTransition ? 5000 : false;
     },
@@ -152,7 +145,7 @@ export function useServerIpSpecs(serviceName: string | null) {
     queryKey: qk.serverControl.ipSpecs(serviceName || ""),
     queryFn: async () => {
       const res = await api.get(`/server-control/${serviceName}/ip-specs`);
-      return (res.data?.ipSpecs || null) as any;
+      return (res.data?.ipSpecs || null) as IpSpecs | null;
     },
     enabled: !!serviceName,
   });
@@ -163,7 +156,7 @@ export function useServerNetworkSpecs(serviceName: string | null, enabled = true
     queryKey: qk.serverControl.networkSpecs(serviceName || ""),
     queryFn: async () => {
       const res = await api.get(`/server-control/${serviceName}/network-specs`);
-      return (res.data?.network || null) as any;
+      return (res.data?.network || null) as NetworkSpecs | null;
     },
     enabled: !!serviceName && enabled,
   });

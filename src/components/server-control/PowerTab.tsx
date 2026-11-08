@@ -16,7 +16,7 @@ import { IpmiDialog } from "./IpmiDialog";
 import { SplaDialog } from "./SplaDialog";
 import { RescueDialog } from "./RescueDialog";
 import { useTranslation } from "react-i18next";
-import { errorMessage } from "@/components/common/LoadFailed";
+import { errorMessage } from "@/lib/api-error";
 
 /** 电源与系统 Tab：重启 / 重装 / IPMI / 启动模式 / 解锁 Windows / 任务 / BIOS / 安装进度 */
 export function PowerTab({ server }: { server: OwnedServer }) {
@@ -39,7 +39,7 @@ export function PowerTab({ server }: { server: OwnedServer }) {
       await api.post(`/server-control/${server.serviceName}/reboot`);
       toast.success(t("maint.power.toast.rebootSent"));
       setRebootOpen(false);
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(errorMessage(e));
     } finally {
       setRebooting(false);

@@ -27,11 +27,8 @@ import {
 import { useNotifyGate } from "@/hooks/ovh/use-notify-channels";
 import { useServers } from "@/hooks/use-servers";
 import { useAvailability, buildAvailabilityMap } from "@/hooks/use-availability";
-import {
-  DEFAULT_MONITOR_OPTIONS,
-  MonitorOptionsFields,
-  type MonitorNotifyOptions,
-} from "./MonitorOptionsFields";
+import { MonitorOptionsFields } from "./MonitorOptionsFields";
+import { DEFAULT_MONITOR_OPTIONS, type MonitorNotifyOptions } from "@/lib/monitor-options";
 import { OptionGroupSection } from "@/components/common/OptionGroupSection";
 import { groupOptions, type OptionGroupKey } from "@/lib/option-groups";
 import { Checkbox } from "@/components/ui/checkbox";

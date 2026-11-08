@@ -3,6 +3,10 @@ import { api } from "@/lib/http";
 import { qk } from "@/lib/query";
 import type { PartialList } from "./partial-list";
 import { useActiveVpsControlAccount } from "@/hooks/use-active-account";
+import type { EngagementInfo, EngagementPricing, EngagementRequest, ServiceInfo } from "./server-control/types";
+
+/** 二级 DNS:老接口返回域名字符串,新接口返回对象 */
+export type VpsSecondaryDnsEntry = string | { domain: string; dns?: string; ipMaster?: string };
 
 /* ────────────── 类型定义 ────────────── */
 
@@ -107,7 +111,7 @@ export function useVpsInfo(svc: string | null) {
     queryKey: qk.vpsControl.info(svc || ""),
     queryFn: async () => {
       const res = await api.get(`/vps-control/${svc}/info`);
-      return res.data?.info as Record<string, any> | null;
+      return (res.data?.info || null) as ServiceInfo | null;
     },
     enabled: !!svc,
   });
@@ -425,7 +429,7 @@ export function useVpsSecondaryDns(svc: string | null) {
     queryKey: qk.vpsControl.secondaryDns(svc || ""),
     queryFn: async () => {
       const res = await api.get(`/vps-control/${svc}/secondary-dns`);
-      return (res.data?.domains || []) as any[];
+      return (res.data?.domains || []) as VpsSecondaryDnsEntry[];
     },
     enabled: !!svc,
   });
@@ -469,7 +473,7 @@ export interface VpsOption {
   unsupportedReason?: string;
   /** 打标记时后端带回的大区,目前只会是 "US" */
   region?: string;
-  [k: string]: any;
+  [k: string]: unknown;
 }
 
 export function useVpsOptions(svc: string | null) {
@@ -493,7 +497,7 @@ export function useVpsEngagement(svc: string | null) {
     queryKey: qk.vpsControl.engagement(svc || ""),
     queryFn: async () => {
       const res = await api.get(`/vps-control/${svc}/engagement`);
-      return res.data?.engagement as { currentPeriod?: any; endRule?: any } | null;
+      return (res.data?.engagement || null) as EngagementInfo | null;
     },
     enabled: !!svc,
   });
@@ -504,7 +508,7 @@ export function useVpsEngagementAvailable(svc: string | null, enabled = true) {
     queryKey: qk.vpsControl.engagementAvailable(svc || ""),
     queryFn: async () => {
       const res = await api.get(`/vps-control/${svc}/engagement/available`);
-      return (res.data?.pricings || []) as any[];
+      return (res.data?.pricings || []) as EngagementPricing[];
     },
     enabled: !!svc && enabled,
   });
@@ -515,7 +519,7 @@ export function useVpsEngagementRequest(svc: string | null) {
     queryKey: qk.vpsControl.engagementRequest(svc || ""),
     queryFn: async () => {
       const res = await api.get(`/vps-control/${svc}/engagement/request`);
-      return res.data?.request as any | null;
+      return (res.data?.request || null) as EngagementRequest | null;
     },
     enabled: !!svc,
   });

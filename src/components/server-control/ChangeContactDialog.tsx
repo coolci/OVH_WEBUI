@@ -12,8 +12,10 @@ import { useActiveAccountEndpoint } from "@/components/common/active-endpoint";
 import { useChangeContact, useContactChangeRequests, useContactRequestAction } from "@/hooks/use-server-control";
 import { toast } from "sonner";
 import { useTranslation, Trans } from "react-i18next";
-import { errorMessage } from "@/components/common/LoadFailed";
+import { errorMessage } from "@/lib/api-error";
 import { fmtDateTime } from "@/i18n/format";
+import type { ContactChangeRequest } from "@/lib/types";
+import { errorField, errorText } from "@/lib/api-error";
 
 /** 变更联系人对话框：提交新 NIC + 查看 / 接受 / 拒绝 / 重发邮件 待审请求 + token 子对话框 */
 export function ChangeContactDialog({
@@ -53,9 +55,9 @@ export function ChangeContactDialog({
       setBilling("");
       setTab("requests");
       list.refetch();
-    } catch (e: any) {
+    } catch (e: unknown) {
       // OVH 业务约束:一个 service 同时只能有一个待审 contact change task
-      if (/contact change task is already running/i.test(String(e?.response?.data?.error || e?.message || ""))) {
+      if (/contact change task is already running/i.test(String(errorField(e, "error") || errorText(e) || ""))) {
         toast.error(t("maint.contact.toast.alreadyRunning"), { duration: 5000 });
         setTab("requests");
         list.refetch();
@@ -77,9 +79,9 @@ export function ChangeContactDialog({
       );
       setTokenTarget(null);
       setToken("");
-    } catch (e: any) {
+    } catch (e: unknown) {
       // 后端有时用 message 字段(refuse/accept/resend),有时用 error(change-contact),
-      // errorMessage 会按 error→message→err.message 顺序挖,最后兜底通用文案
+      // errorMessage 会按 error→message→errorText(err) 顺序挖,最后兜底通用文案
       toast.error(errorMessage(e), { duration: 6000 });
     }
   };
@@ -146,7 +148,7 @@ export function ChangeContactDialog({
               ) : (
                 <div className="space-y-2 py-2">
                   <PartialNotice failedCount={list.data?.failedCount || 0} what={t("maint.contact.partialWhat")} />
-                  {(list.data?.requests || []).map((req: any) => (
+                  {(list.data?.requests || []).map((req) => (
                     <RequestRow
                       key={req.id}
                       req={req}
@@ -254,7 +256,7 @@ function RequestRow({
   onResend,
   busy,
 }: {
-  req: any;
+  req: ContactChangeRequest;
   onAccept: () => void;
   onRefuse: () => void;
   onResend: () => void;

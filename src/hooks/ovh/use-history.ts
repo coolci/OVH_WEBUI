@@ -78,7 +78,7 @@ export function useRefreshOrderStatus() {
           : i18n.t("hooksMsg.history.statusAlreadyLatest")
       );
     },
-    onError: (e: any) => toast.error(apiMessage(e) || i18n.t("hooksMsg.history.refreshStatusFailed")),
+    onError: (e: unknown) => toast.error(apiMessage(e) || i18n.t("hooksMsg.history.refreshStatusFailed")),
   });
 }
 
@@ -91,6 +91,6 @@ export function useClearHistory() {
       qc.invalidateQueries({ queryKey: qk.history() });
       toast.success(i18n.t("hooksMsg.history.cleared"));
     },
-    onError: (e: any) => toast.error(apiMessage(e) || i18n.t("hooksMsg.history.clearFailed")),
+    onError: (e: unknown) => toast.error(apiMessage(e) || i18n.t("hooksMsg.history.clearFailed")),
   });
 }

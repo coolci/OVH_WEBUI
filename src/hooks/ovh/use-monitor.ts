@@ -3,7 +3,7 @@ import { api } from "@/lib/http";
 import { qk } from "@/lib/query";
 import { toast } from "sonner";
 import i18n from "@/i18n";
-import { apiMessage, bodyMessage } from "@/lib/api-error";
+import { apiMessage, bodyMessage, type BodyMessage } from "@/lib/api-error";
 
 export interface MonitorSubscription {
   planCode: string;
@@ -58,7 +58,7 @@ export interface MonitorHistoryEntry {
     memory?: string;
     storage?: string;
     display?: string;
-    [key: string]: any;
+    [key: string]: unknown;
   };
 }
 
@@ -100,13 +100,13 @@ export function useUpsertMonitorSubscription() {
   return useMutation({
     mutationFn: async (payload: Partial<MonitorSubscription> & { planCode: string }) =>
       (await api.post("/monitor/subscriptions", payload)).data,
-    onSuccess: (data: any) => {
+    onSuccess: (data: BodyMessage & { regionWarning?: string }) => {
       qc.invalidateQueries({ queryKey: qk.monitor.list() });
       qc.invalidateQueries({ queryKey: qk.monitor.status() });
       if (data?.regionWarning) toast.warning(data.regionWarning);
       else toast.success(i18n.t("hooksMsg.monitor.saved"));
     },
-    onError: (e: any) => toast.error(apiMessage(e) || i18n.t("hooksMsg.monitor.saveFailed")),
+    onError: (e: unknown) => toast.error(apiMessage(e) || i18n.t("hooksMsg.monitor.saveFailed")),
   });
 }
 
@@ -127,13 +127,13 @@ export function useUpdateMonitorSubscription() {
       ...patch
     }: Partial<MonitorSubscription> & { planCode: string; optionsKey?: string }) =>
       (await api.put(`/monitor/subscriptions/${encodeURIComponent(planCode)}`, patch, { params: optionsKey === undefined ? undefined : { optionsKey } })).data,
-    onSuccess: (data: any) => {
+    onSuccess: (data: BodyMessage & { regionWarning?: string }) => {
       qc.invalidateQueries({ queryKey: qk.monitor.list() });
       qc.invalidateQueries({ queryKey: qk.monitor.status() });
       if (data?.regionWarning) toast.warning(data.regionWarning);
       else toast.success(bodyMessage(data) || i18n.t("hooksMsg.monitor.updated"));
     },
-    onError: (e: any) =>
+    onError: (e: unknown) =>
       toast.error(apiMessage(e) || i18n.t("hooksMsg.monitor.updateFailed")),
   });
 }
@@ -156,7 +156,7 @@ export function usePauseMonitorSubscription() {
       qc.invalidateQueries({ queryKey: qk.monitor.list() });
       qc.invalidateQueries({ queryKey: qk.monitor.status() });
     },
-    onError: (e: any) => toast.error(apiMessage(e) || i18n.t("hooksMsg.monitor.updateFailed")),
+    onError: (e: unknown) => toast.error(apiMessage(e) || i18n.t("hooksMsg.monitor.updateFailed")),
   });
 }
 
@@ -178,7 +178,7 @@ export function useRemoveMonitorSubscription() {
       qc.invalidateQueries({ queryKey: qk.monitor.status() });
       toast.success(i18n.t("hooksMsg.monitor.deleted"));
     },
-    onError: (e: any) => toast.error(apiMessage(e) || i18n.t("hooksMsg.monitor.deleteFailed")),
+    onError: (e: unknown) => toast.error(apiMessage(e) || i18n.t("hooksMsg.monitor.deleteFailed")),
   });
 }
 
@@ -192,7 +192,7 @@ export function useClearMonitor() {
       qc.invalidateQueries({ queryKey: qk.monitor.status() });
       toast.success(i18n.t("hooksMsg.monitor.cleared"));
     },
-    onError: (e: any) => toast.error(apiMessage(e) || i18n.t("hooksMsg.monitor.clearFailed")),
+    onError: (e: unknown) => toast.error(apiMessage(e) || i18n.t("hooksMsg.monitor.clearFailed")),
   });
 }
 
@@ -210,6 +210,6 @@ export function useSetMonitorInterval() {
       qc.invalidateQueries({ queryKey: qk.monitor.status() });
       toast.success(bodyMessage(data) || i18n.t("hooksMsg.monitor.intervalUpdated"));
     },
-    onError: (e: any) => toast.error(apiMessage(e) || i18n.t("hooksMsg.monitor.intervalSetFailed")),
+    onError: (e: unknown) => toast.error(apiMessage(e) || i18n.t("hooksMsg.monitor.intervalSetFailed")),
   });
 }

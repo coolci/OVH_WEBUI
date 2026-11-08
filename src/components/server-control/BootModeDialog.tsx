@@ -8,7 +8,7 @@ import { LoadFailed } from "@/components/common/LoadFailed";
 import { useServerBootModes, useSetServerBootMode, useRebootServer, type BootMode } from "@/hooks/use-server-control";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
-import { errorMessage } from "@/components/common/LoadFailed";
+import { errorMessage } from "@/lib/api-error";
 
 /** 启动模式对话框：列出所有可选启动模式，点击非当前项即切换 + 自动重启（对齐旧前端） */
 export function BootModeDialog({
@@ -43,7 +43,7 @@ export function BootModeDialog({
       }
       onOpenChange(false);
       setConfirmingId(null);
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(errorMessage(e));
     }
   };

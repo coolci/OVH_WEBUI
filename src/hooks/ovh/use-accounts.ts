@@ -4,7 +4,7 @@ import { qk } from "@/lib/query";
 import { toast } from "sonner";
 import { zoneStyle } from "@/lib/zone-color";
 import i18n from "@/i18n";
-import { apiMessage } from "@/lib/api-error";
+import { apiMessage, errorStatus, errorBody } from "@/lib/api-error";
 
 export interface OVHAccount {
   id: string;
@@ -116,9 +116,9 @@ export function useCreateAccount() {
       try {
         const res = await api.post<{ account: OVHAccount } & AccountVerifyResult>("/accounts", input);
         return res.data;
-      } catch (err: any) {
-        if (err?.response?.status === 422 && err.response.data?.account) {
-          return err.response.data as { account: OVHAccount } & AccountVerifyResult;
+      } catch (err: unknown) {
+        if (errorStatus(err) === 422 && errorBody(err).account) {
+          return errorBody(err) as unknown as { account: OVHAccount } & AccountVerifyResult;
         }
         throw err;
       }
@@ -141,7 +141,7 @@ export function useCreateAccount() {
         toast.warning(data.subsidiaryWarning, { duration: 15000 });
       }
     },
-    onError: (e: any) => toast.error(apiMessage(e)),
+    onError: (e: unknown) => toast.error(apiMessage(e)),
   });
 }
 
@@ -153,9 +153,9 @@ export function useUpdateAccount() {
       try {
         const res = await api.put<{ account: OVHAccount } & AccountVerifyResult>(`/accounts/${id}`, input);
         return res.data;
-      } catch (err: any) {
-        if (err?.response?.status === 422 && err.response.data?.account) {
-          return err.response.data as { account: OVHAccount } & AccountVerifyResult;
+      } catch (err: unknown) {
+        if (errorStatus(err) === 422 && errorBody(err).account) {
+          return errorBody(err) as unknown as { account: OVHAccount } & AccountVerifyResult;
         }
         throw err;
       }
@@ -181,7 +181,7 @@ export function useUpdateAccount() {
         toast.warning(data.subsidiaryWarning, { duration: 15000 });
       }
     },
-    onError: (e: any) => toast.error(apiMessage(e)),
+    onError: (e: unknown) => toast.error(apiMessage(e)),
   });
 }
 
@@ -200,7 +200,7 @@ export function useDeleteAccount() {
       qc.invalidateQueries({ queryKey: ["history"] });
       toast.success(i18n.t("hooksMsg.account.deleted"));
     },
-    onError: (e: any) => {
+    onError: (e: unknown) => {
       qc.invalidateQueries({ queryKey: ACCOUNTS_KEY });
       toast.error(apiMessage(e));
     },
@@ -217,7 +217,7 @@ export function useSetDefaultAccount() {
       followDefaultAccount(qc, id);
       toast.success(i18n.t("hooksMsg.account.setDefault"));
     },
-    onError: (e: any) => toast.error(apiMessage(e)),
+    onError: (e: unknown) => toast.error(apiMessage(e)),
   });
 }
 
@@ -357,7 +357,7 @@ export function useProxyTest() {
         toast.error(i18n.t("hooksMsg.account.egressFailed", { via: data.via, error: data.error }));
       }
     },
-    onError: (e: any) => toast.error(apiMessage(e)),
+    onError: (e: unknown) => toast.error(apiMessage(e)),
   });
 }
 
@@ -542,7 +542,7 @@ export function useProxyCheck() {
       else if (g.level === "slow") toast.warning(`${head} —— ${g.note}`, { duration: 8000 });
       else toast.success(head);
     },
-    onError: (e: any) => toast.error(apiMessage(e)),
+    onError: (e: unknown) => toast.error(apiMessage(e)),
   });
 }
 

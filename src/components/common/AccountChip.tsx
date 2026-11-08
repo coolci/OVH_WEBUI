@@ -1,5 +1,5 @@
 import { useAccounts, accountChipColor, findAccountByID } from "@/hooks/use-accounts";
-import { errorMessage } from "@/components/common/LoadFailed";
+import { errorMessage } from "@/lib/api-error";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 

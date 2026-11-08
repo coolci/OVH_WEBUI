@@ -10,7 +10,7 @@ import { api } from "@/lib/http";
 import { apiMessage } from "@/lib/api-error";
 import { useCreateAccount } from "@/hooks/ovh/use-accounts";
 import { qk } from "@/lib/query";
-import { OVH_SUBSIDIARIES, subsidiaryLabel } from "@/lib/ovh-subsidiaries";
+import { OVH_SUBSIDIARIES, subsidiaryLabel, endpointForZone } from "@/lib/ovh-subsidiaries";
 import { apiBaseUrlForEndpoint, endpointRegion } from "@/lib/ovh-regions";
 import { OvhTokenGuide } from "@/components/common/OvhTokenGuide";
 
@@ -71,11 +71,6 @@ const DEFAULT_FORM: Omit<AccountForm, "name"> = {
   consumerKey: "",
   zone: "IE",
 };
-
-function endpointForZone(zone: string): string {
-  const hit = OVH_SUBSIDIARIES.find((s) => s.code === zone);
-  return hit?.endpoint || "ovh-eu";
-}
 
 /**
  * 多账户 gate:
@@ -165,7 +160,7 @@ function AccountOverlay({ onSuccess }: { onSuccess: () => void }) {
       }
       prefetchAfterCredsSaved(qc, zone);
       onSuccess();
-    } catch (e: any) {
+    } catch (e: unknown) {
       setError(apiMessage(e) || t("commons.credsGate.saveFailed"));
     } finally {
       setSubmitting(false);

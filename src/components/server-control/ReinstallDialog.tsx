@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { HardDrive, AlertTriangle, Zap } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { errorMessage } from "@/components/common/LoadFailed";
+import { errorMessage } from "@/lib/api-error";
 import {
   useServerTemplates,
   useReinstallServer,
@@ -11,7 +11,7 @@ import {
   useServerPartitionSchemes,
   type CustomPartition,
 } from "@/hooks/use-server-control";
-import { detectOsKind } from "@/components/server-control/OsIcon";
+import { detectOsKind } from "@/lib/os-kind";
 import { useTheme } from "@/hooks/use-theme";
 import { toast } from "sonner";
 import { buildSmartPlan } from "@/lib/smart-storage";
@@ -242,7 +242,7 @@ export function ReinstallDialog({
       (res?.warnings || []).forEach((w) => toast.warning(w, { duration: 6000 }));
       onOpenChange(false);
       reset();
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(errorMessage(e));
     }
   };

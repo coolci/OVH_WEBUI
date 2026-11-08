@@ -3,9 +3,9 @@ import { api } from "@/lib/http";
 import { qk } from "@/lib/query";
 import { toast } from "sonner";
 import i18n from "@/i18n";
-import { apiMessage } from "@/lib/api-error";
+import { apiMessage, errorBody } from "@/lib/api-error";
 import { clampOrderPlan, MAX_ORDER_QUANTITY, MAX_ORDER_FANOUT } from "@/lib/order-limits";
-import { errorMessage } from "@/components/common/LoadFailed";
+import { errorMessage } from "@/lib/api-error";
 
 export type QueueStatus = "pending" | "running" | "paused" | "completed" | "failed";
 
@@ -143,10 +143,10 @@ export function useCreateQueueItem() {
               duration: payload.duration || undefined,
             });
             success++;
-          } catch (e: any) {
+          } catch (e: unknown) {
             failed++;
             if (!firstError) firstError = errorMessage(e);
-            if (e?.response?.data?.can_force) canForce = true;
+            if (errorBody(e).can_force) canForce = true;
           }
         }
       }
@@ -157,7 +157,7 @@ export function useCreateQueueItem() {
       qc.invalidateQueries({ queryKey: qk.queue.list() });
       qc.invalidateQueries({ queryKey: qk.stats() });
     },
-    onError: (e: any) => toast.error(apiMessage(e) || i18n.t("hooksMsg.queue.addFailed")),
+    onError: (e: unknown) => toast.error(apiMessage(e) || i18n.t("hooksMsg.queue.addFailed")),
   });
 }
 
@@ -172,7 +172,7 @@ export function useUpdateQueueItem() {
       qc.invalidateQueries({ queryKey: qk.stats() });
       toast.success(i18n.t("queue.editSaved") || "修改已保存");
     },
-    onError: (e: any) => toast.error(apiMessage(e) || i18n.t("queue.editFailed") || "修改失败"),
+    onError: (e: unknown) => toast.error(apiMessage(e) || i18n.t("queue.editFailed") || "修改失败"),
   });
 }
 
@@ -187,7 +187,7 @@ export function useToggleQueueItem() {
       // 暂停/恢复改变仪表盘 activeQueues
       qc.invalidateQueries({ queryKey: qk.stats() });
     },
-    onError: (e: any) => toast.error(apiMessage(e) || i18n.t("hooksMsg.queue.actionFailed")),
+    onError: (e: unknown) => toast.error(apiMessage(e) || i18n.t("hooksMsg.queue.actionFailed")),
   });
 }
 
@@ -202,7 +202,7 @@ export function useUpdateQueueInterval() {
       qc.invalidateQueries({ queryKey: qk.queue.list() });
       toast.success(i18n.t("hooksMsg.queue.intervalUpdated"));
     },
-    onError: (e: any) => toast.error(apiMessage(e) || i18n.t("hooksMsg.queue.intervalSetFailed")),
+    onError: (e: unknown) => toast.error(apiMessage(e) || i18n.t("hooksMsg.queue.intervalSetFailed")),
   });
 }
 
@@ -214,7 +214,7 @@ export function useRemoveQueueItem() {
       qc.invalidateQueries({ queryKey: qk.queue.list() });
       qc.invalidateQueries({ queryKey: qk.stats() });
     },
-    onError: (e: any) => toast.error(apiMessage(e) || i18n.t("hooksMsg.queue.removeFailed")),
+    onError: (e: unknown) => toast.error(apiMessage(e) || i18n.t("hooksMsg.queue.removeFailed")),
   });
 }
 
@@ -228,6 +228,6 @@ export function useClearQueue() {
       qc.invalidateQueries({ queryKey: qk.stats() });
       toast.success(i18n.t("hooksMsg.queue.cleared"));
     },
-    onError: (e: any) => toast.error(apiMessage(e) || i18n.t("hooksMsg.queue.clearFailed")),
+    onError: (e: unknown) => toast.error(apiMessage(e) || i18n.t("hooksMsg.queue.clearFailed")),
   });
 }

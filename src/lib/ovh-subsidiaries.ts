@@ -56,6 +56,11 @@ export const OVH_SUBSIDIARIES: OvhSubsidiary[] = [
 
 /** 子公司标签（国家 + 币种，跟随语言），用于下拉框等展示位。
  *  静态的 label 字段仍是中文默认值,给没接 i18n 的旧调用方兜底。 */
+/** 子公司代码 → 它所在的 API endpoint;不认识的按欧区 */
+export function endpointForZone(zone: string): string {
+  return OVH_SUBSIDIARIES.find((s) => s.code === zone)?.endpoint || "ovh-eu";
+}
+
 export function subsidiaryLabel(code: string): string {
   const hit = OVH_SUBSIDIARIES.find((s) => s.code === code);
   if (!hit) return code;

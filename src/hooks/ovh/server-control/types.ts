@@ -1,3 +1,5 @@
+import type { ContactChangeRequest } from "@/lib/types";
+
 export interface OwnedServer {
   serviceName: string;
   name: string;
@@ -40,14 +42,81 @@ export interface HardwareLottery {
   reason?: string;
 }
 
+/** OVH 常见的 { value, unit } 数量结构(容量 / 带宽等) */
+export interface OvhUnitValue {
+  value: number;
+  unit?: string;
+}
+
+/** /hardware 返回的磁盘组(与重装用的 DiskGroup 不是同一个结构) */
+export interface HardwareDiskGroup {
+  numberOfDisks?: number;
+  diskType?: string;
+  diskSize?: OvhUnitValue;
+  raidController?: string;
+  description?: string;
+}
+
+/** 任务可选的执行时间段(GET .../tasks/{id}/available-timeslots) */
+export interface TaskTimeslot {
+  startDate?: string;
+  endDate?: string;
+}
+
+/** 可订购的 IP 段(GET .../orderable/ip 里的 ipv4 / ipv6 每一项) */
+export interface OrderableIpBlock {
+  type?: string;
+  included?: boolean;
+  optionRequired?: string | null;
+  blockSizes?: number[];
+  ipNumber?: number;
+  number?: number;
+}
+
+/** OVH 数量字段:{ value, unit } 或裸数字 */
+export type OvhQuantity = OvhUnitValue | number | null | undefined;
+
+export interface IpSpecs {
+  ipv4?: OrderableIpBlock[];
+  ipv6?: OrderableIpBlock[];
+}
+
+export interface NetworkRoute {
+  ip?: string;
+  gateway?: string;
+  network?: string;
+}
+
+/** GET .../network-specs 的 network 字段 */
+export interface NetworkSpecs {
+  bandwidth?: { OvhToInternet?: OvhQuantity; InternetToOvh?: OvhQuantity; OvhToOvh?: OvhQuantity; type?: string };
+  connection?: OvhQuantity;
+  routing?: { ipv4?: NetworkRoute; ipv6?: NetworkRoute };
+  switching?: { name?: string };
+  vmac?: { supported?: boolean; quota?: number };
+  vrack?: { bandwidth?: OvhQuantity; type?: string };
+  traffic?: { inputQuotaSize?: OvhQuantity; outputQuotaSize?: OvhQuantity; isThrottled?: boolean; resetQuotaDate?: string };
+  ola?: { available?: boolean; supportedModes?: string[] };
+}
+
+/** 硬件维护记录(GET .../interventions) */
+export interface ServerIntervention {
+  id?: number | string;
+  interventionId?: number | string;
+  type?: string;
+  status?: string;
+  description?: string;
+  expectedEndDate?: string;
+}
+
 export interface HardwareInfo {
   processorName: string;
   processorArchitecture: string;
   coresPerProcessor: number;
   threadsPerProcessor: number;
   memorySize?: { value: number; unit: string };
-  diskGroups?: any[];
-  expansionCards?: any[];
+  diskGroups?: HardwareDiskGroup[];
+  expansionCards?: Record<string, unknown>[];
   lottery?: HardwareLottery | null;
 }
 
@@ -258,8 +327,37 @@ export interface BackupFtpAccessEntry {
   error?: string;
 }
 
+export interface BackupFtpInfo {
+  ftpBackupName?: string;
+  quota?: OvhUnitValue;
+  usage?: OvhUnitValue;
+  type?: string;
+  readOnlyDate?: string | null;
+}
+
+export interface BackupCloudInfo {
+  cloudProjectId?: string;
+  containerName?: string;
+  storageType?: string;
+  status?: string;
+}
+
+/** 突发带宽:404 = 该机型不支持 */
+export interface BurstResult {
+  burst: { status?: string; capacity?: OvhUnitValue } | null;
+  notAvailable: boolean;
+  error?: string;
+}
+
+/** 网络防火墙:404 = 该机型不支持 */
+export interface FirewallResult {
+  firewall: { enabled?: boolean; mode?: string; model?: string } | null;
+  notAvailable: boolean;
+  error?: string;
+}
+
 export interface BackupFtpResult {
-  backupFtp?: Record<string, any> | null;
+  backupFtp?: BackupFtpInfo | null;
   accessList?: BackupFtpAccessEntry[];
   accessFailedCount?: number;
   accessError?: string;
@@ -271,7 +369,7 @@ export interface BackupFtpResult {
 }
 
 export interface BackupCloudResult {
-  backupCloud?: Record<string, any> | null;
+  backupCloud?: BackupCloudInfo | null;
   notAvailable?: boolean;
   notActivated?: boolean;
   unknownService?: boolean;
@@ -310,7 +408,7 @@ export interface FaultyDisk {
 }
 
 export interface ContactChangeRequestList {
-  requests: any[];
+  requests: ContactChangeRequest[];
   unsupported: boolean;
   message?: string;
   failedCount: number;

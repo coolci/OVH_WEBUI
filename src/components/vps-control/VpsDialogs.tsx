@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { useChangeVpsContact } from "@/hooks/use-vps-control";
 import { useServerAliases, useSetServerAlias, aliasOf } from "@/hooks/use-server-aliases";
+import { errorField, errorText } from "@/lib/api-error";
 
 /** 简化版变更联系人 */
 export function ChangeContactInline({
@@ -44,8 +45,8 @@ export function ChangeContactInline({
       setAdmin("");
       setTech("");
       setBilling("");
-    } catch (e: any) {
-      toast.error(e?.response?.data?.error || "提交失败");
+    } catch (e: unknown) {
+      toast.error(errorField(e, "error") || "提交失败");
     }
   };
 
@@ -106,8 +107,8 @@ export function AliasEditor({
           try {
             await onSetAlias.mutateAsync({ serviceName, alias: v, accountId });
             toast.success("别名已保存");
-          } catch (e: any) {
-            toast.error(e?.message || "保存失败");
+          } catch (e: unknown) {
+            toast.error(errorText(e) || "保存失败");
           }
         }}
         disabled={onSetAlias.isPending}

@@ -13,7 +13,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DatacenterPicker } from "@/components/common/DatacenterPicker";
 import { PlanCodeCombobox } from "@/components/common/PlanCodeCombobox";
-import { OrderModeGrid, ORDER_MODES } from "@/components/telegram-order/OrderModeGrid";
+import { OrderModeGrid } from "@/components/telegram-order/OrderModeGrid";
+import { ORDER_MODES } from "@/components/telegram-order/order-modes";
 import { TerminalConsole } from "@/components/telegram-order/TerminalConsole";
 import { CommandHistoryPanel } from "@/components/telegram-order/CommandHistoryPanel";
 import { CommandReferenceCard } from "@/components/telegram-order/CommandReferenceCard";
@@ -21,7 +22,8 @@ import {
   type OrderMode, type CommandHistory,
   HISTORY_STORAGE_KEY, MAX_HISTORY_ITEMS,
 } from "@/components/telegram-order/types";
-import { api } from "@/lib/api";
+import { api, type TelegramActionResult } from "@/lib/api";
+import { apiMessage } from "@/lib/api-error";
 import { useServers } from "@/hooks/use-servers";
 import { useAccounts } from "@/hooks/use-accounts";
 import { useAvailability, buildAvailabilityMap } from "@/hooks/use-availability";
@@ -47,7 +49,7 @@ const TelegramOrderPage = () => {
   const [isExecutingRaw, setIsExecutingRaw] = useState(false);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [lastResult, setLastResult] = useState<any>(null);
+  const [lastResult, setLastResult] = useState<TelegramActionResult | null>(null);
   const [copied, setCopied] = useState(false);
   const [commandHistory, setCommandHistory] = useState<CommandHistory[]>([]);
 
@@ -87,8 +89,8 @@ const TelegramOrderPage = () => {
       } else {
         toast.error(result.error || "注册失败");
       }
-    } catch (error: any) {
-      toast.error(`注册失败: ${error.message}`);
+    } catch (error) {
+      toast.error(`注册失败: ${apiMessage(error)}`);
     }
   };
 
@@ -175,9 +177,10 @@ const TelegramOrderPage = () => {
       } else {
         toast.error(result.error || "指令执行失败");
       }
-    } catch (error: any) {
-      toast.error(`请求失败: ${error.message}`);
-      setLastResult({ success: false, error: error.message, command: targetCmd });
+    } catch (error) {
+      const msg = apiMessage(error);
+      toast.error(`请求失败: ${msg}`);
+      setLastResult({ success: false, error: msg, command: targetCmd });
       addToHistory(targetCmd, 'cli', '', undefined, false);
     } finally {
       setIsExecutingRaw(false);
@@ -217,9 +220,10 @@ const TelegramOrderPage = () => {
       } else {
         toast.error(result.error || "操作失败");
       }
-    } catch (error: any) {
-      toast.error(`请求失败: ${error.message}`);
-      setLastResult({ success: false, error: error.message, command });
+    } catch (error) {
+      const msg = apiMessage(error);
+      toast.error(`请求失败: ${msg}`);
+      setLastResult({ success: false, error: msg, command });
       addToHistory(command, selectedMode, planCode, datacenter || undefined, false);
     } finally {
       setIsSubmitting(false);

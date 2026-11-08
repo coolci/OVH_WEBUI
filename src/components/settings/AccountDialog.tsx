@@ -21,7 +21,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Field } from "./Field";
-import { OVH_SUBSIDIARIES, subsidiaryLabel } from "@/lib/ovh-subsidiaries";
+import { OVH_SUBSIDIARIES, subsidiaryLabel, endpointForZone } from "@/lib/ovh-subsidiaries";
 import { apiBaseUrlForEndpoint } from "@/lib/ovh-regions";
 import { OvhTokenGuide } from "@/components/common/OvhTokenGuide";
 import {
@@ -35,10 +35,6 @@ import {
   useLastProxyTest,
   useVerifyAccount,
 } from "@/hooks/use-accounts";
-
-export function endpointForZone(zone: string): string {
-  return OVH_SUBSIDIARIES.find((s) => s.code === zone)?.endpoint || "ovh-eu";
-}
 
 function proxyInputError(raw: string, t: (key: string, vars?: Record<string, string | number>) => string): string {
   const v = raw.trim();

@@ -2,11 +2,13 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/http";
 import i18n from "@/i18n";
 import { qk } from "@/lib/query";
-import { apiMessage } from "@/lib/api-error";
+import { apiMessage, errorStatus, errorBody, errorField, errorText } from "@/lib/api-error";
 import type {
   BackupFtpAccessEntry,
   BackupFtpResult,
   BackupCloudResult,
+  BurstResult,
+  FirewallResult,
 } from "./types";
 
 export function useServerMonitoring(serviceName: string | null) {
@@ -36,13 +38,13 @@ export function useToggleMonitoring() {
 export function useServerBurst(serviceName: string | null) {
   return useQuery({
     queryKey: qk.serverControl.burst(serviceName || ""),
-    queryFn: async () => {
+    queryFn: async (): Promise<BurstResult> => {
       try {
         const res = await api.get(`/server-control/${serviceName}/burst`);
-        return { burst: res.data?.burst || null, notAvailable: false } as any;
-      } catch (e: any) {
-        if (e?.response?.status === 404) {
-          return { burst: null, notAvailable: true, error: e?.response?.data?.error } as any;
+        return { burst: res.data?.burst || null, notAvailable: false };
+      } catch (e: unknown) {
+        if (errorStatus(e) === 404) {
+          return { burst: null, notAvailable: true, error: errorField(e, "error") };
         }
         throw e;
       }
@@ -68,13 +70,13 @@ export function useSetBurst() {
 export function useServerFirewall(serviceName: string | null) {
   return useQuery({
     queryKey: qk.serverControl.firewall(serviceName || ""),
-    queryFn: async () => {
+    queryFn: async (): Promise<FirewallResult> => {
       try {
         const res = await api.get(`/server-control/${serviceName}/firewall`);
-        return { firewall: res.data?.firewall || null, notAvailable: false } as any;
-      } catch (e: any) {
-        if (e?.response?.status === 404) {
-          return { firewall: null, notAvailable: true, error: e?.response?.data?.error } as any;
+        return { firewall: res.data?.firewall || null, notAvailable: false };
+      } catch (e: unknown) {
+        if (errorStatus(e) === 404) {
+          return { firewall: null, notAvailable: true, error: errorField(e, "error") };
         }
         throw e;
       }
@@ -118,18 +120,18 @@ export function useServerBackupFtp(serviceName: string | null) {
           const accRes = await api.get(`/server-control/${serviceName}/backup-ftp/access`);
           accessList = (accRes.data?.accessList || []) as BackupFtpAccessEntry[];
           accessFailedCount = Number(accRes.data?.failedCount) || 0;
-        } catch (e: any) {
-          accessError = apiMessage(e) || e?.message || i18n.t("hooksMsg.server.backupAclLoadFailed");
+        } catch (e: unknown) {
+          accessError = apiMessage(e) || errorText(e) || i18n.t("hooksMsg.server.backupAclLoadFailed");
         }
         return { backupFtp: res.data?.backupFtp || null, accessList, accessFailedCount, accessError };
-      } catch (e: any) {
-        if (e?.response?.status === 404) {
-          if (e?.response?.data?.notAvailable === true) {
-            return { notAvailable: true, error: e?.response?.data?.error };
+      } catch (e: unknown) {
+        if (errorStatus(e) === 404) {
+          if (errorBody(e).notAvailable === true) {
+            return { notAvailable: true, error: errorField(e, "error") };
           }
           return { notActivated: true };
         }
-        return { notAvailable: true, error: apiMessage(e) || e?.message };
+        return { notAvailable: true, error: apiMessage(e) || errorText(e) };
       }
     },
     enabled: !!serviceName,
@@ -236,21 +238,21 @@ export function useServerBackupCloud(serviceName: string | null) {
           };
         }
         return { backupCloud: res.data?.backupCloud || null };
-      } catch (e: any) {
-        if (e?.response?.status === 404) {
-          if (e?.response?.data?.unknownService === true) {
+      } catch (e: unknown) {
+        if (errorStatus(e) === 404) {
+          if (errorBody(e).unknownService === true) {
             return {
               notAvailable: true,
               unknownService: true,
-              error: e?.response?.data?.error,
-              reason: e?.response?.data?.reason,
+              error: errorField(e, "error"),
+              reason: errorField(e, "reason"),
             };
           }
-          if (e?.response?.data?.notActivated === true) {
+          if (errorBody(e).notActivated === true) {
             return { notActivated: true };
           }
         }
-        return { notAvailable: true, error: apiMessage(e) || e?.message };
+        return { notAvailable: true, error: apiMessage(e) || errorText(e) };
       }
     },
     enabled: !!serviceName,

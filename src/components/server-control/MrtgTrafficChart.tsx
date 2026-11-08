@@ -213,7 +213,7 @@ function InterfaceChart({
                 borderRadius: 8,
                 fontSize: 12,
               }}
-              formatter={(value: any, name: string) => [
+              formatter={(value, name) => [
                 formatBandwidth(Number(value)),
                 name === "download" ? t("maint.mrtg.tooltipDl") : t("maint.mrtg.tooltipUl"),
               ]}

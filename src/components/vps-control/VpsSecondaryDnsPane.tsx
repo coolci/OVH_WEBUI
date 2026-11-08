@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/common/Skeleton";
 import { toast } from "sonner";
-import { errorMessage } from "@/components/common/LoadFailed";
+import { errorMessage } from "@/lib/api-error";
 import {
   Dialog,
   DialogContent,
@@ -40,7 +40,7 @@ export function VpsSecondaryDnsPane({ serviceName }: { serviceName: string }) {
       toast.success(`二级 DNS 域名 ${d} 添加成功`);
       setAddOpen(false);
       setDomain("");
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(errorMessage(e));
     }
   };
@@ -50,7 +50,7 @@ export function VpsSecondaryDnsPane({ serviceName }: { serviceName: string }) {
     try {
       await delMutation.mutateAsync(domainName);
       toast.success(`二级 DNS 域名 ${domainName} 已删除`);
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(errorMessage(e));
     }
   };
@@ -88,7 +88,7 @@ export function VpsSecondaryDnsPane({ serviceName }: { serviceName: string }) {
         </p>
       ) : (
         <div className="border border-border rounded-xl divide-y divide-border overflow-hidden">
-          {domains.map((row: any) => {
+          {domains.map((row) => {
             const domainName = typeof row === "string" ? row : row.domain;
             return (
               <div key={domainName} className="px-3.5 py-2.5 flex items-center justify-between text-xs gap-2">

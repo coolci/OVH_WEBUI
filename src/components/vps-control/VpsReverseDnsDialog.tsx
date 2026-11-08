@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useSetVpsIpReverse } from "@/hooks/use-vps-control";
 import { toast } from "sonner";
-import { errorMessage } from "@/components/common/LoadFailed";
+import { errorMessage } from "@/lib/api-error";
 
 interface VpsReverseDnsDialogProps {
   open: boolean;
@@ -44,7 +44,7 @@ export function VpsReverseDnsDialog({
       await setReverse.mutateAsync({ ip, reverse: rev });
       toast.success(rev ? `IP ${ip} 反向 DNS 已更新为 ${rev}` : `IP ${ip} 反向 DNS 已重置`);
       onOpenChange(false);
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error(errorMessage(e));
     }
   };

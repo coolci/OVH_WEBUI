@@ -1,9 +1,9 @@
 import { Chip } from "@/components/common/Chip";
 import { Skeleton } from "@/components/common/Skeleton";
-import { useVpsOptions, useVpsAutomatedBackup } from "@/hooks/use-vps-control";
+import { useVpsOptions, useVpsAutomatedBackup, type VpsOption } from "@/hooks/use-vps-control";
 import { ShieldCheck, Clock, Archive } from "lucide-react";
 
-const EMPTY_OPTIONS: any[] = [];
+const EMPTY_OPTIONS: VpsOption[] = [];
 
 export function VpsOptionsPanel({ serviceName, region }: { serviceName: string; region: string }) {
   const q = useVpsOptions(serviceName);
@@ -22,7 +22,7 @@ export function VpsOptionsPanel({ serviceName, region }: { serviceName: string; 
         <p className="text-[12px] text-muted-foreground">该 VPS 没有附加选项</p>
       ) : (
         <div className="space-y-2">
-          {list.map((opt: any) => {
+          {list.map((opt) => {
             const manageable = opt.manageEndpointsAvailable !== false;
             return (
               <div key={opt.option} className="border border-border rounded-xl px-3 py-2 space-y-1">

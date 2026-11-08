@@ -10,6 +10,7 @@ import {
   resolveAbsoluteUrl,
   onAuthFailure,
 } from "@/lib/http";
+import { errorStatus, errorField, errorText } from "@/lib/api-error";
 
 type AuthState = "checking" | "needs-auth" | "authed";
 
@@ -111,8 +112,8 @@ function LoginOverlay({
       } else {
         setError("密钥无效（服务端返回 401）");
       }
-    } catch (e: any) {
-      setError(e?.message || "验证失败，请检查网络或后端服务");
+    } catch (e: unknown) {
+      setError(errorText(e) || "验证失败，请检查网络或后端服务");
     } finally {
       setSubmitting(false);
     }
@@ -192,10 +193,10 @@ async function verifyKey(key: string): Promise<boolean> {
       throw new Error(msg);
     }
     throw new Error(`后端返回 ${res.status}`);
-  } catch (e: any) {
-    if (e?.response?.status === 401) return false;
-    if (e?.response?.status === 429) {
-      const msg = e.response.data?.message || e.response.data?.error || "连续错误次数过多，请求已被限制，请稍后再试";
+  } catch (e: unknown) {
+    if (errorStatus(e) === 401) return false;
+    if (errorStatus(e) === 429) {
+      const msg = errorField(e, "message") || errorField(e, "error") || "连续错误次数过多，请求已被限制，请稍后再试";
       throw new Error(msg);
     }
     throw e;

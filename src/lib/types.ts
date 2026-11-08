@@ -178,6 +178,8 @@ export interface ContactChangeRequest {
   state?: string;
   dateDone?: string | null;
   dateRequest?: string;
+  /** 本次变更涉及的联系人类型(admin / tech / billing) */
+  contactTypes?: string[];
   [key: string]: unknown;
 }
 

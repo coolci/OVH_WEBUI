@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { ExternalLink, Loader2, MessageCircle, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { errorMessage } from "@/components/common/LoadFailed";
+import { errorMessage } from "@/lib/api-error";
 import { useAccountScope } from "@/hooks/use-account";
 import { useAccounts } from "@/hooks/use-accounts";
 import { authorizeOfficialChat, type ChatIdentity, type ChatProduct } from "@/lib/official-chat";
