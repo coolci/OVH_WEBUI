@@ -1,4 +1,4 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import i18n from "@/i18n";
 import { api } from "@/lib/http";
@@ -13,5 +13,26 @@ export function useCleanupCarts() {
       else toast.info(i18n.t("ovhExtra.carts.none"));
     },
     onError: (e: unknown) => toast.error(i18n.t("ovhExtra.carts.failed", { reason: apiMessage(e) || "" })),
+  });
+}
+
+export interface DefaultPaymentInfo {
+  hasDefault: boolean;
+  valid: boolean;
+  type?: string;
+  label?: string;
+  status?: string;
+  expiration?: string;
+  reason?: string;
+}
+
+/** 账户默认支付方式(自动付款依赖它)。后端缓存 10 分钟 */
+export function useDefaultPayment(accountId: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: ["ovh", "payment-default", accountId || ""],
+    queryFn: async () => (await api.get<DefaultPaymentInfo>("/ovh/payment-default", { params: { account_id: accountId } })).data,
+    enabled: enabled && !!accountId,
+    staleTime: 5 * 60_000,
+    retry: false,
   });
 }

@@ -33,6 +33,7 @@ import { AccountSelect } from "@/components/common/AccountSelect";
 import { useAccounts } from "@/hooks/use-accounts";
 import { MAX_ORDER_QUANTITY } from "@/lib/order-limits";
 import { SUBSIDIARIES } from "./types";
+import { AutoPayCheck } from "@/components/orders/AutoPayCheck";
 
 interface AddVPSDialogProps {
   open: boolean;
@@ -335,6 +336,7 @@ export function AddVPSDialog({ open, onOpenChange, initial }: AddVPSDialogProps)
                     <p className="text-[11px] text-muted-foreground">默认关闭。开启后用 OVH 账户默认支付方式扣款。</p>
                   </div>
                 </label>
+                <AutoPayCheck accountIds={[autoOrderAccountId]} enabled={autoOrder && autoPay} />
               </div>
             )}
           </div>

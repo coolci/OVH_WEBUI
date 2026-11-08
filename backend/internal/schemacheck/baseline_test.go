@@ -119,6 +119,7 @@ var usedEndpoints = []string{
 
 	"GET /me/order/{orderId}/paymentMethods",
 	"GET /me/order/{orderId}/availablePaymentMethod",
+	"GET /me/payment/method",
 	"GET /me/payment/method/{paymentMethodId}",
 	"POST /me/order/{orderId}/pay",
 

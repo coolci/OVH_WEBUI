@@ -1919,6 +1919,35 @@
       ]
     }
   },
+  "GET /me/payment/method": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "long[]",
+      "params": [
+        "query:default:boolean:false",
+        "query:paymentType:string:false",
+        "query:status:me.payment.method.StatusEnum:false"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "long[]",
+      "params": [
+        "query:default:boolean:false",
+        "query:paymentType:string:false",
+        "query:status:me.payment.method.StatusEnum:false"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "long[]",
+      "params": [
+        "query:default:boolean:false",
+        "query:paymentType:string:false",
+        "query:status:me.payment.method.StatusEnum:false"
+      ]
+    }
+  },
   "GET /me/payment/method/{paymentMethodId}": {
     "CA": {
       "params": [

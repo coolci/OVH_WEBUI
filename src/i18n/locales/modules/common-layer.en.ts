@@ -420,6 +420,13 @@ const pack: CommonLayerPack = {
     },
   },
   ovhExtra: {
+    payment: {
+      checking: "Checking the account default payment method…",
+      none: "Account \"{{account}}\" has no default payment method: auto-pay cannot charge it and only an unpaid order will be created (sale orders may expire within 15 minutes). Set a default payment method in the OVH control panel first.",
+      invalid: "The default payment method of account \"{{account}}\" is unusable ({{reason}}); auto-pay will fail. Update it in the OVH control panel.",
+      ok: "Account \"{{account}}\" will auto-pay with its default payment method {{label}}.",
+      unknown: "Could not verify the default payment method of account \"{{account}}\": {{reason}}",
+    },
     carts: {
       title: "Leftover carts",
       hint: "Carts created by this app can stay in your OVH account after a crash or a failed delete, and many of them make rate limiting more likely. They are cleaned automatically every 6 hours; only carts created by this app and not in use are deleted — carts you created on the OVH website are never touched.",

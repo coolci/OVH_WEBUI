@@ -36,6 +36,7 @@ import {
 } from "@/hooks/use-availability";
 import { mergeDcAvailability } from "@/lib/datacenters";
 import { describeOptionCode, describeOptionCodes, groupOptions, type OptionGroupKey } from "@/lib/option-groups";
+import { AutoPayCheck } from "@/components/orders/AutoPayCheck";
 
 interface CreateQueueDialogProps {
   open: boolean;
@@ -423,6 +424,7 @@ export function CreateQueueDialog({
               <p className="text-[11px] text-muted-foreground">默认关闭。开启后用 OVH 账户默认支付方式扣款。</p>
             </div>
           </label>
+          <AutoPayCheck accountIds={[accountId]} enabled={autoPay} />
 
           {datacenters.length > 0 && (
             <div className="border border-border rounded-2xl p-3 text-[12px] text-muted-foreground">

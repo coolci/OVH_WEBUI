@@ -31,6 +31,7 @@ import {
 import { useAccounts, findAccountByID } from "@/hooks/use-accounts";
 import { OVH_DATACENTERS, apiDatacenterCode } from "@/lib/datacenters";
 import { describeOptionCode, describeOptionCodes, groupOptions, type OptionGroupKey } from "@/lib/option-groups";
+import { AutoPayCheck } from "@/components/orders/AutoPayCheck";
 
 interface EditQueueDialogProps {
   open: boolean;
@@ -295,6 +296,7 @@ export function EditQueueDialog({ open, onOpenChange, item }: EditQueueDialogPro
               </p>
             </div>
           </label>
+          <AutoPayCheck accountIds={[item?.accountId]} enabled={autoPay} />
         </div>
 
         <DialogFooter>

@@ -31,6 +31,7 @@ import {
 } from "@/hooks/use-availability";
 import { groupOptions, type OptionGroupKey } from "@/lib/option-groups";
 import { OVH_DATACENTERS, isDcInStock, lookupDcStatus, mergeDcAvailability } from "@/lib/datacenters";
+import { AutoPayCheck } from "@/components/orders/AutoPayCheck";
 
 interface ServerDetailDialogProps {
   server: ServerPlan;
@@ -279,6 +280,7 @@ export function ServerDetailDialog({
               <Checkbox checked={autoPay} onCheckedChange={(v) => setAutoPay(!!v)} />
               <span className="text-muted-foreground">抢到后自动付款（默认关闭；开启后使用 OVH 账户默认支付方式自动结算）</span>
             </label>
+            <AutoPayCheck accountIds={[accountId]} enabled={autoPay} />
           </div>
         </div>
       </div>

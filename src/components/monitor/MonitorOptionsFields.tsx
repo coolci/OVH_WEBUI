@@ -3,6 +3,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { MAX_ORDER_QUANTITY } from "@/lib/order-limits";
+import { AutoPayCheck } from "@/components/orders/AutoPayCheck";
 
 export type MonitorNotifyOptions = {
   notifyAvailable: boolean;
@@ -113,6 +114,7 @@ export function MonitorOptionsFields({
             label="抢到后自动付款"
             hint="默认关闭。开启后分别使用各下单账户的默认支付方式扣款"
           />
+          <AutoPayCheck accountIds={value.autoOrderAccountIds} enabled={value.autoOrder && value.autoPay} />
           <div>
             <label className="mb-1.5 block text-xs font-medium text-muted-foreground">每账户、每配置、每机房下单数量</label>
             <Input

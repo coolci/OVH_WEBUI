@@ -46,6 +46,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { AutoPayCheck } from "@/components/orders/AutoPayCheck";
 
 type QuickOrderDialogProps = {
   open: boolean;
@@ -462,6 +463,7 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
                 <p className="text-[11px] text-muted-foreground">默认关闭。开启后用 OVH 账户默认支付方式扣款。</p>
               </div>
             </label>
+            <AutoPayCheck accountIds={[targetAccountId]} enabled={autoPay} />
           </div>
 
           <div className="relative z-10 shrink-0 space-y-2 border-t border-border/60 bg-card px-4 py-3 sm:px-6">
