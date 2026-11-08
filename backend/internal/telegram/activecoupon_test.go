@@ -24,4 +24,3 @@ func TestActiveCoupon(t *testing.T) {
 		t.Fatalf("expected empty coupon after clear, got %q", got)
 	}
 }
-

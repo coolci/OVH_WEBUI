@@ -123,4 +123,3 @@ func TestExtractCPUFromProduct(t *testing.T) {
 		}
 	}
 }
-

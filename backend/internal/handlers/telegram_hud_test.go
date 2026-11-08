@@ -94,4 +94,3 @@ func TestPersistentReplyKeyboard(t *testing.T) {
 		t.Fatalf("expected first button to be ⚡ 快速下单, got %s", rows[0][0]["text"])
 	}
 }
-

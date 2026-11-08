@@ -255,3 +255,11 @@ EP-256,REGISTRY,P2,POST,/api/vps-monitor/subscriptions/batch-add-all,/vps-monito
 EP-257,REGISTRY,P2,PUT,/api/queue/:id,/queue/:id,wip,,2026-11-06
 EP-258,F03,P2,GET,/api/catalog-watch,/catalog-watch,wip,,2026-11-07
 EP-259,F03,P2,PUT,/api/catalog-watch,/catalog-watch,wip,,2026-11-07
+EP-260,F02,P2,GET,/api/order/durations,/order/durations,wip,,2026-11-08
+EP-261,F02,P2,GET,/api/ovh/os-availability,/ovh/os-availability,wip,,2026-11-08
+EP-262,F01b,P3,GET,/api/ovh/payment-default,/ovh/payment-default,wip,,2026-11-08
+EP-263,F01b,P3,GET,/api/ovh/orders/:orderId/followup,/ovh/orders/:orderId/followup,wip,,2026-11-08
+EP-264,F01b,P3,POST,/api/ovh/carts/cleanup,/ovh/carts/cleanup,wip,,2026-11-08
+EP-265,F01b,P3,GET,/api/ovh/security/credentials,/ovh/security/credentials,wip,,2026-11-08
+EP-266,F01b,P3,DELETE,/api/ovh/security/credentials/:credentialId,/ovh/security/credentials/:credentialId,wip,,2026-11-08
+EP-267,F01b,P3,GET,/api/ovh/security/api-logs,/ovh/security/api-logs,wip,,2026-11-08

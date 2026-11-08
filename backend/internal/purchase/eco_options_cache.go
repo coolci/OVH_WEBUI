@@ -67,4 +67,3 @@ func resetEcoOptionsCache() {
 	ecoOptionsCache = map[string]ecoOptionEntry{}
 	ecoOptionsCacheMu.Unlock()
 }
-

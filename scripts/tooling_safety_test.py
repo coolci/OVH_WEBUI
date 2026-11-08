@@ -55,7 +55,8 @@ function go { $BuildArgs = $args
                 (root/'backend/.env').write_text('# fixture')
                 script=root/'scripts/start.ps1'; script.write_text(prefix+source,encoding='utf-8-sig')
                 env={**os.environ,'FIXTURE_REBUILD':str(int(rebuild)),'FIXTURE_BUILD_FAIL':str(int(fail))}
-                result=subprocess.run(['powershell','-NoProfile','-ExecutionPolicy','Bypass','-File',str(script)],env=env,capture_output=True,text=True)
+                # PowerShell 按系统代码页输出(中文 Windows 是 GBK),按 UTF-8 严格解码会让读线程抛错、输出丢失
+                result=subprocess.run(['powershell','-NoProfile','-ExecutionPolicy','Bypass','-File',str(script)],env=env,capture_output=True,text=True,encoding='utf-8',errors='replace')
                 self.assertEqual(result.returncode,1 if fail else 0,result.stderr)
                 self.assertEqual(binary.read_text().strip(),'new-binary' if rebuild and not fail else 'old-binary')
                 stopped=root/'backend/stopped.txt'

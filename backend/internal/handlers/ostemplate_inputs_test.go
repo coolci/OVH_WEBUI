@@ -118,4 +118,3 @@ func TestParseTemplateInputs(t *testing.T) {
 		t.Errorf("unexpected default: %v", appQ["default"])
 	}
 }
-

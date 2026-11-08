@@ -49,4 +49,3 @@ func TestAuditTelegramDifferentAccountNotDuplicate(t *testing.T) {
 		t.Fatalf("account-b blocked by account-a task: %s", result.Message)
 	}
 }
-

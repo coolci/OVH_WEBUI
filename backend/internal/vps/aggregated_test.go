@@ -37,7 +37,7 @@ func TestPrefetchAggregatedGroupsAndFilters(t *testing.T) {
 	subs := []types.VPSSubscription{
 		{ID: "1", PlanCode: "vps-a", OvhSubsidiary: "IE"},
 		{ID: "2", PlanCode: "vps-b", OvhSubsidiary: "ie"},
-		{ID: "3", PlanCode: "vps-a", OvhSubsidiary: "IE"},                // 同型号只查一次
+		{ID: "3", PlanCode: "vps-a", OvhSubsidiary: "IE"},                  // 同型号只查一次
 		{ID: "4", PlanCode: "vps-c", OvhSubsidiary: "IE", OS: "Debian 12"}, // 带系统过滤:不走聚合
 	}
 	got := prefetchAggregated(state, subs)

@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
+	"time"
 )
 
 // Paths 数据/缓存/日志目录
@@ -112,7 +114,24 @@ func WriteJSON(path string, v interface{}) error {
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	return renameReplacing(tmp, path)
+}
+
+// renameReplacing 原子替换目标文件。Windows 上杀毒 / 索引服务会在文件刚写完时短暂持有句柄,
+// 这时 rename 覆盖会报 "Access is denied" / 共享冲突;等一下再试就好了
+// (Go 工具链 cmd/go/internal/robustio 也是这样处理)。不重试的话这次写盘直接丢掉。
+func renameReplacing(from, to string) error {
+	err := os.Rename(from, to)
+	if err == nil || runtime.GOOS != "windows" {
+		return err
+	}
+	for _, d := range []time.Duration{10, 20, 40, 80, 160, 320} {
+		time.Sleep(d * time.Millisecond)
+		if err = os.Rename(from, to); err == nil {
+			return nil
+		}
+	}
+	return err
 }
 
 // FileExists 是否存在

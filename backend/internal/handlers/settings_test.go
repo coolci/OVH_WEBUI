@@ -190,4 +190,3 @@ func TestGetSettings_ReflectsDefaultAccount(t *testing.T) {
 		t.Fatalf("st.Config.Get().Zone should be 'FR', got %q", st.Config.Get().Zone)
 	}
 }
-

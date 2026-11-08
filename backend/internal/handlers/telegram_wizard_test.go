@@ -63,4 +63,3 @@ func TestHandleInlineCallback_AllDCs_NoValidDCs_RefusesBlindEnqueue(t *testing.T
 		t.Fatalf("expected 0 queue items for plan with no valid DCs, got %d", qLen)
 	}
 }
-

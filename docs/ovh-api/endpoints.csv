@@ -1,4 +1,4 @@
-﻿version,section,method,path,status,no_auth,used_by_project,description
+version,section,method,path,status,no_auth,used_by_project,description
 v1,/allDom,GET,/allDom,PRODUCTION,,,List available AllDom services
 v1,/allDom,GET,/allDom/{serviceName},PRODUCTION,,,Get this AllDom properties
 v1,/allDom,GET,/allDom/{serviceName}/domain,PRODUCTION,,,List all domains attached to this allDom
@@ -2327,11 +2327,11 @@ v1,/horizonView,GET,/horizonView,PRODUCTION,,,Horizon View as a Service
 v1,/horizonView,GET,/horizonView/{serviceName},PRODUCTION,,,Get this object properties
 v1,/horizonView,GET,/horizonView/{serviceName}/accessPoint,PRODUCTION,,,Pool associated with this Datacenter
 v1,/horizonView,POST,/horizonView/{serviceName}/accessPoint,PRODUCTION,,,Add new access point to create a new network
-v1,/horizonView,DELETE,/horizonView/{serviceName}/accessPoint/{accessPointId},PRODUCTION,,,Delete this access point 
+v1,/horizonView,DELETE,/horizonView/{serviceName}/accessPoint/{accessPointId},PRODUCTION,,,Delete this access point
 v1,/horizonView,GET,/horizonView/{serviceName}/accessPoint/{accessPointId},PRODUCTION,,,Get this object properties
 v1,/horizonView,POST,/horizonView/{serviceName}/accessPoint/{accessPointId}/changeSessionTimeout,PRODUCTION,,,Manage your session Timeout on Unified Access Gateway
 v1,/horizonView,GET,/horizonView/{serviceName}/accessPoint/{accessPointId}/customerNetwork,PRODUCTION,,,You can reach from the Desktops your private network
-v1,/horizonView,POST,/horizonView/{serviceName}/accessPoint/{accessPointId}/customerNetwork,PRODUCTION,,,Add a new network 
+v1,/horizonView,POST,/horizonView/{serviceName}/accessPoint/{accessPointId}/customerNetwork,PRODUCTION,,,Add a new network
 v1,/horizonView,DELETE,/horizonView/{serviceName}/accessPoint/{accessPointId}/customerNetwork/{customerNetworkId},PRODUCTION,,,Delete this Customer Network
 v1,/horizonView,GET,/horizonView/{serviceName}/accessPoint/{accessPointId}/customerNetwork/{customerNetworkId},PRODUCTION,,,Get this object properties
 v1,/horizonView,POST,/horizonView/{serviceName}/accessPoint/{accessPointId}/disableTwoFA,PRODUCTION,,,Disable two factor authentication on your pool
@@ -2340,12 +2340,12 @@ v1,/horizonView,POST,/horizonView/{serviceName}/accessPoint/{accessPointId}/enab
 v1,/horizonView,POST,/horizonView/{serviceName}/accessPoint/{accessPointId}/enableWindowsUsernameOption,PRODUCTION,,,Enable windows Username option on Unified Access Gateway
 v1,/horizonView,POST,/horizonView/{serviceName}/confirmTermination,PRODUCTION,,,Confirm service termination
 v1,/horizonView,GET,/horizonView/{serviceName}/customerNetwork,PRODUCTION,,,You can reach from the Desktops your private network
-v1,/horizonView,POST,/horizonView/{serviceName}/customerNetwork,PRODUCTION,,,Add a new network 
+v1,/horizonView,POST,/horizonView/{serviceName}/customerNetwork,PRODUCTION,,,Add a new network
 v1,/horizonView,DELETE,/horizonView/{serviceName}/customerNetwork/{customerNetworkId},PRODUCTION,,,Delete this Customer Network
 v1,/horizonView,GET,/horizonView/{serviceName}/customerNetwork/{customerNetworkId},PRODUCTION,,,Get this object properties
 v1,/horizonView,GET,/horizonView/{serviceName}/dedicatedHorizon,PRODUCTION,,,Get this object properties
 v1,/horizonView,GET,/horizonView/{serviceName}/dedicatedHorizon/customerUser,PRODUCTION,,,Account to access to your pool
-v1,/horizonView,POST,/horizonView/{serviceName}/dedicatedHorizon/customerUser,PRODUCTION,,,Create a new customer user 
+v1,/horizonView,POST,/horizonView/{serviceName}/dedicatedHorizon/customerUser,PRODUCTION,,,Create a new customer user
 v1,/horizonView,DELETE,/horizonView/{serviceName}/dedicatedHorizon/customerUser/{username},PRODUCTION,,,Delete this Customer User
 v1,/horizonView,GET,/horizonView/{serviceName}/dedicatedHorizon/customerUser/{username},PRODUCTION,,,Get this object properties
 v1,/horizonView,POST,/horizonView/{serviceName}/dedicatedHorizon/customerUser/{username}/changePassword,PRODUCTION,,,Change Horizon View Customer  user password

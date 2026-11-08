@@ -20,47 +20,58 @@ export interface PrewarmParams {
 export function usePrewarmOrder(params: PrewarmParams) {
   const [isPrewarming, setIsPrewarming] = useState(false);
   const [isReady, setIsReady] = useState(false);
-  const lastKeyRef = useRef<string>("");
+  // 已经预热就绪的那组参数;换了机型/机房/选项后必须重新预热,不能沿用上一组的"就绪"
+  const readyKeyRef = useRef<string>("");
+  // 请求体取最新参数(options 数组每次渲染都是新引用,不能放进依赖),是否重发只看 key
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
 
-  const key = `${params.account_id || ""}|${params.planCode || ""}|${params.datacenter || ""}|${(params.options || []).join(",")}|${params.coupon || ""}|${params.duration || ""}`;
+  const { enabled, planCode, datacenter } = params;
+  const key = `${params.account_id || ""}|${planCode || ""}|${datacenter || ""}|${(params.options || []).join(",")}|${params.coupon || ""}|${params.duration || ""}`;
 
   useEffect(() => {
-    if (!params.enabled || !params.planCode || !params.datacenter) {
+    if (!enabled || !planCode || !datacenter) {
       setIsReady(false);
       setIsPrewarming(false);
       return;
     }
-
-    if (lastKeyRef.current === key && isReady) {
+    if (readyKeyRef.current === key) {
+      setIsReady(true);
+      setIsPrewarming(false);
       return;
     }
 
-    lastKeyRef.current = key;
+    setIsReady(false);
     setIsPrewarming(true);
-
+    // 参数在请求途中又变了:旧请求的结果不能把新参数标成就绪
+    let stale = false;
     const timer = setTimeout(async () => {
+      const p = paramsRef.current;
       try {
         const res = await api.post<{ success: boolean; ready: boolean; message: string }>("/purchase/prewarm", {
-          account_id: params.account_id,
-          planCode: params.planCode,
-          datacenter: params.datacenter,
-          options: params.options || [],
-          coupon: params.coupon,
-          duration: params.duration || undefined,
+          account_id: p.account_id,
+          planCode: p.planCode,
+          datacenter: p.datacenter,
+          options: p.options || [],
+          coupon: p.coupon,
+          duration: p.duration || undefined,
         });
-        if (res.data?.success) {
+        if (!stale && res.data?.success) {
+          readyKeyRef.current = key;
           setIsReady(true);
         }
       } catch {
         // 静默降级：预热若遇网络或配置问题不阻断用户正常下单
       } finally {
-        setIsPrewarming(false);
+        if (!stale) setIsPrewarming(false);
       }
     }, 300);
 
-    return () => clearTimeout(timer);
-  }, [key, params.enabled, params.account_id, params.planCode, params.datacenter, params.coupon, params.duration]);
+    return () => {
+      stale = true;
+      clearTimeout(timer);
+    };
+  }, [key, enabled, planCode, datacenter]);
 
   return { isPrewarming, isReady };
 }
-

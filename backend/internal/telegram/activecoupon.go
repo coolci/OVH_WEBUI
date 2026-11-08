@@ -62,4 +62,3 @@ func SetActiveCoupon(state *app.State, coupon string) error {
 func ClearActiveCoupon(state *app.State) error {
 	return SetActiveCoupon(state, "")
 }
-

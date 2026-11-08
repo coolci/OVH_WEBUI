@@ -70,4 +70,3 @@ func TestMonitorCatalogMissRefreshesSoonWithoutRefreshingKnownPlans(t *testing.T
 		})
 	}
 }
-

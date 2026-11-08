@@ -84,11 +84,11 @@ func formatPhaseDur(d time.Duration) string {
 // FormatMetrics 返回用于 Telegram / Webhook 成功通知卡片展示的多行耗时指标。
 // 例如：
 // ⏱️ 抢购耗时: 总计 7.62s
-//   • 查库存: 395ms
-//   • 建购物车: 564ms
-//   • 绑定并加购: 1.15s
-//   • 必需配置与选件: 1.07s
-//   • 下单: 4.45s
+//   - 查库存: 395ms
+//   - 建购物车: 564ms
+//   - 绑定并加购: 1.15s
+//   - 必需配置与选件: 1.07s
+//   - 下单: 4.45s
 func (t *timeline) FormatMetrics() string {
 	if t == nil || len(t.items) == 0 {
 		return ""

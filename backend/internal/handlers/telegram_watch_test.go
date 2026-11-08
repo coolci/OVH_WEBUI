@@ -234,4 +234,3 @@ func TestBuildTelegramCommandArgsAccountAndDC(t *testing.T) {
 		t.Fatalf("args missing components: %v", args)
 	}
 }
-

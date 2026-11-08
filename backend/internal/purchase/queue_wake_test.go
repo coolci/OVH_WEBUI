@@ -58,4 +58,3 @@ func TestQueueProcessorInstantWakeup(t *testing.T) {
 	}
 	t.Logf("队列处理器毫秒级即时唤醒验证通过！入队到执行耗时: %v", elapsed)
 }
-

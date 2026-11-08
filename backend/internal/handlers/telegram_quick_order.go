@@ -323,4 +323,3 @@ func RegisterTelegramCommands(state *app.State) gin.HandlerFunc {
 		c.JSON(http.StatusOK, gin.H{"success": true, "message": "Bot 命令菜单已注册"})
 	}
 }
-

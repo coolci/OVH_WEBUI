@@ -56,7 +56,7 @@ func RefreshOrderStatuses(state *app.State, force bool) int {
 	state.HistoryMu.Lock()
 	type target struct {
 		entryID, orderID, accountID, statusAt, status, purchaseTime string
-		needDeadline                                               bool
+		needDeadline                                                bool
 	}
 	var targets []target
 	for _, h := range state.History {

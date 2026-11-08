@@ -119,7 +119,7 @@ func AddQueueItem(state *app.State) gin.HandlerFunc {
 			AutoPay:       body.AutoPay,
 			Force:         body.Force,
 			Preorder:      body.Preorder,
-			Coupon: strings.TrimSpace(body.Coupon),
+			Coupon:        strings.TrimSpace(body.Coupon),
 		}
 		// 入队 + 落库由 OrderService 统一保证:失败时自动撤回,不存在半成功任务
 		if err := state.OrderService.Enqueue(item, false); err != nil {
