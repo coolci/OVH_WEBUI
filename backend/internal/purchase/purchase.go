@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -304,7 +305,7 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 
 	// ⚡ 检查预装车池：若后台已提前组装好满配就绪车，直接跳过装车阶段直达 checkout，装车耗时归零！
 	var prewarmed *PrewarmedCart
-	if !item.Preorder {
+	if !item.Preorder && ctx.Value(skipPrewarmKey{}) == nil {
 		prewarmed = TakePrewarmedCart(item.AccountID, item.PlanCode, item.Datacenter, effectiveOptions, item.Coupon, selectedDuration)
 	}
 	// 预订不用预热车:结账前要逐项核对购物车里的实际配置,预热车拿不到基础商品 itemId
@@ -770,6 +771,14 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 			errMsg += "；" + couponWarning
 		}
 
+		// 用的是预热车,而 OVH 明确说这辆车已经不存在 / 已过期:订单肯定没建(确定性的 4xx),
+		// 问题只在车本身。以前这里记一次失败、等下一轮(默认 60 秒)才重新装车 ——
+		// 补货窗口往往就这几十秒。现在本轮立即不用预热车重走一遍(只重走一次,不会循环)。
+		if prewarmed != nil && !strings.HasPrefix(item.ID, "catalog-watch-") && staleCartError(err) {
+			state.Logger.Warn(fmt.Sprintf("预热购物车 %s 在 OVH 侧已失效(%s),本轮立即重新装车下单", cartID, errMsg), "purchase")
+			return PurchaseServer(context.WithValue(ctx, skipPrewarmKey{}, true), state, item)
+		}
+
 		// checkout 超时/传输层失败 ≠ 下单失败:请求可能已经到达 OVH 且订单已建,
 		// 只是我方没等到响应。这时任务会重试 → 新车再 checkout → **买两台**
 		// (autoPay 开着就是重复扣款)。所以 transient 失败先按官方 GET /me/order 对账
@@ -898,6 +907,24 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 // (handlers/accounts.go 只在创建/更新时校验)。建车是抢购链路第一步,这一步 400
 // 整单就没了,所以下单前再兜一次:大写化 + 校验归属大区,不合法退回 endpoint 的默认子公司。
 // 归属表只有 internal/ovh/helpers.go 一份,这里只调它派生出来的函数,不另写映射。
+// skipPrewarmKey 本轮不再用预热车(预热车已在 OVH 侧失效、正在重新装车时)
+type skipPrewarmKey struct{}
+
+// staleCartError 结账被拒的原因是"这辆车本身没了 / 过期了",而不是配置或库存问题。
+// 只认确定性的 4xx:超时、429 这类不确定结果绝不能当成"车坏了"去重新下单。
+func staleCartError(err error) bool {
+	var apiErr *ovhsdk.APIError
+	if !errors.As(err, &apiErr) || apiErr.Code < 400 || apiErr.Code >= 500 || apiErr.Code == 408 || apiErr.Code == 429 {
+		return false
+	}
+	if apiErr.Code == http.StatusNotFound {
+		return true
+	}
+	msg := strings.ToLower(apiErr.Message)
+	return strings.Contains(msg, "cart") &&
+		(strings.Contains(msg, "expired") || strings.Contains(msg, "does not exist") || strings.Contains(msg, "not found"))
+}
+
 func orderSubsidiary(state *app.State, acc types.OVHAccount, logTag string) string {
 	// 大写化 / zone 为空时按 endpoint 推,统一走 catalog.SubsidiaryOfAccount(全项目唯一口径),
 	// 这里只在它之上再加一道"跨大区"校验

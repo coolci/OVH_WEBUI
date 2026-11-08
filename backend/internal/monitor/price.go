@@ -9,6 +9,7 @@ import (
 	"github.com/ovh-webui/server/internal/numconv"
 	"github.com/ovh-webui/server/internal/price"
 	"github.com/ovh-webui/server/internal/purchase"
+	"github.com/ovh-webui/server/internal/telegram"
 )
 
 // optionsFromConfig 取本次配置组合要询价的 addon 列表
@@ -146,11 +147,13 @@ func (m *Monitor) verifyPriceAvailable(planCode, datacenter string, configInfo m
 	options := optionsFromConfig(configInfo)
 	accountID := accountIDFromConfig(configInfo)
 	duration := durationFromConfig(configInfo)
+	coupon := m.keptCartCoupon(configInfo)
 
 	// 预热就绪车直通校验闸门：
 	// 若预热池中已存在该机型与配置的预装车，说明此前已在 OVH 侧完成装车验证，
 	// 直接放行，避免在抢购黄金窗口因现场建车删车询价浪费 3.5s~5.0s 甚至踩 429 导致丢单！
-	if purchase.HasPrewarmedCart(accountID, planCode, datacenter, options, "", duration) {
+	if purchase.HasPrewarmedCart(accountID, planCode, datacenter, options, "", duration) ||
+		(coupon != "" && purchase.HasPrewarmedCart(accountID, planCode, datacenter, options, coupon, duration)) {
 		m.state.Logger.Info(fmt.Sprintf("[monitor/prewarm] %s@%s 命中预热就绪车，跳过二次建车验价直通放行", planCode, datacenter), "monitor")
 		return true, ""
 	}
@@ -168,7 +171,7 @@ func (m *Monitor) verifyPriceAvailable(planCode, datacenter string, configInfo m
 			return
 		}
 		if passed {
-			m.keepPriceCheckCart(cartID, accountID, planCode, datacenter, options, duration)
+			m.keepPriceCheckCart(cartID, accountID, planCode, datacenter, options, duration, coupon)
 			return
 		}
 		m.discardPriceCheckCart(accountID, cartID)
@@ -225,28 +228,84 @@ func (m *Monitor) verifyPriceAvailable(planCode, datacenter string, configInfo m
 	return true, ""
 }
 
-// keepPriceCheckCart 把验价通过的购物车放进预热池(键与自动下单任务一致:无优惠码、订阅的购买时长)。
+// keptCartCoupon 验价车留作预热车时该带的优惠码,与接下来会用它下单的那一方一致:
+//   - 订阅开了自动下单 → 自动下单任务不带优惠码 → 空
+//   - 只通知 → 用的是 TG 一键下单按钮,按钮下单会套 TG 默认优惠码 → 当前默认优惠码
+//
+// 以前一律不带,设了默认优惠码时这辆验价车和按钮任务对不上号,只能等另一辆带码的车热好。
+func (m *Monitor) keptCartCoupon(configInfo map[string]interface{}) string {
+	if auto, _ := configInfo["auto_order"].(bool); auto {
+		return ""
+	}
+	return strings.TrimSpace(telegram.ActiveCoupon(m.state))
+}
+
+// keepPriceCheckCart 把验价通过的购物车放进预热池(键与接下来下单的任务一致,见 keptCartCoupon)。
 // 池里已有同键的车时不覆盖,删掉这辆多余的。
-func (m *Monitor) keepPriceCheckCart(cartID, accountID, planCode, datacenter string, options []string, duration string) {
+func (m *Monitor) keepPriceCheckCart(cartID, accountID, planCode, datacenter string, options []string, duration, coupon string) {
 	acc, ok := m.state.FindAccount(accountID)
 	if !ok {
 		m.discardPriceCheckCart(accountID, cartID)
 		return
 	}
-	if purchase.HasPrewarmedCart(acc.ID, planCode, datacenter, options, "", duration) {
+	if purchase.HasPrewarmedCart(acc.ID, planCode, datacenter, options, coupon, duration) {
 		m.discardPriceCheckCart(acc.ID, cartID)
 		return
 	}
-	purchase.PutPrewarmedCart(&purchase.PrewarmedCart{
-		CartID:     cartID,
-		AccountID:  acc.ID,
-		PlanCode:   planCode,
-		Datacenter: datacenter,
-		Options:    append([]string{}, options...),
-		Duration:   duration,
-		CreatedAt:  time.Now(),
-	})
-	m.state.Logger.Info(fmt.Sprintf("[monitor/prewarm] 验价购物车 %s 留作 %s@%s 的预热车", cartID, planCode, datacenter), "monitor")
+	put := func(withCoupon string) {
+		// 回退成无码车时,池里若已有同键的无码车就别覆盖(被覆盖的那辆会变成没人管的僵尸车)
+		if withCoupon != coupon && purchase.HasPrewarmedCart(acc.ID, planCode, datacenter, options, withCoupon, duration) {
+			m.discardPriceCheckCart(acc.ID, cartID)
+			return
+		}
+		purchase.PutPrewarmedCart(&purchase.PrewarmedCart{
+			CartID:     cartID,
+			AccountID:  acc.ID,
+			PlanCode:   planCode,
+			Datacenter: datacenter,
+			Options:    append([]string{}, options...),
+			Coupon:     withCoupon,
+			Duration:   duration,
+			CreatedAt:  time.Now(),
+		})
+		m.state.Logger.Info(fmt.Sprintf("[monitor/prewarm] 验价购物车 %s 留作 %s@%s 的预热车(优惠码: %q)",
+			cartID, planCode, datacenter, withCoupon), "monitor")
+	}
+	if coupon == "" {
+		put("")
+		return
+	}
+
+	// 套优惠码要再打一次 OVH,放到后台做,不拖慢有货通知。
+	// 套码期间在预热协调器上占住这个键:紧接着的通知按钮预热看到"进行中"就不会再另建一辆。
+	key := prewarmCoordKey(acc.ID, planCode, datacenter, options, coupon, duration)
+	globalPrewarmCoord.mu.Lock()
+	if globalPrewarmCoord.inFlight[key] {
+		globalPrewarmCoord.mu.Unlock()
+		// 另一辆带码的车已经在装了,这辆按不带码留着(自动下单 / 无码任务还用得上)
+		put("")
+		return
+	}
+	globalPrewarmCoord.inFlight[key] = true
+	globalPrewarmCoord.mu.Unlock()
+	go func() {
+		defer func() {
+			globalPrewarmCoord.mu.Lock()
+			delete(globalPrewarmCoord.inFlight, key)
+			globalPrewarmCoord.mu.Unlock()
+		}()
+		client, err := m.state.OVH.IsolatedClientFor(acc.ID)
+		if err == nil {
+			err = client.Post("/order/cart/"+cartID+"/coupon", map[string]interface{}{"coupon": coupon}, nil)
+		}
+		if err != nil {
+			// 码被拒 / 网络问题:车本身仍是好的,按不带码留着
+			m.state.Logger.Warn(fmt.Sprintf("[monitor/prewarm] 给验价购物车 %s 套优惠码失败,按无码预热车保留: %v", cartID, err), "monitor")
+			put("")
+			return
+		}
+		put(coupon)
+	}()
 }
 
 func (m *Monitor) discardPriceCheckCart(accountID, cartID string) {

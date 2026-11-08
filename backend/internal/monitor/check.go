@@ -485,6 +485,8 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 		}
 		priceCfg := copyMap(configInfo)
 		priceCfg["account_id"] = choice.accountID
+		// 验价车留作预热车时要知道下一步谁来用它:自动下单(不带优惠码)还是 TG 一键下单按钮(带默认优惠码)
+		priceCfg["auto_order"] = cfg.AutoOrder
 
 		type dcStatus struct {
 			status    string
