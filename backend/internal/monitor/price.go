@@ -158,7 +158,21 @@ func (m *Monitor) verifyPriceAvailable(planCode, datacenter string, configInfo m
 	// 监控轮询验价: 直接进程内调用带有短 TTL 缓存的 price.GetInternalCached,
 	// 避免 HTTP 回环网络开销与 429 抖动。
 	// 验价按订阅要买的周期:目录里没有年付的型号,年付订阅不该被判成"可下单"
-	result := price.GetInternalCached(m.state, accountID, planCode, datacenter, options, duration)
+	//
+	// 询价车按下单的配置装好、绑定过,校验通过就直接留作预热车:自动下单 / 一键下单按钮
+	// 紧接着就能拿它结账,不用再重装一辆。没通过就删掉,不留僵尸车。
+	result, cartID := price.GetInternalCachedKeepCart(m.state, accountID, planCode, datacenter, options, duration)
+	passed := false
+	defer func() {
+		if cartID == "" {
+			return
+		}
+		if passed {
+			m.keepPriceCheckCart(cartID, accountID, planCode, datacenter, options, duration)
+			return
+		}
+		m.discardPriceCheckCart(accountID, cartID)
+	}()
 	if !result.Success {
 		errMsg := result.Error
 		if errMsg == "" {
@@ -207,7 +221,43 @@ func (m *Monitor) verifyPriceAvailable(planCode, datacenter string, configInfo m
 		}
 	}
 	m.state.Logger.Debug(fmt.Sprintf("价格校验通过: %s@%s - 价格(未税优先): %v", planCode, datacenter, priceVal), "monitor")
+	passed = true
 	return true, ""
+}
+
+// keepPriceCheckCart 把验价通过的购物车放进预热池(键与自动下单任务一致:无优惠码、订阅的购买时长)。
+// 池里已有同键的车时不覆盖,删掉这辆多余的。
+func (m *Monitor) keepPriceCheckCart(cartID, accountID, planCode, datacenter string, options []string, duration string) {
+	acc, ok := m.state.FindAccount(accountID)
+	if !ok {
+		m.discardPriceCheckCart(accountID, cartID)
+		return
+	}
+	if purchase.HasPrewarmedCart(acc.ID, planCode, datacenter, options, "", duration) {
+		m.discardPriceCheckCart(acc.ID, cartID)
+		return
+	}
+	purchase.PutPrewarmedCart(&purchase.PrewarmedCart{
+		CartID:     cartID,
+		AccountID:  acc.ID,
+		PlanCode:   planCode,
+		Datacenter: datacenter,
+		Options:    append([]string{}, options...),
+		Duration:   duration,
+		CreatedAt:  time.Now(),
+	})
+	m.state.Logger.Info(fmt.Sprintf("[monitor/prewarm] 验价购物车 %s 留作 %s@%s 的预热车", cartID, planCode, datacenter), "monitor")
+}
+
+func (m *Monitor) discardPriceCheckCart(accountID, cartID string) {
+	if m.state == nil || m.state.OVH == nil {
+		return
+	}
+	go func() {
+		if client, err := m.state.OVH.IsolatedClientFor(accountID); err == nil {
+			_ = client.Delete("/order/cart/"+cartID, nil)
+		}
+	}()
 }
 
 // PlanPriceInfo 结构化价格信息

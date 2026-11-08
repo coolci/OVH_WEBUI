@@ -228,8 +228,9 @@ func TestCustomPlanMonitorMatchesExplicitInventoryOptions(t *testing.T) {
 		t.Fatalf("monitor did not validate a fully configured live cart: carts=%d options=%d checkouts=%d", stats.carts.Load(), stats.options.Load(), stats.checkouts.Load())
 	}
 	item := state.Queue[0]
+	// 验价通过的那辆车已留作预热车:下单直接拿它结账,不再建第二辆、也不重复加选项
 	outcome := purchase.PurchaseServer(context.Background(), state, &item)
-	if !outcome.Success || stats.carts.Load() != 2 || stats.options.Load() != 2 || stats.checkouts.Load() != 1 {
+	if !outcome.Success || stats.carts.Load() != 1 || stats.options.Load() != 1 || stats.checkouts.Load() != 1 {
 		t.Fatalf("custom plan checkout failed or hardware duplicated: outcome=%+v carts=%d options=%d checkouts=%d", outcome, stats.carts.Load(), stats.options.Load(), stats.checkouts.Load())
 	}
 	wrong := []string{"softraid-2x960nvme-extra-" + plan}

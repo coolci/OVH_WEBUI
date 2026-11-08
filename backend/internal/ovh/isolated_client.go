@@ -24,6 +24,7 @@ func IsolateClient(base *ovhsdk.Client) (*ovhsdk.Client, error) {
 		return nil, err
 	}
 	client.Timeout, client.UserAgent, client.Logger = base.Timeout, base.UserAgent, base.Logger
-	client.Client = &http.Client{Transport: base.Client.Transport, CheckRedirect: base.Client.CheckRedirect, Jar: base.Client.Jar}
+	// /auth/time 走时差缓存:省掉新 client 首个签名请求前的那次串行校时(见 authtime.go)
+	client.Client = &http.Client{Transport: wrapAuthTime(base.Client.Transport), CheckRedirect: base.Client.CheckRedirect, Jar: base.Client.Jar}
 	return client, nil
 }

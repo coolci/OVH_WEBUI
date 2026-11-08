@@ -350,6 +350,30 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 			}, &itemResult)
 		}
 
+		// 硬件选项列表与 assign / 加购并发预取(只依赖 cartId;缓存命中时零往返)。
+		// 以前要等加购完成才去拉,冷启动时串行多一次往返。用独立 client:
+		// go-ovh 每次请求都会写 http.Client.Timeout,共享实例并发调用是数据竞争。
+		type ecoOptsResult struct {
+			opts []map[string]interface{}
+			err  error
+		}
+		var ecoOptsCh chan ecoOptsResult
+		if len(effectiveOptions) > 0 {
+			ecoOptsCh = make(chan ecoOptsResult, 1)
+			prefetchClient, perr := state.OVH.IsolatedClientFor(item.AccountID)
+			if perr != nil {
+				prefetchClient = nil
+			}
+			go func() {
+				if prefetchClient == nil {
+					ecoOptsCh <- ecoOptsResult{err: perr}
+					return
+				}
+				opts, err := getOrFetchEcoOptions(ctx, prefetchClient, cartID, subsidiary, item.PlanCode)
+				ecoOptsCh <- ecoOptsResult{opts: opts, err: err}
+			}()
+		}
+
 		g2, ctx2 := errgroup.WithContext(ctx)
 
 		// 1. assign
@@ -517,7 +541,14 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 			if len(filtered) > 0 {
 				state.Logger.Info(fmt.Sprintf("过滤后的硬件选项计划代码: %v", filtered), "purchase")
 				// 优先读取内存缓存，消除抢购链路上 GET /eco/options 的网络阻塞
-				availableEcoOpts, err := getOrFetchEcoOptions(ctx, client, cartID, subsidiary, item.PlanCode)
+				var availableEcoOpts []map[string]interface{}
+				var err error
+				if ecoOptsCh != nil {
+					r := <-ecoOptsCh
+					availableEcoOpts, err = r.opts, r.err
+				} else {
+					availableEcoOpts, err = getOrFetchEcoOptions(ctx, client, cartID, subsidiary, item.PlanCode)
+				}
 				if err != nil {
 					if ctx.Err() != nil {
 						return cancelledOutcome(state, item, "查硬件选项")
