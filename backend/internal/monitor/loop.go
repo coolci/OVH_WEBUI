@@ -113,6 +113,7 @@ func (m *Monitor) monitorLoopGen(gen int64) {
 
 		m.cleanupExpiredCaches()
 
+		roundStart := time.Now()
 		m.subsMu.Lock()
 		count := len(m.subscriptions)
 		subsCopy := make([]*Subscription, count)
@@ -175,20 +176,36 @@ func (m *Monitor) monitorLoopGen(gen int64) {
 			m.state.Logger.Info("当前无订阅，跳过检查", "monitor")
 		}
 
-		// 等下次（可中断 sleep）
-		running := m.stillMine(gen)
-		if running {
-			m.state.Logger.Info(fmt.Sprintf("等待 %d 秒后进行下次检查...", interval), "monitor")
-			for i := 0; i < interval; i++ {
-				running = m.stillMine(gen)
-				if !running {
+		// 等下次（可中断 sleep）。按"上一轮开始 + 间隔"定点起跑,而不是本轮跑完再睡满一个间隔:
+		// 以前实际检查周期 = 本轮耗时(验价 / 发通知 / 下单)+ 间隔,补货检测平白慢了一整轮的耗时。
+		// 本轮已经超过间隔时立即开始下一轮。
+		if m.stillMine(gen) {
+			wait := nextRoundDelay(roundStart, time.Now(), interval)
+			m.state.Logger.Info(fmt.Sprintf("本轮耗时 %.1f 秒,%.1f 秒后进行下次检查...",
+				time.Since(roundStart).Seconds(), wait.Seconds()), "monitor")
+			deadline := time.Now().Add(wait)
+			for m.stillMine(gen) {
+				left := time.Until(deadline)
+				if left <= 0 {
 					break
 				}
-				time.Sleep(time.Second)
+				if left > 200*time.Millisecond {
+					left = 200 * time.Millisecond
+				}
+				time.Sleep(left)
 			}
 		}
 	}
 	m.state.Logger.Info("监控循环已停止", "monitor")
+}
+
+// nextRoundDelay 下一轮距现在还要等多久:以本轮开始时间为基准定点起跑,超时则不等。
+func nextRoundDelay(roundStart, now time.Time, intervalSec int) time.Duration {
+	wait := roundStart.Add(time.Duration(intervalSec) * time.Second).Sub(now)
+	if wait < 0 {
+		return 0
+	}
+	return wait
 }
 
 func (m *Monitor) stillInSubscriptions(sub *Subscription) bool {

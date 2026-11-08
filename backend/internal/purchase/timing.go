@@ -114,6 +114,9 @@ func (t *timeline) FormatMetrics() string {
 		durStr := formatPhaseDur(p.Dur)
 		if strings.Contains(p.Name, "预装车") || strings.Contains(p.Name, "预热") {
 			b.WriteString(fmt.Sprintf("  • %s: ⚡ %s (预热池命中，0s直接结算)\n", p.Name, durStr))
+		} else if p.Name == "下单" {
+			// 结账就是一次 OVH 请求,这段几乎全是 OVH 服务端建单的耗时,本地已无可压缩
+			b.WriteString(fmt.Sprintf("  • %s: %s (OVH 建单)\n", p.Name, durStr))
 		} else {
 			b.WriteString(fmt.Sprintf("  • %s: %s\n", p.Name, durStr))
 		}
