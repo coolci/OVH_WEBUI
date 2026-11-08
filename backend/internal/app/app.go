@@ -146,6 +146,9 @@ type State struct {
 	QueueMu     sync.Mutex
 	Queue       []types.QueueItem
 	queueWakeCh chan struct{}
+	// stockWake 监控发现有货后被标为"立即到期"的队列任务 id(见 stock_wake.go)
+	stockWakeMu sync.Mutex
+	stockWake   map[string]struct{}
 	// QueueMu 同时保护用户对监控自动建单的停止记录。
 	automaticOrderBlocks   map[string]bool
 	pausedMonitorScopes    []MonitorQueueScope

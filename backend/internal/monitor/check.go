@@ -511,6 +511,20 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 			}
 		}
 
+		// 新出现的有货:先于验价 / 通知,立刻唤醒同型号、同机房的队列任务,
+		// 不让它们等满各自的重试间隔(默认 60 秒)。任务醒来会自己再查一次库存,不会误下单。
+		queryEndpoint := ""
+		if acc, ok := m.state.FindAccount(choice.accountID); ok {
+			queryEndpoint = acc.Endpoint
+		}
+		for dc, ds := range dcStatusMap {
+			if NeedsPriceCheck(ds.orderable, ds.hasOld, ds.oldStatus) {
+				if n := m.state.WakeQueueForStock(planCode, dc, queryEndpoint); n > 0 {
+					m.state.Logger.Info(fmt.Sprintf("[monitor->queue] %s@%s 有货,已唤醒 %d 个同型号队列任务", planCode, dc, n), "monitor")
+				}
+			}
+		}
+
 		// 并发价格校验
 		priceCheckResults := map[string][2]interface{}{}
 		if len(priceCheckTasks) > 0 {

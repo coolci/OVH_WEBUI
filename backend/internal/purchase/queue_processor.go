@@ -264,7 +264,13 @@ func processQueueLoop(loopCtx context.Context, state *app.State, purchase func(c
 			if it.Preorder && interval > int(catalog.PreorderCheckInterval/time.Second) {
 				interval = int(catalog.PreorderCheckInterval / time.Second)
 			}
-			if it.LastCheckTime == 0 || float64(current)-it.LastCheckTime >= float64(interval) {
+			// 监控刚看到这个型号在这个机房有货:不等重试间隔,马上查一次(见 app/stock_wake.go)。
+			// 先取标记再判断,任务本来就到期时也把标记清掉,不会再多跑一轮。
+			woke := state.TakeStockWake(it.ID)
+			if woke || it.LastCheckTime == 0 || float64(current)-it.LastCheckTime >= float64(interval) {
+				if woke {
+					state.Logger.Info(fmt.Sprintf("监控发现 %s@%s 有货,立即检查队列任务 %s", it.PlanCode, it.Datacenter, it.ID), "queue")
+				}
 				ready = append(ready, it)
 			}
 		}
