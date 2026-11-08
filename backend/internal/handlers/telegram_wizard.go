@@ -183,7 +183,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 					go func(a, p, d string, opts []string) {
 						ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 						defer cancel()
-						_, _ = purchase.AssemblePrewarmedCart(ctx, state, a, p, d, opts, "", "")
+						_, _ = purchase.AssemblePrewarmedCart(ctx, state, a, p, d, opts, telegram.ActiveCoupon(state), "")
 					}(accID, plan, dc, sess.Options)
 				}
 			} else {
@@ -210,7 +210,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 					go func(a, p, dcCode string, opts []string) {
 						ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 						defer cancel()
-						_, _ = purchase.AssemblePrewarmedCart(ctx, state, a, p, dcCode, opts, "", "")
+						_, _ = purchase.AssemblePrewarmedCart(ctx, state, a, p, dcCode, opts, telegram.ActiveCoupon(state), "")
 					}(accID, plan, d, sess.Options)
 				}
 			}

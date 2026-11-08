@@ -440,46 +440,7 @@ func (m *Monitor) buildAvailabilityAlert(planCode string, availableDCs []map[str
 		m.state.Logger.Debug("一键下单按钮无法解析账户归属，回调时将退回默认账户: "+planCode, "monitor")
 	}
 
-	// 能买这台机器的账户。多于一个时每个机房 × 每个账户各一颗按钮 ——
-	// 抢稀缺机器时多账户就是多一次机会,而看到补货通知那一刻是最不该去打字切账户的时候。
-	//
-	// 只认目录,不解析 planCode 后缀:实测美区目录里 42 个 `-eu` 后缀的机型
-	// 卖的是欧洲机房的机器,却要用**美区**账户下单。
-	btnAccounts := m.AccountsForPlan(planCode)
-	if len(btnAccounts) <= 1 {
-		// 判不出来 / 只有一个能买 → 保持老样子:每个机房一颗按钮,账户走上面解析出来的那个
-		btnAccounts = nil
-	}
-	// 按钮总数封顶。5 个机房 × 3 个账户 = 15 颗,手机上会把消息挤得没法看,
-	// Telegram 对键盘也有上限。超了就退回"每机房一颗",账户仍按订阅解析。
-	if len(btnAccounts) > 0 && len(availableDCs)*len(btnAccounts) > maxOrderButtons {
-		m.state.Logger.Debug(fmt.Sprintf("按钮数 %d×%d 超过上限 %d,退回每机房一颗",
-			len(availableDCs), len(btnAccounts), maxOrderButtons), "monitor")
-		btnAccounts = nil
-	}
-
-	// 一颗按钮 = 一个 (机房, 账户) 组合
-	type target struct {
-		dc        string
-		accountID string
-		label     string
-	}
-	targets := []target{}
-	for _, dcInfo := range availableDCs {
-		dc, _ := dcInfo["dc"].(string)
-		if len(btnAccounts) == 0 {
-			label := "⚡ 抢购 · " + dcButtonLabel(dc)
-			if len(availableDCs) == 1 {
-				label = "⚡ 立即抢购 (" + dcButtonLabel(dc) + ")"
-			}
-			targets = append(targets, target{dc: dc, accountID: btnAccountID, label: label})
-			continue
-		}
-		for _, a := range btnAccounts {
-			targets = append(targets, target{dc: dc, accountID: a.ID,
-				label: "⚡ " + dcButtonLabel(dc) + " · " + a.Name})
-		}
-	}
+	targets := m.orderButtonTargets(planCode, availableDCs, btnAccountID)
 
 	for idx, t := range targets {
 		msgUUID := uuid.NewString()
@@ -548,25 +509,9 @@ func (m *Monitor) SendAvailabilityAlertGrouped(planCode string, availableDCs []m
 	msgText, replyMarkup := m.buildAvailabilityAlert(planCode, availableDCs, configInfo,
 		serverName, priceErrorMessage, traceID, configTraceID, accountID...)
 
-	// 上架通知按钮预热：探针发现有货并在 Telegram/Webhook 广播通知的同时，
-	// 为默认下单账户顺带预热就绪车。用户看到群通知/手机弹窗点击按钮时，直接消费现车 0 秒秒出！
-	targetAcc := ""
-	if len(accountID) > 0 && accountID[0] != "" {
-		targetAcc = accountID[0]
-	}
-	if targetAcc == "" && m.state != nil {
-		if acc, ok := m.state.FindAccount(""); ok {
-			targetAcc = acc.ID
-		}
-	}
-	if targetAcc != "" {
-		options := optionsFromConfig(configInfo)
-		for _, item := range availableDCs {
-			if dcCode, ok := item["datacenter"].(string); ok && dcCode != "" {
-				go m.assemblePrewarmedCartAsync(targetAcc, planCode, dcCode, options, "") // TG 一键下单按钮按月付
-			}
-		}
-	}
+	// 上架通知按钮预热：广播通知的同时为每颗一键下单按钮预热就绪车,
+	// 用户点按钮时直接消费现车结账,省掉装车时间。
+	m.prewarmAlertButtons(planCode, availableDCs, configInfo, accountID...)
 
 	configDesc := ""
 	if configInfo != nil {
@@ -918,6 +863,88 @@ func (m *Monitor) SendNewServerAlert(server map[string]interface{}) {
 	}
 	notify.Broadcast(m.state, b.String(), replyMarkup)
 	m.state.Logger.Info(fmt.Sprintf("发送新服务器提醒: %v", planCode), "monitor")
+}
+
+// orderButtonTarget 上架通知里一颗一键下单按钮 = 一个 (机房, 账户) 组合。
+// accountID 为空表示按钮不带账户,点击时退回默认账户。
+type orderButtonTarget struct {
+	dc        string
+	accountID string
+	label     string
+}
+
+// orderButtonTargets 算出上架通知要放哪些一键下单按钮。
+// 拼按钮和预热购物车都用它 —— 预热的 (机房, 账户) 必须和按钮点下去时用的完全一致,
+// 否则热好的车在池里对不上号,点按钮照样从零装车。
+func (m *Monitor) orderButtonTargets(planCode string, availableDCs []map[string]interface{}, btnAccountID string) []orderButtonTarget {
+	// 能买这台机器的账户。多于一个时每个机房 × 每个账户各一颗按钮 ——
+	// 抢稀缺机器时多账户就是多一次机会,而看到补货通知那一刻是最不该去打字切账户的时候。
+	//
+	// 只认目录,不解析 planCode 后缀:实测美区目录里 42 个 `-eu` 后缀的机型
+	// 卖的是欧洲机房的机器,却要用**美区**账户下单。
+	btnAccounts := m.AccountsForPlan(planCode)
+	if len(btnAccounts) <= 1 {
+		// 判不出来 / 只有一个能买 → 保持老样子:每个机房一颗按钮,账户走上面解析出来的那个
+		btnAccounts = nil
+	}
+	// 按钮总数封顶。5 个机房 × 3 个账户 = 15 颗,手机上会把消息挤得没法看,
+	// Telegram 对键盘也有上限。超了就退回"每机房一颗",账户仍按订阅解析。
+	if len(btnAccounts) > 0 && len(availableDCs)*len(btnAccounts) > maxOrderButtons {
+		btnAccounts = nil
+	}
+
+	targets := []orderButtonTarget{}
+	for _, dcInfo := range availableDCs {
+		dc, _ := dcInfo["dc"].(string)
+		if len(btnAccounts) == 0 {
+			label := "⚡ 抢购 · " + dcButtonLabel(dc)
+			if len(availableDCs) == 1 {
+				label = "⚡ 立即抢购 (" + dcButtonLabel(dc) + ")"
+			}
+			targets = append(targets, orderButtonTarget{dc: dc, accountID: btnAccountID, label: label})
+			continue
+		}
+		for _, a := range btnAccounts {
+			targets = append(targets, orderButtonTarget{dc: dc, accountID: a.ID,
+				label: "⚡ " + dcButtonLabel(dc) + " · " + a.Name})
+		}
+	}
+	return targets
+}
+
+// prewarmAlertButtons 发上架通知时,为每颗一键下单按钮预热一辆购物车。
+// 键要和点按钮后入队的任务完全一致:同一账户(按钮没记账户就是默认账户)、
+// 同一机房、同一配件、当前 TG 默认优惠码、月付。
+func (m *Monitor) prewarmAlertButtons(planCode string, availableDCs []map[string]interface{},
+	configInfo map[string]interface{}, accountID ...string) int {
+	if m.state == nil {
+		return 0
+	}
+	options := optionsFromConfig(configInfo)
+	coupon := telegram.ActiveCoupon(m.state)
+	btnAccountID := m.resolveNotifyAccountID(planCode, accountID...)
+	seen := map[string]bool{}
+	n := 0
+	for _, t := range m.orderButtonTargets(planCode, availableDCs, btnAccountID) {
+		acc := t.accountID
+		if acc == "" {
+			if a, ok := m.state.FindAccount(""); ok {
+				acc = a.ID
+			}
+		}
+		dc := strings.TrimSpace(t.dc)
+		if acc == "" || dc == "" {
+			continue
+		}
+		k := acc + "|" + strings.ToLower(dc)
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		n++
+		go m.assemblePrewarmedCartAsync(acc, planCode, dc, options, coupon, "") // TG 一键下单按钮按月付
+	}
+	return n
 }
 
 // maxOrderButtons 上架通知里最多放几颗一键下单按钮。
