@@ -8,6 +8,7 @@ import { useActiveAccountEndpoint } from "@/components/common/active-endpoint";
 import { apiBaseUrlForEndpoint, endpointRegion } from "@/lib/ovh-regions";
 import { formatMoney } from "@/lib/money";
 import i18n from "@/i18n";
+import { fqnAddonParts, partMatchesValue } from "@/lib/variant-stock";
 
 export interface DatacenterInfo {
   datacenter: string;
@@ -95,29 +96,6 @@ export function variantsForPlan(
 ): AvailabilityItem[] | undefined {
   if (!items || !planCode) return undefined;
   return items.filter((it) => it.planCode === planCode);
-}
-
-/** 以完整型号切除前缀，允许自定义型号包含点号。 */
-function fqnAddonParts(fqn: string, planCode: string): string[] {
-  if (!fqn) return [];
-  const prefix = planCode + ".";
-  return fqn.startsWith(prefix) ? fqn.slice(prefix.length).split(".").filter(Boolean) : [];
-}
-
-/**
- * FQN 段 vs catalog option value 的匹配。
- * OVH availability 接口的 FQN 段是"短前缀",比如 `ram-128g-noecc-2933` / `softraid-4x3840nvme-pcie-gen4`,
- * 但 catalog 返回的 option.value 是带 plan 后缀的完整 planCode,比如 `ram-128g-noecc-2933-rise` /
- * `softraid-4x3840nvme-pcie-gen4-24adv01-v2`。
- * 直接相等匹配永远不命中 → 全红 bug。
- * 这里用双向前缀:相等 / 任一为对方 "x-" 前缀 都算 match,加 "-" 防 `ram-1` 错配 `ram-128g`。
- */
-function partMatchesValue(part: string, value: string): boolean {
-  if (!part || !value) return false;
-  if (part === value) return true;
-  if (value.startsWith(part + "-")) return true;
-  if (part.startsWith(value + "-")) return true;
-  return false;
 }
 
 /** variant 的 FQN 是否覆盖所有 required option value */

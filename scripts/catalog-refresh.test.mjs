@@ -134,7 +134,7 @@ test('price catalog retries stale HTTP 200 and respects upstream cache age', asy
   const hooks = load('src/hooks/ovh/use-availability.ts', {
     '@/lib/catalog-refresh': helper,
     '@tanstack/react-query': {useQueryClient: () => client, useQuery: x => x},
-    '@/lib/availability': {}, axios: {}, '@/lib/query': {},
+    '@/lib/availability': {}, '@/lib/variant-stock': {}, axios: {}, '@/lib/query': {},
     '@/components/common/active-endpoint': {}, '@/lib/ovh-regions': {}, '@/lib/money': {}, '@/i18n': {},
     '@/lib/http': {api: {get: async (url, {params}) => {
       assert.equal(params.subsidiary, 'US');

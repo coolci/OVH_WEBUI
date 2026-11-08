@@ -29,7 +29,8 @@ import {
   formatPrice,
   hasStockWithOption,
 } from "@/hooks/use-availability";
-import { groupOptions, type OptionGroupKey } from "@/lib/option-groups";
+import { groupOptions, describeOptionCodes, type OptionGroupKey } from "@/lib/option-groups";
+import { selectionDcStatus, stockOnlyParts } from "@/lib/variant-stock";
 import { OVH_DATACENTERS, isDcInStock, lookupDcStatus, mergeDcAvailability } from "@/lib/datacenters";
 import { AutoPayCheck } from "@/components/orders/AutoPayCheck";
 import { OSAvailabilityList } from "@/components/servers/OSAvailabilityList";
@@ -45,6 +46,9 @@ interface ServerDetailDialogProps {
   onClose: () => void;
   onMonitor: (datacenters: string[]) => void;
 }
+
+/** 不出现在库存 FQN 里的选项组:不参与"这个配置有没有货"的判断 */
+const NON_FQN_GROUPS = new Set<OptionGroupKey>(["bandwidth", "vrack", "cpu", "other"]);
 
 export function ServerDetailDialog({
   server,
@@ -106,10 +110,11 @@ export function ServerDetailDialog({
 
   const [picked, setPicked] = useState<Partial<Record<OptionGroupKey, string>>>(initialPicked);
 
-  const ok = OVH_DATACENTERS.filter((dc) => isDcInStock(lookupDcStatus(dcMap, dc))).length;
+  // 型号级:任一配置有货的机房数
+  const planOk = OVH_DATACENTERS.filter((dc) => isDcInStock(lookupDcStatus(dcMap, dc))).length;
 
   const optionHasStock = (groupKey: OptionGroupKey, value: string): boolean => {
-    if (groupKey === "bandwidth" || groupKey === "vrack" || groupKey === "cpu" || groupKey === "other") {
+    if (NON_FQN_GROUPS.has(groupKey)) {
       return true;
     }
     return hasStockWithOption(variants, picked as Record<string, string>, groupKey, value);
@@ -117,6 +122,28 @@ export function ServerDetailDialog({
 
   // 预订(只在库存出现、尚未进入销售目录):CPU 不参与匹配,不随任务提交
   const preorder = !!server.prerelease;
+
+  // 机房红绿按"当前所选配置"判断,不是型号级。以前用型号级状态:只要任一配置有货,
+  // 机房就显示有货 —— 选了一套全线缺货的配置,机房照样亮绿,用户以为马上能下单。
+  const hasVariants = !!variants && variants.length > 0;
+  const stockPicks = useMemo(
+    () =>
+      (Object.entries(picked) as [OptionGroupKey, string | undefined][])
+        .filter(([g, v]) => !!v && !NON_FQN_GROUPS.has(g))
+        .map(([, v]) => v as string),
+    [picked],
+  );
+  const selectionMap = useMemo(
+    () => (hasVariants && !preorder ? selectionDcStatus(dcMap, variants!, stockPicks) : dcMap),
+    [hasVariants, preorder, dcMap, variants, stockPicks],
+  );
+  const ok = OVH_DATACENTERS.filter((dc) => isDcInStock(lookupDcStatus(selectionMap, dc))).length;
+  // 有货、但销售目录里选不到的配置段(如目录只卖 3×4T,有货的却是 2×4T)
+  const offCatalog = useMemo(() => {
+    if (!hasVariants || preorder) return [];
+    const catalogValues = (server.availableOptions || []).map((o) => o.value);
+    return stockOnlyParts(variants!, catalogValues);
+  }, [hasVariants, preorder, variants, server.availableOptions]);
   const selectedValues = useMemo(() => {
     const options = Object.values(picked).filter(Boolean) as string[];
     return preorder ? preorderOptions(options, grouped.cpu?.map((o) => o.value)) : options;
@@ -157,6 +184,11 @@ export function ServerDetailDialog({
             <Chip tone="success" className="flex-shrink-0">
               <StatusDot tone="success" size="xs" pulse />
               <span>{ok} 机房有货</span>
+            </Chip>
+          ) : planOk > 0 ? (
+            <Chip tone="warning" className="flex-shrink-0">
+              <StatusDot tone="warning" size="xs" />
+              <span>所选配置缺货</span>
             </Chip>
           ) : (
             <Chip tone="default" className="flex-shrink-0 text-muted-foreground">
@@ -224,7 +256,20 @@ export function ServerDetailDialog({
           <p role="alert" className="text-xs text-destructive">库存记录中没有这套配置组合，请重新选择内存或存储。</p>
         )}
 
-        <DatacenterPicker value={selectedDCs} onChange={setSelectedDCs} availability={dcMap} />
+        {!preorder && ok === 0 && planOk > 0 && (
+          <div role="status" className="rounded-xl border border-warning/30 bg-warning/5 p-3 text-xs space-y-1">
+            <p className="font-medium">所选配置目前在所有机房都缺货（下面按所选配置显示）。</p>
+            <p className="text-muted-foreground">
+              这个型号有 {planOk} 个机房有货，但有货的是其他配置
+              {offCatalog.length > 0
+                ? `，其中「${describeOptionCodes(offCatalog)}」不在当前销售目录里，这里选不到`
+                : "，换成带绿点的选项就能看到"}
+              。按当前配置创建任务会等这套配置有货再下单。
+            </p>
+          </div>
+        )}
+
+        <DatacenterPicker value={selectedDCs} onChange={setSelectedDCs} availability={selectionMap} />
 
         {!preorder && <OSAvailabilityList planCode={server.planCode} accountId={accountId} />}
 
