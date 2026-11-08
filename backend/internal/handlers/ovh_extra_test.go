@@ -125,3 +125,38 @@ func TestOrderDurationsUseAnonymousCart(t *testing.T) {
 		t.Fatalf("anonymous lookup must not sign requests or try to delete: signed=%d deletes=%d", signed, deletes)
 	}
 }
+
+func TestOrderFollowUpReturnsStepsAndDeliveredService(t *testing.T) {
+	fakeOVHServer(t, map[string]string{
+		"GET /me/order/4242/followUp": `[{"step":"VALIDATING","status":"DONE","history":[{"date":"2026-11-08T10:00:00+01:00","label":"PAYMENT_RECEIVED","description":"paid"}]},
+		                                 {"step":"DELIVERING","status":"DOING","history":[]}]`,
+		"GET /me/order/4242/details":   `[1,2]`,
+		"GET /me/order/4242/details/1": `{"orderDetailId":1,"domain":"ns3141.ip-1-2-3.eu"}`,
+		"GET /me/order/4242/details/2": `{"orderDetailId":2,"domain":"*"}`,
+	})
+	st := newTestState(t)
+	st.Accounts = []types.OVHAccount{{ID: "acc", Endpoint: "ovh-eu", Zone: "IE", AppKey: "k", AppSecret: "s", ConsumerKey: "c"}}
+	r := gin.New()
+	r.GET("/o/:orderId", GetOrderFollowUp(st))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/o/4242?account_id=acc", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d %s", w.Code, w.Body.String())
+	}
+	var got struct {
+		Steps    []OrderFollowUpStep `json:"steps"`
+		Services []string            `json:"services"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &got)
+	if len(got.Steps) != 2 || got.Steps[1].Step != "DELIVERING" || got.Steps[0].History[0].Label != "PAYMENT_RECEIVED" {
+		t.Fatalf("steps: %+v", got.Steps)
+	}
+	if len(got.Services) != 1 || got.Services[0] != "ns3141.ip-1-2-3.eu" {
+		t.Fatalf("delivered service name must come from order details (\"*\" ignored): %v", got.Services)
+	}
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/o/12a?account_id=acc", nil))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("non-numeric order id must be rejected: %d", w.Code)
+	}
+}

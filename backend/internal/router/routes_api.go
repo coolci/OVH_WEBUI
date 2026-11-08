@@ -92,6 +92,7 @@ func registerAPIRoutes(api *gin.RouterGroup, cfg Config) {
 	api.POST("/cache/clear", handlers.ClearCache(state))
 	api.POST("/ovh/carts/cleanup", handlers.CleanupCarts(state))
 	api.GET("/ovh/payment-default", handlers.GetDefaultPayment(state))
+	api.GET("/ovh/orders/:orderId/followup", handlers.GetOrderFollowUp(state))
 	api.GET("/catalog", handlers.GetCatalog(state))
 	api.GET("/system/metrics", handlers.GetSystemMetrics(state))
 	api.GET("/version", handlers.GetVersion(state))

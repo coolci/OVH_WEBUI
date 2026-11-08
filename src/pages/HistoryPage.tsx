@@ -32,6 +32,7 @@ import {
 } from "@/hooks/use-history";
 import { cn } from "@/lib/utils";
 import { OrderDurationBadge } from "@/components/orders/OrderDurationField";
+import { OrderProgressButton } from "@/components/history/OrderProgressButton";
 
 /**
  * 订单支付状态 → 标签。取值是 OVH 的 billing.order.OrderStatusEnum,三区一致。
@@ -427,6 +428,7 @@ function HistoryRow({ item, now }: { item: PurchaseHistory; now: number }) {
       </td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-2">
+          {item.status === "success" && item.orderId && <OrderProgressButton accountId={item.accountId} orderId={item.orderId} />}
           {item.status === "success" && item.orderUrl ? (
             <a
               href={item.orderUrl}
@@ -515,6 +517,7 @@ function HistoryCard({ item, now }: { item: PurchaseHistory; now: number }) {
             <span />
           )}
           <div className="flex items-center gap-2">
+            {item.status === "success" && item.orderId && <OrderProgressButton accountId={item.accountId} orderId={item.orderId} />}
             {item.status === "success" && item.orderUrl ? (
               <a
                 href={item.orderUrl}

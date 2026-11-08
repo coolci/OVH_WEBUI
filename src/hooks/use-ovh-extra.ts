@@ -36,3 +36,24 @@ export function useDefaultPayment(accountId: string | undefined, enabled: boolea
     retry: false,
   });
 }
+
+export interface OrderFollowUpStep {
+  step: string;
+  status: string;
+  history: { date: string; label: string; description?: string }[];
+}
+
+/** 订单付款后的进度 + 已交付的服务名(点开时才查) */
+export function useOrderFollowUp(accountId: string | undefined, orderId: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: ["ovh", "order-followup", accountId || "", orderId || ""],
+    queryFn: async () =>
+      (await api.get<{ steps: OrderFollowUpStep[]; services: string[] }>(
+        `/ovh/orders/${encodeURIComponent(orderId || "")}/followup`,
+        { params: { account_id: accountId } },
+      )).data,
+    enabled: enabled && !!accountId && !!orderId,
+    staleTime: 60_000,
+    retry: false,
+  });
+}

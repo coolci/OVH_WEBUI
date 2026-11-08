@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Cloud, Eye, EyeOff, RefreshCw } from "lucide-react";
 import { Helmet } from "react-helmet-async";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -24,8 +25,18 @@ function VpsControlPage() {
   const q = useOwnedVps();
   const { hidden, toggle } = useHideIp();
   const [selectedName, setSelectedName] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const wantedService = useRef<string | null>(searchParams.get("service"));
+  const wantedAccount = useRef<string | null>(searchParams.get("account"));
   const [activeAccount, setActiveAccount] = useActiveVpsControlAccount();
   const { data: accounts } = useAccounts();
+  // ?account= 指定账户时先切过去(购买历史跳转用),只生效一次
+  useEffect(() => {
+    const want = wantedAccount.current;
+    if (!want || !accounts) return;
+    wantedAccount.current = null;
+    if (accounts.some((a) => a.id === want)) setActiveAccount(want);
+  }, [accounts, setActiveAccount]);
   const vpsList = q.data || EMPTY_VPS_LIST;
 
   useEffect(() => {
@@ -45,6 +56,12 @@ function VpsControlPage() {
 
   // 自动选第一台（首次加载或列表变更/当前选中失效后）
   useEffect(() => {
+    // 从购买历史"打开服务器控制"跳过来:?service= 指定要选中的服务
+    if (wantedService.current && vpsList.some((x) => x.serviceName === wantedService.current)) {
+      setSelectedName(wantedService.current);
+      wantedService.current = null;
+      return;
+    }
     if (vpsList.length === 0) {
       setSelectedName(null);
       return;

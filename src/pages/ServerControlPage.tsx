@@ -1,7 +1,8 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Helmet } from "react-helmet-async";
 import { Cpu, Server, RefreshCw, Eye, EyeOff, Activity, Network, CalendarRange } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -48,9 +49,19 @@ function ServerControlPage() {
   const { serversQuery: q, byServiceName: lotteries, isFetching, refresh } = useServerLotterySummary();
   const { hidden, toggle } = useHideIp();
   const [selectedName, setSelectedName] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const wantedService = useRef<string | null>(searchParams.get("service"));
+  const wantedAccount = useRef<string | null>(searchParams.get("account"));
   const [renaming, setRenaming] = useState<null | OwnedServer>(null);
   const [activeAccount, setActiveAccount] = useActiveServerControlAccount();
   const { data: accounts } = useAccounts();
+  // ?account= 指定账户时先切过去(购买历史跳转用),只生效一次
+  useEffect(() => {
+    const want = wantedAccount.current;
+    if (!want || !accounts) return;
+    wantedAccount.current = null;
+    if (accounts.some((a) => a.id === want)) setActiveAccount(want);
+  }, [accounts, setActiveAccount]);
   const { data: aliases } = useServerAliases();
   const servers = q.data || EMPTY_SERVERS;
 
@@ -73,6 +84,12 @@ function ServerControlPage() {
 
   // 自动选中第一台（首次加载或切换列表后）
   useEffect(() => {
+    // 从购买历史"打开服务器控制"跳过来:?service= 指定要选中的服务
+    if (wantedService.current && servers.some((x) => x.serviceName === wantedService.current)) {
+      setSelectedName(wantedService.current);
+      wantedService.current = null;
+      return;
+    }
     if (servers.length === 0) {
       setSelectedName(null);
       return;

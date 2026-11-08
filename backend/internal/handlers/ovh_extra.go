@@ -123,3 +123,74 @@ func fetchDefaultPayment(ctx context.Context, state *app.State, accountID string
 	}
 	return info, nil
 }
+
+// OrderFollowUpStep GET /me/order/{orderId}/followUp 的一项(billing.order.FollowUp)
+type OrderFollowUpStep struct {
+	Step    string `json:"step"`   // VALIDATING / VALIDATED / DELIVERING / AVAILABLE
+	Status  string `json:"status"` // TODO / DOING / DONE / ERROR
+	History []struct {
+		Date        string `json:"date"`
+		Label       string `json:"label"` // ORDER_ACCEPTED / PAYMENT_RECEIVED / FRAUD_DOCS_REQUESTED / DELIVERY ...
+		Description string `json:"description"`
+	} `json:"history"`
+}
+
+// GetOrderFollowUp GET /api/ovh/orders/:orderId/followup?account_id=
+// 订单付款后的进度(OVH 的 followUp,BETA)+ 订单明细里的 domain(交付后就是服务器/VPS 的 serviceName),
+// 购买历史据此显示"验证中 / 交付中 / 已可用",交付后一键跳到服务器控制。
+// 注意:/me/order/{id}/associatedObject 返回的是账单/退款对象,不是服务器,所以不用它。
+func GetOrderFollowUp(state *app.State) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		accountID := strings.TrimSpace(c.Query("account_id"))
+		orderID := strings.TrimSpace(c.Param("orderId"))
+		if _, ok := state.FindAccount(accountID); !ok || accountID == "" || orderID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "缺少有效账户或订单号"})
+			return
+		}
+		for _, ch := range orderID {
+			if ch < '0' || ch > '9' {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "订单号格式不正确"})
+				return
+			}
+		}
+		client, err := state.OVH.IsolatedClientFor(accountID)
+		if err != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+			return
+		}
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
+		defer cancel()
+		var steps []OrderFollowUpStep
+		followErr := client.GetWithContext(ctx, "/me/order/"+orderID+"/followUp", &steps)
+		// 交付出来的服务名:明细的 domain 字段(付款前多为 "*" 或空)
+		var services []string
+		var detailIDs []int64
+		if err := client.GetWithContext(ctx, "/me/order/"+orderID+"/details", &detailIDs); err == nil {
+			seen := map[string]bool{}
+			for _, id := range detailIDs {
+				var detail struct {
+					Domain string `json:"domain"`
+				}
+				if err := client.GetWithContext(ctx, fmt.Sprintf("/me/order/%s/details/%d", orderID, id), &detail); err != nil {
+					continue
+				}
+				d := strings.TrimSpace(detail.Domain)
+				if d != "" && d != "*" && !seen[d] {
+					seen[d] = true
+					services = append(services, d)
+				}
+			}
+		}
+		if followErr != nil && len(services) == 0 {
+			c.JSON(http.StatusBadGateway, gin.H{"error": "无法读取订单进度: " + ovh.Explain(followErr)})
+			return
+		}
+		if steps == nil {
+			steps = []OrderFollowUpStep{}
+		}
+		if services == nil {
+			services = []string{}
+		}
+		c.JSON(http.StatusOK, gin.H{"steps": steps, "services": services})
+	}
+}
