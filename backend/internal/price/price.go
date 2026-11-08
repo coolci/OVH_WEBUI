@@ -131,12 +131,11 @@ func GetInternal(state *app.State, accountID, planCode, datacenter string, optio
 
 	// 1. 创建购物车
 	var cartResult map[string]interface{}
-	if err := client.Post("/order/cart", map[string]interface{}{
-		"ovhSubsidiary": subsidiary,
-	}, &cartResult); err != nil {
+	if err := client.Post("/order/cart", ovh.CartCreateBody(subsidiary), &cartResult); err != nil {
 		return Result{Success: false, Error: ovh.Explain(err)}
 	}
 	cartID, _ = cartResult["cartId"].(string)
+	ovh.TrackCart(cartID)
 	state.Logger.Debug("购物车创建成功，ID: "+cartID, "price")
 
 	// 2. 添加基础商品。

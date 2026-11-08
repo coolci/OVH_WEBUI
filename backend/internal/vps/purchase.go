@@ -101,10 +101,11 @@ func purchaseVPSInternal(state *app.State, sub types.VPSSubscription, dcCode str
 
 	// 1) 建购物车
 	var cartResult map[string]interface{}
-	if err := client.Post("/order/cart", map[string]interface{}{"ovhSubsidiary": subsidiary}, &cartResult); err != nil {
+	if err := client.Post("/order/cart", ovh.CartCreateBody(subsidiary), &cartResult); err != nil {
 		return Outcome{Reason: "创建购物车失败: " + ovh.Explain(err)}
 	}
 	cartID, _ := cartResult["cartId"].(string)
+	ovh.TrackCart(cartID)
 	if cartID == "" {
 		return Outcome{Reason: fmt.Sprintf("购物车响应里没有 cartId: %v", cartResult)}
 	}

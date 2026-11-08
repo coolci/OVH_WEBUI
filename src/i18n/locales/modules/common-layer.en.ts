@@ -419,6 +419,17 @@ const pack: CommonLayerPack = {
       close: "Close menu",
     },
   },
+  ovhExtra: {
+    carts: {
+      title: "Leftover carts",
+      hint: "Carts created by this app can stay in your OVH account after a crash or a failed delete, and many of them make rate limiting more likely. They are cleaned automatically every 6 hours; only carts created by this app and not in use are deleted — carts you created on the OVH website are never touched.",
+      run: "Clean up leftover carts now",
+      running: "Cleaning…",
+      done: "Removed {{count}} leftover carts",
+      none: "No leftover carts to remove",
+      failed: "Cleanup failed: {{reason}}",
+    },
+  },
   orderDuration: {
     label: "Purchase period",
     default: "default",

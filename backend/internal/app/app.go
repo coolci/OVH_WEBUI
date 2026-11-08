@@ -287,6 +287,13 @@ func (s *State) DBPath() string {
 // HasAnyAccount 是否至少有一个 OVH 账户。
 // 多账户场景下,旧的 state.Config.HasCredentials() 不再可靠(新用户的 kv['config'] 可能为空),
 // 凡是判断"系统能不能调 OVH"都应该走这个。
+// AccountsSnapshot 账户列表的副本(后台任务遍历用,不持锁做网络请求)
+func (s *State) AccountsSnapshot() []types.OVHAccount {
+	s.AccountsMu.RLock()
+	defer s.AccountsMu.RUnlock()
+	return append([]types.OVHAccount(nil), s.Accounts...)
+}
+
 func (s *State) HasAnyAccount() bool {
 	s.AccountsMu.RLock()
 	defer s.AccountsMu.RUnlock()

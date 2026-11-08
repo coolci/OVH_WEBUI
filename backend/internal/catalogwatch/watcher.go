@@ -86,6 +86,12 @@ func New(s *app.State) *Watcher {
 	if w.data.Jobs == nil {
 		w.data.Jobs = map[string]*Job{}
 	}
+	// 结账凭据里记着的购物车要留给后续核对,遗留购物车清理不能删
+	for _, j := range w.data.Jobs {
+		if j.Checkout != nil {
+			ovh.TrackCart(j.Checkout.CartID)
+		}
+	}
 	for _, j := range w.data.Jobs {
 		if j.Status == "attempting" {
 			j.Status = "uncertain"
@@ -388,6 +394,7 @@ func (w *Watcher) Attempt(ctx context.Context) {
 			return fmt.Errorf("尝试已取消")
 		}
 		job.Checkout = &j
+		ovh.TrackCart(j.CartID)
 		return w.save()
 	})
 	outcome := w.buy(journalCtx, w.state, &item)

@@ -318,9 +318,7 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 		// 创建购物车
 		state.Logger.Info(fmt.Sprintf("为区域 %s 创建购物车 (账户 %s)", subsidiary, acc.Name), "purchase")
 		var cartResult map[string]interface{}
-		if err := client.PostWithContext(ctx, "/order/cart", map[string]interface{}{
-			"ovhSubsidiary": subsidiary,
-		}, &cartResult); err != nil {
+		if err := client.PostWithContext(ctx, "/order/cart", ovh.CartCreateBody(subsidiary), &cartResult); err != nil {
 			if ctx.Err() != nil {
 				return cancelledOutcome(state, item, "建购物车")
 			}
@@ -329,6 +327,7 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 			return attemptOutcome(err)
 		}
 		cartID, _ = cartResult["cartId"].(string)
+		ovh.TrackCart(cartID)
 		tl.mark("建购物车")
 		state.Logger.Info("购物车创建成功，ID: "+cartID, "purchase")
 

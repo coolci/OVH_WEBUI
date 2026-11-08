@@ -12,6 +12,7 @@ import (
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/catalog"
 	"github.com/ovh-webui/server/internal/orderterm"
+	"github.com/ovh-webui/server/internal/ovh"
 )
 
 // 可选购买时长按 (账户, 型号) 缓存。每次查询都要在 OVH 建一辆临时购物车,
@@ -85,12 +86,13 @@ func fetchOrderDurations(ctx context.Context, state *app.State, accountID, subsi
 	var cart struct {
 		ID string `json:"cartId"`
 	}
-	if err := client.PostWithContext(ctx, "/order/cart", map[string]interface{}{"ovhSubsidiary": subsidiary}, &cart); err != nil {
+	if err := client.PostWithContext(ctx, "/order/cart", ovh.CartCreateBody(subsidiary), &cart); err != nil {
 		return nil, err
 	}
 	if cart.ID == "" {
 		return nil, context.DeadlineExceeded
 	}
+	ovh.TrackCart(cart.ID)
 	defer func() {
 		// 不挂请求 ctx:请求超时/取消后也要把临时车删掉
 		cleanup, done := context.WithTimeout(context.Background(), 5*time.Second)

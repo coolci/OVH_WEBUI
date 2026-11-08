@@ -402,6 +402,17 @@ export const commonLayerZh = {
       close: "关闭菜单",
     },
   },
+  ovhExtra: {
+    carts: {
+      title: "遗留购物车",
+      hint: "本程序建的购物车在崩溃或删车失败时可能留在 OVH 账户里，堆多了会让账户更容易被限流。后台每 6 小时自动清理一次；只删本程序建的、当前没在用的车，你在 OVH 网站上自己建的车不会动。",
+      run: "立即清理遗留购物车",
+      running: "清理中…",
+      done: "已清理 {{count}} 辆遗留购物车",
+      none: "没有需要清理的遗留购物车",
+      failed: "清理失败：{{reason}}",
+    },
+  },
   orderDuration: {
     label: "购买时长",
     default: "默认",

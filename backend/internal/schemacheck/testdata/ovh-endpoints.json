@@ -1992,6 +1992,29 @@
       ]
     }
   },
+  "GET /order/cart": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "string[]",
+      "params": [
+        "query:description:string:false"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "string[]",
+      "params": [
+        "query:description:string:false"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "string[]",
+      "params": [
+        "query:description:string:false"
+      ]
+    }
+  },
   "GET /order/cart/{cartId}": {
     "CA": {
       "status": "PRODUCTION",

@@ -136,12 +136,11 @@ func AssemblePrewarmedCart(ctx context.Context, state *app.State, accountID, pla
 
 	// 1. 创建购物车
 	var cartResult map[string]interface{}
-	if err := client.PostWithContext(ctx, "/order/cart", map[string]interface{}{
-		"ovhSubsidiary": subsidiary,
-	}, &cartResult); err != nil {
+	if err := client.PostWithContext(ctx, "/order/cart", ovh.CartCreateBody(subsidiary), &cartResult); err != nil {
 		return nil, fmt.Errorf("建预热车失败: %w", err)
 	}
 	cartID, _ := cartResult["cartId"].(string)
+	ovh.TrackCart(cartID)
 	if cartID == "" {
 		return nil, fmt.Errorf("建预热车未返回 cartId")
 	}

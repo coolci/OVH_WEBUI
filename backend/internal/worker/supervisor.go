@@ -46,6 +46,8 @@ func (s *Supervisor) Start() {
 	// 1. 启动订单队列处理与状态刷新轮询
 	go purchase.ProcessQueueLoopWithContext(s.ctx, state)
 	go purchase.OrderStatusLoopWithContext(s.ctx, state)
+	// 清理本程序上次运行留下的购物车(只删带本程序标记、且本进程没在用的)
+	go purchase.CartJanitorLoop(s.ctx, state)
 
 	// 2. 预热各账户子公司的区域配置
 	go catalog.WarmRegionCache(state)

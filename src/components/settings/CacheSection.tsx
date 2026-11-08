@@ -5,6 +5,7 @@ import { Database } from "lucide-react";
 import { LoadFailed } from "@/components/common/LoadFailed";
 import { Section } from "./Section";
 import { useCacheInfo, useClearCache } from "@/hooks/use-settings";
+import { useCleanupCarts } from "@/hooks/use-ovh-extra";
 import { fmtDateTime } from "@/i18n/format";
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
@@ -20,6 +21,7 @@ export function CacheSection() {
   const { t } = useTranslation();
   const info = useCacheInfo();
   const clear = useClearCache();
+  const cleanupCarts = useCleanupCarts();
 
   const sqliteUpdated = info.data?.sqlite?.updatedAtMs
     ? fmtDateTime(info.data.sqlite.updatedAtMs)
@@ -65,6 +67,13 @@ export function CacheSection() {
         </Button>
         <Button variant="destructive" onClick={() => clear.mutate("all")} disabled={clear.isPending}>
           {t("settings.cache.clearAll")}
+        </Button>
+      </div>
+      <div className="border-t border-border pt-3 space-y-2">
+        <p className="text-[13px] font-medium">{t("ovhExtra.carts.title")}</p>
+        <p className="text-[11px] text-muted-foreground leading-relaxed">{t("ovhExtra.carts.hint")}</p>
+        <Button variant="outline" onClick={() => cleanupCarts.mutate()} disabled={cleanupCarts.isPending}>
+          {cleanupCarts.isPending ? t("ovhExtra.carts.running") : t("ovhExtra.carts.run")}
         </Button>
       </div>
     </Section>
