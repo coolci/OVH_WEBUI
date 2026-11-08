@@ -38,6 +38,8 @@ export function AccountSecurityPanel({ accountId }: { accountId?: string }) {
   const logs = useApiLogs(accountId, true);
   const revoke = useRevokeApiCredential(accountId);
   const [pending, setPending] = useState<ApiCredential | null>(null);
+  // 关闭动画期间仍显示被确认的那条,不清空 pending,只切换 open
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   return (
     <div className="space-y-4">
@@ -79,7 +81,10 @@ export function AccountSecurityPanel({ accountId }: { accountId?: string }) {
                         variant="outline"
                         className="h-7 text-[12px] text-destructive"
                         disabled={revoke.isPending}
-                        onClick={() => setPending(c)}
+                        onClick={() => {
+                          setPending(c);
+                          setConfirmOpen(true);
+                        }}
                       >
                         {revoke.isPending && revoke.variables === c.credentialId ? t("ovhExtra.security.revoking") : t("ovhExtra.security.revoke")}
                       </Button>
@@ -147,7 +152,7 @@ export function AccountSecurityPanel({ accountId }: { accountId?: string }) {
         </CardContent>
       </Card>
 
-      <AlertDialog open={!!pending} onOpenChange={(o) => !o && setPending(null)}>
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t("ovhExtra.security.revoke")}</AlertDialogTitle>
@@ -161,7 +166,6 @@ export function AccountSecurityPanel({ accountId }: { accountId?: string }) {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() => {
                 if (pending) revoke.mutate(pending.credentialId);
-                setPending(null);
               }}
             >
               {t("ovhExtra.security.revoke")}
