@@ -15,6 +15,7 @@ import { Skeleton } from "@/components/common/Skeleton";
 import { EmptyState } from "@/components/common/EmptyState";
 import { OrderPaymentButton } from "@/components/account/OrderPaymentButton";
 import { OfficialChat } from "@/components/support/OfficialChat";
+import { AccountSecurityPanel } from "@/components/account/AccountSecurityPanel";
 import {
   useAccountInfo,
   useRefunds,
@@ -74,11 +75,12 @@ function AccountPage() {
       </div>
 
       <Tabs defaultValue="emails">
-        <TabsList className="grid grid-cols-4 sm:flex h-auto gap-1 p-1 bg-muted/50 rounded-lg border border-border/60">
+        <TabsList className="grid grid-cols-3 sm:flex h-auto gap-1 p-1 bg-muted/50 rounded-lg border border-border/60">
           <TabsTrigger value="emails" className="text-[12px] sm:text-xs px-2.5 sm:px-3.5 py-1.5 rounded-md data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm font-medium">邮件历史</TabsTrigger>
           <TabsTrigger value="orders" className="text-[12px] sm:text-xs px-2.5 sm:px-3.5 py-1.5 rounded-md data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm font-medium">订单记录</TabsTrigger>
           <TabsTrigger value="refunds" className="text-[12px] sm:text-xs px-2.5 sm:px-3.5 py-1.5 rounded-md data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm font-medium">退款记录</TabsTrigger>
           <TabsTrigger value="chat" className="text-[12px] sm:text-xs px-2.5 sm:px-3.5 py-1.5 rounded-md data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm font-medium">在线客服</TabsTrigger>
+          <TabsTrigger value="security" className="text-[12px] sm:text-xs px-2.5 sm:px-3.5 py-1.5 rounded-md data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm font-medium">API 安全</TabsTrigger>
         </TabsList>
         <TabsContent value="emails">
           <EmailsTab />
@@ -88,6 +90,9 @@ function AccountPage() {
         </TabsContent>
         <TabsContent value="chat">
           <OfficialChat />
+        </TabsContent>
+        <TabsContent value="security">
+          <SecurityTab />
         </TabsContent>
         <TabsContent value="refunds">
           <RefundsTab />
@@ -208,6 +213,11 @@ function EmailsTab() {
       </Card>
     </div>
   );
+}
+
+function SecurityTab() {
+  const accountId = useAccountScope();
+  return <AccountSecurityPanel accountId={accountId} />;
 }
 
 function OrdersTab() {

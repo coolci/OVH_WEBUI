@@ -203,3 +203,71 @@ func TestOSAvailabilityIsAnonymousAndCached(t *testing.T) {
 		t.Fatalf("plan codes with path characters must be rejected: %d", w.Code)
 	}
 }
+
+func TestSecurityCredentialsAndRevokeGuard(t *testing.T) {
+	var revoked []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/auth/time":
+			fmt.Fprint(w, time.Now().Unix())
+		case r.URL.Path == "/auth/currentCredential":
+			fmt.Fprint(w, `{"credentialId":11}`)
+		case r.URL.Path == "/me/api/credential":
+			fmt.Fprint(w, `[11,22]`)
+		case r.URL.Path == "/me/api/credential/11":
+			fmt.Fprint(w, `{"credentialId":11,"applicationId":5,"status":"validated","lastUse":"2026-11-08T10:00:00+01:00"}`)
+		case r.URL.Path == "/me/api/credential/22" && r.Method == http.MethodGet:
+			fmt.Fprint(w, `{"credentialId":22,"applicationId":6,"status":"validated","allowedIPs":["1.2.3.4/32"]}`)
+		case strings.HasSuffix(r.URL.Path, "/application"):
+			fmt.Fprint(w, `{"name":"app-`+strings.Split(r.URL.Path, "/")[4]+`","description":"d"}`)
+		case r.Method == http.MethodDelete:
+			revoked = append(revoked, r.URL.Path)
+			fmt.Fprint(w, `null`)
+		case r.URL.Path == "/me/api/logs/self":
+			fmt.Fprint(w, `[1,3,2]`)
+		case strings.HasPrefix(r.URL.Path, "/me/api/logs/self/"):
+			fmt.Fprint(w, `{"logId":0,"date":"2026-11-08T10:00:00+01:00","method":"GET","path":"/me","ip":"1.2.3.4"}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	for _, ep := range []string{"ovh-eu", "ovh-us"} {
+		orig := ovhsdk.Endpoints[ep]
+		ovhsdk.Endpoints[ep] = srv.URL
+		t.Cleanup(func() { ovhsdk.Endpoints[ep] = orig })
+	}
+	st := newTestState(t)
+	st.Accounts = []types.OVHAccount{{ID: "eu", Endpoint: "ovh-eu", Zone: "IE", AppKey: "k", AppSecret: "s", ConsumerKey: "c"},
+		{ID: "us", Endpoint: "ovh-us", Zone: "US", AppKey: "k", AppSecret: "s", ConsumerKey: "c"}}
+	r := gin.New()
+	r.GET("/creds", GetAPICredentials(st))
+	r.DELETE("/creds/:credentialId", RevokeAPICredential(st))
+	r.GET("/logs", GetAPILogs(st))
+	do := func(method, path string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(method, path, nil))
+		return w
+	}
+	w := do(http.MethodGet, "/creds?account_id=eu")
+	var got struct {
+		Credentials []securityCredential `json:"credentials"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &got)
+	if w.Code != 200 || len(got.Credentials) != 2 || got.Credentials[0].CredentialID != 22 || got.Credentials[1].Current != true || got.Credentials[0].AppName == "" {
+		t.Fatalf("credentials (newest first, current marked, app name filled): %d %+v", w.Code, got.Credentials)
+	}
+	if w := do(http.MethodDelete, "/creds/11?account_id=eu"); w.Code != http.StatusConflict || len(revoked) != 0 {
+		t.Fatalf("revoking the credential this app uses must be refused: %d revoked=%v", w.Code, revoked)
+	}
+	if w := do(http.MethodDelete, "/creds/22?account_id=eu"); w.Code != http.StatusOK || len(revoked) != 1 || revoked[0] != "/me/api/credential/22" {
+		t.Fatalf("revoking another credential: %d %v", w.Code, revoked)
+	}
+	if w := do(http.MethodGet, "/logs?account_id=eu"); w.Code != 200 || strings.Count(w.Body.String(), `"logId"`) != 3 || !strings.Contains(w.Body.String(), `"logId":3`) {
+		t.Fatalf("EU logs: %d %s", w.Code, w.Body.String())
+	}
+	if w := do(http.MethodGet, "/logs?account_id=us"); w.Code != 200 || !strings.Contains(w.Body.String(), `"unsupported":true`) {
+		t.Fatalf("US logs must be reported as unsupported: %d %s", w.Code, w.Body.String())
+	}
+}

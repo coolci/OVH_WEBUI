@@ -142,6 +142,29 @@
       ]
     }
   },
+  "DELETE /me/api/credential/{credentialId}": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "path:credentialId:long:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "path:credentialId:long:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "void",
+      "params": [
+        "path:credentialId:long:true"
+      ]
+    }
+  },
   "DELETE /order/cart/{cartId}": {
     "CA": {
       "status": "PRODUCTION",
@@ -235,6 +258,23 @@
       "params": [
         "path:serviceName:string:true"
       ]
+    }
+  },
+  "GET /auth/currentCredential": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "auth.ApiCredential",
+      "params": []
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "auth.ApiCredential",
+      "params": []
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "auth.ApiCredential",
+      "params": []
     }
   },
   "GET /dedicated/installationTemplate": {
@@ -1731,6 +1771,94 @@
     "US": {
       "status": "PRODUCTION",
       "response": "nichandle.Nichandle"
+    }
+  },
+  "GET /me/api/credential": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "long[]",
+      "params": [
+        "query:applicationId:long:false",
+        "query:status:auth.CredentialStateEnum:false"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "long[]",
+      "params": [
+        "query:applicationId:long:false",
+        "query:status:auth.CredentialStateEnum:false"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "long[]",
+      "params": [
+        "query:applicationId:long:false",
+        "query:status:auth.CredentialStateEnum:false"
+      ]
+    }
+  },
+  "GET /me/api/credential/{credentialId}": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "auth.ApiCredential",
+      "params": [
+        "path:credentialId:long:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "auth.ApiCredential",
+      "params": [
+        "path:credentialId:long:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "auth.ApiCredential",
+      "params": [
+        "path:credentialId:long:true"
+      ]
+    }
+  },
+  "GET /me/api/credential/{credentialId}/application": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "auth.ApiApplication",
+      "params": [
+        "path:credentialId:long:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "auth.ApiApplication",
+      "params": [
+        "path:credentialId:long:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "auth.ApiApplication",
+      "params": [
+        "path:credentialId:long:true"
+      ]
+    }
+  },
+  "GET /me/api/logs/self": {
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "long[]",
+      "params": []
+    }
+  },
+  "GET /me/api/logs/self/{logId}": {
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "api.Log",
+      "params": [
+        "path:logId:long:true"
+      ]
     }
   },
   "GET /me/bill": {

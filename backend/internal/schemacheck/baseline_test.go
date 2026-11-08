@@ -108,6 +108,13 @@ var removedEndpoints = []string{
 }
 
 var usedEndpoints = []string{
+	"GET /auth/currentCredential",
+	"GET /me/api/credential",
+	"GET /me/api/credential/{credentialId}",
+	"DELETE /me/api/credential/{credentialId}",
+	"GET /me/api/credential/{credentialId}/application",
+	"GET /me/api/logs/self",
+	"GET /me/api/logs/self/{logId}",
 	"POST /auth/token",
 	"GET /support/tickets",
 	"POST /support/tickets/create",

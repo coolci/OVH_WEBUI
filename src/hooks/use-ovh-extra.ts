@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import i18n from "@/i18n";
 import { api } from "@/lib/http";
@@ -66,6 +66,64 @@ export function useOSAvailability(planCode: string | undefined, accountId: strin
       (await api.get<{ os: string[] }>("/ovh/os-availability", { params: { planCode, account_id: accountId || undefined } })).data.os,
     enabled: enabled && !!planCode,
     staleTime: 60 * 60_000,
+    retry: false,
+  });
+}
+
+export interface ApiCredential {
+  credentialId: number;
+  applicationId: number;
+  appName?: string;
+  appDescription?: string;
+  status: string;
+  creation?: string;
+  expiration?: string;
+  lastUse?: string;
+  allowedIPs?: string[];
+  rules?: { method: string; path: string }[];
+  current: boolean;
+}
+
+export function useApiCredentials(accountId: string | undefined) {
+  return useQuery({
+    queryKey: ["ovh", "security", "credentials", accountId || ""],
+    queryFn: async () =>
+      (await api.get<{ credentials: ApiCredential[]; truncated: boolean }>("/ovh/security/credentials", { params: { account_id: accountId } })).data,
+    enabled: !!accountId,
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
+export function useRevokeApiCredential(accountId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) =>
+      (await api.delete(`/ovh/security/credentials/${id}`, { params: { account_id: accountId } })).data,
+    onSuccess: (_d, id) => {
+      toast.success(i18n.t("ovhExtra.security.revoked", { id }));
+      qc.invalidateQueries({ queryKey: ["ovh", "security", "credentials", accountId || ""] });
+    },
+    onError: (e: unknown) => toast.error(i18n.t("ovhExtra.security.revokeFailed", { reason: apiMessage(e) || "" })),
+  });
+}
+
+export interface ApiLog {
+  logId: number;
+  date: string;
+  method: string;
+  path: string;
+  route?: string;
+  ip: string;
+}
+
+export function useApiLogs(accountId: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: ["ovh", "security", "api-logs", accountId || ""],
+    queryFn: async () =>
+      (await api.get<{ logs: ApiLog[]; unsupported?: boolean }>("/ovh/security/api-logs", { params: { account_id: accountId } })).data,
+    enabled: enabled && !!accountId,
+    staleTime: 60_000,
     retry: false,
   });
 }
