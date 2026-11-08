@@ -44,11 +44,6 @@ func Open(dataDir string) (*DB, error) {
 	sx.SetMaxIdleConns(2)
 	sx.SetConnMaxLifetime(time.Hour)
 
-	// 混合内存模式 PRAGMA：256MB 内存映射 + 64MB 页面缓存 + 临时表内存化
-	_, _ = sx.Exec("PRAGMA mmap_size = 268435456")
-	_, _ = sx.Exec("PRAGMA cache_size = -64000")
-	_, _ = sx.Exec("PRAGMA temp_store = MEMORY")
-
 	if err := sx.Ping(); err != nil {
 		_ = sx.Close()
 		return nil, fmt.Errorf("ping sqlite (%s): %w", driverName, err)
