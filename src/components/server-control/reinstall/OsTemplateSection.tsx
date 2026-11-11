@@ -10,7 +10,6 @@ import { detectOsKind, osBrandColor, osBrandTextColor } from "@/lib/os-kind";
 import { Trans, useTranslation } from "react-i18next";
 import { fmtDateTime } from "@/i18n/format";
 import type { useServerTemplates, OSTemplate } from "@/hooks/use-server-control";
-import type { OS_GROUPS } from "./constants";
 
 export interface GroupedTemplateItem {
   kind: ReturnType<typeof detectOsKind>;

@@ -30,6 +30,8 @@ import { useAvailability, buildAvailabilityMap } from "@/hooks/use-availability"
 import { useTelegramPollerStatus } from "@/hooks/use-settings";
 import { mergeDcAvailability } from "@/lib/datacenters";
 import { cn } from "@/lib/utils";
+import { copyText } from "@/lib/clipboard";
+import { MAX_ORDER_QUANTITY } from "@/lib/order-limits";
 
 const TelegramOrderPage = () => {
   const { data: servers } = useServers();
@@ -150,8 +152,11 @@ const TelegramOrderPage = () => {
     return cmd;
   };
 
-  const copyCommand = () => {
-    navigator.clipboard.writeText(generateCommand());
+  const copyCommand = async () => {
+    if (!(await copyText(generateCommand()))) {
+      toast.error("复制失败，请手动选择复制");
+      return;
+    }
     setCopied(true);
     toast.success("命令已复制到剪贴板");
     setTimeout(() => setCopied(false), 2000);
@@ -506,7 +511,7 @@ const TelegramOrderPage = () => {
                           min={1}
                           max={10}
                           value={quantity}
-                          onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
+                          onChange={(e) => setQuantity(Math.min(MAX_ORDER_QUANTITY, Math.max(1, parseInt(e.target.value, 10) || 1)))}
                           className="h-8 rounded-lg text-xs bg-background/50 border-border/80"
                         />
                       </div>
@@ -523,7 +528,7 @@ const TelegramOrderPage = () => {
                           min={0}
                           max={10}
                           value={quantity}
-                          onChange={(e) => setQuantity(Math.max(0, parseInt(e.target.value) || 0))}
+                          onChange={(e) => setQuantity(Math.min(MAX_ORDER_QUANTITY, Math.max(0, parseInt(e.target.value, 10) || 0)))}
                           placeholder="0 = 仅发通知，1 = 自动抢 1 台"
                           className="h-8 rounded-lg text-xs bg-background/50 border-border/80"
                         />

@@ -317,7 +317,14 @@ func ClearSubscriptions(state *app.State, mon *monitor.Monitor) gin.HandlerFunc 
 func GetSubscriptionHistory(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		planCode := c.Param("planCode")
-		sub := mon.FindSubscription(planCode)
+		// 同型号可以有多条不同配置的订阅:带 ?optionsKey= 时精确到那一条
+		// (与删除 / 暂停同参),否则会把第一条订阅的历史显示到别的配置卡片上
+		var sub *monitor.Subscription
+		if optionsKey, present := c.GetQuery("optionsKey"); present {
+			sub = mon.FindSubscription(planCode, optionsKey)
+		} else {
+			sub = mon.FindSubscription(planCode)
+		}
 		if sub == nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": "订阅不存在", "code": "E9E5CC314"})
 			return

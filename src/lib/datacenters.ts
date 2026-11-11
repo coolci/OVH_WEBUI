@@ -1,3 +1,5 @@
+import { isOrderable } from "@/lib/availability";
+
 /**
  * OVH 标准数据中心列表（前端固定的 16 个 + 别名映射）
  * - code：前端显示用的小写代码（如 mum）
@@ -49,9 +51,16 @@ export function lookupDcStatus(
   return availMap[dc.code] || (dc.apiCode ? availMap[dc.apiCode] : undefined);
 }
 
-/** 明确有货：不是 unavailable / unknown / 空 */
+/**
+ * 明确有货:与后端 ovh.IsAvailableForOrder 同一白名单(见 lib/availability.ts)。
+ *
+ * 以前是黑名单 `!== "unavailable" && !== "unknown"`,会把 comingSoon(即将上线、还没开卖)
+ * 判成有货:机房选择器、快速下单、服务器卡片都亮绿点,而后端判定不可订,任务进队列后空转。
+ * 监控订阅的 lastStatus 是后端归一化过的 available / unavailable / price_check_failed,
+ * 其中只有 available 是验价通过的真有货。
+ */
 export function isDcInStock(status: string | undefined): boolean {
-  return !!status && status !== "unavailable" && status !== "unknown";
+  return status === "available" || isOrderable(status);
 }
 
 /** Collapse account/configuration stock snapshots for the dashboard's DC chips. */

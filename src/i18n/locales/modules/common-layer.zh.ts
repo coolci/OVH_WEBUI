@@ -324,8 +324,8 @@ export const commonLayerZh = {
       sg: "新加坡",
       au: "澳大利亚",
       in: "印度",
-      we: "西欧(WE)",
-      ws: "南欧(WS)",
+      we: "国际站·英语(WE)",
+      ws: "国际站·西语(WS)",
     },
     subsidiary: {
       ie: "爱尔兰 · EUR",
@@ -350,8 +350,8 @@ export const commonLayerZh = {
       sg: "新加坡 · SGD",
       au: "澳大利亚 · AUD",
       in: "印度 · INR",
-      we: "西欧(WE) · USD",
-      ws: "南欧(WS) · USD",
+      we: "国际站·英语(WE) · USD",
+      ws: "国际站·西语(WS) · USD",
     },
     option: {
       hybridStorage: "混合 {{firstCount}}× {{firstSize}}GB {{firstType}} + {{secondCount}}× {{secondSize}}GB {{secondType}}",

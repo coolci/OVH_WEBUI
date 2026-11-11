@@ -101,7 +101,13 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 	// preorderStock 是库存匹配条件(内存/完整硬盘组合/GPU 逐字匹配,CPU 不参与),
 	// preorderOrder 是下单要加的 addon。
 	preorderStock, preorderOrder := item.Options, item.Options
+	gateKey := ""
 	if item.Preorder {
+		gateKey = preorderGateKey(item, selectedDuration)
+		// 同型号同配置的另一个预订任务刚被明确告知"未开放":本轮不再打 OVH(见 preorder_gate.go)
+		if !stockWoken(ctx) && preorderGateClosed(gateKey, item.ID, time.Now()) {
+			return Outcome{WaitingForCatalog: true, Reason: "同型号同配置的预订任务刚确认尚未开放"}
+		}
 		var resolveErr error
 		preorderStock, preorderOrder, resolveErr = catalog.ResolvePreorderOptions(state, item.AccountID, item.PlanCode, item.Options)
 		if resolveErr != nil {
@@ -363,6 +369,11 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 					ecoOptsCh <- ecoOptsResult{err: perr}
 					return
 				}
+				if item.Preorder {
+					// 预订不用缓存:开售前拉到的选项列表里还没有新配置,
+					// 拿它判断会让开售后的第一次尝试误判"所选配置未开放",白白浪费一轮
+					invalidateEcoOptions(subsidiary, item.PlanCode)
+				}
 				opts, err := getOrFetchEcoOptions(ctx, prefetchClient, cartID, subsidiary, item.PlanCode)
 				ecoOptsCh <- ecoOptsResult{opts: opts, err: err}
 			}()
@@ -421,7 +432,10 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 			// assign,那个 "context canceled" 不是真正的失败原因 —— 先看它就会把确定性失败
 			// 当成可重试错误,任务按 retryInterval 永远重试。
 			if item.Preorder && (termUnavailable || (postBaseErr != nil && listingNotReady(postBaseErr))) {
-				// 开售前 OVH 不接受这个型号/周期:继续等,不算失败
+				// 开售前 OVH 不接受这个型号/周期:继续等,不算失败;同型号同配置的其它任务短时间内不必再试
+				closePreorderGate(gateKey, item.ID)
+				// 未开售时拉到的选项列表不可信,别留给同型号的其它任务
+				invalidateEcoOptions(subsidiary, item.PlanCode)
 				return preorderWait(state, item, ovh.Explain(postBaseErr))
 			}
 			if termUnavailable {
@@ -598,6 +612,7 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 					})
 				}
 				if len(missing) > 0 && item.Preorder {
+					closePreorderGate(gateKey, item.ID)
 					invalidateEcoOptions(subsidiary, item.PlanCode)
 					return preorderWait(state, item, fmt.Sprintf("等待所选配置开放: %v", missing))
 				}
@@ -826,6 +841,7 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 
 	// checkout 已返回订单 ID,cart 已成功转 order,标记成功阻止 defer 删除
 	success = true
+	openPreorderGate(gateKey)
 
 	// Persist the returned identity before history/notifications; a restart can
 	// query this exact order without relying on cart retention upstream.

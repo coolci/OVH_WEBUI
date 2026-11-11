@@ -79,10 +79,12 @@ function LogsPage() {
     return items.filter((l) => `${l.message} ${l.source}`.toLowerCase().includes(s));
   }, [items, debouncedSearch]);
 
-  // 筛选/limit 变化时重置可视窗口
+  // 筛选 / limit 变化时重置可视窗口。
+  // 不能依赖 items.length:开着自动刷新时每来一批新日志条数就变,
+  // 用户点过"加载更多"翻到的位置每 12 秒被打回第一页。
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
-  }, [limit, levelFilter, debouncedSearch, items.length]);
+  }, [limit, levelFilter, debouncedSearch]);
 
   const windowed = useMemo(
     () => filtered.slice(0, visibleCount),
@@ -90,28 +92,10 @@ function LogsPage() {
   );
   const hasMore = visibleCount < filtered.length;
 
-  // 仅当用户靠近底部时自动跟滚（避免刷新打断浏览）
+  // 列表按时间倒序,最新在顶部,自动刷新不需要跟滚。
+  // (以前这里有一段"靠近底部才跟滚"的逻辑:监听器在列表还没渲染出来时挂载就挂不上,
+  // 跟滚的 effect 本身也是空操作,删掉。)
   const scrollerRef = useRef<HTMLDivElement | null>(null);
-  const stickBottomRef = useRef(true);
-  useEffect(() => {
-    const el = scrollerRef.current;
-    if (!el) return;
-    const onScroll = () => {
-      const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
-      stickBottomRef.current = dist < 80;
-    };
-    el.addEventListener("scroll", onScroll, { passive: true });
-    return () => el.removeEventListener("scroll", onScroll);
-  }, []);
-
-  useEffect(() => {
-    if (!autoRefresh || !stickBottomRef.current) return;
-    // desc 列表顶部是最新：贴顶
-    const el = scrollerRef.current;
-    if (el && el.scrollTop < 40) {
-      /* already near top */
-    }
-  }, [windowed, autoRefresh]);
 
   return (
     <div className="space-y-5 sm:space-y-6">

@@ -166,6 +166,12 @@ export function ReinstallDialog({
     if (blocked) setConfirming(false);
   }, [blocked]);
 
+  // 重装会清盘:已进入二次确认后又改了系统模板或存储方案,必须重新确认,
+  // 否则下一次点击会直接按用户没确认过的新配置提交
+  useEffect(() => {
+    setConfirming(false);
+  }, [templateName, storageMode, partitionSchemeName]);
+
   const zfsCap = useMemo(() => {
     const groups = disk.data || {};
     const first = Object.values(groups)[0];
@@ -227,12 +233,12 @@ export function ReinstallDialog({
         hardwareRaid: useCustomStorage ? hardwareRaid : undefined,
         useSoftwareRaid: useCustomStorage && useSoftwareRaid,
         softwareRaidLevel: useCustomStorage && useSoftwareRaid ? softwareRaidLevel : undefined,
+        // 非法输入(空 / 负数 / 非数字)不提交:parseInt 失败得到 NaN,JSON 序列化成 null,
+        // 后端会把它当成"没填"而用默认值,用户却以为按自己填的盘数重装了
         softwareRaidDisks:
-          useCustomStorage && useSoftwareRaid && softwareRaidDisks ? parseInt(softwareRaidDisks) : undefined,
-        hwRaidArrays:
-          useCustomStorage && hwRaidArrays ? parseInt(hwRaidArrays) : undefined,
-        hwRaidSpares:
-          useCustomStorage && hwRaidSpares ? parseInt(hwRaidSpares) : undefined,
+          useCustomStorage && useSoftwareRaid ? positiveInt(softwareRaidDisks) : undefined,
+        hwRaidArrays: useCustomStorage ? positiveInt(hwRaidArrays) : undefined,
+        hwRaidSpares: useCustomStorage ? nonNegativeInt(hwRaidSpares) : undefined,
         keepDiskGroups:
           useCustomStorage && keepDiskGroups.size > 0 ? Array.from(keepDiskGroups) : undefined,
         customPartitions: useCustomStorage ? customPartitions : undefined,
@@ -434,4 +440,17 @@ export function ReinstallDialog({
       />
     </Dialog>
   );
+}
+
+/** 正整数,否则 undefined(不提交) */
+function positiveInt(v: string): number | undefined {
+  const n = parseInt(v.trim(), 10);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+/** 非负整数,否则 undefined(不提交) */
+function nonNegativeInt(v: string): number | undefined {
+  if (!v.trim()) return undefined;
+  const n = parseInt(v.trim(), 10);
+  return Number.isFinite(n) && n >= 0 ? n : undefined;
 }

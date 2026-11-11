@@ -50,8 +50,8 @@ export const OVH_SUBSIDIARIES: OvhSubsidiary[] = [
   { code: "AU", endpoint: "ovh-ca", label: "澳大利亚 · AUD", currency: "AUD" },
   { code: "IN", endpoint: "ovh-ca", label: "印度 · INR", currency: "INR" },
   // WE / WS 是两个 USD 计价的子公司,属于**加区站点** —— 实测在 eu 站点请求会 400
-  { code: "WE", endpoint: "ovh-ca", label: "西欧(WE) · USD", currency: "USD" },
-  { code: "WS", endpoint: "ovh-ca", label: "南欧(WS) · USD", currency: "USD" },
+  { code: "WE", endpoint: "ovh-ca", label: "国际站·英语(WE) · USD", currency: "USD" },
+  { code: "WS", endpoint: "ovh-ca", label: "国际站·西语(WS) · USD", currency: "USD" },
 ];
 
 /** 子公司标签（国家 + 币种，跟随语言），用于下拉框等展示位。
@@ -79,6 +79,40 @@ export function defaultSubsidiaryForEndpoint(endpoint: string | undefined): stri
     default:
       return "IE";
   }
+}
+
+/**
+ * 账户实际下单用的子公司:账户里配置的 zone,没配置就按 endpoint 推。
+ * 与后端 catalog.SubsidiaryOfAccount 同一口径 —— 服务器列表、购物车、下单都按它,
+ * 价格也必须按它取,否则列表和价格来自两份不同的目录(加区账户会全部显示 "—")。
+ */
+export function accountSubsidiary(zone: string | undefined, endpoint: string | undefined): string {
+  const z = (zone || "").trim().toUpperCase();
+  return z || defaultSubsidiaryForEndpoint(endpoint);
+}
+
+/** 服务器列表页手动选的价格地区,按账户分别记忆 */
+export interface PriceSubsidiaryPick {
+  account: string;
+  code: string;
+}
+
+/**
+ * 价格地区:手动选过且仍属于该账户所在大区时用手动值,否则跟账户实际下单的子公司走。
+ *
+ * 以前手动选择是全局记忆的、下拉框也列出三个大区的全部子公司:在加区账户上选过 WE,
+ * 切回欧区账户后价格仍按 WE(加区站点)的目录取,而列表是欧区目录 —— 价格全是 "—"。
+ */
+export function resolvePriceSubsidiary(
+  pick: PriceSubsidiaryPick | null | undefined,
+  accountId: string,
+  zone: string | undefined,
+  endpoint: string | undefined,
+): string {
+  const fallback = accountSubsidiary(zone, endpoint);
+  if (!pick || pick.account !== accountId) return fallback;
+  const code = (pick.code || "").trim().toUpperCase();
+  return subsidiariesForEndpoint(endpoint).some((s) => s.code === code) ? code : fallback;
 }
 
 /**

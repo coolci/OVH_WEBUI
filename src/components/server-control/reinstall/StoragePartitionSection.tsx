@@ -201,7 +201,7 @@ export function StoragePartitionSection({
                 max={vzMaxKnown ? zfsCap.maxVzGB : undefined}
                 value={Math.floor(zfsVzSize / 1024)}
                 onChange={(e) => {
-                  const v = Math.max(10, Math.min(vzMaxGB, parseInt(e.target.value) || 100));
+                  const v = Math.max(10, Math.min(vzMaxGB, parseInt(e.target.value, 10) || 100));
                   setZfsVzSize(v * 1024);
                 }}
                 className="w-40"
@@ -293,7 +293,7 @@ export function StoragePartitionSection({
               <div className="space-y-3">
                 <h4 className="text-[12px] font-semibold">{t("ctrl.reinstall.disk.groupTitle")}</h4>
                 {Object.entries(disk.data || {}).map(([gidStr, group]) => {
-                  const gid = parseInt(gidStr);
+                  const gid = parseInt(gidStr, 10);
                   return (
                     <div key={gid} className="border border-border rounded-xl p-3 space-y-2 bg-background">
                       <div className="flex items-center gap-2 text-[12px]">
@@ -490,7 +490,7 @@ export function StoragePartitionSection({
                     <PartitionRow
                       key={idx}
                       partition={p}
-                      diskGroupIds={Object.keys(disk.data || {}).map((s) => parseInt(s))}
+                      diskGroupIds={Object.keys(disk.data || {}).map((s) => parseInt(s, 10))}
                       filesystems={osFilesystems}
                       lvmReady={lvmReady}
                       softRaidOnlyMirroring={softRaidOnlyMirroring}

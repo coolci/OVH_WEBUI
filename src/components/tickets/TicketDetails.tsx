@@ -6,6 +6,7 @@ import type { SupportTicket } from "@/hooks/ovh/use-tickets";
 import { formatDateTime } from "@/lib/format-os";
 import { cn } from "@/lib/utils";
 import { getCategoryLabel, getProductLabel, getStateMeta } from "./labels";
+import { copyText } from "@/lib/clipboard";
 
 interface TicketDetailsProps {
   ticket: SupportTicket;
@@ -46,10 +47,9 @@ export function TicketDetails({
 
   const copyServiceName = async () => {
     if (!ticket.serviceName) return;
-    try {
-      await navigator.clipboard.writeText(ticket.serviceName);
+    if (await copyText(ticket.serviceName)) {
       toast.success("服务名称已复制");
-    } catch {
+    } else {
       toast.error("复制失败，请手动选择并复制服务名称");
     }
   };

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Helmet } from "react-helmet-async";
 import { useTranslation } from "react-i18next";
 import {
@@ -58,8 +58,12 @@ function SettingsPage() {
   const [apiKey, setApiKey] = useState("");
   const [loaded, setLoaded] = useState(false);
 
+  // 表单有未保存的改动时,后台重新拉到的设置不能覆盖它。
+  // 设置会被别处的操作失效重拉(比如在「账户」分区增删账户、改默认账户),
+  // 以前一重拉就把用户在别的分区填了一半、还没保存的内容整个冲掉。
+  const dirtyRef = useRef(false);
   useEffect(() => {
-    if (cfg.data) {
+    if (cfg.data && !dirtyRef.current) {
       setForm(cfg.data);
       setLoaded(true);
     }
@@ -70,6 +74,7 @@ function SettingsPage() {
   }, []);
 
   const set = <K extends keyof SettingsConfig>(k: K, v: SettingsConfig[K]) => {
+    dirtyRef.current = true;
     setForm((prev) => ({ ...prev, [k]: v }));
   };
 
@@ -80,7 +85,15 @@ function SettingsPage() {
     }
     if (!loaded) return;
     const zone = form.zone || "IE";
-    save.mutate({ ...form, zone, endpoint: endpointForZone(zone) });
+    save.mutate(
+      { ...form, zone, endpoint: endpointForZone(zone) },
+      {
+        // 保存成功后才接受服务端的最新值(保存会触发重拉)
+        onSuccess: () => {
+          dirtyRef.current = false;
+        },
+      },
+    );
   };
 
   const savableSection = active === "password" || loaded;

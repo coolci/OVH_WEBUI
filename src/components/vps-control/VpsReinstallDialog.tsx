@@ -13,7 +13,6 @@ import { useVpsTemplates, useReinstallVps, useVpsCurrentOS, type VpsTemplate } f
 import { useAccountSshKeys } from "@/hooks/use-account";
 import { useActiveVpsControlAccount } from "@/hooks/use-active-account";
 import { toast } from "sonner";
-import { splitList } from "@/lib/split-list";
 import { Trans, useTranslation } from "react-i18next";
 
 /** VPS 重装系统:模板列表 + 语言 + SSH key 选项 + 二次确认 */

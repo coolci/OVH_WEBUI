@@ -27,67 +27,89 @@ export const VPS_CONTROL_ACCOUNT_KEY = "ovh_active_vps_control_account_id";
 
 // ─── storage helpers ────────────────────────────────────────
 
-export function getApiSecretKey(): string {
+/**
+ * localStorage 读写一律经过这里:隐私模式、站点数据被禁用、配额已满时
+ * localStorage 访问会直接抛异常。这些 getter 在每个请求的拦截器里调用,
+ * 抛出来就是全站所有请求失败、界面空白,而存不进去本来只该丢掉一个偏好。
+ */
+function lsGet(key: string): string {
   if (typeof window === "undefined") return "";
-  return (
-    window.localStorage.getItem(API_KEY_STORAGE) ||
-    window.localStorage.getItem("apiSecretKey") ||
-    ""
-  );
+  try {
+    return window.localStorage.getItem(key) || "";
+  } catch {
+    return "";
+  }
+}
+
+function lsSet(key: string, value: string): void {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    /* 存不进去:本次会话内的内存状态仍然生效 */
+  }
+}
+
+function lsRemove(key: string): void {
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    /* 同上 */
+  }
+}
+
+export function getApiSecretKey(): string {
+  return lsGet(API_KEY_STORAGE) || lsGet("apiSecretKey");
 }
 
 export function setApiSecretKey(key: string): void {
-  window.localStorage.setItem(API_KEY_STORAGE, key);
-  window.localStorage.setItem("apiSecretKey", key);
+  lsSet(API_KEY_STORAGE, key);
+  lsSet("apiSecretKey", key);
 }
 
 export function clearApiSecretKey(): void {
-  window.localStorage.removeItem(API_KEY_STORAGE);
-  window.localStorage.removeItem("apiSecretKey");
+  lsRemove(API_KEY_STORAGE);
+  lsRemove("apiSecretKey");
 }
 
 /** 空字符串 = 同源 / Vite 代理 */
 export function getBackendUrl(): string {
-  if (typeof window === "undefined") return "";
-  return window.localStorage.getItem(BACKEND_URL_STORAGE) || "";
+  return lsGet(BACKEND_URL_STORAGE);
 }
 
 export function setBackendUrl(url: string): void {
   const v = url.trim().replace(/\/$/, "");
   if (v) {
-    window.localStorage.setItem(BACKEND_URL_STORAGE, v);
+    lsSet(BACKEND_URL_STORAGE, v);
   } else {
-    window.localStorage.removeItem(BACKEND_URL_STORAGE);
+    lsRemove(BACKEND_URL_STORAGE);
   }
 }
 
 export function getActiveServerControlAccount(): string {
-  if (typeof window === "undefined") return "";
-  return window.localStorage.getItem(SERVER_CONTROL_ACCOUNT_KEY) || "";
+  return lsGet(SERVER_CONTROL_ACCOUNT_KEY);
 }
 
 export const getActiveAccount = getActiveServerControlAccount;
 
 export function setActiveServerControlAccount(id: string): void {
   if (id) {
-    window.localStorage.setItem(SERVER_CONTROL_ACCOUNT_KEY, id);
+    lsSet(SERVER_CONTROL_ACCOUNT_KEY, id);
   } else {
-    window.localStorage.removeItem(SERVER_CONTROL_ACCOUNT_KEY);
+    lsRemove(SERVER_CONTROL_ACCOUNT_KEY);
   }
   window.dispatchEvent(new Event("ovh-active-account-changed"));
   window.dispatchEvent(new Event("ovh-active-server-account-changed"));
 }
 
 export function getActiveVpsControlAccount(): string {
-  if (typeof window === "undefined") return "";
-  return window.localStorage.getItem(VPS_CONTROL_ACCOUNT_KEY) || "";
+  return lsGet(VPS_CONTROL_ACCOUNT_KEY);
 }
 
 export function setActiveVpsControlAccount(id: string): void {
   if (id) {
-    window.localStorage.setItem(VPS_CONTROL_ACCOUNT_KEY, id);
+    lsSet(VPS_CONTROL_ACCOUNT_KEY, id);
   } else {
-    window.localStorage.removeItem(VPS_CONTROL_ACCOUNT_KEY);
+    lsRemove(VPS_CONTROL_ACCOUNT_KEY);
   }
   window.dispatchEvent(new Event("ovh-active-account-changed"));
   window.dispatchEvent(new Event("ovh-active-vps-account-changed"));

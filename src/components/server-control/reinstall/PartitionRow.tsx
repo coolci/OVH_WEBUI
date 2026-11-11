@@ -59,7 +59,7 @@ export function PartitionRow({
         type="number"
         min={0}
         value={partition.size}
-        onChange={(e) => onChange({ ...partition, size: parseInt(e.target.value) || 0 })}
+        onChange={(e) => onChange({ ...partition, size: Math.max(0, parseInt(e.target.value, 10) || 0) })}
         placeholder="MB"
         className="h-8 w-24"
         title={t("ctrl.reinstall.part.sizeHint")}
@@ -68,7 +68,7 @@ export function PartitionRow({
       {diskGroupIds.length > 1 && (
         <Select
           value={String(partition.diskGroupId ?? "")}
-          onValueChange={(v) => onChange({ ...partition, diskGroupId: parseInt(v) })}
+          onValueChange={(v) => onChange({ ...partition, diskGroupId: parseInt(v, 10) })}
         >
           <SelectTrigger className="h-8 w-24">
             <SelectValue placeholder={t("ctrl.reinstall.part.diskGroup")} />

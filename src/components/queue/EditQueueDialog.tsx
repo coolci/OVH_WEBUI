@@ -24,13 +24,12 @@ import { OrderDurationField } from "@/components/orders/OrderDurationField";
 import { DEFAULT_ORDER_DURATION, normalizeDuration } from "@/lib/order-duration";
 import {
   useAvailability,
-  buildAvailabilityMap,
   buildVariantIndex,
   hasStockWithOption,
 } from "@/hooks/use-availability";
 import { useAccounts, findAccountByID } from "@/hooks/use-accounts";
 import { OVH_DATACENTERS, apiDatacenterCode } from "@/lib/datacenters";
-import { describeOptionCode, describeOptionCodes, groupOptions, type OptionGroupKey } from "@/lib/option-groups";
+import { describeOptionCode, groupOptions, type OptionGroupKey } from "@/lib/option-groups";
 import { AutoPayCheck } from "@/components/orders/AutoPayCheck";
 
 interface EditQueueDialogProps {
@@ -49,7 +48,6 @@ export function EditQueueDialog({ open, onOpenChange, item }: EditQueueDialogPro
   const servers = useServers(true, accountId);
   const availQ = useAvailability(activeAcc?.endpoint || undefined);
   const variantIndex = useMemo(() => buildVariantIndex(availQ.data), [availQ.data]);
-  const availMap = useMemo(() => buildAvailabilityMap(availQ.data), [availQ.data]);
 
   const [datacenter, setDatacenter] = useState("");
   const [retryInterval, setRetryInterval] = useState("");

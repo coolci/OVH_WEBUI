@@ -36,7 +36,6 @@ export function ServerCard({
     dc,
     isOk: isDcInStock(lookupDcStatus(dcMap, dc)),
   }));
-  const total = dcStatuses.length;
   const okCount = dcStatuses.filter((s) => s.isOk).length;
 
   return (

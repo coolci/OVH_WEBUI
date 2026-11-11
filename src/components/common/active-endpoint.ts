@@ -16,6 +16,8 @@ import { endpointRegion, isUsEndpoint, type OvhRegion } from "@/lib/ovh-regions"
  * activeId 为空表示「用默认账户」，这跟 lib/api 的请求拦截逻辑一致。
  */
 export function useActiveAccountEndpoint(): {
+  /** 实际生效的账户 id(活跃账户无效时为默认账户;一个账户都没有时为空) */
+  accountId: string;
   endpoint: string;
   zone: string;
   /** 账户所属大区 EU / US / CA，按 endpoint 推（与后端 ovh.EndpointRegion 同一套规则） */
@@ -33,6 +35,7 @@ export function useActiveAccountEndpoint(): {
   const acc = findAccountByID(accounts, activeId) || fallback;
   const endpoint = acc?.endpoint || "";
   return {
+    accountId: acc?.id || "",
     endpoint,
     zone: acc?.zone || "",
     region: endpointRegion(endpoint),

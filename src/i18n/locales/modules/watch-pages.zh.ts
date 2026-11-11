@@ -262,8 +262,8 @@ export const watchPagesZh = {
       SG: "新加坡 · SGD",
       AU: "澳大利亚 · AUD",
       IN: "印度 · INR",
-      WE: "西欧(WE) · USD",
-      WS: "南欧(WS) · USD",
+      WE: "国际站·英语(WE) · USD",
+      WS: "国际站·西语(WS) · USD",
     },
   },
 

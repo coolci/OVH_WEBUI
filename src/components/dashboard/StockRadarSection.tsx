@@ -117,12 +117,20 @@ export function StockRadarSection({
         ) : subscriptions.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {subscriptions.map((sub) => {
+              const orderAccounts = monitorAccountIds(sub);
+              const dcStatus = monitorDcAvailability(sub.lastStatus, orderAccounts);
+              // 订阅没限定机房 = 盯全部机房。以前这里写死 gra/rbx/sbg/bhs,
+              // 美区 / 亚太机型(hil、vin、sgp…)有货时卡片高亮了,机房小标签却一个都不亮。
+              // 改成按实际探测到的机房展示,有货的排前面。
+              const probedDcs = Object.keys(dcStatus).sort(
+                (a, b) => Number(isDcInStock(dcStatus[b])) - Number(isDcInStock(dcStatus[a])) || a.localeCompare(b)
+              );
               const targetDcs =
                 sub.datacenters && sub.datacenters.length > 0
                   ? sub.datacenters
-                  : ["gra", "rbx", "sbg", "bhs"];
-              const orderAccounts = monitorAccountIds(sub);
-              const dcStatus = monitorDcAvailability(sub.lastStatus, orderAccounts);
+                  : probedDcs.length > 0
+                    ? probedDcs
+                    : ["gra", "rbx", "sbg", "bhs"];
               const inStockDcList = Object.entries(dcStatus).filter(
                 ([_, status]) => isDcInStock(status)
               );

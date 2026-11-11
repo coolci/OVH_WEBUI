@@ -5,6 +5,7 @@ import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { TelegramActionResult } from "@/lib/api";
+import { copyText } from "@/lib/clipboard";
 
 interface TerminalConsoleProps {
   selectedMode: string;
@@ -15,10 +16,13 @@ interface TerminalConsoleProps {
 export function TerminalConsole({ selectedMode, lastResult, currentCommand }: TerminalConsoleProps) {
   const [copied, setCopied] = useState(false);
 
-  const handleCopy = () => {
+  const handleCopy = async () => {
     const textToCopy = lastResult?.message || lastResult?.error || "";
     if (!textToCopy) return;
-    navigator.clipboard.writeText(textToCopy);
+    if (!(await copyText(textToCopy))) {
+      toast.error("复制失败，请手动选择复制");
+      return;
+    }
     setCopied(true);
     toast.success("响应内容已复制");
     setTimeout(() => setCopied(false), 2000);

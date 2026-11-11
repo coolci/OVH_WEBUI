@@ -210,3 +210,65 @@
 4. 其余低优先级问题按需处理。
 
 建议补的回归测试：关停期间结账返回成功仍能落库（H1）；未决对账结束后标记被清除（H2）；在 `-race` 环境下并发跑 `SaveToDB` 和多账户检查（H3，需要先装 gcc）；同型号两任务并发对账不会认领同一单（M1）。
+
+---
+
+## 前端专项修复(2026-11-12,分支 `fix/frontend-bugs`)
+
+### 规范检查
+- 用 `tsc --strict --noUnusedLocals --noUnusedParameters --noFallthroughCasesInSwitch` 检查,只报出 18 处未使用的变量和导入(死代码),都已清理。这几个选项已写进 `tsconfig.app.json`、`tsconfig.json`、`tsconfig.node.json`,以后由 `tsc -b` 强制检查。
+- eslint 新增 `radix`、`eqeqeq: smart` 两条规则;全仓 `parseInt` 都补上了进制参数。本地打包时复制出来的 `scratch/*/source` 加入了 lint 忽略。
+
+### BUG 修复
+| 问题 | 位置 | 修法 |
+|---|---|---|
+| `isDcInStock` 用黑名单判断有货,把 comingSoon(还没开卖)当成有货:机房选择器、快速下单、服务器卡片、详情页都亮绿点,后端却判定不可订 | `lib/datacenters.ts` | 改为与后端相同的白名单 `isOrderable`,监控归一化状态里只认 `available` |
+| 服务器列表「只看有货」也用了同样的黑名单 | `pages/ServersPage.tsx` | 改用 `isOrderable` |
+| 库存雷达在订阅没限定机房时,写死只显示 gra/rbx/sbg/bhs,美区和亚太机型有货时机房标签一个都不亮 | `components/dashboard/StockRadarSection.tsx` | 按实际探测到的机房显示,有货的排在前面 |
+| 同型号有多条配置订阅时,每张卡片的「变化历史」都显示第一条订阅的历史 | `hooks/ovh/use-monitor.ts`、`pages/MonitorPage.tsx`、后端 `GetSubscriptionHistory` | 请求带上 `optionsKey`,query key 也按它区分;planCode 做 URL 编码 |
+| 剪贴板:用 HTTP 访问(局域网 / IP 直连,非安全上下文)时 `navigator.clipboard` 不存在,点复制直接抛错,或者没复制成功却提示「已复制」 | 4 个组件 | 新增 `lib/clipboard.ts` 的 `copyText`,带 execCommand 降级,失败时如实提示 |
+| localStorage 不可用(隐私模式、站点数据被禁用、配额已满)时,请求拦截器里读存储就抛异常,所有请求都会失败 | `lib/http.ts`、`hooks/ovh/use-hide-ip.ts`、`pages/TelegramOrderPage.tsx` | 所有读写都包上 try/catch |
+| 隐私打码:文本里同时有反向 DNS 和真实 IP 时,命中第一种就返回,括号里的 IP 原样露出;文本中的 IPv6 也不打码 | `hooks/ovh/use-hide-ip.ts` | 改为依次对所有形式打码 |
+| 隐私开关的副作用写在 setState 的更新函数里(违反纯函数约定,StrictMode 下会执行两次) | `hooks/ovh/use-hide-ip.ts` | 副作用移到更新函数外面,storage 事件按 key 过滤 |
+| 设置页:其他操作(比如在账户分区增删账户)会让设置重新拉取,覆盖用户还没保存的修改 | `pages/SettingsPage.tsx` | 有未保存修改时不接受后台数据,保存成功后再同步 |
+| 重装系统:进入二次确认后再改模板或存储方案,下一次点击就直接按没确认过的新配置清盘重装 | `components/server-control/ReinstallDialog.tsx` | 关键配置一变就退出确认状态 |
+| 重装系统:RAID 盘数等输入非法时 `parseInt` 得到 NaN,序列化成 null 提交,后端按默认值处理 | 同上、`reinstall/PartitionRow.tsx` | 非法值不提交;分区大小下限为 0 |
+| 救援模式:救援状态晚于对话框打开到达时,会覆盖用户已输入的邮箱 | `components/server-control/RescueDialog.tsx` | 只在用户还没输入时预填 |
+| Telegram 下单页:数量可以输入负数或超出上限 | `pages/TelegramOrderPage.tsx` | 限制在 1~20(监控模式 0~20) |
+| 日志页:开着自动刷新时,每来一批新日志都把「加载更多」的位置打回第一页;另有一段跟滚逻辑是空操作 | `pages/LogsPage.tsx` | 只在筛选条件变化时重置;删掉无效逻辑 |
+
+回归测试:新增 `scripts/frontend-bugs.test.mjs`(有货判定、监控标签合并、隐私打码)。`scripts/order-inputs.test.mjs` 改为能解析 `datacenters.ts` 新增的依赖。
+
+### 已知但未改
+- 后端 `NowISO` 生成的时间不带时区,前端按浏览器本地时区解析。Docker 部署默认设了 `TZ=Asia/Shanghai`,浏览器在其他时区时显示的时间会有偏差。要修需要改后端的时间格式,这次没动。
+
+---
+
+## 预售(预订)专项:测试与改进(2026-11-12)
+
+### 现状测试(全部离线 fixture,不下真单)
+- 现有预订测试全部通过(后端 18 项、前端 4 项):开售前被拒不记失败,只买库存里完全一致的配置,不换型号,结账前逐项核对购物车。
+- 实测发现三个问题:
+  1. **重复下单**:用户已经给新机型建了预订任务,机型进入销售目录时,默认开启的「目录上新自动下单」也会为同一型号同一机房再下一单,用户要 1 台、实际会买到 2 台。
+  2. **开售前开销大、开售后反应慢**:每个预订任务每轮约 6 次 OVH 请求(查库存、建车、绑定、加购被拒、删车等),任务数 = 机房数 × 数量,15 秒一轮。机型开售后,预订任务最长还要等 15 秒才会再试,而目录上新每 2 秒轮询一次,会抢在前面。
+  3. **开售后第一次尝试被浪费**:开售前预取的硬件选项列表会被缓存,里面还没有新配置。开售后第一次尝试因此误判为「所选配置未开放」,要等下一轮才能下单。
+
+### 业界做法(公开资料)
+- 社区普遍观察到:新机型会先出现在库存接口(availabilities),等进入销售目录后才能下单;在那之前用库存里的 planCode 下单会返回 400。没有办法预知它什么时候进目录。
+- adns44/ovh-eco-autoorder 的做法是周期性拉取目录,一旦出现就补全配件代码并立即下单;多个机房同时尝试,一个成功后停掉其余;购物车可以复用。
+- 另据社区反馈,OVH 已把售罄状态从 unavailable 改为 comingSoon。本项目判断有货只认 `\d+H` 白名单,这一变化不会造成误判。
+
+### 改进
+| 改进 | 位置 |
+|---|---|
+| 目录上新下单前先看队列:同账户、同型号、同机房已有运行中、待执行或已暂停的任务时,目录上新放弃这一单,由队列任务负责 | `catalogwatch/watcher.go` `queueCovers` |
+| 开售信号:型号或机房第一次出现在销售目录时,立即唤醒同型号同机房的队列任务(包括预订任务),开售后的反应时间从最长 15 秒缩短到约 2 秒(目录轮询周期) | `catalogwatch/watcher.go` `Poll` |
+| 共享探测:同型号同配置的预订任务里,只要有一个刚被 OVH 明确告知「未开放」,其他任务在 10 秒内直接等待,不再请求 OVH;被开售信号唤醒的任务不受这个限制 | `purchase/preorder_gate.go` |
+| 预订任务不使用硬件选项缓存;开售前被拒时同时清掉该型号的选项缓存 | `purchase/purchase.go` |
+
+回归测试:`TestCatalogWatchDefersToExistingQueueTask`、`TestCatalogWatchStillOrdersUncoveredLaunch`、`TestPreorderSiblingsShareOneProbe`。最后一项同时覆盖了「开售后被唤醒的任务立即下单成功」,也就是问题 3。
+
+### 限制
+- 开售信号来自目录上新的轮询。如果用户关掉了「目录上新自动下单」,这个信号也会一起停掉,预订任务退回到最长 15 秒轮询一次。
+- 目录上新只监控默认账户所在子公司的目录;同一大区内其他账户的任务也会被唤醒,但其他大区不会。
+- 以上都是本地模拟测试,没有在真实开售时验证过;OVH 是否接单,最终以真实下单接口为准。

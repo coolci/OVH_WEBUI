@@ -173,14 +173,14 @@ export function formatOptionDisplay(option: ServerOption, group: OptionGroupKey)
     }
     const bw = v.match(/bandwidth-(\d+)/i);
     if (bw) {
-      const speed = parseInt(bw[1]);
+      const speed = parseInt(bw[1], 10);
       return speed >= 1000 ? `${speed / 1000} Gbps` : `${speed} Mbps`;
     }
   }
   if (group === "vrack") {
     const m = v.match(/vrack-bandwidth-(\d+)/i);
     if (m) {
-      const speed = parseInt(m[1]);
+      const speed = parseInt(m[1], 10);
       return speed >= 1000
         ? i18n.t("commons.option.vrackSpeed", { speed: `${speed / 1000}`, unit: "Gbps" })
         : i18n.t("commons.option.vrackSpeed", { speed: `${speed}`, unit: "Mbps" });

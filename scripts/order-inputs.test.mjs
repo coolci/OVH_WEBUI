@@ -53,9 +53,14 @@ test("manually entered hardware addons preserve arbitrary codes and deduplicate 
   assert.deepEqual(parseOptionCodes(" ram-custom，storage-custom, ram-custom\n network-custom "), ["ram-custom", "storage-custom", "network-custom"]);
 });
 
+// datacenters.ts 依赖 @/lib/availability(有货白名单):data: URL 里解析不了路径别名,先把它编译成 data: URL 再替换进去
+const toDataUrl = (code) => `data:text/javascript;base64,${Buffer.from(code).toString("base64")}`;
+const esm = { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } };
+const availSource = await readFile(new URL("../src/lib/availability.ts", import.meta.url), "utf8");
+const availUrl = toDataUrl(ts.transpileModule(availSource, esm).outputText);
 const dcSource = await readFile(new URL("../src/lib/datacenters.ts", import.meta.url), "utf8");
-const dcCompiled = ts.transpileModule(dcSource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } });
-const { monitorDcAvailability } = await import(`data:text/javascript;base64,${Buffer.from(dcCompiled.outputText).toString("base64")}`);
+const dcCompiled = ts.transpileModule(dcSource, esm).outputText.replace('"@/lib/availability"', JSON.stringify(availUrl));
+const { monitorDcAvailability } = await import(toDataUrl(dcCompiled));
 
 test("monitor dashboard combines per-account and per-configuration stock without hiding stock", () => {
   assert.deepEqual(monitorDcAvailability({

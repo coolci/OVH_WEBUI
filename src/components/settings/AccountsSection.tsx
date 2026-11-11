@@ -30,7 +30,6 @@ import {
 import { Section } from "./Section";
 import { cn } from "@/lib/utils";
 import { AccountDialog } from "./AccountDialog";
-import { endpointForZone } from "@/lib/ovh-subsidiaries";
 import { LinkCheckDialog } from "./LinkCheckDialog";
 import {
   useAccounts,

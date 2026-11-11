@@ -6,7 +6,8 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   // dist / artifacts 是构建与发布产物(不进 Git),不参与 lint
-  { ignores: ["dist", "artifacts"] },
+  // scratch/*/source 是本地打包时复制出来的源码快照(不进 Git),不参与 lint
+  { ignores: ["dist", "artifacts", "scratch/*/source"] },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ["**/*.{ts,tsx}"],
@@ -36,7 +37,11 @@ export default tseslint.config(
           ],
         },
       ],
+      // 未使用的变量 / 参数交给 tsc(noUnusedLocals / noUnusedParameters)报错,不重复报
       "@typescript-eslint/no-unused-vars": "off",
+      // parseInt 必须写进制;比较一律用 ===(与 null 比较除外)
+      radix: "error",
+      eqeqeq: ["error", "smart"],
     },
   },
 );

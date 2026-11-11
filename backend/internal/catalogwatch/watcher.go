@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -299,8 +300,20 @@ func (w *Watcher) Poll(ctx context.Context) error {
 	gen, sub := w.generation, w.data.Subsidiary
 	w.mu.Unlock()
 	current, err := w.fetch(ctx, w.state, sub)
+	// 型号/机房首次出现在销售目录 = 开售信号(库存往往先于目录出现,目录收录前下单接口一律 400)。
+	// 在 w.mu 释放之后唤醒同型号同机房的队列任务(预订任务不用再等满 15 秒轮询间隔)。
+	var launches [][2]string
+	endpoint := ""
+	defer func() {
+		for _, l := range launches {
+			if n := w.state.WakeQueueForStock(l[0], l[1], endpoint); n > 0 && w.state.Logger != nil {
+				w.state.Logger.Info(fmt.Sprintf("[catalog-watch] %s@%s 已进入销售目录,唤醒 %d 个同型号队列任务", l[0], l[1], n), "queue")
+			}
+		}
+	}()
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	endpoint = w.data.Endpoint
 	if gen != w.generation || !w.data.Enabled {
 		return nil
 	}
@@ -338,6 +351,7 @@ func (w *Watcher) Poll(ctx context.Context) error {
 			if seen && wasSeen {
 				continue
 			}
+			launches = append(launches, [2]string{c.PlanCode, dc})
 			id := locationKey(w.data.AccountID, c, dc)
 			if _, exists := w.data.Jobs[id]; !exists {
 				one := c
@@ -396,6 +410,15 @@ func (w *Watcher) Attempt(ctx context.Context) {
 		return
 	}
 	dc := job.Datacenters[0]
+	// 用户已经为这个型号在这个机房建了抢购 / 预订任务(运行中、待执行或已暂停):
+	// 那是用户明确的购买意图,由队列负责。目录上新再自动下一单,开售那一刻就会买两台。
+	if taskID, covered := queueCovers(w.state, job.AccountID, job.PlanCode, dc); covered {
+		job.Status = "cancelled"
+		job.Reason = "该型号在此机房已有抢购/预订任务(" + taskID + ")负责，目录上新不再另下一单"
+		_ = w.save()
+		w.mu.Unlock()
+		return
+	}
 	item := types.QueueItem{ID: "catalog-watch-" + job.ID + "-" + dc, AccountID: job.AccountID, PlanCode: job.PlanCode, Datacenter: dc, Options: append([]string{}, job.Options...), AutoPay: false, Force: true, Status: "running"}
 	job.TaskID = item.ID
 	job.Status = "attempting"
@@ -537,4 +560,25 @@ func (w *Watcher) Wait(timeout time.Duration) bool {
 	case <-time.After(timeout):
 		return false
 	}
+}
+
+// queueCovers 队列里是否已有同账户、同型号、同机房的未结束任务(运行中 / 待执行 / 已暂停)。
+func queueCovers(s *app.State, accountID, planCode, dc string) (string, bool) {
+	want := strings.ToLower(ovh.ConvertDisplayDCToAPIDC(dc))
+	for _, it := range s.QueueSnapshot() {
+		if it.Status != "running" && it.Status != "pending" && it.Status != "paused" {
+			continue
+		}
+		if it.PlanCode != planCode || strings.ToLower(ovh.ConvertDisplayDCToAPIDC(it.Datacenter)) != want {
+			continue
+		}
+		acc := it.AccountID
+		if a, ok := s.FindAccount(acc); ok {
+			acc = a.ID
+		}
+		if acc == accountID {
+			return it.ID, true
+		}
+	}
+	return "", false
 }

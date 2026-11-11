@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LifeBuoy, AlertTriangle, Loader2 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
@@ -35,10 +35,17 @@ export function RescueDialog({
   const [email, setEmail] = useState("");
   const [confirming, setConfirming] = useState(false);
 
-  // 每次打开都重置二次确认,并把上次用过的邮箱带出来省得重填
+  // 每次打开都重置二次确认,并把上次用过的邮箱带出来省得重填。
+  // 状态晚于打开到达时也要带出来,但不能覆盖用户已经输入的内容。
+  const emailEditedRef = useRef(false);
   useEffect(() => {
     if (!open) return;
+    emailEditedRef.current = false;
     setConfirming(false);
+    setEmail("");
+  }, [open]);
+  useEffect(() => {
+    if (!open || emailEditedRef.current) return;
     setEmail(status.data?.rescueMail || "");
   }, [open, status.data?.rescueMail]);
 
@@ -101,7 +108,7 @@ export function RescueDialog({
                   </label>
                   <Input
                     value={email}
-                    onChange={(e) => { setEmail(e.target.value); setConfirming(false); }}
+                    onChange={(e) => { emailEditedRef.current = true; setEmail(e.target.value); setConfirming(false); }}
                     placeholder={t("ctrl.rescue.mailPlaceholder")}
                     inputMode="email"
                   />

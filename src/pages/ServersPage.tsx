@@ -1,5 +1,5 @@
 import { CatalogWatchPanel } from "@/components/servers/CatalogWatchPanel";
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState } from "react";
 import { Server, RefreshCw } from "lucide-react";
 import { Helmet } from "react-helmet-async";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -27,13 +27,35 @@ import {
   type PriceInfo,
 } from "@/hooks/use-availability";
 import { OVH_DATACENTERS } from "@/lib/datacenters";
+import { isOrderable } from "@/lib/availability";
 import { comparePrices } from "@/lib/money";
 import { mergeStockPlans, matchesServerSearch } from "@/lib/stock-plans";
 import { sortServersForSniping } from "@/lib/server-sort";
 import { cn } from "@/lib/utils";
+import { useActiveAccountEndpoint } from "@/components/common/active-endpoint";
+import {
+  accountSubsidiary,
+  resolvePriceSubsidiary,
+  subsidiariesForEndpoint,
+  type PriceSubsidiaryPick,
+} from "@/lib/ovh-subsidiaries";
 
-const SUB_LS_KEY = "ovh_sniper_price_subsidiary";
-const SUB_MANUAL_LS_KEY = "ovh_sniper_price_subsidiary_manual";
+// 手动选的价格地区,按账户记忆(JSON: {account, code})。
+// 旧版的两个键是全局的、不分账户,换账户后会沿用上一个账户大区的子公司,读到时直接丢弃。
+const SUB_PICK_LS_KEY = "ovh_sniper_price_subsidiary_pick";
+const LEGACY_SUB_LS_KEYS = ["ovh_sniper_price_subsidiary", "ovh_sniper_price_subsidiary_manual"];
+
+function readPricePick(): PriceSubsidiaryPick | null {
+  try {
+    for (const k of LEGACY_SUB_LS_KEYS) localStorage.removeItem(k);
+    const raw = localStorage.getItem(SUB_PICK_LS_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as Partial<PriceSubsidiaryPick>;
+    return typeof v?.account === "string" && typeof v?.code === "string" ? { account: v.account, code: v.code } : null;
+  } catch {
+    return null;
+  }
+}
 
 function ServersPage() {
   const q = useServers();
@@ -41,43 +63,36 @@ function ServersPage() {
   const availMap = useMemo(() => buildAvailabilityMap(availQ.data), [availQ.data]);
   const variantIndex = useMemo(() => buildVariantIndex(availQ.data), [availQ.data]);
 
+  // 价格地区默认跟账户实际下单用的子公司(账户配置的 zone)走 —— 服务器列表、购物车、
+  // 下单都按它。以前取的是 OVH /me 的 ovhSubsidiary:加区账户 /me 常报 WE,
+  // 于是列表来自 CA 目录、价格却查 WE 目录,整页价格都是 "—"。
+  // /me 的值只用来提示"账户配置与 OVH 实际归属不一致"。
+  const active = useActiveAccountEndpoint();
+  const accountSub = active.ready ? accountSubsidiary(active.zone, active.endpoint) : undefined;
+  const subsidiaryOptions = useMemo(() => subsidiariesForEndpoint(active.endpoint), [active.endpoint]);
   const account = useAccountInfo();
-  const accountSub = account.data?.ovhSubsidiary;
+  const meSub = account.data?.ovhSubsidiary?.trim().toUpperCase() || undefined;
 
-  const [subsidiary, setSubsidiary] = useState<string>(() => {
-    try {
-      const manualPicked = localStorage.getItem(SUB_MANUAL_LS_KEY) === "1";
-      if (manualPicked) return localStorage.getItem(SUB_LS_KEY) || "IE";
-    } catch { /* ignore */ }
-    return "IE";
-  });
-
-  useEffect(() => {
-    if (!accountSub) return;
-    let manualPicked = false;
-    try {
-      manualPicked = localStorage.getItem(SUB_MANUAL_LS_KEY) === "1";
-    } catch { /* ignore */ }
-    if (!manualPicked) setSubsidiary(accountSub);
-  }, [accountSub]);
+  const [pricePick, setPricePick] = useState<PriceSubsidiaryPick | null>(readPricePick);
+  const subsidiary = resolvePriceSubsidiary(pricePick, active.accountId, active.zone, active.endpoint);
 
   const changeSubsidiary = (v: string) => {
-    setSubsidiary(v);
+    const pick = { account: active.accountId, code: v };
+    setPricePick(pick);
     try {
-      localStorage.setItem(SUB_LS_KEY, v);
-      localStorage.setItem(SUB_MANUAL_LS_KEY, "1");
+      localStorage.setItem(SUB_PICK_LS_KEY, JSON.stringify(pick));
     } catch { /* ignore */ }
   };
 
   const resetSubsidiaryToAccount = () => {
+    setPricePick(null);
     try {
-      localStorage.removeItem(SUB_MANUAL_LS_KEY);
-      localStorage.removeItem(SUB_LS_KEY);
+      localStorage.removeItem(SUB_PICK_LS_KEY);
     } catch { /* ignore */ }
-    if (accountSub) setSubsidiary(accountSub);
   };
 
-  const catalogQ = useOvhCatalog(subsidiary);
+  // 账户列表还没到手时不知道该用哪个子公司:先不指定,避免先拉一份 IE 目录再换
+  const catalogQ = useOvhCatalog(active.ready ? subsidiary : undefined);
   const catalogIdx = useMemo(() => buildCatalogIndex(catalogQ.data), [catalogQ.data]);
 
   const priceMap = useMemo(() => {
@@ -120,10 +135,11 @@ function ServersPage() {
     if (onlyAvailable) {
       out = out.filter((srv) => {
         const map = availMap[srv.planCode];
+        // 「只看有货」用下单白名单:comingSoon 还没开卖,不能算有货(见 lib/availability.ts)
         if (map) {
-          return Object.values(map).some((v) => v && v !== "unavailable" && v !== "unknown");
+          return Object.values(map).some(isOrderable);
         }
-        return srv.datacenters?.some((dc) => dc.availability && dc.availability !== "unavailable" && dc.availability !== "unknown") ?? false;
+        return srv.datacenters?.some((dc) => isOrderable(dc.availability)) ?? false;
       });
     }
     // 预订置顶,正式销售的新上架在上;点了按价格排序时非预订部分按价格排
@@ -181,6 +197,8 @@ function ServersPage() {
         subsidiary={subsidiary}
         onSubsidiaryChange={changeSubsidiary}
         accountSub={accountSub}
+        meSub={meSub}
+        subsidiaryOptions={subsidiaryOptions}
         onResetSubsidiary={resetSubsidiaryToAccount}
         totalCount={filtered.length}
         isLoading={q.isPending}

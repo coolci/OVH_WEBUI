@@ -84,12 +84,21 @@ export function useMonitorStatus() {
   });
 }
 
-/** 某订阅的变化历史（后端直接返回数组，倒序最新在前） */
-export function useMonitorHistory(planCode: string | null) {
+/**
+ * 某订阅的变化历史（后端直接返回数组，倒序最新在前）。
+ * optionsKey 定位同型号下的具体配置订阅;不传时后端取该型号第一条。
+ */
+export function useMonitorHistory(planCode: string | null, optionsKey?: string) {
   return useQuery({
-    queryKey: qk.monitor.history(planCode || ""),
-    queryFn: async () =>
-      (await api.get<MonitorHistoryEntry[]>(`/monitor/subscriptions/${planCode}/history`)).data,
+    queryKey: qk.monitor.history(planCode || "", optionsKey),
+    queryFn: async () => {
+      const d = (
+        await api.get<MonitorHistoryEntry[]>(`/monitor/subscriptions/${encodeURIComponent(planCode || "")}/history`, {
+          params: optionsKey === undefined ? undefined : { optionsKey },
+        })
+      ).data;
+      return Array.isArray(d) ? d : [];
+    },
     enabled: !!planCode,
   });
 }

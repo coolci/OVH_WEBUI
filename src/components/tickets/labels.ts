@@ -1,7 +1,7 @@
 /**
  * OVH 支持工单枚举字典与视觉展示映射
  */
-import { Cpu, Cloud, Globe, HardDrive, ShieldAlert, Wrench, CreditCard, HelpCircle, AlertCircle } from "lucide-react";
+import { Cpu, Cloud, Globe, HardDrive, ShieldAlert, Wrench, CreditCard, HelpCircle } from "lucide-react";
 
 export interface LabelOption {
   value: string;

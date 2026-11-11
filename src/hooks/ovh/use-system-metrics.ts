@@ -1,7 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/http";
 import i18n from "@/i18n";
-import { apiMessage } from "@/lib/api-error";
 
 /** 后端二进制版本*/
 export function useAppVersion() {

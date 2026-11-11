@@ -244,19 +244,6 @@ function RenameDialog({
   );
 }
 
-/**
- * 撤回期的悬停说明:把起止都写出来。
- * 撤回期是从下单起算的,机器常常下单后几天才交付。
- */
-function retractionWindowText(r: { orderDate?: string; retractionDate?: string }): string {
-  const fmt = (v?: string) => (v ? new Date(v).toLocaleString("zh-CN") : "");
-  const end = fmt(r.retractionDate);
-  const start = fmt(r.orderDate);
-  if (!end) return "在撤回期内";
-  if (!start) return `撤回期截止 ${end}（OVH 给的日期）`;
-  return `撤回期 ${start} → ${end}\n从下单起算，不是从服务器开通起算`;
-}
-
 function ServerTabs({ server }: { server: OwnedServer }) {
   const info = useServerServiceInfo(server.serviceName);
   const monitoring = useServerMonitoring(server.serviceName);

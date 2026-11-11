@@ -50,7 +50,7 @@ export const qk = {
   monitor: {
     list: () => ["monitor", "list"] as const,
     status: () => ["monitor", "status"] as const,
-    history: (planCode: string) => ["monitor", "history", planCode] as const,
+    history: (planCode: string, optionsKey?: string) => ["monitor", "history", planCode, optionsKey ?? ""] as const,
   },
 
   // VPS 补货通知

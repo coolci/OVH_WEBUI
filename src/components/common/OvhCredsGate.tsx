@@ -127,9 +127,6 @@ function AccountOverlay({ onSuccess }: { onSuccess: () => void }) {
   const set = (k: keyof AccountForm, v: string) =>
     setForm((prev) => ({ ...prev, [k]: v }));
 
-  // token 申请页按站点分:EU / US / CA 三站的 token 互不通用,链接必须跟着所选子公司走
-  const tokenSiteUrl = apiBaseUrlForEndpoint(endpointForZone(form.zone || "IE"));
-
   const canSubmit =
     form.name.trim() &&
     form.appKey.trim() &&

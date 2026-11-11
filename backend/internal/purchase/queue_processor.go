@@ -334,6 +334,10 @@ func processQueueLoop(loopCtx context.Context, state *app.State, purchase func(c
 					return
 				}
 
+				// 被开售 / 补货信号唤醒的这一轮:预订共享探测闸门对它不生效,立即真打 OVH
+				if woken[it.ID] {
+					ctx = WithStockWoken(ctx)
+				}
 				// 结账请求发出前先把"结账未决"落库(见 SetQueueCheckoutUncertain):
 				// 结账请求不接受取消,进程在它返回前退出(崩溃 / SIGKILL / 关停超时)时,
 				// 重启后任务会先对账,而不是当作从没结过账再买一台。

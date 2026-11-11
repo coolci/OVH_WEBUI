@@ -339,8 +339,8 @@ const pack: CommonLayerPack = {
       sg: "Singapore",
       au: "Australia",
       in: "India",
-      we: "Western Europe (WE)",
-      ws: "Southern Europe (WS)",
+      we: "World · English (WE)",
+      ws: "World · Spanish (WS)",
     },
     subsidiary: {
       ie: "Ireland · EUR",
@@ -365,8 +365,8 @@ const pack: CommonLayerPack = {
       sg: "Singapore · SGD",
       au: "Australia · AUD",
       in: "India · INR",
-      we: "Western Europe (WE) · USD",
-      ws: "Southern Europe (WS) · USD",
+      we: "World · English (WE) · USD",
+      ws: "World · Spanish (WS) · USD",
     },
     option: {
       hybridStorage: "Hybrid {{firstCount}}× {{firstSize}}GB {{firstType}} + {{secondCount}}× {{secondSize}}GB {{secondType}}",

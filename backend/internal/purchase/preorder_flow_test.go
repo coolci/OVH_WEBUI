@@ -35,6 +35,8 @@ type preorderFixture struct {
 	checkouts       atomic.Int32
 	addedOptions    []string
 	catalogRequests atomic.Int32
+	// apiCalls 打到 OVH 的请求数(不含 /auth/time),用来衡量等待期每轮的开销
+	apiCalls atomic.Int32
 }
 
 func (f *preorderFixture) set(fn func(*preorderFixture)) {
@@ -48,6 +50,7 @@ func newPreorderFixture(t *testing.T) (*app.State, *preorderFixture) {
 	s := quickOrderTestState(t)
 	ClearPrewarmPool(nil)
 	resetEcoOptionsCache()
+	resetPreorderGate()
 	s.Accounts = []types.OVHAccount{{ID: "pre-acc", Endpoint: "ovh-eu", Zone: "FI", AppKey: "k", AppSecret: "s", ConsumerKey: "c"}}
 	f := &preorderFixture{storedMemory: "ram-64g-ddr4-ecc-2933-" + preorderPlan,
 		stockFQN: preorderPlan + ".ram-64g-ddr4-ecc-2933.softraid-2x480ssd"}
@@ -57,6 +60,9 @@ func newPreorderFixture(t *testing.T) (*app.State, *preorderFixture) {
 		launched, optionsOpen, stored, fqn := f.launched, f.optionsOpen, f.storedMemory, f.stockFQN
 		f.mu.Unlock()
 		path := r.URL.Path
+		if path != "/auth/time" {
+			f.apiCalls.Add(1)
+		}
 		switch {
 		case path == "/auth/time":
 			fmt.Fprint(w, time.Now().Unix())

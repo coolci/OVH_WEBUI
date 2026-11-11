@@ -127,7 +127,7 @@ export function useReinstallServer() {
           const ovhP: OvhPartition = { mountPoint: p.mountpoint, fileSystem: p.filesystem, size: p.size || 0 };
           if (p.raid) {
             const m = p.raid.match(/raid(\d+)/);
-            if (m) ovhP.raidLevel = parseInt(m[1]);
+            if (m) ovhP.raidLevel = parseInt(m[1], 10);
           }
           if (p.lvName?.trim()) ovhP.extras = { ...(ovhP.extras || {}), lv: { name: p.lvName.trim() } };
           if (p.filesystem === "zfs" && p.zpoolName?.trim()) {
@@ -145,7 +145,7 @@ export function useReinstallServer() {
         if (args.hardwareRaid) {
           Object.entries(args.hardwareRaid).forEach(([gidStr, raidMode]) => {
             if (!raidMode) return;
-            const parsed = parseInt(gidStr);
+            const parsed = parseInt(gidStr, 10);
             const parsedKey = gidKey(parsed);
             const gid =
               groups.size === 1 && groups.has(DEFAULT_GID) && parsedKey === DEFAULT_GID

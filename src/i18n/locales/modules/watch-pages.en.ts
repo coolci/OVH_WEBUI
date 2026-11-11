@@ -267,8 +267,8 @@ const pack: WatchPagesPack = {
       SG: "Singapore · SGD",
       AU: "Australia · AUD",
       IN: "India · INR",
-      WE: "Western Europe (WE) · USD",
-      WS: "Southern Europe (WS) · USD",
+      WE: "World · English (WE) · USD",
+      WS: "World · Spanish (WS) · USD",
     },
   },
 

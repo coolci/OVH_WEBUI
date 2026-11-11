@@ -4,6 +4,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { COMMAND_REFERENCE } from "./types";
+import { copyText } from "@/lib/clipboard";
 
 export function CommandReferenceCard() {
   return (
@@ -49,8 +50,9 @@ export function CommandReferenceCard() {
                       <button
                         type="button"
                         onClick={() => {
-                          navigator.clipboard.writeText(cmd.example);
-                          toast.success(`已复制: ${cmd.example}`);
+                          void copyText(cmd.example).then((ok) =>
+                            ok ? toast.success(`已复制: ${cmd.example}`) : toast.error("复制失败，请手动选择复制")
+                          );
                         }}
                         className="text-muted-foreground hover:text-primary transition-colors p-1 rounded hover:bg-secondary"
                         title="复制示例"
@@ -79,8 +81,9 @@ export function CommandReferenceCard() {
                 <button
                   type="button"
                   onClick={() => {
-                    navigator.clipboard.writeText(cmd.example);
-                    toast.success(`已复制: ${cmd.example}`);
+                    void copyText(cmd.example).then((ok) =>
+                      ok ? toast.success(`已复制: ${cmd.example}`) : toast.error("复制失败，请手动选择复制")
+                    );
                   }}
                   className="inline-flex items-center gap-1 text-[11px] font-mono text-primary bg-primary/10 hover:bg-primary/20 px-2 py-1 rounded-md border border-primary/20 transition-colors"
                   title="复制示例"
@@ -112,8 +115,9 @@ export function CommandReferenceCard() {
               <button
                 type="button"
                 onClick={() => {
-                  navigator.clipboard.writeText("24sk102 gra 1");
-                  toast.success("已复制: 24sk102 gra 1");
+                  void copyText("24sk102 gra 1").then((ok) =>
+                    ok ? toast.success("已复制: 24sk102 gra 1") : toast.error("复制失败，请手动选择复制")
+                  );
                 }}
                 className="text-muted-foreground hover:text-primary transition-colors ml-2 p-1 rounded hover:bg-secondary"
                 title="复制"

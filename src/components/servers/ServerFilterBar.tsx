@@ -4,7 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { OVH_SUBSIDIARIES } from "@/lib/ovh-subsidiaries";
+import { subsidiaryLabel, type OvhSubsidiary } from "@/lib/ovh-subsidiaries";
 import { cn } from "@/lib/utils";
 
 interface ServerFilterBarProps {
@@ -16,7 +16,12 @@ interface ServerFilterBarProps {
   onPriceSortChange: () => void;
   subsidiary: string;
   onSubsidiaryChange: (value: string) => void;
+  /** 账户实际下单用的子公司(配置的 zone) */
   accountSub?: string;
+  /** OVH /me 报的 ovhSubsidiary,与 accountSub 不一致时提示 */
+  meSub?: string;
+  /** 该账户所在大区可选的子公司(三个大区目录互不相通,别的大区选了也对不上列表) */
+  subsidiaryOptions: OvhSubsidiary[];
   onResetSubsidiary: () => void;
   totalCount: number;
   isLoading: boolean;
@@ -32,6 +37,8 @@ export function ServerFilterBar({
   subsidiary,
   onSubsidiaryChange,
   accountSub,
+  meSub,
+  subsidiaryOptions,
   onResetSubsidiary,
   totalCount,
   isLoading,
@@ -119,11 +126,11 @@ export function ServerFilterBar({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {OVH_SUBSIDIARIES.map((s) => (
+                  {subsidiaryOptions.map((s) => (
                     <SelectItem key={s.code} value={s.code}>
                       <span className="font-medium">{s.code}</span>
                       <span className="text-muted-foreground ml-1">
-                        · {s.label}
+                        · {subsidiaryLabel(s.code)}
                         {accountSub === s.code ? " · 我的账户" : ""}
                       </span>
                     </SelectItem>
@@ -140,6 +147,14 @@ export function ServerFilterBar({
                 >
                   ↩ {accountSub}
                 </Button>
+              )}
+              {accountSub && meSub && meSub !== accountSub && (
+                <span
+                  className="text-[11px] text-warning whitespace-nowrap"
+                  title={`账户里配置的子公司是 ${accountSub}(服务器列表、价格、下单都按它),但 OVH 显示这个账户实际归属 ${meSub}。两者不一致时价格和可售机型可能对不上,建议到「设置 → 账户」把子公司改成 ${meSub}`}
+                >
+                  OVH 归属 {meSub}
+                </span>
               )}
             </div>
           </div>

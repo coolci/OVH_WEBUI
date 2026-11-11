@@ -6,7 +6,6 @@ import {
   BellOff,
   RefreshCw,
   Trash2,
-  X,
   History as HistoryIcon,
   ChevronUp,
   Plus,
@@ -405,7 +404,10 @@ function SubRow({
 
         {expanded && (
           <div className="mt-4 pt-4 border-t border-border">
-            <HistoryPanel planCode={sub.planCode} />
+            <HistoryPanel
+              planCode={sub.planCode}
+              optionsKey={sub.options && sub.options.length > 0 ? [...sub.options].sort().join(",") : ""}
+            />
           </div>
         )}
       </CardContent>
@@ -413,8 +415,8 @@ function SubRow({
   );
 }
 
-function HistoryPanel({ planCode }: { planCode: string }) {
-  const history = useMonitorHistory(planCode);
+function HistoryPanel({ planCode, optionsKey }: { planCode: string; optionsKey: string }) {
+  const history = useMonitorHistory(planCode, optionsKey);
   const entries = useMemo(
     () => (Array.isArray(history.data) ? history.data : []),
     [history.data]
