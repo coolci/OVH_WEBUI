@@ -52,29 +52,32 @@ func (m *Monitor) CheckNewServers(currentServerList []map[string]interface{}) {
 		}
 	}
 	m.subsMu.Lock()
-	defer m.subsMu.Unlock()
 	if len(m.knownServers) == 0 {
 		m.knownServers = current
+		m.subsMu.Unlock()
 		m.state.Logger.Info(fmt.Sprintf("初始化已知服务器列表: %d 台", len(current)), "monitor")
 		return
 	}
-	newServers := []string{}
+	newServers := map[string]bool{}
 	for k := range current {
 		if _, ok := m.knownServers[k]; !ok {
-			newServers = append(newServers, k)
+			newServers[k] = true
 		}
 	}
 	if len(newServers) > 0 {
-		for _, code := range newServers {
-			for _, s := range currentServerList {
-				if pc, _ := s["planCode"].(string); pc == code {
-					m.SendNewServerAlert(s)
-				}
-			}
-		}
 		m.knownServers = current
-		m.state.Logger.Info(fmt.Sprintf("检测到 %d 台新服务器上架", len(newServers)), "monitor")
 	}
+	m.subsMu.Unlock()
+	if len(newServers) == 0 {
+		return
+	}
+	// 通知在锁外发:SendNewServerAlert 是网络请求,持 subsMu 发会卡住所有订阅读写
+	for _, s := range currentServerList {
+		if pc, _ := s["planCode"].(string); newServers[pc] {
+			m.SendNewServerAlert(s)
+		}
+	}
+	m.state.Logger.Info(fmt.Sprintf("检测到 %d 台新服务器上架", len(newServers)), "monitor")
 }
 
 func (m *Monitor) runSubscriptionCheck(sub *Subscription, traceID string) {
@@ -256,14 +259,38 @@ func (m *Monitor) Start() bool {
 	// 出锁之后再写就是无同步的写-写竞争(go test -race 会报)。
 	m.state.MonitorRunning = true
 	interval := m.checkInterval
+	m.loops.Add(1)
 	m.subsMu.Unlock()
 	// 重置 TG 检查时间戳,保证启动后第一轮一定 verify
 	m.tgCheckMu.Lock()
 	m.lastTGCheck = time.Time{}
 	m.tgCheckMu.Unlock()
-	go m.monitorLoopGen(gen)
+	go func() {
+		defer m.loops.Done()
+		m.monitorLoopGen(gen)
+	}()
 	m.state.Logger.Info(fmt.Sprintf("服务器监控已启动 (检查间隔: %d秒)", interval), "monitor")
 	return true
+}
+
+// WaitStopped 等所有检查循环退出(最多 timeout),关库前调用。返回 false = 超时。
+// 先 Stop 再调;循环在每个检查点看 stillMine,本轮在途的验价/入队收尾后退出。
+func (m *Monitor) WaitStopped(timeout time.Duration) bool {
+	return waitGroupTimeout(&m.loops, timeout)
+}
+
+func waitGroupTimeout(wg *sync.WaitGroup, timeout time.Duration) bool {
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return true
+	case <-time.After(timeout):
+		return false
+	}
 }
 
 // Stop 只停止本轮进程,内部健康检查也会调用。

@@ -26,8 +26,8 @@ func TestSetSubscriptionOptionsOnlyTouchesOptions(t *testing.T) {
 	}
 
 	want := []string{"ram-64g-ecc-2133-24sk60", "softraid-2x480ssd-24sk60"}
-	if !m.SetSubscriptionOptions("24sk602", want) {
-		t.Fatal("订阅存在却返回 false")
+	if err := m.SetSubscriptionOptions("24sk602", "old-addon", want); err != nil {
+		t.Fatalf("订阅存在却返回错误: %v", err)
 	}
 	s := m.subscriptions[0]
 	if len(s.Options) != 2 || s.Options[0] != want[0] {
@@ -49,22 +49,47 @@ func TestSetSubscriptionOptionsOnlyTouchesOptions(t *testing.T) {
 	}
 
 	// 传空 = 改回"盯全部配置"
-	if !m.SetSubscriptionOptions("24sk602", nil) {
-		t.Fatal("改回全部配置失败")
+	if err := m.SetSubscriptionOptions("24sk602", OptionsKey(want), nil); err != nil {
+		t.Fatalf("改回全部配置失败: %v", err)
 	}
 	if len(m.subscriptions[0].Options) != 0 {
 		t.Fatalf("空 options 应清空,实际 %v", m.subscriptions[0].Options)
 	}
 
 	// 不存在的订阅要明确返回 false,让调用方能告诉用户"这条订阅已经没了"
-	if m.SetSubscriptionOptions("不存在", want) {
-		t.Fatal("不存在的订阅应返回 false")
+	if err := m.SetSubscriptionOptions("不存在", "", want); err != ErrSubscriptionNotFound {
+		t.Fatalf("不存在的订阅应返回 ErrSubscriptionNotFound, 实际 %v", err)
 	}
 
 	// 入参切片是调用方的,不能被内部持有 —— 否则调用方之后改它会悄悄改掉订阅
-	m.SetSubscriptionOptions("24sk602", want)
+	_ = m.SetSubscriptionOptions("24sk602", "", want)
 	want[0] = "被调用方改掉了"
 	if m.subscriptions[0].Options[0] == "被调用方改掉了" {
 		t.Fatal("内部直接持有了调用方的切片,应该拷贝一份")
+	}
+}
+
+// 改窄配置不能和同型号另一条订阅撞成同一个配置键(库表主键是 plan_code+options),
+// 只改原配置键对应的那条,并且要让进行中的检查失效。
+func TestSetSubscriptionOptionsGuardsIdentity(t *testing.T) {
+	m := &Monitor{subscriptions: []*Subscription{
+		{PlanCode: "p", Options: []string{"ram-a"}},
+		{PlanCode: "p", Options: []string{}},
+	}}
+	if err := m.SetSubscriptionOptions("p", "", []string{"ram-a"}); err != ErrSubscriptionConflict {
+		t.Fatalf("撞配置键应返回冲突, 实际 %v", err)
+	}
+	if len(m.subscriptions[1].Options) != 0 {
+		t.Fatalf("冲突时不能改动: %v", m.subscriptions[1].Options)
+	}
+	before := m.subscriptions[1].revision
+	if err := m.SetSubscriptionOptions("p", "", []string{"ram-b"}); err != nil {
+		t.Fatal(err)
+	}
+	if m.subscriptions[0].Options[0] != "ram-a" || m.subscriptions[1].Options[0] != "ram-b" {
+		t.Fatal("改错了订阅")
+	}
+	if m.subscriptions[1].revision == before {
+		t.Fatal("配置变了 revision 必须递增,旧一轮检查不能再凭旧配置下单")
 	}
 }

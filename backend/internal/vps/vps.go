@@ -768,6 +768,27 @@ func Stop(state *app.State) bool {
 	return true
 }
 
+// WaitStopped 等最近一代监控循环退出(最多 timeout),关库前调用。返回 false = 超时。
+func WaitStopped(timeout time.Duration) bool {
+	runningMu.Lock()
+	wg := loopWg
+	runningMu.Unlock()
+	if wg == nil {
+		return true
+	}
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return true
+	case <-time.After(timeout):
+		return false
+	}
+}
+
 // Running 返回是否在运行
 func Running() bool {
 	runningMu.Lock()

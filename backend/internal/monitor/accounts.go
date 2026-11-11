@@ -169,21 +169,26 @@ func (m *Monitor) CheckAvailabilityChange(sub *Subscription, traceID string) {
 	}
 	wg.Wait()
 	if !m.checkCurrent(sub, cfg) {
+		m.mergeCommittedChecks(sub, ids, checks)
 		return
 	}
 	sub.mu.Lock()
-	defer sub.mu.Unlock()
 	if sub.revision != cfg.Revision || sub.Paused {
+		sub.mu.Unlock()
+		m.mergeCommittedChecks(sub, ids, checks)
 		return
 	}
-	if sub.LastStatus == nil {
-		sub.LastStatus = map[string]string{}
+	defer sub.mu.Unlock()
+	// 复制后替换,不原地改:SaveToDB / snapshot 拿到的旧 map 不会被并发写
+	merged := make(map[string]string, len(sub.LastStatus))
+	for k, v := range sub.LastStatus {
+		merged[k] = v
 	}
 	errors := []string{}
 	for index, check := range checks {
 		prefix := accountStatusPrefix(ids[index])
 		for key, value := range check.LastStatus {
-			sub.LastStatus[prefix+key] = value
+			merged[prefix+key] = value
 		}
 		if check.LastCheckError != "" {
 			errors = append(errors, ids[index]+": "+check.LastCheckError)
@@ -195,5 +200,42 @@ func (m *Monitor) CheckAvailabilityChange(sub *Subscription, traceID string) {
 			sub.LastCheckSubsidiary = check.LastCheckSubsidiary
 		}
 	}
+	sub.LastStatus = merged
 	sub.LastCheckError = strings.Join(errors, "; ")
+}
+
+// mergeCommittedChecks 本轮因配置变更 / 暂停被整体作废时,只把各账户副本里
+// 已经据此下单或发过通知的基线合并回父订阅(见 commitStatus)。
+// 已经不在订阅账户列表里的账户跳过:它的基线已被 removeOrderAccountLocked 清掉,不能复活。
+func (m *Monitor) mergeCommittedChecks(sub *Subscription, ids []string, checks []*Subscription) {
+	pending := make([]map[string]string, len(checks))
+	any := false
+	for i, check := range checks {
+		pending[i] = check.takeCommitted()
+		any = any || len(pending[i]) > 0
+	}
+	if !any {
+		return
+	}
+	sub.mu.Lock()
+	current := map[string]bool{}
+	for _, id := range NormalizeOrderAccounts(sub.AutoOrderAccountID, sub.AutoOrderAccountIDs) {
+		current[id] = true
+	}
+	merged := make(map[string]string, len(sub.LastStatus))
+	for k, v := range sub.LastStatus {
+		merged[k] = v
+	}
+	for i, entries := range pending {
+		if !current[ids[i]] {
+			continue
+		}
+		prefix := accountStatusPrefix(ids[i])
+		for k, v := range entries {
+			merged[prefix+k] = v
+		}
+	}
+	sub.LastStatus = merged
+	sub.mu.Unlock()
+	m.dirty.Store(true)
 }

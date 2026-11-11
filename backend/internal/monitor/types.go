@@ -41,8 +41,10 @@ type Monitor struct {
 
 	running       bool
 	checkInterval int // 检查间隔(秒),可配,见 SetCheckInterval
-	thread        *sync.WaitGroup
-	maxWorkers    int
+	// loops 在跑的检查循环。关停时要等它退出再关库:循环末尾的 SaveToDB、
+	// 自动下单入队都会写数据库。
+	loops      sync.WaitGroup
+	maxWorkers int
 
 	// Options 缓存（旧机制，兼容性保留）
 	optionsCache    map[string]*CachedOptions
@@ -91,6 +93,10 @@ type Subscription struct {
 	revision uint64
 	// checkParent links an isolated per-account check to its live subscription.
 	checkParent *Subscription
+	// committed 仅用于按账户隔离的检查副本:本轮已经据此下单/发通知的库存基线。
+	// 父订阅在 revision 变化时会丢弃整轮结果,但这部分必须合并回去,
+	// 否则下一轮又判一次"无货→有货",重复通知、再下一单。由 mu 保护。
+	committed map[string]string
 
 	PlanCode            string            `json:"planCode"`
 	Datacenters         []string          `json:"datacenters"`
@@ -226,6 +232,43 @@ func (s *Subscription) replaceLastStatus(m map[string]string) {
 	s.mu.Lock()
 	s.LastStatus = m
 	s.mu.Unlock()
+}
+
+// commitStatus 把已经产生副作用(自动下单 / 发通知)的库存基线立刻写回。
+// 一轮检查中途因配置变更 / 暂停 / 停止而提前返回时,整轮的 lastStatus 不再写回,
+// 但已经下过单、发过通知的那些机房必须记住,不然下一轮会把同一次补货再处理一遍。
+// 写法是复制后替换整张 map,不原地改:读者拿到的旧 map 不会被并发修改。
+func (s *Subscription) commitStatus(entries map[string]string) {
+	if len(entries) == 0 {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	next := make(map[string]string, len(s.LastStatus)+len(entries))
+	for k, v := range s.LastStatus {
+		next[k] = v
+	}
+	for k, v := range entries {
+		next[k] = v
+	}
+	s.LastStatus = next
+	if s.checkParent != nil {
+		if s.committed == nil {
+			s.committed = map[string]string{}
+		}
+		for k, v := range entries {
+			s.committed[k] = v
+		}
+	}
+}
+
+// takeCommitted 取出检查副本已提交的基线(调用方持有父订阅的锁时也安全:这里只锁副本自己)。
+func (s *Subscription) takeCommitted() map[string]string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := s.committed
+	s.committed = nil
+	return out
 }
 
 // appendHistory 追加历史并就地裁剪到 maxSize 条(旧的先丢)。

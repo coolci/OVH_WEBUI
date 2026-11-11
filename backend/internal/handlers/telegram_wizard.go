@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -688,7 +689,13 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 				opts = offer.Configs[idx].Options
 				label = offer.Configs[idx].Label
 			}
-			if !mon.SetSubscriptionOptions(offer.PlanCode, opts) {
+			// 规格细化只针对"盯全部配置"的那条订阅(见 offerNarrowConfig)
+			if err := mon.SetSubscriptionOptions(offer.PlanCode, "", opts); err != nil {
+				if errors.Is(err, monitor.ErrSubscriptionConflict) {
+					telegram.AnswerCallback(state, cbID, "已有同配置订阅", true)
+					telegram.SendReply(state, chatID, "这个型号已经有一条盯「"+label+"」的订阅了，不能再改成同一套配置。发 /subs 查看。", messageID)
+					return true
+				}
 				telegram.AnswerCallback(state, cbID, "订阅已不在了", true)
 				telegram.SendReply(state, chatID, "这条订阅已经被删掉了，发 /monitor "+offer.PlanCode+" 重新开始。", messageID)
 				return true

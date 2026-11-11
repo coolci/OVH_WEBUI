@@ -23,6 +23,15 @@ func TrackCart(id string) {
 	}
 }
 
+// ReleaseCart 撤销登记:车已删除、删除失败或被丢弃时调用。
+// 不撤销的话登记表只增不减,而且本次运行里被丢弃(删除失败 / 被覆盖 / 过期)的车
+// 永远不会被遗留车清理删掉,只能等进程重启。
+func ReleaseCart(id string) {
+	if id != "" {
+		inUseCarts.Delete(id)
+	}
+}
+
 // CartInUse 这辆车是否被本进程登记为在用
 func CartInUse(id string) bool {
 	_, ok := inUseCarts.Load(id)

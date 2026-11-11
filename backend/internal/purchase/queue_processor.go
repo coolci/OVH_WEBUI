@@ -229,6 +229,7 @@ func processQueueLoop(loopCtx context.Context, state *app.State, purchase func(c
 
 		current := time.Now().Unix()
 		ready := []types.QueueItem{}
+		woken := map[string]bool{} // 本轮因库存唤醒而就绪的任务;没派发出去要把标记还回去
 		state.DeletedTaskIDsMu.Lock()
 		deletedSnap := make(map[string]struct{}, len(state.DeletedTaskIDs))
 		for k := range state.DeletedTaskIDs {
@@ -269,6 +270,7 @@ func processQueueLoop(loopCtx context.Context, state *app.State, purchase func(c
 			woke := state.TakeStockWake(it.ID)
 			if woke || it.LastCheckTime == 0 || float64(current)-it.LastCheckTime >= float64(interval) {
 				if woke {
+					woken[it.ID] = true
 					state.Logger.Info(fmt.Sprintf("监控发现 %s@%s 有货,立即检查队列任务 %s", it.PlanCode, it.Datacenter, it.ID), "queue")
 				}
 				ready = append(ready, it)
@@ -332,15 +334,36 @@ func processQueueLoop(loopCtx context.Context, state *app.State, purchase func(c
 					return
 				}
 
+				// 结账请求发出前先把"结账未决"落库(见 SetQueueCheckoutUncertain):
+				// 结账请求不接受取消,进程在它返回前退出(崩溃 / SIGKILL / 关停超时)时,
+				// 重启后任务会先对账,而不是当作从没结过账再买一台。
+				ctx = WithCheckoutJournal(ctx, func(j CheckoutJournal) error {
+					if j.OrderID != "" {
+						return nil // 已拿到订单号,成功记录紧随其后
+					}
+					return state.SetQueueCheckoutUncertain(it.ID, true)
+				})
 				outcome := purchase(ctx, state, &snapshot)
+				if !outcome.CheckoutUncertain {
+					// 本轮已得出明确结论(成功 / 明确失败 / 无货 / 对账确认无单 / 根本没结账),
+					// 未决标记必须清掉 —— 留着的话以后每一轮都先对账,
+					// 补货时对账一被 429 就把任务又暂停,还会把用户后来手动下的同型号单认成本任务的。
+					if err := state.SetQueueCheckoutUncertain(it.ID, false); err != nil && err != app.ErrQueueNotFound {
+						state.Logger.Warn("清除结账未决标记失败: "+err.Error(), "queue")
+					}
+				}
 				if outcome.PauseTask {
-					// 结账不确定:暂停而不是重试(重试可能买两台)。不计失败次数
+					// 暂停而不是重试。结账未决时重试可能买两台;不计失败次数
 					state.QueueMu.Lock()
 					for i := range state.Queue {
 						if state.Queue[i].ID == it.ID {
 							state.Queue[i].Status = "paused"
-							state.Queue[i].UncertainCheckout = true
-							state.Queue[i].UncertainTime = types.NowISO()
+							if outcome.CheckoutUncertain {
+								state.Queue[i].UncertainCheckout = true
+								if state.Queue[i].UncertainTime == "" {
+									state.Queue[i].UncertainTime = types.NowISO()
+								}
+							}
 							state.Queue[i].UpdatedAt = types.NowISO()
 							break
 						}
@@ -349,7 +372,11 @@ func processQueueLoop(loopCtx context.Context, state *app.State, purchase func(c
 					if err := state.SaveQueue(); err != nil {
 						state.Logger.Error("暂停任务后保存队列失败(重启后可能恢复运行,请人工核对订单): "+err.Error(), "queue")
 					}
-					state.Logger.Info("任务已暂停(结账结果不确定,等人工确认): "+it.PlanCode, "queue")
+					if outcome.CheckoutUncertain {
+						state.Logger.Info("任务已暂停(结账结果不确定,等人工确认): "+it.PlanCode, "queue")
+					} else {
+						state.Logger.Info("任务已暂停: "+it.PlanCode+" "+outcome.Reason, "queue")
+					}
 					return
 				}
 				if outcome.Cancelled {
@@ -439,8 +466,11 @@ func processQueueLoop(loopCtx context.Context, state *app.State, purchase func(c
 				state.QueueMu.Lock()
 				for i := range state.Queue {
 					if state.Queue[i].ID == it.ID {
-						state.Queue[i].Status = "failed"
-						state.Queue[i].UpdatedAt = types.NowISO()
+						// 本轮进行中用户可能已暂停任务:不能把用户选的"暂停"改成"失败"
+						if state.Queue[i].Status == "running" || state.Queue[i].Status == "pending" {
+							state.Queue[i].Status = "failed"
+							state.Queue[i].UpdatedAt = types.NowISO()
+						}
 						break
 					}
 				}
@@ -467,7 +497,13 @@ func processQueueLoop(loopCtx context.Context, state *app.State, purchase func(c
 				}
 				inFlightMu.Unlock()
 				if busy {
-					continue // 上一枪还没回来,不能并发打同一个任务
+					// 上一枪还没回来,不能并发打同一个任务。
+					// 唤醒标记已在挑选时取走,不还回去的话这次补货信号就丢了,
+					// 任务要等满整个重试间隔才会再查(它的 LastCheckTime 刚被上一枪刷新)
+					if woken[it.ID] {
+						state.RestoreStockWake(it.ID)
+					}
+					continue
 				}
 				select {
 				case slots <- struct{}{}:
@@ -476,6 +512,9 @@ func processQueueLoop(loopCtx context.Context, state *app.State, purchase func(c
 					inFlightMu.Lock()
 					delete(inFlight, it.ID)
 					inFlightMu.Unlock()
+					if woken[it.ID] {
+						state.RestoreStockWake(it.ID)
+					}
 					continue
 				}
 				workers.Add(1)

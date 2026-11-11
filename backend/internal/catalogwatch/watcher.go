@@ -59,9 +59,11 @@ type Watcher struct {
 	generation uint64
 	active     map[string]context.CancelFunc
 	once       sync.Once
-	fetch      func(context.Context, *app.State, string) (map[string]Candidate, error)
-	check      func(context.Context, *app.State, string, *purchase.CheckoutJournal) (purchase.CheckoutCheck, error)
-	buy        func(context.Context, *app.State, *types.QueueItem) purchase.Outcome
+	// loops Run 起的全部循环;关停时等它们(含在途下单)退出再关库
+	loops sync.WaitGroup
+	fetch func(context.Context, *app.State, string) (map[string]Candidate, error)
+	check func(context.Context, *app.State, string, *purchase.CheckoutJournal) (purchase.CheckoutCheck, error)
+	buy   func(context.Context, *app.State, *types.QueueItem) purchase.Outcome
 }
 
 func For(s *app.State) *Watcher {
@@ -116,8 +118,29 @@ func New(s *app.State) *Watcher {
 			continue
 		}
 		delete(w.data.Jobs, id)
-		for _, dc := range unique(j.Datacenters) {
+		dcs := unique(j.Datacenters)
+		// 旧版未决结账只对应一辆车、一个机房(正在尝试的那个)。
+		attemptedDC := ""
+		if len(dcs) > 0 {
+			attemptedDC = dcs[0]
+			if j.NextDC >= 0 && j.NextDC < len(dcs) {
+				attemptedDC = dcs[j.NextDC]
+			}
+		}
+		for _, dc := range dcs {
 			copyJob := *j
+			// 不能共用旧 job 的 FailedDCs / Checkout:拆出来的每个机房 job 各自演进,
+			// 共用同一个 Checkout 会让每个机房都去核对同一辆车、拿同一张订单标成已完成
+			copyJob.FailedDCs = nil
+			copyJob.Checkout = nil
+			if j.Checkout != nil && dc == attemptedDC {
+				cp := *j.Checkout
+				copyJob.Checkout = &cp
+			}
+			if j.Status == "uncertain" && j.Checkout != nil && dc != attemptedDC {
+				copyJob.Status = "cancelled"
+				copyJob.Reason = "旧版未决结账只在原尝试机房核对，其他机房不在升级时自动回补"
+			}
 			copyJob.Datacenters = []string{dc}
 			copyJob.PerDatacenter = true
 			copyJob.ID = locationKey(j.AccountID, j.Candidate, dc)
@@ -443,7 +466,9 @@ func (w *Watcher) Attempt(ctx context.Context) {
 }
 func (w *Watcher) Run(ctx context.Context) {
 	w.once.Do(func() {
+		w.loops.Add(2 + maxConcurrentAttempts)
 		go func() {
+			defer w.loops.Done()
 			ticker := time.NewTicker(2 * time.Second)
 			defer ticker.Stop()
 			for {
@@ -456,6 +481,7 @@ func (w *Watcher) Run(ctx context.Context) {
 			}
 		}()
 		go func() {
+			defer w.loops.Done()
 			delay := time.Duration(0)
 			for {
 				timer := time.NewTimer(delay)
@@ -481,6 +507,7 @@ func (w *Watcher) Run(ctx context.Context) {
 		}()
 		for worker := 0; worker < maxConcurrentAttempts; worker++ {
 			go func() {
+				defer w.loops.Done()
 				ticker := time.NewTicker(time.Second)
 				defer ticker.Stop()
 				for {
@@ -494,4 +521,20 @@ func (w *Watcher) Run(ctx context.Context) {
 			}()
 		}
 	})
+}
+
+// Wait 等 Run 起的循环全部退出(最多 timeout)。ctx 取消后调用;返回 false = 超时。
+// 在途的下单尝试里结账请求不接受取消,必须等它返回、结果写进库后才能关数据库。
+func (w *Watcher) Wait(timeout time.Duration) bool {
+	done := make(chan struct{})
+	go func() {
+		w.loops.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return true
+	case <-time.After(timeout):
+		return false
+	}
 }

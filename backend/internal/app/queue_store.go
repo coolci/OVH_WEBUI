@@ -24,6 +24,47 @@ func (s *State) QueueSnapshot() []types.QueueItem {
 	return cp
 }
 
+// SetQueueCheckoutUncertain 置位/清除一条任务的"结账未决"标记,先落库再改内存。
+//
+// 置位发生在结账请求发出之前:进程在结账途中崩溃、被 SIGKILL 或数据库先被关掉时,
+// 重启后任务带着这个标记恢复,下单前会先对账,而不是直接再买一台。
+// 与 SaveQueue 同用 saveQueueMu:保证不会有一份早先拍的整表快照晚于本次写入落库、把标记覆盖回去。
+// 清除时内存里本就是 false 则直接返回,不产生写入。
+func (s *State) SetQueueCheckoutUncertain(id string, uncertain bool) error {
+	if err := s.SaveBlocked("queue"); err != nil {
+		return err
+	}
+	s.saveQueueMu.Lock()
+	defer s.saveQueueMu.Unlock()
+	s.QueueMu.Lock()
+	defer s.QueueMu.Unlock()
+	for i := range s.Queue {
+		if s.Queue[i].ID != id {
+			continue
+		}
+		if s.Queue[i].UncertainCheckout == uncertain && !uncertain {
+			return nil
+		}
+		at, now := "", types.NowISO()
+		if uncertain {
+			at = now
+		}
+		if s.DB != nil {
+			if err := s.DB.SetQueueUncertain(id, uncertain, at, now); err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					return ErrQueueNotFound
+				}
+				return err
+			}
+		}
+		s.Queue[i].UncertainCheckout = uncertain
+		s.Queue[i].UncertainTime = at
+		s.Queue[i].UpdatedAt = now
+		return nil
+	}
+	return ErrQueueNotFound
+}
+
 // RemoveQueueItem 删除一条任务并落库。
 //
 // 即使这条任务已经不在队列里,也要 MarkTaskDeleted,确保正在跑的那一轮被取消。

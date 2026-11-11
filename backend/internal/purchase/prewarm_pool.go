@@ -70,6 +70,8 @@ func TakePrewarmedCart(accountID, planCode, datacenter string, options []string,
 	}
 	delete(prewarmCarts, key)
 	if time.Since(c.CreatedAt) > cartTTL {
+		// 过期车不再用,撤销登记让遗留车清理把它从 OVH 删掉
+		ovh.ReleaseCart(c.CartID)
 		return nil
 	}
 	return c
@@ -82,8 +84,14 @@ func PutPrewarmedCart(cart *PrewarmedCart) {
 	}
 	key := prewarmKey(cart.AccountID, cart.PlanCode, cart.Datacenter, cart.Options, cart.Coupon, cart.Duration)
 	prewarmMu.Lock()
+	old := prewarmCarts[key]
 	prewarmCarts[key] = cart
 	prewarmMu.Unlock()
+	// 监控预热、队列预热、验价留车三条路径可能为同一个键各装一辆,后放的覆盖先放的。
+	// 被覆盖的那辆没人会再用:撤销登记,由遗留车清理从 OVH 删掉,不留僵尸车。
+	if old != nil && old.CartID != cart.CartID {
+		ovh.ReleaseCart(old.CartID)
+	}
 }
 
 // HasPrewarmedCart 检查指定配置是否已有就绪的预热车
@@ -97,9 +105,21 @@ func HasPrewarmedCart(accountID, planCode, datacenter string, options []string, 
 	}
 	if time.Since(c.CreatedAt) > cartTTL {
 		delete(prewarmCarts, key)
+		ovh.ReleaseCart(c.CartID)
 		return false
 	}
 	return true
+}
+
+// HasFreshPrewarmedCart 池里有同键、且装好不超过 maxAge 的车。
+// 给"有预热车就跳过验价"用:装车成功只说明装车那一刻配置和价格有效,
+// 一辆 80 分钟前装的车说明不了现在还买得到,不能拿它顶替验价。
+func HasFreshPrewarmedCart(accountID, planCode, datacenter string, options []string, coupon, duration string, maxAge time.Duration) bool {
+	key := prewarmKey(accountID, planCode, datacenter, options, coupon, duration)
+	prewarmMu.Lock()
+	defer prewarmMu.Unlock()
+	c, ok := prewarmCarts[key]
+	return ok && time.Since(c.CreatedAt) <= maxAge && time.Since(c.CreatedAt) <= cartTTL
 }
 
 // ClearPrewarmPool 清理预热池并释放所有购物车（供测试与重置使用）
@@ -111,6 +131,7 @@ func ClearPrewarmPool(state *app.State) {
 			if client, err := state.OVH.IsolatedClientFor(c.AccountID); err == nil {
 				_ = client.Delete("/order/cart/"+c.CartID, nil)
 			}
+			ovh.ReleaseCart(c.CartID)
 		}
 	}
 	prewarmCarts = map[string]*PrewarmedCart{}
@@ -149,6 +170,7 @@ func AssemblePrewarmedCart(ctx context.Context, state *app.State, accountID, pla
 	defer func() {
 		if cleanOnFail && cartID != "" {
 			_ = client.Delete("/order/cart/"+cartID, nil)
+			ovh.ReleaseCart(cartID)
 		}
 	}()
 
@@ -223,9 +245,15 @@ func AssemblePrewarmedCart(ctx context.Context, state *app.State, accountID, pla
 
 	// 3. 准备配置项与选件
 	apiDC := ovh.ConvertDisplayDCToAPIDC(datacenter)
-	region, _ := catalog.ResolveRegion(state, accountID, planCode, apiDC)
-	if region == "" {
-		region = catalog.FallbackRegion(apiDC, subsidiary)
+	// 与正式下单同一口径(purchase.go):目录兜底分支用的是账户原始 zone,
+	// zone 为空的美区账户会算成 europe/canada,必须按归一化后的子公司重算。
+	// 不对齐的话预热车带着错 region,结账报 "not available"(不算失效车),
+	// 每轮命中这辆坏车失败一次、又装一辆同样坏的,直到用尽重试。
+	region, regionSrc := catalog.ResolveRegion(state, accountID, planCode, apiDC)
+	if regionSrc == "fallback" || region == "" {
+		if r := catalog.FallbackRegion(apiDC, subsidiary); r != "" {
+			region = r
+		}
 	}
 
 	type kv struct{ label, value string }

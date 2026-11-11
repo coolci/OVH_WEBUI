@@ -147,7 +147,10 @@ func getInternal(state *app.State, accountID, planCode, datacenter string, optio
 			return
 		}
 		id := cartID
-		go func() { _ = client.Delete("/order/cart/"+id, nil) }()
+		go func() {
+			_ = client.Delete("/order/cart/"+id, nil)
+			ovh.ReleaseCart(id) // 删失败也撤销登记,交给遗留车清理兜底
+		}()
 	}()
 
 	// 1. 创建购物车

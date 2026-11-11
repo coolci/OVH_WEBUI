@@ -64,7 +64,8 @@ func Middleware(cfg Config) gin.HandlerFunc {
 
 		// 先看这个来源是不是已经猜错太多次。放在读 header 之前:
 		// 被挡下的请求不该再进入任何比较逻辑。
-		if blocked, wait := authBlocked(ip, time.Now()); blocked {
+		blocked, wait := authReserve(ip, time.Now())
+		if blocked {
 			secs := int(wait.Seconds()) + 1
 			c.Header("Retry-After", strconv.Itoa(secs))
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
@@ -90,12 +91,12 @@ func Middleware(cfg Config) gin.HandlerFunc {
 				if token != "" && cfg.DeviceTokenValid != nil {
 					if id, ok := cfg.DeviceTokenValid(token); ok {
 						c.Set("app_device_id", id)
-						clearAuthFailures(ip)
+						authRelease(ip, authSucceeded, time.Now())
 						c.Next()
 						return
 					}
 				}
-				recordAuthFailure(ip, time.Now())
+				authRelease(ip, authFailed, time.Now())
 				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 					"error":   "Invalid device token",
 					"message": "设备令牌无效或已被吊销。请到网页控制台重新配对(设置 → App 管理)",
@@ -103,6 +104,7 @@ func Middleware(cfg Config) gin.HandlerFunc {
 				})
 				return
 			}
+			authRelease(ip, authNeutral, time.Now())
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"error":   "Missing API key",
 				"message": "缺少API密钥，请通过官方前端访问",
@@ -117,7 +119,7 @@ func Middleware(cfg Config) gin.HandlerFunc {
 		if subtle.ConstantTimeCompare([]byte(key), []byte(cfg.APIKey)) != 1 {
 			// 记一次失败。不限次数的话,端口可达的人可以一秒几千次地猜 ——
 			// 而这个服务能用你的 OVH 账户下单。
-			recordAuthFailure(ip, time.Now())
+			authRelease(ip, authFailed, time.Now())
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"error":   "Invalid API key",
 				"message": "API 密钥无效。请核对 API_SECRET_KEY 配置或数据目录的 .api-secret 文件;连续错误多次后会被暂时锁定",
@@ -126,7 +128,7 @@ func Middleware(cfg Config) gin.HandlerFunc {
 			return
 		}
 		// 对了就清零:打错一次的正常用户不该被后面的请求连坐
-		clearAuthFailures(ip)
+		authRelease(ip, authSucceeded, time.Now())
 
 		// X-Request-Time 时间戳校验。
 		//

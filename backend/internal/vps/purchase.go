@@ -117,6 +117,7 @@ func purchaseVPSInternal(state *app.State, sub types.VPSSubscription, dcCode str
 		if success || cartID == "" {
 			return
 		}
+		defer ovh.ReleaseCart(cartID)
 		if err := client.Delete("/order/cart/"+cartID, nil); err != nil {
 			state.Logger.Debug("[VPS下单] 清理失败 cart "+cartID+": "+err.Error(), "vps_purchase")
 		}

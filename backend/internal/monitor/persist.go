@@ -35,14 +35,16 @@ func toDBSub(s *Subscription) types.Subscription {
 			Config:     h.Config,
 		})
 	}
-	dcs := s.Datacenters
-	if dcs == nil {
-		dcs = []string{}
+	// 必须深拷贝:返回值在所有锁释放之后才被 ReplaceMonitorSubscriptions 做 JSON 序列化,
+	// 而多账户检查合并结果、删除账户清引用都会在 s.mu 下**原地**改 LastStatus。
+	// 共用同一个 map 时两边并发就是 Go 运行时的 fatal error
+	// (concurrent map iteration and map write),recover 接不住,进程直接退出。
+	dcs := append([]string{}, s.Datacenters...)
+	last := make(map[string]string, len(s.LastStatus))
+	for k, v := range s.LastStatus {
+		last[k] = v
 	}
-	last := s.LastStatus
-	if last == nil {
-		last = map[string]string{}
-	}
+	opts := append([]string{}, s.Options...)
 	return types.Subscription{
 		PlanCode:            s.PlanCode,
 		Datacenters:         dcs,
@@ -59,7 +61,7 @@ func toDBSub(s *Subscription) types.Subscription {
 		AutoPay:             s.AutoPay,
 		Duration:            s.Duration,
 		Paused:              s.Paused,
-		Options:             s.Options,
+		Options:             opts,
 	}
 }
 

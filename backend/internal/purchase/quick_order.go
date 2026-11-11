@@ -152,80 +152,91 @@ func EnqueueQuickOrder(state *app.State, params QuickOrderParams) *QuickOrderRes
 		}
 	}
 
-	// 去重:防止同一 plan@dc + 同 options 的任务被重复入队(除非监控来源 + 显式跳过)
-	quickOrderMu.Lock()
-	defer quickOrderMu.Unlock()
-
-	// 监控跳过的只是"队列里已有同配置任务"检查 —— 它在补货窗口内本来就该能重新入队。
-	// 但"120 秒内同配置已成功下过单"这道闸门对监控同样生效:监控的 lastStatus 在
-	// 验价 429 抖动时会走 price_check_failed → available 的来回,状态机表达不了
-	// "这个窗口已经买过",唯一能表达的就是近期成功史,跳过它 = 同一窗口重复下单
-	if params.FromMonitor && params.SkipDuplicateCheck {
-		fp0 := fingerprint(options)
-		nowTS0 := time.Now().Unix()
-		state.HistoryMu.Lock()
-		for i := len(state.History) - 1; i >= 0; i-- {
-			h := state.History[i]
-			if (h.AccountID == "" || h.AccountID == params.AccountID) && h.PlanCode == params.PlanCode && h.Datacenter == params.Datacenter && h.Status == "success" &&
-				fingerprint(h.Options) == fp0 {
-				if t, ok := types.ParseTS(h.PurchaseTime); ok && nowTS0-t.Unix() < 120 {
-					state.HistoryMu.Unlock()
-					state.Logger.Info("监控来源:近期已成功下过同配置订单,拒绝(防同窗口重复下单)", "quick_order")
-					return &QuickOrderResult{
-						Success:    false,
-						Error:      "该配置刚刚已成功下单(120 秒内),不再重复下单",
-						Code:       "EF4FA206C",
-						HTTPStatus: http.StatusTooManyRequests,
-					}
-				}
-			}
-		}
-		state.HistoryMu.Unlock()
+	// 去重:防止同一 plan@dc + 同 options 的任务被重复入队(除非监控来源 + 显式跳过)。
+	// 询价前先查一次(快速拒绝,不白建车),询价后在 quickOrderMu 内再查一次并入队。
+	// 以前整个函数都在 quickOrderMu 里,手动下单的实时询价(建车删车 3~6 秒,超时可到 30 秒)
+	// 会把这段时间里监控为每个机房发起的自动入队全部挡在锁外 —— 补货窗口往往就这几十秒。
+	// 机房比较按 API 码:同一机房可能一边是显示码(mum)一边是 API 码(ynm)
+	sameDC := func(a, b string) bool {
+		return ovh.ConvertDisplayDCToAPIDC(a) == ovh.ConvertDisplayDCToAPIDC(b)
 	}
-	if !(params.FromMonitor && params.SkipDuplicateCheck) {
-		fp := fingerprint(options)
-		state.QueueMu.Lock()
-		for _, it := range state.Queue {
-			if (it.AccountID == "" || it.AccountID == params.AccountID) && it.PlanCode == params.PlanCode && it.Datacenter == params.Datacenter &&
-				(it.Status == "running" || it.Status == "pending" || it.Status == "paused") &&
-				fingerprint(it.Options) == fp {
-				state.QueueMu.Unlock()
-				state.Logger.Info("检测到重复的队列任务（含配置），拒绝再次入队", "quick_order")
-				return &QuickOrderResult{
-					Success:    false,
-					Error:      "已存在相同配置的购买任务，稍后再试",
-					Code:       "EE77AF09E",
-					HTTPStatus: http.StatusTooManyRequests,
-				}
-			}
-		}
-		state.QueueMu.Unlock()
-
-		nowTS := time.Now().Unix()
-		state.HistoryMu.Lock()
-		for i := len(state.History) - 1; i >= 0; i-- {
-			h := state.History[i]
-			if (h.AccountID == "" || h.AccountID == params.AccountID) && h.PlanCode == params.PlanCode && h.Datacenter == params.Datacenter && h.Status == "success" &&
-				fingerprint(h.Options) == fp {
-				// PurchaseTime 是 types.NowISO() 写的,不带时区 —— 用 RFC3339Nano
-				// 解必然失败,于是这道"刚刚已经买成过同款,别再买一次"的闸门
-				// 一直是死代码。它拦的是重复扣款,不是显示问题。
-				if t, ok := types.ParseTS(h.PurchaseTime); ok {
-					if nowTS-t.Unix() < 120 {
+	dupCheck := func() *QuickOrderResult {
+		// 监控跳过的只是"队列里已有同配置任务"检查 —— 它在补货窗口内本来就该能重新入队。
+		// 但"120 秒内同配置已成功下过单"这道闸门对监控同样生效:监控的 lastStatus 在
+		// 验价 429 抖动时会走 price_check_failed → available 的来回,状态机表达不了
+		// "这个窗口已经买过",唯一能表达的就是近期成功史,跳过它 = 同一窗口重复下单
+		if params.FromMonitor && params.SkipDuplicateCheck {
+			fp0 := fingerprint(options)
+			nowTS0 := time.Now().Unix()
+			state.HistoryMu.Lock()
+			for i := len(state.History) - 1; i >= 0; i-- {
+				h := state.History[i]
+				if (h.AccountID == "" || h.AccountID == params.AccountID) && h.PlanCode == params.PlanCode && sameDC(h.Datacenter, params.Datacenter) && h.Status == "success" &&
+					fingerprint(h.Options) == fp0 {
+					if t, ok := types.ParseTS(h.PurchaseTime); ok && nowTS0-t.Unix() < 120 {
 						state.HistoryMu.Unlock()
-						state.Logger.Info("检测到近期成功订单，拒绝再次入队", "quick_order")
+						state.Logger.Info("监控来源:近期已成功下过同配置订单,拒绝(防同窗口重复下单)", "quick_order")
 						return &QuickOrderResult{
 							Success:    false,
-							Error:      "刚刚已成功下过同配置订单，稍后再试",
+							Error:      "该配置刚刚已成功下单(120 秒内),不再重复下单",
 							Code:       "EF4FA206C",
 							HTTPStatus: http.StatusTooManyRequests,
 						}
 					}
 				}
 			}
+			state.HistoryMu.Unlock()
 		}
-		state.HistoryMu.Unlock()
-	} else {
+		if !(params.FromMonitor && params.SkipDuplicateCheck) {
+			fp := fingerprint(options)
+			state.QueueMu.Lock()
+			for _, it := range state.Queue {
+				if (it.AccountID == "" || it.AccountID == params.AccountID) && it.PlanCode == params.PlanCode && sameDC(it.Datacenter, params.Datacenter) &&
+					(it.Status == "running" || it.Status == "pending" || it.Status == "paused") &&
+					fingerprint(it.Options) == fp {
+					state.QueueMu.Unlock()
+					state.Logger.Info("检测到重复的队列任务（含配置），拒绝再次入队", "quick_order")
+					return &QuickOrderResult{
+						Success:    false,
+						Error:      "已存在相同配置的购买任务，稍后再试",
+						Code:       "EE77AF09E",
+						HTTPStatus: http.StatusTooManyRequests,
+					}
+				}
+			}
+			state.QueueMu.Unlock()
+
+			nowTS := time.Now().Unix()
+			state.HistoryMu.Lock()
+			for i := len(state.History) - 1; i >= 0; i-- {
+				h := state.History[i]
+				if (h.AccountID == "" || h.AccountID == params.AccountID) && h.PlanCode == params.PlanCode && sameDC(h.Datacenter, params.Datacenter) && h.Status == "success" &&
+					fingerprint(h.Options) == fp {
+					// PurchaseTime 是 types.NowISO() 写的,不带时区 —— 用 RFC3339Nano
+					// 解必然失败,于是这道"刚刚已经买成过同款,别再买一次"的闸门
+					// 一直是死代码。它拦的是重复扣款,不是显示问题。
+					if t, ok := types.ParseTS(h.PurchaseTime); ok {
+						if nowTS-t.Unix() < 120 {
+							state.HistoryMu.Unlock()
+							state.Logger.Info("检测到近期成功订单，拒绝再次入队", "quick_order")
+							return &QuickOrderResult{
+								Success:    false,
+								Error:      "刚刚已成功下过同配置订单，稍后再试",
+								Code:       "EF4FA206C",
+								HTTPStatus: http.StatusTooManyRequests,
+							}
+						}
+					}
+				}
+			}
+			state.HistoryMu.Unlock()
+		}
+		return nil
+	}
+	if r := dupCheck(); r != nil {
+		return r
+	}
+	if params.FromMonitor && params.SkipDuplicateCheck {
 		state.Logger.Info("来自监控的批量下单，跳过重复检查", "quick_order")
 	}
 
@@ -345,6 +356,11 @@ func EnqueueQuickOrder(state *app.State, params QuickOrderParams) *QuickOrderRes
 		if i > 0 {
 			items[i].ID = uuid.NewString()
 		}
+	}
+	quickOrderMu.Lock()
+	defer quickOrderMu.Unlock()
+	if r := dupCheck(); r != nil {
+		return r
 	}
 	commit := func() error { return enqueue(items, true) }
 	var enqueueErr error

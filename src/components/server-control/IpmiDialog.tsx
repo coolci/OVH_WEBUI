@@ -32,6 +32,11 @@ export function IpmiDialog({
   const [result, setResult] = useState<{ url?: string; accessType?: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const startedRef = useRef(false);
+  // 每次打开 / 关闭 / 换服务器都换一代:晚到的旧请求结果一律丢弃,
+  // 否则关掉再打开(或换到另一台)时会显示上一台的类型列表或控制台链接。
+  const sessionRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // 支持的接入方式(打开对话框时查一次)
   const [types, setTypes] = useState<{ supportedTypes: string[]; typeLabels: Record<string, string>; activated: boolean } | null>(null);
   const [chosen, setChosen] = useState<string>("");
@@ -40,6 +45,14 @@ export function IpmiDialog({
 
   // 打开对话框:先查支持哪几种(秒回),不自动申请会话
   useEffect(() => {
+    const sid = ++sessionRef.current;
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current);
+      countdownRef.current = null;
+    }
     if (!open) {
       setCountdown(20);
       setLoading(false);
@@ -48,12 +61,20 @@ export function IpmiDialog({
       setTypes(null);
       setChosen("");
       startedRef.current = false;
+      setTypesLoading(false);
       return;
     }
+    // 换服务器时清掉上一台的残留
+    setResult(null);
+    setError(null);
+    setTypes(null);
+    setChosen("");
+    setLoading(false);
     setTypesLoading(true);
     (async () => {
       try {
-        const res = await api.get(`/server-control/${serviceName}/ipmi-types`);
+        const res = await api.get(`/server-control/${serviceName}/ipmi-types`, { signal: ac.signal });
+        if (sid !== sessionRef.current) return;
         setTypes({
           supportedTypes: res.data?.supportedTypes || [],
           typeLabels: res.data?.typeLabels || {},
@@ -61,12 +82,23 @@ export function IpmiDialog({
         });
         setChosen(res.data?.defaultType || "");
       } catch (e: unknown) {
+        if (sid !== sessionRef.current) return;
         setError(errorMessage(e));
       } finally {
-        setTypesLoading(false);
+        if (sid === sessionRef.current) setTypesLoading(false);
       }
     })();
   }, [open, serviceName]);
+
+  // 卸载时中止在途请求、清掉倒计时
+  useEffect(
+    () => () => {
+      sessionRef.current++;
+      abortRef.current?.abort();
+      if (countdownRef.current) clearInterval(countdownRef.current);
+    },
+    [],
+  );
 
   // 申请控制台会话(要轮询 OVH 任务,约 20 秒)
   const openConsole = () => {
@@ -79,14 +111,24 @@ export function IpmiDialog({
     setResult(null);
     setLoading(true);
     setCountdown(20);
+    const sid = sessionRef.current;
+    const signal = abortRef.current?.signal;
+    if (countdownRef.current) clearInterval(countdownRef.current);
     const interval = setInterval(() => {
       setCountdown((p) => (p <= 1 ? 0 : p - 1));
     }, 1000);
+    countdownRef.current = interval;
+    const stopCountdown = () => {
+      clearInterval(interval);
+      if (countdownRef.current === interval) countdownRef.current = null;
+    };
 
     (async () => {
       try {
-        const res = await api.get(`/server-control/${serviceName}/console`, { params: { type: chosen } });
-        clearInterval(interval);
+        const res = await api.get(`/server-control/${serviceName}/console`, { params: { type: chosen }, signal });
+        stopCountdown();
+        // 对话框已关闭或换了服务器:这份结果不属于当前界面
+        if (sid !== sessionRef.current) return;
         setLoading(false);
         const value = res.data?.console?.value;
         const accessType = res.data?.accessType;
@@ -111,7 +153,8 @@ export function IpmiDialog({
           setResult({ url: value, accessType });
         }
       } catch (e: unknown) {
-        clearInterval(interval);
+        stopCountdown();
+        if (sid !== sessionRef.current) return;
         setLoading(false);
         setError(errorMessage(e));
       }

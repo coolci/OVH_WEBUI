@@ -10,12 +10,15 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	ovhsdk "github.com/ovh/go-ovh/ovh"
 
+	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/numconv"
 	"github.com/ovh-webui/server/internal/ovh"
+	"github.com/ovh-webui/server/internal/types"
 )
 
 // reconcileScanCap 对账只看最新的若干笔。订单号随时间递增，
@@ -30,6 +33,53 @@ const reconcileDetailCap = 12
 type ReconcileOptions struct {
 	Datacenter       string
 	ExcludedOrderIDs map[string]bool
+}
+
+// reconcileLocks 按(账户, 型号)串行化对账。
+//
+// 同型号同机房一次入队 N 台时,N 个任务会同时跑、补货时也常常同时遇到结账超时,
+// 于是同时对账。以前"拍已认领订单快照 → 查 /me/order → 写成功记录"三步之间没有互斥,
+// 两个任务拿到同一份快照、都匹配到同一张新订单,都按成功处理 ——
+// 用户要 2 台只建了 1 单,界面却显示两台都成功。
+var reconcileLocks sync.Map // key → *sync.Mutex
+
+func lockReconcile(accountID, planCode string) func() {
+	v, _ := reconcileLocks.LoadOrStore(accountID+"|"+planCode, &sync.Mutex{})
+	mu := v.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
+}
+
+// claimedOrderIDs 购买历史里已经归属某个任务的订单号
+func claimedOrderIDs(state *app.State) map[string]bool {
+	claimed := map[string]bool{}
+	state.HistoryMu.Lock()
+	for _, h := range state.History {
+		if h.OrderID != "" {
+			claimed[h.OrderID] = true
+		}
+	}
+	state.HistoryMu.Unlock()
+	return claimed
+}
+
+// reconcileAndClaim 对账,命中时在同一把锁里把订单记到本任务名下(写成功历史),
+// 后来者拍的已认领快照里就一定有它。
+func reconcileAndClaim(state *app.State, client *ovhsdk.Client, acc types.OVHAccount, item *types.QueueItem, since time.Time, couponWarning string) (string, string, error) {
+	accountKey := acc.ID
+	if accountKey == "" {
+		accountKey = item.AccountID
+	}
+	unlock := lockReconcile(accountKey, item.PlanCode)
+	defer unlock()
+	oid, link, err := ReconcileRecentOrderEx(client, acc.Endpoint, item.PlanCode, since, ReconcileOptions{
+		Datacenter:       item.Datacenter,
+		ExcludedOrderIDs: claimedOrderIDs(state),
+	})
+	if err == nil && oid != "" {
+		recordSuccess(state, item, oid, link, "", nil, couponWarning)
+	}
+	return oid, link, err
 }
 
 // ReconcileRecentOrder 兼容旧调用入口

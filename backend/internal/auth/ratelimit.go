@@ -33,6 +33,108 @@ const (
 type failBucket struct {
 	count       int
 	windowStart time.Time
+	// inflight 已通过闸门、还没出结果的校验数。闸门按 count+inflight 判断:
+	// 只看 count 的话,一批并发猜测会在计数涨到上限之前一起通过("先查后记"竞态)。
+	inflight int
+}
+
+// authResult 一次校验的结果
+type authResult int
+
+const (
+	authNeutral authResult = iota // 没校验(比如没带密钥),不计数
+	authFailed
+	authSucceeded
+)
+
+// authReserve 原子地判断是否已被挡下,未挡下就占一个在途名额。
+// 必须和 authRelease 成对调用,且在 c.Next() 之前释放(不能占着名额跑完整个请求)。
+func authReserve(ip string, now time.Time) (bool, time.Duration) {
+	if ip == "" {
+		ip = "unknown"
+	}
+	failMu.Lock()
+	defer failMu.Unlock()
+	b, ok := failByIP[ip]
+	if ok && now.Sub(b.windowStart) >= AuthFailureWindow && b.inflight == 0 {
+		delete(failByIP, ip)
+		ok = false
+	}
+	if !ok {
+		if len(failByIP) >= maxTrackedIPs {
+			pruneLocked(now)
+		}
+		b = &failBucket{windowStart: now}
+		failByIP[ip] = b
+	}
+	expired := now.Sub(b.windowStart) >= AuthFailureWindow
+	if !expired && b.count+b.inflight >= MaxAuthFailures {
+		wait := AuthFailureWindow - now.Sub(b.windowStart)
+		if b.count < MaxAuthFailures {
+			// 是被在途名额挡下的,稍等即可
+			wait = time.Second
+		}
+		return true, wait
+	}
+	b.inflight++
+	return false, 0
+}
+
+// authRelease 归还 authReserve 占的名额并记下结果
+func authRelease(ip string, res authResult, now time.Time) {
+	if ip == "" {
+		ip = "unknown"
+	}
+	failMu.Lock()
+	defer failMu.Unlock()
+	b, ok := failByIP[ip]
+	if !ok {
+		if res == authFailed {
+			failByIP[ip] = &failBucket{count: 1, windowStart: now}
+		}
+		return
+	}
+	if b.inflight > 0 {
+		b.inflight--
+	}
+	switch res {
+	case authSucceeded:
+		b.count = 0
+		b.windowStart = now
+	case authFailed:
+		if now.Sub(b.windowStart) >= AuthFailureWindow {
+			b.count, b.windowStart = 0, now
+		}
+		b.count++
+	}
+	if b.count == 0 && b.inflight == 0 {
+		delete(failByIP, ip)
+	}
+}
+
+// pruneLocked 删过期且没有在途校验的条目;仍然满员时删掉计数最少的,保证表有上限。
+// 调用方持有 failMu。
+func pruneLocked(now time.Time) {
+	for k, v := range failByIP {
+		if now.Sub(v.windowStart) >= AuthFailureWindow && v.inflight == 0 {
+			delete(failByIP, k)
+		}
+	}
+	for len(failByIP) >= maxTrackedIPs {
+		victim, min := "", -1
+		for k, v := range failByIP {
+			if v.inflight > 0 {
+				continue
+			}
+			if min < 0 || v.count < min {
+				victim, min = k, v.count
+			}
+		}
+		if victim == "" {
+			return
+		}
+		delete(failByIP, victim)
+	}
 }
 
 var (
@@ -65,11 +167,7 @@ func recordAuthFailure(ip string, now time.Time) {
 	failMu.Lock()
 	defer failMu.Unlock()
 	if len(failByIP) >= maxTrackedIPs {
-		for k, v := range failByIP {
-			if now.Sub(v.windowStart) >= AuthFailureWindow {
-				delete(failByIP, k)
-			}
-		}
+		pruneLocked(now)
 	}
 	b, ok := failByIP[ip]
 	if !ok || now.Sub(b.windowStart) >= AuthFailureWindow {

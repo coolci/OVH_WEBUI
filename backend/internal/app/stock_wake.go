@@ -77,6 +77,21 @@ func (s *State) WakeQueueForStock(planCode, datacenter, endpoint string) int {
 }
 
 // TakeStockWake 队列处理器取走某个任务的"立即到期"标记(取走即清除)。
+// RestoreStockWake 把取走但没能派发的唤醒标记放回去(任务在途 / 并发槽已满时),
+// 下一次任务返回唤醒循环后它仍会被立即检查。不触发 WakeQueueProcessor:
+// 任务返回时自己会唤醒循环,这里再唤醒只会空转一轮。
+func (s *State) RestoreStockWake(taskID string) {
+	if s == nil || taskID == "" {
+		return
+	}
+	s.stockWakeMu.Lock()
+	if s.stockWake == nil {
+		s.stockWake = map[string]struct{}{}
+	}
+	s.stockWake[taskID] = struct{}{}
+	s.stockWakeMu.Unlock()
+}
+
 func (s *State) TakeStockWake(taskID string) bool {
 	if s == nil {
 		return false

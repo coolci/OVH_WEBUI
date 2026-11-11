@@ -49,6 +49,11 @@ type Outcome struct {
 	// PauseTask:结账结果不确定(超时+对账也失败),暂停任务等人工确认。
 	// 不计 FailureCount(不是确定性失败);不发 Fatal(用户确认无单后可恢复)
 	PauseTask bool
+	// CheckoutUncertain:结账请求已经发出(或上一轮的未决结账仍无法确认),OVH 侧是否建单未知。
+	// 只有它为 true 时队列才保留 UncertainCheckout 标记,恢复运行时先对账。
+	// 优惠码被拒、结账凭据没存上这类"根本没结账"的暂停只设 PauseTask,不设它 ——
+	// 否则恢复时会去对一笔从未提交过的结账,把用户自己手动下的同型号订单误认成本任务的单。
+	CheckoutUncertain bool
 }
 
 // cancelledOutcome 下单途中任务被删除时的返回。
@@ -118,22 +123,12 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 		if tParse, ok := types.ParseTS(item.UncertainTime); ok {
 			attemptStart = tParse.Add(-2 * time.Minute)
 		}
-		claimedMap := make(map[string]bool)
-		state.HistoryMu.Lock()
-		for _, h := range state.History {
-			if h.OrderID != "" {
-				claimedMap[h.OrderID] = true
-			}
-		}
-		state.HistoryMu.Unlock()
-		oidCheck, orderURLCheck, reconcileErr := ReconcileRecentOrderEx(client, accCheck.Endpoint, item.PlanCode, attemptStart, ReconcileOptions{
-			Datacenter:       item.Datacenter,
-			ExcludedOrderIDs: claimedMap,
-		})
+		// 对账与认领在同一把(账户+型号)锁里完成,见 reconcileAndClaim
+		oidCheck, orderURLCheck, reconcileErr := reconcileAndClaim(state, client, accCheck, item, attemptStart, "")
 		if reconcileErr != nil {
 			reason := "上一轮结账结果仍不确定，对账失败，暂停以避免重复下单: " + reconcileErr.Error()
 			state.Logger.Warn(reason, "purchase")
-			return Outcome{PauseTask: true, Reason: reason}
+			return Outcome{PauseTask: true, CheckoutUncertain: true, Reason: reason}
 		}
 		if oidCheck != "" {
 			state.Logger.Warn(fmt.Sprintf("抢购前对账发现上一轮未决结账已在 OVH 成功建单(#%s),按成功处理,不再重复下单", oidCheck), "purchase")
@@ -298,6 +293,7 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 		} else {
 			state.Logger.Debug("已清理失败 cart "+cartID, "purchase")
 		}
+		ovh.ReleaseCart(cartID) // 删失败也撤销登记,交给遗留车清理兜底
 	}()
 
 	// ⚡ 检查预装车池：若后台已提前组装好满配就绪车，直接跳过装车阶段直达 checkout，装车耗时归零！
@@ -693,7 +689,7 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 					state.Logger.Warn(errMsg, "purchase")
 					recordFailure(state, item, errMsg)
 					notify.Broadcast(state, fmt.Sprintf("⚠️ 抢购 %s@%s 优惠码被拒绝\n\n为防自动按原价扣款，任务已暂停。\n原因：%s", item.PlanCode, item.Datacenter, ovh.Explain(err)), nil)
-					return Outcome{Attempted: false, PauseTask: true}
+					return Outcome{Attempted: false, PauseTask: true, Reason: errMsg}
 				}
 				couponWarning = "优惠码被 OVH 拒绝，本次未使用优惠码，价格不包含该码优惠。原因: " + ovh.Explain(err)
 				state.Logger.Warn(couponWarning, "purchase")
@@ -788,20 +784,9 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 			// Preserve uncertainty rather than attributing another worker's order.
 			if strings.HasPrefix(item.ID, "catalog-watch-") {
 				success = true // Retain the original cart for read-only automatic reconciliation.
-				return Outcome{PauseTask: true, Reason: "结账响应不确定，后台将自动核对原购物车；确认前不重复提交"}
+				return Outcome{PauseTask: true, CheckoutUncertain: true, Reason: "结账响应不确定，后台将自动核对原购物车；确认前不重复提交"}
 			}
-			claimed := make(map[string]bool)
-			state.HistoryMu.Lock()
-			for _, h := range state.History {
-				if h.OrderID != "" {
-					claimed[h.OrderID] = true
-				}
-			}
-			state.HistoryMu.Unlock()
-			oid, orderURL, recErr := ReconcileRecentOrderEx(client, acc.Endpoint, item.PlanCode, attemptStart, ReconcileOptions{
-				Datacenter:       item.Datacenter,
-				ExcludedOrderIDs: claimed,
-			})
+			oid, orderURL, recErr := reconcileAndClaim(state, client, acc, item, attemptStart, couponWarning)
 			if recErr != nil {
 				state.Logger.Warn("checkout 对账查询失败(按未建单处理): "+recErr.Error(), "purchase")
 			} else if oid != "" {
@@ -817,7 +802,7 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 					"任务已暂停。请到 OVH 订单页查看是否已有一笔未付订单:\n"+
 					"- 有:等付款即可,任务不需要恢复\n"+
 					"- 没有:在队列页把任务恢复运行", item.PlanCode, item.Datacenter), nil)
-			return Outcome{Attempted: false, PauseTask: true}
+			return Outcome{Attempted: false, PauseTask: true, CheckoutUncertain: true, Reason: "结账超时且对账未能确认是否已建单"}
 		}
 		if item.Preorder && listingNotReady(err) {
 			// 明确拒绝(400/404/409),不是超时:订单肯定没建。开售前结账被拒属于"还没开放"
@@ -836,7 +821,7 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 	orderURL, _ := checkoutResult["url"].(string)
 	if strings.HasPrefix(item.ID, "catalog-watch-") && (orderID == "" || orderID == "0") {
 		success = true
-		return Outcome{PauseTask: true, Reason: "结账未返回有效订单编号，后台自动核对"}
+		return Outcome{PauseTask: true, CheckoutUncertain: true, Reason: "结账未返回有效订单编号，后台自动核对"}
 	}
 
 	// checkout 已返回订单 ID,cart 已成功转 order,标记成功阻止 defer 删除

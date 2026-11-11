@@ -1,6 +1,7 @@
 package db
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 
@@ -171,6 +172,27 @@ func (db *DB) ReplaceQueue(items []types.QueueItem) error {
 		}
 	}
 	return tx.Commit()
+}
+
+// SetQueueUncertain 只改一条任务的结账未决标记(结账前置位、结论明确后清除)。
+// 走单行 UPDATE 而不是 ReplaceQueue:置位发生在结账关键路径上,不能整表重写。
+// 返回 sql.ErrNoRows 表示任务已不在库里。
+func (db *DB) SetQueueUncertain(id string, uncertain bool, uncertainTime, updatedAt string) error {
+	flag := 0
+	if uncertain {
+		flag = 1
+	}
+	res, err := db.Exec(`UPDATE queue SET uncertain_checkout = ?, uncertain_time = ?, updated_at = ? WHERE id = ?`,
+		flag, uncertainTime, updatedAt, id)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return err
+	} else if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 // DeleteQueueItem 按 id 删除单条

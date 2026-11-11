@@ -38,44 +38,62 @@ export function UpdateButton({ check }: { check?: UpdateCheck }) {
     }
   }, [progress.data?.phase, progress.data?.error, t]);
 
-  // 等待重启：轮询 /api/version，等到版本号变了就刷新整页
+  // 等待重启：轮询 /api/version，等到版本号变了就刷新整页。
+  // 串行轮询:上一次请求结束后再排下一次。以前是 setInterval(async…),请求在进程替换期间
+  // 会挂很久(axios 超时 120 秒),回调层层叠起、乱序返回,于是可能先报"已回滚"又刷新页面。
+  // done 标志拦住晚到的回调。
   useEffect(() => {
     if (!waitingRestart) return;
     const target = check?.latest;
     let tries = 0;
-    const timer = window.setInterval(async () => {
+    let done = false;
+    let timer: number | undefined;
+    const startedAt = Date.now();
+    const finish = () => {
+      done = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+    const tick = async () => {
+      if (done) return;
       tries += 1;
       try {
-        const res = await api.get<{ version: string }>("/version");
+        const res = await api.get<{ version: string }>("/version", { timeout: 3000 });
+        if (done) return;
         const now = res.data?.version;
         // 版本号变成目标值 = 新进程已经起来了
         if (now && (!target || now === target)) {
-          window.clearInterval(timer);
+          finish();
           toast.success(t("commons.update.updatedTo", { version: now }));
           setTimeout(() => window.location.reload(), 800);
-        } else if (now && target && now !== target && tries > 3) {
+          return;
+        }
+        if (now && target && now !== target && tries > 3) {
           // 服务回来了但版本不是目标值 = 新版本没起来、回滚保护把旧版换回来了。
-          // 这是确凿信号，不能当"没消息"吞掉——以前这里会一路等到超时，
-          // 然后说"二进制可能已经替换成功"，两头都不对。
-          // 头几秒放过：旧进程还没退完时也会回旧版本号。
-          window.clearInterval(timer);
+          // 这是确凿信号，不能当"没消息"吞掉。头几秒放过：旧进程还没退完时也会回旧版本号。
+          finish();
           setWaitingRestart(false);
           setStarted(false);
           setFailed(t("commons.update.rollback", { target, current: now }));
+          return;
         }
       } catch {
         // 连不上是预期内的：进程正在被替换。继续等。
       }
+      if (done) return;
       // 60 秒还没回来就别转圈了，给一句能行动的话
-      if (tries > 60) {
-        window.clearInterval(timer);
+      if (Date.now() - startedAt > 60_000) {
+        finish();
         setWaitingRestart(false);
         setStarted(false);
         setFailed(t("commons.update.restartTimeout"));
+        return;
       }
-    }, 1000);
+      timer = window.setTimeout(tick, 1000);
+      pollRef.current = timer;
+    };
+    timer = window.setTimeout(tick, 1000);
     pollRef.current = timer;
-    return () => window.clearInterval(timer);
+    return finish;
   }, [waitingRestart, check?.latest, t]);
 
   const start = async () => {

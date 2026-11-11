@@ -24,7 +24,16 @@ type Supervisor struct {
 	stopCh  chan struct{}
 	ctx     context.Context
 	cancel  context.CancelFunc
+	// queueDone 队列处理循环真正返回时关闭。循环返回前会等全部在途任务
+	// (包括已发出、不接受取消的结账请求)结束,Stop 必须等它,不然数据库先关、
+	// 结账随后返回成功,成功记录写不进库,重启后任务复活再买一台。
+	queueDone chan struct{}
 }
+
+// stopWait 关停时等后台循环收尾的上限。结账请求不接受取消,
+// 最长受 SDK 超时约束;这里给足时间,超时则记错误日志后继续关停
+// (此时任务已带着结账未决标记落库,重启后会先对账)。
+var stopWait = 3 * time.Minute
 
 // NewSupervisor 创建后台任务编排器
 func NewSupervisor(state *app.State, mon *monitor.Monitor) *Supervisor {
@@ -44,7 +53,11 @@ func (s *Supervisor) Start() {
 	mon := s.monitor
 
 	// 1. 启动订单队列处理与状态刷新轮询
-	go purchase.ProcessQueueLoopWithContext(s.ctx, state)
+	s.queueDone = make(chan struct{})
+	go func() {
+		defer close(s.queueDone)
+		purchase.ProcessQueueLoopWithContext(s.ctx, state)
+	}()
 	go purchase.OrderStatusLoopWithContext(s.ctx, state)
 	// 清理本程序上次运行留下的购物车(只删带本程序标记、且本进程没在用的)
 	go purchase.CartJanitorLoop(s.ctx, state)
@@ -122,6 +135,37 @@ func (s *Supervisor) Stop() {
 		s.monitor.Stop()
 	}
 	vps.Stop(s.state)
+
+	// 等各循环真正退出再返回:调用方紧接着就会关数据库。
+	deadline := time.Now().Add(stopWait)
+	left := func() time.Duration {
+		if d := time.Until(deadline); d > 0 {
+			return d
+		}
+		return 0
+	}
+	if s.queueDone != nil {
+		select {
+		case <-s.queueDone:
+		case <-time.After(left()):
+			s.logStopTimeout("抢购队列(可能有结账请求仍未返回)")
+		}
+	}
+	if s.monitor != nil && !s.monitor.WaitStopped(left()) {
+		s.logStopTimeout("服务器监控")
+	}
+	if !vps.WaitStopped(left()) {
+		s.logStopTimeout("VPS 监控")
+	}
+	if w, ok := s.state.CatalogWatch.(interface{ Wait(time.Duration) bool }); ok && !w.Wait(left()) {
+		s.logStopTimeout("目录上新自动下单")
+	}
+}
+
+func (s *Supervisor) logStopTimeout(what string) {
+	if s.state != nil && s.state.Logger != nil {
+		s.state.Logger.Error("关停时等待「"+what+"」退出超时,继续关闭;在途结果以重启后的对账为准", "system")
+	}
 }
 
 // ApplySharedProxy 把默认账户的代理设为"公开请求"的统一出口。

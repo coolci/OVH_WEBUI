@@ -431,6 +431,17 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 	// 状态先在副本上推进,循环结束一次性写回:HTTP 侧读到的要么是上轮的完整状态、
 	// 要么是本轮的完整状态,不会是推进到一半的中间态。
 	lastStatus := sub.statusSnapshot()
+	before := copyStatus(lastStatus)
+	// committed 已经据此下单 / 发通知的基线。本轮因配置变更、暂停、停止而提前返回时,
+	// 整轮的 lastStatus 不写回(旧配置的半成品不能生效),但这部分必须写回,
+	// 否则下一轮把同一次补货再判一次"无货→有货":重复通知,再下一单。
+	committed := map[string]string{}
+	bail := func() {
+		if len(committed) > 0 {
+			sub.commitStatus(committed)
+			m.dirty.Store(true)
+		}
+	}
 	monitoredDCs := cfg.Datacenters
 
 	m.state.Logger.Info(fmt.Sprintf("订阅 %s - 监控数据中心: %v", planCode, monitoredDCs), "monitor")
@@ -438,6 +449,7 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 
 	for configKey, configData := range currentAvailability {
 		if !m.checkCurrent(sub, cfg) {
+			bail()
 			return
 		}
 		// 订阅指定了配置就只盯那一套。
@@ -692,6 +704,15 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 			lastStatus[ds.statusKey] = actualStatus
 		}
 
+		// sideEffects 本配置是否已经下单或发出通知;commitConfig 把本配置各机房的新基线记为已生效
+		sideEffects := false
+		commitConfig := func() {
+			for _, ds := range dcStatusMap {
+				committed[ds.statusKey] = lastStatus[ds.statusKey]
+			}
+			sub.commitStatus(committed)
+		}
+
 		// 价格查询（同一配置只查一次）
 		var priceText string
 		var priceFetchError string
@@ -724,6 +745,7 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 		}
 
 		if !m.checkCurrent(sub, cfg) {
+			bail()
 			return
 		}
 		// 分类。通知三兄弟只收 notify=true 的 —— 通知开关只管发不发消息;
@@ -779,6 +801,10 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 				m.batchOrder(planCode, configInfo, orderTargets, cfg.Quantity, cfg.AutoOrderAccountID, cfg.AutoPay,
 					func() bool { return m.checkCurrent(sub, cfg) },
 					func(enqueue func() error) error { return m.guardCheckEnqueue(sub, cfg, enqueue) })
+				// 已经按这批跳变下过单(或尝试过入队):基线立即写回,
+				// 之后哪怕本轮因配置变更提前返回,下一轮也不会把同一次补货再下一单
+				sideEffects = true
+				commitConfig()
 			}
 		}
 
@@ -825,10 +851,15 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 				errIfNoPrice = priceFetchError
 			}
 			if !m.checkCurrent(sub, cfg) {
+				if sideEffects {
+					commitConfig()
+				}
+				bail()
 				return
 			}
 			m.SendAvailabilityAlertGrouped(planCode, availDCs, configInfoWithPrice, cfg.ServerName,
 				errIfNoPrice, traceID, configTraceForNotif)
+			sideEffects = true
 
 			entries := make([]HistoryEntry, 0, len(availables))
 			for _, n := range availables {
@@ -855,10 +886,15 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 				configInfoFailed["price_check_error"] = n.priceCheckError
 			}
 			if !m.checkCurrent(sub, cfg) {
+				if sideEffects {
+					commitConfig()
+				}
+				bail()
 				return
 			}
 			m.SendAvailabilityAlert(planCode, n.dc, "unavailable", "price_check_failed",
 				configInfoFailed, cfg.ServerName, "", n.priceCheckError, traceID, n.configTraceID, n.detectedTime)
+			sideEffects = true
 			sub.appendHistory([]HistoryEntry{{
 				Timestamp:  m.nowBeijing().Format(time.RFC3339Nano),
 				Datacenter: n.dc,
@@ -889,6 +925,10 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 				configTraceForNotif = unavailables[0].configTraceID
 			}
 			if !m.checkCurrent(sub, cfg) {
+				if sideEffects {
+					commitConfig()
+				}
+				bail()
 				return
 			}
 			m.SendUnavailableAlertGrouped(planCode, unavailDCs, configInfo, cfg.ServerName,
@@ -906,6 +946,8 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 			}
 			sub.appendHistory(entries, maxHistorySize)
 		}
+		// 这套配置的通知和下单都处理完了,基线即刻生效(即使后面的配置提前返回)
+		commitConfig()
 	}
 
 	// 这里以前会给"本轮没监控的机房"也写一条 lastStatus,而且写的是 OVH 原始可用性值
@@ -916,12 +958,36 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 	//     "首次检查"分支失效,当次有货既不通知也不触发 auto-order。
 	// 监控范围内的机房在上面的主循环里已经写过规范化状态了,所以这里不再补写。
 	if !m.checkCurrent(sub, cfg) {
+		bail()
 		return
 	}
 	sub.replaceLastStatus(lastStatus)
-	// 状态动过就标脏,循环末尾统一落一次库。不标的话 LastStatus 只活在内存里,
+	// 状态真的动过才标脏,循环末尾统一落一次库。不标的话 LastStatus 只活在内存里,
 	// 重启后当次有货会被当成"初始存量"吞掉(既不通知也不自动下单)。
-	m.dirty.Store(true)
+	// 但也不能每轮无条件标脏:那等于每 5 秒整表重写一次订阅(连同每条 100 条历史)。
+	if !statusEqual(before, lastStatus) {
+		m.dirty.Store(true)
+	}
+}
+
+func copyStatus(in map[string]string) map[string]string {
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func statusEqual(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if bv, ok := b[k]; !ok || bv != v {
+			return false
+		}
+	}
+	return true
 }
 
 func containsString(list []string, s string) bool {

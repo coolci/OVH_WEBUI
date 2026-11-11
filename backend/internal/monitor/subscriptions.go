@@ -307,21 +307,41 @@ func (m *Monitor) FindSubscription(planCode string, optionsKey ...string) *Subsc
 // 漏一个就等于把用户的设置改掉(自动下单账户、数量、autoPay 都在里面)。
 // 而且这里只动 Options,不碰 LastStatus / History —— 状态一清,
 // 下一轮就会把"本来就有货"当成补货跳变,发一条根本没发生的通知外加真下单。
-func (m *Monitor) SetSubscriptionOptions(planCode string, options []string) bool {
+//
+// 按 planCode + 原配置键(originalKey,"" = 盯全部配置的那条)精确定位:
+// 同型号常有好几条不同配置的订阅,只按 planCode 取第一条会改错订阅。
+// 改动要像 UpdateSubscriptionFields 一样:
+//   - 新配置与同型号另一条订阅重复 → ErrSubscriptionConflict。不拦的话内存里出现两条
+//     (plan_code, options) 相同的订阅,库表主键冲突,之后每一次 SaveToDB 都整体回滚,
+//     所有订阅变更从此写不进库;
+//   - revision 递增:进行中的那一轮按旧的(更宽的)配置筛选,不能再凭它自动下单。
+func (m *Monitor) SetSubscriptionOptions(planCode, originalKey string, options []string) error {
 	m.subsMu.Lock()
 	defer m.subsMu.Unlock()
+	newKey := OptionsKey(options)
 	for _, sub := range m.subscriptions {
-		if sub.PlanCode != planCode {
+		if sub.PlanCode != planCode || OptionsKey(sub.Options) != originalKey {
 			continue
+		}
+		for _, other := range m.subscriptions {
+			if other != sub && other.PlanCode == planCode && OptionsKey(other.Options) == newKey {
+				return ErrSubscriptionConflict
+			}
 		}
 		opts := make([]string, len(options))
 		copy(opts, options)
 		sub.mu.Lock()
+		if OptionsKey(sub.Options) != newKey {
+			sub.revision++
+		}
 		sub.Options = opts
 		sub.mu.Unlock()
-		return true
+		if m.state != nil {
+			m.publishPausedQueueScopesLocked()
+		}
+		return nil
 	}
-	return false
+	return ErrSubscriptionNotFound
 }
 
 func (m *Monitor) SetKnownServers(set map[string]struct{}) {

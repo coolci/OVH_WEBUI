@@ -5,7 +5,24 @@ import {
   setActiveServerControlAccount,
   getActiveVpsControlAccount,
   setActiveVpsControlAccount,
+  SERVER_CONTROL_ACCOUNT_KEY,
+  VPS_CONTROL_ACCOUNT_KEY,
 } from "@/lib/http";
+import type { QueryClient } from "@tanstack/react-query";
+
+function invalidateServerControl(qc: QueryClient) {
+  qc.invalidateQueries({ queryKey: ["server-control"] });
+  qc.invalidateQueries({ queryKey: ["account"] });
+  qc.invalidateQueries({ queryKey: ["ips"] });
+  qc.invalidateQueries({ queryKey: ["ssh-keys"] });
+  qc.invalidateQueries({ queryKey: ["payment-methods"] });
+  qc.invalidateQueries({ queryKey: ["support-tickets"] });
+}
+
+function invalidateVpsControl(qc: QueryClient) {
+  qc.invalidateQueries({ queryKey: ["vps-control"] });
+  qc.invalidateQueries({ queryKey: ["vps-monitor"] });
+}
 
 const EVT = "ovh-active-account-changed";
 const VPS_EVT = "ovh-active-vps-account-changed";
@@ -28,27 +45,30 @@ export function useActiveServerControlAccount(): ActiveAccountResult {
   useEffect(() => {
     // 监听跨组件 / 跨 tab 的活跃账户变化
     const onChange = () => setAccountId(getActiveServerControlAccount());
+    // 另一个标签页切了账户:请求是在发出时才读 localStorage 注入账户的(lib/http.ts),
+    // 本页之后的刷新和操作都会落到新账户上。必须同时让本页的缓存按新账户重拉,
+    // 否则界面还显示旧账户的数据,而点下去的操作已经发往另一个账户。
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== null && e.key !== SERVER_CONTROL_ACCOUNT_KEY) return;
+      onChange();
+      invalidateServerControl(qc);
+    };
     window.addEventListener(EVT, onChange);
     window.addEventListener(SRV_EVT, onChange);
-    window.addEventListener("storage", onChange);
+    window.addEventListener("storage", onStorage);
     return () => {
       window.removeEventListener(EVT, onChange);
       window.removeEventListener(SRV_EVT, onChange);
-      window.removeEventListener("storage", onChange);
+      window.removeEventListener("storage", onStorage);
     };
-  }, []);
+  }, [qc]);
 
   const set = (id: string) => {
     if (id === accountId) return;
     setActiveServerControlAccount(id);
     setAccountId(id);
     // 让所有依赖账户的查询重拉
-    qc.invalidateQueries({ queryKey: ["server-control"] });
-    qc.invalidateQueries({ queryKey: ["account"] });
-    qc.invalidateQueries({ queryKey: ["ips"] });
-    qc.invalidateQueries({ queryKey: ["ssh-keys"] });
-    qc.invalidateQueries({ queryKey: ["payment-methods"] });
-    qc.invalidateQueries({ queryKey: ["support-tickets"] });
+    invalidateServerControl(qc);
   };
 
   const res = [accountId, set] as unknown as ActiveAccountResult;
@@ -66,22 +86,27 @@ export function useActiveVpsControlAccount(): ActiveAccountResult {
 
   useEffect(() => {
     const onChange = () => setAccountId(getActiveVpsControlAccount());
+    // 同上:VPS 请求在没选 VPS 账户时会退回独服账户,两个键变了都要重拉
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== null && e.key !== VPS_CONTROL_ACCOUNT_KEY && e.key !== SERVER_CONTROL_ACCOUNT_KEY) return;
+      onChange();
+      invalidateVpsControl(qc);
+    };
     window.addEventListener(EVT, onChange);
     window.addEventListener(VPS_EVT, onChange);
-    window.addEventListener("storage", onChange);
+    window.addEventListener("storage", onStorage);
     return () => {
       window.removeEventListener(EVT, onChange);
       window.removeEventListener(VPS_EVT, onChange);
-      window.removeEventListener("storage", onChange);
+      window.removeEventListener("storage", onStorage);
     };
-  }, []);
+  }, [qc]);
 
   const set = (id: string) => {
     if (id === accountId) return;
     setActiveVpsControlAccount(id);
     setAccountId(id);
-    qc.invalidateQueries({ queryKey: ["vps-control"] });
-    qc.invalidateQueries({ queryKey: ["vps-monitor"] });
+    invalidateVpsControl(qc);
   };
 
   const res = [accountId, set] as unknown as ActiveAccountResult;
