@@ -68,55 +68,70 @@ export const qk = {
   // 并在后台重拉,期间组件读到的 data 仍是上一个账户的:切过去的那几百毫秒里
   // 看到的是别人的服务器列表、别人的 /me 身份信息;重拉一旦失败,就一直停在那儿。
   // 把账户放进 key,切换即缓存未命中 → 走骨架屏,不会串号。
-  // hardware 也带 accountId:中奖提醒会后台读取全部机器，避免账户切换后沿用旧账户的检测结果。
-  // 其余按 serviceName 索引的详情依赖全局唯一的服务名。
+  //
+  // 按 serviceName 区分的详情键同样带 accountId,并且 hooks 发请求时显式传 ?account=,
+  // 不再依赖拦截器在发送时读 localStorage:另一个标签页切账户后,本页的刷新和操作
+  // (重启、重装、救援)仍然发往界面上显示的那个账户,缓存也不会串到别的账户。
+  // accountId 紧跟在 serviceName 后面,按 [域, 类型, serviceName] 前缀失效仍覆盖所有账户。
   serverControl: {
     list: (accountId: string) => ["server-control", "list", accountId] as const,
     hardware: (serviceName: string, accountId: string) =>
       ["server-control", "hardware", serviceName, accountId] as const,
-    rescue: (serviceName: string) => ["server-control", "rescue", serviceName] as const,
-    spla: (serviceName: string) => ["server-control", "spla", serviceName] as const,
-    serviceInfo: (serviceName: string) => ["server-control", "service-info", serviceName] as const,
-    ips: (serviceName: string) => ["server-control", "ips", serviceName] as const,
-    interventions: (serviceName: string) => ["server-control", "interventions", serviceName] as const,
-    networkInterfaces: (serviceName: string) => ["server-control", "network", serviceName] as const,
-    mrtg: (serviceName: string, period: string, type: string) =>
-      ["server-control", "mrtg", serviceName, period, type] as const,
-    bootModes: (serviceName: string) => ["server-control", "boot-modes", serviceName] as const,
-    bios: (serviceName: string) => ["server-control", "bios", serviceName] as const,
-    osTemplates: (serviceName: string) => ["server-control", "os-templates", serviceName] as const,
-    tasks: (serviceName: string) => ["server-control", "tasks", serviceName] as const,
-    diskInfo: (serviceName: string) => ["server-control", "disk-info", serviceName] as const,
-    raidProfiles: (serviceName: string) => ["server-control", "raid-profiles", serviceName] as const,
-    partitionSchemes: (serviceName: string, templateName: string) =>
-      ["server-control", "partition-schemes", serviceName, templateName] as const,
-    installStatus: (serviceName: string) => ["server-control", "install-status", serviceName] as const,
-    biosSettings: (serviceName: string) => ["server-control", "bios-settings", serviceName] as const,
-    biosSgx: (serviceName: string) => ["server-control", "bios-sgx", serviceName] as const,
-    monitoring: (serviceName: string) => ["server-control", "monitoring", serviceName] as const,
-    burst: (serviceName: string) => ["server-control", "burst", serviceName] as const,
-    firewall: (serviceName: string) => ["server-control", "firewall", serviceName] as const,
-    backupFtp: (serviceName: string) => ["server-control", "backup-ftp", serviceName] as const,
-    backupFtpAccess: (serviceName: string) => ["server-control", "backup-ftp-access", serviceName] as const,
-    backupCloud: (serviceName: string) => ["server-control", "backup-cloud", serviceName] as const,
-    backupCloudOffer: (serviceName: string) => ["server-control", "backup-cloud-offer", serviceName] as const,
-    secondaryDns: (serviceName: string) => ["server-control", "secondary-dns", serviceName] as const,
-    virtualMac: (serviceName: string) => ["server-control", "virtual-mac", serviceName] as const,
-    vrack: (serviceName: string) => ["server-control", "vrack", serviceName] as const,
-    orderable: (serviceName: string) => ["server-control", "orderable", serviceName] as const,
-    options: (serviceName: string) => ["server-control", "options", serviceName] as const,
-    ipSpecs: (serviceName: string) => ["server-control", "ip-specs", serviceName] as const,
-    networkSpecs: (serviceName: string) => ["server-control", "network-specs", serviceName] as const,
+    rescue: (serviceName: string, accountId: string) => ["server-control", "rescue", serviceName, accountId] as const,
+    spla: (serviceName: string, accountId: string) => ["server-control", "spla", serviceName, accountId] as const,
+    serviceInfo: (serviceName: string, accountId: string) =>
+      ["server-control", "service-info", serviceName, accountId] as const,
+    ips: (serviceName: string, accountId: string) => ["server-control", "ips", serviceName, accountId] as const,
+    reverseDns: (serviceName: string, accountId: string) =>
+      ["server-control", "reverse-dns", serviceName, accountId] as const,
+    interventions: (serviceName: string, accountId: string) =>
+      ["server-control", "interventions", serviceName, accountId] as const,
+    networkInterfaces: (serviceName: string, accountId: string) =>
+      ["server-control", "network", serviceName, accountId] as const,
+    mrtg: (serviceName: string, accountId: string, period: string, type: string) =>
+      ["server-control", "mrtg", serviceName, accountId, period, type] as const,
+    bootModes: (serviceName: string, accountId: string) => ["server-control", "boot-modes", serviceName, accountId] as const,
+    osTemplates: (serviceName: string, accountId: string) =>
+      ["server-control", "os-templates", serviceName, accountId] as const,
+    tasks: (serviceName: string, accountId: string) => ["server-control", "tasks", serviceName, accountId] as const,
+    diskInfo: (serviceName: string, accountId: string) => ["server-control", "disk-info", serviceName, accountId] as const,
+    raidProfiles: (serviceName: string, accountId: string) =>
+      ["server-control", "raid-profiles", serviceName, accountId] as const,
+    partitionSchemes: (serviceName: string, accountId: string, templateName: string) =>
+      ["server-control", "partition-schemes", serviceName, accountId, templateName] as const,
+    installStatus: (serviceName: string, accountId: string) =>
+      ["server-control", "install-status", serviceName, accountId] as const,
+    biosSettings: (serviceName: string, accountId: string) =>
+      ["server-control", "bios-settings", serviceName, accountId] as const,
+    monitoring: (serviceName: string, accountId: string) => ["server-control", "monitoring", serviceName, accountId] as const,
+    burst: (serviceName: string, accountId: string) => ["server-control", "burst", serviceName, accountId] as const,
+    firewall: (serviceName: string, accountId: string) => ["server-control", "firewall", serviceName, accountId] as const,
+    backupFtp: (serviceName: string, accountId: string) => ["server-control", "backup-ftp", serviceName, accountId] as const,
+    backupFtpAccess: (serviceName: string, accountId: string) =>
+      ["server-control", "backup-ftp-access", serviceName, accountId] as const,
+    backupCloud: (serviceName: string, accountId: string) =>
+      ["server-control", "backup-cloud", serviceName, accountId] as const,
+    backupCloudOffer: (serviceName: string, accountId: string) =>
+      ["server-control", "backup-cloud-offer", serviceName, accountId] as const,
+    secondaryDns: (serviceName: string, accountId: string) =>
+      ["server-control", "secondary-dns", serviceName, accountId] as const,
+    virtualMac: (serviceName: string, accountId: string) => ["server-control", "virtual-mac", serviceName, accountId] as const,
+    vrack: (serviceName: string, accountId: string) => ["server-control", "vrack", serviceName, accountId] as const,
+    orderable: (serviceName: string, accountId: string) => ["server-control", "orderable", serviceName, accountId] as const,
+    options: (serviceName: string, accountId: string) => ["server-control", "options", serviceName, accountId] as const,
+    ipSpecs: (serviceName: string, accountId: string) => ["server-control", "ip-specs", serviceName, accountId] as const,
+    networkSpecs: (serviceName: string, accountId: string) =>
+      ["server-control", "network-specs", serviceName, accountId] as const,
     contactRequests: (accountId: string) => ["server-control", "contact-requests", accountId] as const,
-    engagement: (serviceName: string) => ["server-control", "engagement", serviceName] as const,
-    engagementAvailable: (serviceName: string) => ["server-control", "engagement-available", serviceName] as const,
-    engagementRequest: (serviceName: string) => ["server-control", "engagement-request", serviceName] as const,
-    mitigation: (serviceName: string, accountId?: string) =>
-      accountId === undefined
-        ? ["server-control", "mitigation", serviceName] as const
-        : ["server-control", "mitigation", serviceName, accountId] as const,
-    taskTimeslots: (serviceName: string, taskId: number, periodStart: string, periodEnd: string) =>
-      ["server-control", "task-timeslots", serviceName, taskId, periodStart, periodEnd] as const,
+    engagement: (serviceName: string, accountId: string) => ["server-control", "engagement", serviceName, accountId] as const,
+    engagementAvailable: (serviceName: string, accountId: string) =>
+      ["server-control", "engagement-available", serviceName, accountId] as const,
+    engagementRequest: (serviceName: string, accountId: string) =>
+      ["server-control", "engagement-request", serviceName, accountId] as const,
+    mitigation: (serviceName: string, accountId: string) => ["server-control", "mitigation", serviceName, accountId] as const,
+    retraction: (serviceName: string, accountId: string) => ["server-control", "retraction", serviceName, accountId] as const,
+    taskTimeslots: (serviceName: string, accountId: string, taskId: number, periodStart: string, periodEnd: string) =>
+      ["server-control", "task-timeslots", serviceName, accountId, taskId, periodStart, periodEnd] as const,
   },
 
   // VPS 控制(已购 VPS 管理,跟监控库存的 vpsMonitor 不同)

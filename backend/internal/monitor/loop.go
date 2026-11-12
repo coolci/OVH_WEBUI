@@ -17,13 +17,13 @@ import (
 // 失败立即调 Stop() 自停监控。
 const tgRecheckInterval = 5 * time.Minute
 
-// checkNotifyOrStop 节流后体检通知通道,**全部**不可用才自停。
+// checkNotifyOrStop 节流后体检通知通道。
 //
-// 以前这里只看 Telegram,TG 一失效就停整个监控 —— 于是 bot 被封、token 过期、
-// 或者机器一时连不上 api.telegram.org,用户失去的不是一条通知,而是整个补货监控,
-// 且只有翻日志才知道。现在只要还有一条通道能送达(比如 Webhook),监控就继续跑。
+// 以前这里在所有通道失效时直接停掉整个监控 —— 于是当 bot 被封、网络超时、
+// 或用户仅需要后台自动下单而不配置 TG 时，监控循环和抢购引擎直接被杀停。
+// 现在通道不可用时仅记录 Warning 日志提示，不杀停监控循环，保证自动下单和轮询继续工作。
 //
-// 返回 true=继续 loop,false=已自停。
+// 返回 true=继续 loop。
 func (m *Monitor) checkNotifyOrStop() bool {
 	m.tgCheckMu.Lock()
 	due := time.Since(m.lastTGCheck) >= tgRecheckInterval
@@ -36,10 +36,8 @@ func (m *Monitor) checkNotifyOrStop() bool {
 	m.lastTGCheck = time.Now()
 	m.tgCheckMu.Unlock()
 	if !ok {
-		m.state.Logger.Error("所有通知通道都不可用,自动停止服务器监控("+reason+
-			")。配一条 Webhook 作为备用通道可以避免这种全盲。", "monitor")
-		m.Stop()
-		return false
+		m.state.Logger.Warn("当前未配置可用通知通道("+reason+")，通知推送已静默；监控与自动下单引擎保持运行。", "monitor")
+		return true
 	}
 	return true
 }
@@ -109,7 +107,7 @@ func (m *Monitor) monitorLoopGen(gen int64) {
 			break
 		}
 
-		// 通知通道全挂 → 自停。checkNotifyOrStop 内部已节流 5 分钟,且失败时调 Stop()。
+		// 周期性体检通知通道。若无可用通道仅 Warn 提示，不杀停监控循环。
 		if !m.checkNotifyOrStop() {
 			break
 		}

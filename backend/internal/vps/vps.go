@@ -70,8 +70,8 @@ func clearCheckFailure(subID string) {
 	lastCheckErrMu.Unlock()
 }
 
-// checkNotifyOrStop 节流后体检所有通知通道,全挂才 Stop()。
-// 返回 true=继续 loop,false=已自停。
+// checkNotifyOrStop 节流后体检所有通知通道。
+// 返回 true=继续 loop。
 func checkNotifyOrStop(state *app.State) bool {
 	if state == nil || state.Config == nil {
 		return true
@@ -82,15 +82,14 @@ func checkNotifyOrStop(state *app.State) bool {
 	if !due {
 		return true
 	}
-	// 与服务器监控同一口径:所有通道都不可用才停,只挂一条不影响
+	// 与服务器监控同一口径:通知不可用时仅告警,不杀停监控循环
 	ok, reason := notify.AnyAvailable(state, false) // 周期性只查配置,不发真消息(issue #2)
 	tgCheckMu.Lock()
 	lastTGCheck = time.Now()
 	tgCheckMu.Unlock()
 	if !ok {
-		state.Logger.Error("所有通知通道都不可用,自动停止 VPS 监控("+reason+")", "vps_monitor")
-		Stop(state)
-		return false
+		state.Logger.Warn("当前未配置可用通知通道("+reason+")，VPS 通知推送已静默；VPS 监控保持运行。", "vps_monitor")
+		return true
 	}
 	return true
 }

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api } from "@/lib/http";
+import { useServerAccount, withAccount } from "@/hooks/ovh/server-control/account";
 import { useQueryClient } from "@tanstack/react-query";
 import { qk } from "@/lib/query";
 import { useSplaList, hasActiveSpla } from "@/hooks/use-server-control";
@@ -50,12 +51,15 @@ export function SplaDialog({
   serviceName,
   open,
   onOpenChange,
+  accountId: propAccountId,
 }: {
   serviceName: string;
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  accountId?: string;
 }) {
   const { t } = useTranslation();
+  const accountId = useServerAccount(propAccountId);
   const [type, setType] = useState("os");
   const [serial, setSerial] = useState("");
   const [busy, setBusy] = useState(false);
@@ -76,9 +80,9 @@ export function SplaDialog({
       await api.post(`/server-control/${serviceName}/spla`, {
         type: "os",
         serialNumber: WINDOWS_GVLK,
-      });
+      }, withAccount(accountId));
       toast.success(t("maint.spla.toast.unlocked"), { duration: 7000 });
-      qc.invalidateQueries({ queryKey: qk.serverControl.spla(serviceName) });
+      qc.invalidateQueries({ queryKey: qk.serverControl.spla(serviceName, accountId) });
     } catch (e: unknown) {
       toast.error(errorMessage(e), { duration: 8000 });
     } finally {
@@ -95,10 +99,10 @@ export function SplaDialog({
     }
     setBusy(true);
     try {
-      await api.post(`/server-control/${serviceName}/spla`, { type, serialNumber: sn });
+      await api.post(`/server-control/${serviceName}/spla`, { type, serialNumber: sn }, withAccount(accountId));
       toast.success(t("maint.spla.toast.submitted"));
       setSerial("");
-      qc.invalidateQueries({ queryKey: qk.serverControl.spla(serviceName) });
+      qc.invalidateQueries({ queryKey: qk.serverControl.spla(serviceName, accountId) });
       onOpenChange(false);
     } catch (e: unknown) {
       toast.error(errorMessage(e), { duration: 8000 });

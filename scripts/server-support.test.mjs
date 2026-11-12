@@ -15,11 +15,14 @@ function loadHook(file, api) {
     if (id === '@tanstack/react-query') return { useQuery: x => x, useMutation: x => x, useQueryClient: () => ({ invalidateQueries() {} }) };
     if (id === '@/lib/http') return { api };
     if (id === '@/lib/query') return { qk: keys };
-    if (id.endsWith('use-active-account')) return { useActiveAccount: () => ['fixture'], useActiveVpsControlAccount: () => ['fixture'] };
+    if (id.endsWith('use-active-account')) return { useActiveAccount: () => ['fixture'], useActiveServerControlAccount: () => ['fixture'], useActiveVpsControlAccount: () => ['fixture'] };
     if (id.endsWith('use-accounts')) return { useDefaultAccount: () => ({id: 'fixture'}) };
     if (id === '@/i18n') return { default: { t: x => x } };
+    if (id === 'sonner') return { toast: { success() {}, error() {} } };
+    if (id === '@/lib/api-error') return { apiMessage: () => '', bodyMessage: () => '' };
     // 纯函数模块,用真实实现
     if (id.endsWith('/partial-list')) return loadHook('src/hooks/ovh/partial-list.ts', api);
+    if (id.endsWith('server-control/account') || id === './account') return loadHook('src/hooks/ovh/server-control/account.ts', api);
     throw Error(`Unexpected import ${id}`);
   };
   vm.runInNewContext(js, { exports, require, console }, { filename: file });
@@ -115,4 +118,29 @@ test('SS-05: rDNS dialog preserves selected secondary IP', async () => {
   assert.equal(postPath, '/server-control/ns-fixture/reverse');
   assert.equal(sent.ip, '192.0.2.2');
   assert.equal(sent.reverse, 'secondary.example.test');
+});
+test('L9: server operations and per-server query keys are bound to the rendered account', async () => {
+  const calls = [];
+  const record = (method) => async (...args) => { calls.push([method, ...args]); return { data: {} }; };
+  const api = { get: record('get'), post: record('post'), put: record('put'), delete: record('delete') };
+  const boot = loadHook('src/hooks/ovh/server-control/use-server-boot.ts', api);
+  const install = loadHook('src/hooks/ovh/server-control/use-server-install.ts', api);
+
+  // 查询键带账户:另一个标签页切账户后,本页不会读到别的账户的缓存
+  assert.deepEqual(boot.useServerTasks('ns-1').queryKey, ['serverControl', 'tasks', 'ns-1', 'fixture']);
+  assert.deepEqual(boot.useRescueStatus('ns-1').queryKey, ['serverControl', 'rescue', 'ns-1', 'fixture']);
+
+  // 操作类请求显式带 ?account=,不依赖拦截器在发送时读 localStorage
+  await boot.useRebootServer().mutationFn('ns-1');
+  await boot.useEnterRescue('ns-1').mutationFn({ email: 'a@example.test' });
+  await install.useReinstallServer().mutationFn({ serviceName: 'ns-1', templateName: 'debian12_64' });
+  await install.useReinstallServer('account-locked').mutationFn({ serviceName: 'ns-2', templateName: 'debian12_64' });
+  await boot.useServerTasks('ns-1').queryFn();
+  assert.equal(calls.length, 5);
+  assert.equal(calls[3][3]?.params?.account, 'account-locked', 'locked account must override default');
+  for (const [method, url, ...rest] of calls) {
+    const config = method === 'get' || method === 'delete' ? rest[0] : rest[1];
+    const expected = url === '/server-control/ns-2/install' ? 'account-locked' : 'fixture';
+    assert.equal(config?.params?.account, expected, `${method} ${url} must carry account`);
+  }
 });

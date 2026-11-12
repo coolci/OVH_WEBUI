@@ -3,6 +3,7 @@ import { Monitor, Loader2, ExternalLink, Download } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/http";
+import { useServerAccount, withAccount } from "@/hooks/ovh/server-control/account";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { errorMessage } from "@/lib/api-error";
@@ -22,10 +23,12 @@ export function IpmiDialog({
   serviceName,
   open,
   onOpenChange,
+  accountId: propAccountId,
 }: {
   serviceName: string;
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  accountId?: string;
 }) {
   const [countdown, setCountdown] = useState(20);
   const [loading, setLoading] = useState(false);
@@ -42,6 +45,7 @@ export function IpmiDialog({
   const [chosen, setChosen] = useState<string>("");
   const [typesLoading, setTypesLoading] = useState(false);
   const { t } = useTranslation();
+  const accountId = useServerAccount(propAccountId);
 
   // 打开对话框:先查支持哪几种(秒回),不自动申请会话
   useEffect(() => {
@@ -73,7 +77,7 @@ export function IpmiDialog({
     setTypesLoading(true);
     (async () => {
       try {
-        const res = await api.get(`/server-control/${serviceName}/ipmi-types`, { signal: ac.signal });
+        const res = await api.get(`/server-control/${serviceName}/ipmi-types`, withAccount(accountId, { signal: ac.signal }));
         if (sid !== sessionRef.current) return;
         setTypes({
           supportedTypes: res.data?.supportedTypes || [],
@@ -88,7 +92,7 @@ export function IpmiDialog({
         if (sid === sessionRef.current) setTypesLoading(false);
       }
     })();
-  }, [open, serviceName]);
+  }, [open, serviceName, accountId]);
 
   // 卸载时中止在途请求、清掉倒计时
   useEffect(
@@ -125,7 +129,7 @@ export function IpmiDialog({
 
     (async () => {
       try {
-        const res = await api.get(`/server-control/${serviceName}/console`, { params: { type: chosen }, signal });
+        const res = await api.get(`/server-control/${serviceName}/console`, withAccount(accountId, { params: { type: chosen }, signal }));
         stopCountdown();
         // 对话框已关闭或换了服务器:这份结果不属于当前界面
         if (sid !== sessionRef.current) return;

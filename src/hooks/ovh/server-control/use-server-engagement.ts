@@ -5,7 +5,6 @@ import i18n from "@/i18n";
 import { qk } from "@/lib/query";
 import { apiMessage, bodyMessage, errorStatus, errorField, type BodyMessage } from "@/lib/api-error";
 import type { ContactChangeRequest } from "@/lib/types";
-import { useActiveAccount } from "@/hooks/use-active-account";
 import { readPartialList, type PartialList } from "../partial-list";
 import type {
   EngagementInfo,
@@ -17,12 +16,14 @@ import type {
   RetractionInfo,
   SplaListResult,
 } from "./types";
+import { useControlAccount, useServerAccount, withAccount } from "./account";
 
 export function useEngagement(serviceName: string | null) {
+  const accountId = useServerAccount();
   return useQuery({
-    queryKey: qk.serverControl.engagement(serviceName || ""),
+    queryKey: qk.serverControl.engagement(serviceName || "", accountId),
     queryFn: async () => {
-      const res = await api.get(`/server-control/${serviceName}/engagement`);
+      const res = await api.get(`/server-control/${serviceName}/engagement`, withAccount(accountId));
       return (res.data?.engagement || null) as EngagementInfo | null;
     },
     enabled: !!serviceName,
@@ -30,10 +31,11 @@ export function useEngagement(serviceName: string | null) {
 }
 
 export function useEngagementAvailable(serviceName: string | null, enabled = true) {
+  const accountId = useServerAccount();
   return useQuery({
-    queryKey: qk.serverControl.engagementAvailable(serviceName || ""),
+    queryKey: qk.serverControl.engagementAvailable(serviceName || "", accountId),
     queryFn: async () => {
-      const res = await api.get(`/server-control/${serviceName}/engagement/available`);
+      const res = await api.get(`/server-control/${serviceName}/engagement/available`, withAccount(accountId));
       return (res.data?.pricings || []) as EngagementPricing[];
     },
     enabled: !!serviceName && enabled,
@@ -41,10 +43,11 @@ export function useEngagementAvailable(serviceName: string | null, enabled = tru
 }
 
 export function useEngagementRequest(serviceName: string | null) {
+  const accountId = useServerAccount();
   return useQuery({
-    queryKey: qk.serverControl.engagementRequest(serviceName || ""),
+    queryKey: qk.serverControl.engagementRequest(serviceName || "", accountId),
     queryFn: async () => {
-      const res = await api.get(`/server-control/${serviceName}/engagement/request`);
+      const res = await api.get(`/server-control/${serviceName}/engagement/request`, withAccount(accountId));
       return (res.data?.request || null) as EngagementRequest | null;
     },
     enabled: !!serviceName,
@@ -52,53 +55,57 @@ export function useEngagementRequest(serviceName: string | null) {
 }
 
 export function useCreateEngagementRequest(serviceName: string) {
+  const accountId = useServerAccount();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (vars: { pricingMode: string }) => {
-      const res = await api.post(`/server-control/${serviceName}/engagement/request`, vars);
+      const res = await api.post(`/server-control/${serviceName}/engagement/request`, vars, withAccount(accountId));
       return res.data;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.serverControl.engagement(serviceName) });
-      qc.invalidateQueries({ queryKey: qk.serverControl.engagementRequest(serviceName) });
+      qc.invalidateQueries({ queryKey: qk.serverControl.engagement(serviceName, accountId) });
+      qc.invalidateQueries({ queryKey: qk.serverControl.engagementRequest(serviceName, accountId) });
     },
   });
 }
 
 export function useDeleteEngagementRequest(serviceName: string) {
+  const accountId = useServerAccount();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async () => {
-      const res = await api.delete(`/server-control/${serviceName}/engagement/request`);
+      const res = await api.delete(`/server-control/${serviceName}/engagement/request`, withAccount(accountId));
       return res.data;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.serverControl.engagementRequest(serviceName) });
+      qc.invalidateQueries({ queryKey: qk.serverControl.engagementRequest(serviceName, accountId) });
     },
   });
 }
 
 export function useUpdateEngagementEndRule(serviceName: string) {
+  const accountId = useServerAccount();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (vars: { strategy: EngagementEndStrategy | string; confirm?: boolean }) => {
-      const res = await api.put(`/server-control/${serviceName}/engagement/end-rule`, vars);
+      const res = await api.put(`/server-control/${serviceName}/engagement/end-rule`, vars, withAccount(accountId));
       return res.data;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.serverControl.engagement(serviceName) });
+      qc.invalidateQueries({ queryKey: qk.serverControl.engagement(serviceName, accountId) });
     },
   });
 }
 
 export function useServerOrderable(serviceName: string | null) {
+  const accountId = useServerAccount();
   return useQuery({
-    queryKey: qk.serverControl.orderable(serviceName || ""),
+    queryKey: qk.serverControl.orderable(serviceName || "", accountId),
     queryFn: async () => {
       const [bw, tr, ip] = await Promise.all([
-        api.get(`/server-control/${serviceName}/orderable/bandwidth`).catch(() => ({ data: { success: false } })),
-        api.get(`/server-control/${serviceName}/orderable/traffic`).catch(() => ({ data: { success: false } })),
-        api.get(`/server-control/${serviceName}/orderable/ip`).catch(() => ({ data: { success: false } })),
+        api.get(`/server-control/${serviceName}/orderable/bandwidth`, withAccount(accountId)).catch(() => ({ data: { success: false } })),
+        api.get(`/server-control/${serviceName}/orderable/traffic`, withAccount(accountId)).catch(() => ({ data: { success: false } })),
+        api.get(`/server-control/${serviceName}/orderable/ip`, withAccount(accountId)).catch(() => ({ data: { success: false } })),
       ]);
       return {
         bandwidth: bw.data?.success ? bw.data.orderable : null,
@@ -111,10 +118,11 @@ export function useServerOrderable(serviceName: string | null) {
 }
 
 export function useServerOptions(serviceName: string | null) {
+  const accountId = useServerAccount();
   return useQuery({
-    queryKey: qk.serverControl.options(serviceName || ""),
+    queryKey: qk.serverControl.options(serviceName || "", accountId),
     queryFn: async (): Promise<PartialList<ServerOptionEntry>> => {
-      const res = await api.get(`/server-control/${serviceName}/options`);
+      const res = await api.get(`/server-control/${serviceName}/options`, withAccount(accountId));
       return readPartialList<ServerOptionEntry>(res.data, "options");
     },
     enabled: !!serviceName,
@@ -122,25 +130,26 @@ export function useServerOptions(serviceName: string | null) {
 }
 
 export function useChangeContact() {
+  const accountId = useServerAccount();
   return useMutation({
     mutationFn: async (args: { serviceName: string; admin?: string; tech?: string; billing?: string }) => {
       const res = await api.post(`/server-control/${args.serviceName}/change-contact`, {
         contactAdmin: args.admin || undefined,
         contactTech: args.tech || undefined,
         contactBilling: args.billing || undefined,
-      });
+      }, withAccount(accountId));
       return res.data;
     },
   });
 }
 
 export function useContactChangeRequests(enabled = true) {
-  const [accountId] = useActiveAccount();
+  const accountId = useServerAccount();
   return useQuery({
     queryKey: qk.serverControl.contactRequests(accountId),
     queryFn: async (): Promise<ContactChangeRequestList> => {
       try {
-        const res = await api.get(`/ovh/contact-change-requests`);
+        const res = await api.get(`/ovh/contact-change-requests`, withAccount(accountId));
         return {
           requests: (res.data?.data || res.data?.requests || []) as ContactChangeRequest[],
           unsupported: false,
@@ -163,16 +172,17 @@ export function useContactChangeRequests(enabled = true) {
 }
 
 export function useContactRequestAction() {
+  const accountId = useServerAccount();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (args: { id: number | string; action: "accept" | "refuse" | "resend"; token?: string }) => {
       if (args.action === "resend") {
-        const res = await api.post(`/ovh/contact-change-requests/${args.id}/resend-email`);
+        const res = await api.post(`/ovh/contact-change-requests/${args.id}/resend-email`, undefined, withAccount(accountId));
         return res.data;
       }
       const res = await api.post(`/ovh/contact-change-requests/${args.id}/${args.action}`, {
         token: args.token,
-      });
+      }, withAccount(accountId));
       return res.data;
     },
     onSuccess: () => {
@@ -182,12 +192,13 @@ export function useContactRequestAction() {
 }
 
 export function useRetraction(serviceName: string | null, isVps = false) {
+  const accountId = useControlAccount(isVps);
   const prefix = isVps ? "/vps-control" : "/server-control";
   const domain = isVps ? "vps-control" : "server-control";
   return useQuery<RetractionInfo>({
-    queryKey: [domain, "retraction", serviceName],
+    queryKey: [domain, "retraction", serviceName, accountId],
     queryFn: async () =>
-      (await api.get<RetractionInfo>(`${prefix}/${encodeURIComponent(serviceName!)}/retraction`)).data,
+      (await api.get<RetractionInfo>(`${prefix}/${encodeURIComponent(serviceName!)}/retraction`, withAccount(accountId))).data,
     enabled: !!serviceName,
     staleTime: 5 * 60_000,
     retry: false,
@@ -196,6 +207,7 @@ export function useRetraction(serviceName: string | null, isVps = false) {
 }
 
 export function useRequestRetraction(serviceName: string, isVps = false) {
+  const accountId = useControlAccount(isVps);
   const prefix = isVps ? "/vps-control" : "/server-control";
   const domain = isVps ? "vps-control" : "server-control";
   const qc = useQueryClient();
@@ -206,7 +218,7 @@ export function useRequestRetraction(serviceName: string, isVps = false) {
         await api.post(`${prefix}/${encodeURIComponent(serviceName)}/retraction`, {
           ...p,
           confirm: true,
-        })
+        }, withAccount(accountId))
       ).data,
     onSuccess: (d: BodyMessage) => {
       qc.invalidateQueries({ queryKey: [domain, "retraction"] });
@@ -218,10 +230,11 @@ export function useRequestRetraction(serviceName: string, isVps = false) {
 }
 
 export function useSplaList(serviceName: string | null, enabled = true) {
+  const accountId = useServerAccount();
   return useQuery({
-    queryKey: qk.serverControl.spla(serviceName || ""),
+    queryKey: qk.serverControl.spla(serviceName || "", accountId),
     queryFn: async (): Promise<SplaListResult> => {
-      const d = (await api.get(`/server-control/${serviceName}/spla`)).data;
+      const d = (await api.get(`/server-control/${serviceName}/spla`, withAccount(accountId))).data;
       return {
         list: Array.isArray(d?.splaList) ? d.splaList : [],
         partial: d?.partial === true,

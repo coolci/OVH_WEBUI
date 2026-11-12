@@ -33,12 +33,11 @@
 | L6 | `authReserve`/`authRelease` 按 `count + 在途数` 原子判断；表满时淘汰计数最少的条目 | `TestAuthReserveCountsInflightAttempts`、`TestAuthReserveSuccessClears` |
 | L7 | IPMI 对话框按会话代号丢弃过期结果，用 AbortController 中止请求，关闭或卸载时清掉倒计时 | — |
 | L8 | 更新按钮改为串行轮询（单次请求超时 3 秒），用 `done` 标志拦住晚到的回调 | — |
-| L9 | 其他标签页切换账户时，本页同样让相关查询失效并重新拉取 | — |
+| L9 | 其他标签页切换账户时，本页同样让相关查询失效并重新拉取；服务器控制的全部查询和操作（重启、重装、救援、SPLA、IPMI、MRTG、撤单、别名等）显式带 `?account=`，按 serviceName 区分的 query key 都加上 accountId（`hooks/ovh/server-control/account.ts`） | `L9: server operations and per-server query keys are bound to the rendered account` |
 | 备注 | `CheckNewServers` 改为在锁外发送通知 | — |
 
 **剩余说明**
 - L2：订阅没指定配置时，自动下单的配件来自库存 FQN，监控预热按空配件装车，只有无配件机型能命中；有配件的机型主要靠验价留车和队列预热命中。
-- L9：单台服务器的 query key 里仍然没有账户，切换账户后到重新拉取完成之前，界面会短暂显示旧数据。
 - H1 的超时上限：如果容器编排的 SIGKILL 宽限期短于在途结账的时长，进程会在 Stop 返回前被强杀。这时靠落库的未决标记兜底，重启后先对账，但这份对账在补货时可能失败，任务会因此暂停等人工确认。
 
 ## 总览

@@ -4,6 +4,7 @@ import i18n from "@/i18n";
 import { qk } from "@/lib/query";
 import { useActiveAccount } from "@/hooks/use-active-account";
 import type { OwnedServer, ServiceInfo } from "./types";
+import { useServerAccount, withAccount } from "./account";
 
 /**
  * 已购服务器列表（后端返回 { success, servers, total }）
@@ -14,7 +15,10 @@ export function useOwnedServers() {
     queryKey: qk.serverControl.list(accountId),
     queryFn: async () => {
       const res = await api.get("/server-control/list", { params: { account: accountId } });
-      const raw = (res.data?.servers || []) as OwnedServer[];
+      const raw = ((res.data?.servers || []) as OwnedServer[]).map((s) => ({
+        ...s,
+        accountId: s.accountId || accountId,
+      }));
       return raw;
     },
     staleTime: 60_000,
@@ -24,10 +28,11 @@ export function useOwnedServers() {
 
 /** 服务信息（后端返回 { success, serviceInfo: {...} }） */
 export function useServerServiceInfo(serviceName: string | null) {
+  const accountId = useServerAccount();
   return useQuery({
-    queryKey: qk.serverControl.serviceInfo(serviceName || ""),
+    queryKey: qk.serverControl.serviceInfo(serviceName || "", accountId),
     queryFn: async () => {
-      const res = await api.get(`/server-control/${serviceName}/serviceinfo`);
+      const res = await api.get(`/server-control/${serviceName}/serviceinfo`, withAccount(accountId));
       return (res.data?.serviceInfo || null) as ServiceInfo | null;
     },
     enabled: !!serviceName,
@@ -38,14 +43,15 @@ export function useServerServiceInfo(serviceName: string | null) {
  * 修改续费策略。
  */
 export function useUpdateRenewal(serviceName: string) {
+  const accountId = useServerAccount();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (vars: { mode: "auto" | "manual" | "delete"; period?: number }) => {
-      const res = await api.put(`/server-control/${serviceName}/serviceinfo/renewal`, vars);
+      const res = await api.put(`/server-control/${serviceName}/serviceinfo/renewal`, vars, withAccount(accountId));
       return res.data;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.serverControl.serviceInfo(serviceName) });
+      qc.invalidateQueries({ queryKey: qk.serverControl.serviceInfo(serviceName, accountId) });
       qc.invalidateQueries({ queryKey: ["server-control", "list"] });
     },
   });
@@ -100,15 +106,16 @@ export function terminationLabel(info: {
  * 设置终止策略。
  */
 export function useUpdateTerminationPolicy(serviceName: string) {
+  const accountId = useServerAccount();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (vars: { policy: string }) =>
-      (await api.put(`/server-control/${serviceName}/termination-policy`, vars)).data as {
+      (await api.put(`/server-control/${serviceName}/termination-policy`, vars, withAccount(accountId))).data as {
         success: boolean;
         message: string;
       },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.serverControl.serviceInfo(serviceName) });
+      qc.invalidateQueries({ queryKey: qk.serverControl.serviceInfo(serviceName, accountId) });
     },
   });
 }

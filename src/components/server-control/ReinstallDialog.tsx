@@ -33,15 +33,17 @@ export function ReinstallDialog({
   serviceName,
   open,
   onOpenChange,
+  accountId,
 }: {
   serviceName: string;
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  accountId?: string;
 }) {
-  const tpl = useServerTemplates(serviceName, open);
+  const tpl = useServerTemplates(serviceName, open, accountId);
   const disk = useServerDiskInfo(serviceName, open);
   const raid = useServerRaidProfiles(serviceName, open);
-  const mut = useReinstallServer();
+  const mut = useReinstallServer(accountId);
   const { t } = useTranslation();
   const brandDark = useTheme().resolved === "dark";
 

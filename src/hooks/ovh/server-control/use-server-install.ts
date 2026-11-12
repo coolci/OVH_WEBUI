@@ -7,15 +7,17 @@ import type {
   ReinstallResult,
   InstallStatus,
 } from "./types";
+import { useServerAccount, withAccount } from "./account";
 
 const TEMPLATES_LS_PREFIX = "ovh_sniper_templates_v2_";
 
-export function useServerTemplates(serviceName: string | null, enabled = true) {
+export function useServerTemplates(serviceName: string | null, enabled = true, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   const lsKey = serviceName ? TEMPLATES_LS_PREFIX + serviceName : "";
   return useQuery({
-    queryKey: qk.serverControl.osTemplates(serviceName || ""),
+    queryKey: qk.serverControl.osTemplates(serviceName || "", accountId),
     queryFn: async () => {
-      const res = await api.get(`/server-control/${serviceName}/templates`);
+      const res = await api.get(`/server-control/${serviceName}/templates`, withAccount(accountId));
       const list = (res.data?.templates || []) as OSTemplate[];
       if (lsKey) {
         try {
@@ -79,9 +81,11 @@ interface InstallPayload {
   partitionSchemeName?: string;
 }
 
-export function useReinstallServer() {
+export function useReinstallServer(overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   return useMutation({
-    mutationFn: async (args: ReinstallArgs) => {
+    mutationFn: async (args: ReinstallArgs & { accountId?: string }) => {
+      const targetAcc = args.accountId || accountId;
       const installData: InstallPayload = {
         templateName: args.templateName,
         customHostname: args.customHostname || undefined,
@@ -188,17 +192,18 @@ export function useReinstallServer() {
         installData.partitionSchemeName = args.partitionSchemeName;
       }
 
-      const res = await api.post(`/server-control/${args.serviceName}/install`, installData);
+      const res = await api.post(`/server-control/${args.serviceName}/install`, installData, withAccount(targetAcc));
       return res.data as ReinstallResult;
     },
   });
 }
 
 export function useInstallStatus(serviceName: string | null, enabled = true) {
+  const accountId = useServerAccount();
   return useQuery({
-    queryKey: qk.serverControl.installStatus(serviceName || ""),
+    queryKey: qk.serverControl.installStatus(serviceName || "", accountId),
     queryFn: async () => {
-      const res = await api.get(`/server-control/${serviceName}/install/status`);
+      const res = await api.get(`/server-control/${serviceName}/install/status`, withAccount(accountId));
       return {
         hasInstallation: res.data?.hasInstallation !== false,
         status: (res.data?.status || null) as InstallStatus | null,

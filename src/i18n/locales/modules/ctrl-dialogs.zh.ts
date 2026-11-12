@@ -116,6 +116,8 @@ export const ctrlDialogsZh = {
     customize: {
       title: "系统定制(官方模板问题)",
       enable: "启用",
+      selectPlaceholder: "请选择配置选项...",
+      optionalNone: "不指定（默认）",
       scriptHint: "安装后脚本内容(bash/PowerShell…带 shebang);后端原样提交给 OVH",
       sshKeyHint: "ssh-rsa AAAA… your-comment",
       note: "这些问题由所选系统的官方模板定义(SSH 密钥、安装后脚本、语言等),答案原样提交给 OVH。",

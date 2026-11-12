@@ -6,6 +6,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
 import { api } from "@/lib/http";
+import { useServerAccount, withAccount } from "@/hooks/ovh/server-control/account";
 import { toast } from "sonner";
 import { BootModeDialog } from "./BootModeDialog";
 import { TasksDialog } from "./TasksDialog";
@@ -19,8 +20,9 @@ import { useTranslation } from "react-i18next";
 import { errorMessage } from "@/lib/api-error";
 
 /** 电源与系统 Tab：重启 / 重装 / IPMI / 启动模式 / 解锁 Windows / 任务 / BIOS / 安装进度 */
-export function PowerTab({ server }: { server: OwnedServer }) {
+export function PowerTab({ server, accountId: propAccountId }: { server: OwnedServer; accountId?: string }) {
   const { t } = useTranslation();
+  const accountId = useServerAccount(propAccountId || server.accountId);
   const [bootOpen, setBootOpen] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false);
   const [reinstallOpen, setReinstallOpen] = useState(false);
@@ -36,7 +38,7 @@ export function PowerTab({ server }: { server: OwnedServer }) {
     // 按下就发,不给第二次机会 —— 所以必须先确认、发的过程中必须禁用。
     setRebooting(true);
     try {
-      await api.post(`/server-control/${server.serviceName}/reboot`);
+      await api.post(`/server-control/${server.serviceName}/reboot`, undefined, withAccount(accountId));
       toast.success(t("maint.power.toast.rebootSent"));
       setRebootOpen(false);
     } catch (e: unknown) {
@@ -112,7 +114,7 @@ export function PowerTab({ server }: { server: OwnedServer }) {
         />
       </div>
 
-      <SplaDialog serviceName={server.serviceName} open={splaOpen} onOpenChange={setSplaOpen} />
+      <SplaDialog serviceName={server.serviceName} open={splaOpen} onOpenChange={setSplaOpen} accountId={accountId} />
       <BootModeDialog serviceName={server.serviceName} open={bootOpen} onOpenChange={setBootOpen} />
       <RescueDialog
         serviceName={server.serviceName}
@@ -121,10 +123,10 @@ export function PowerTab({ server }: { server: OwnedServer }) {
         onOpenChange={setRescueOpen}
       />
       <TasksDialog serviceName={server.serviceName} open={tasksOpen} onOpenChange={setTasksOpen} />
-      <ReinstallDialog serviceName={server.serviceName} open={reinstallOpen} onOpenChange={setReinstallOpen} />
+      <ReinstallDialog serviceName={server.serviceName} open={reinstallOpen} onOpenChange={setReinstallOpen} accountId={accountId} />
       <BiosDialog serviceName={server.serviceName} open={biosOpen} onOpenChange={setBiosOpen} />
       <InstallProgressDialog serviceName={server.serviceName} open={progressOpen} onOpenChange={setProgressOpen} />
-      <IpmiDialog serviceName={server.serviceName} open={ipmiOpen} onOpenChange={setIpmiOpen} />
+      <IpmiDialog serviceName={server.serviceName} open={ipmiOpen} onOpenChange={setIpmiOpen} accountId={accountId} />
 
       {/* 重启确认。
           以前这张卡片是"点一下就直接硬重启" —— 没有确认、没有禁用、没有进行中反馈。

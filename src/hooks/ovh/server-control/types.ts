@@ -19,6 +19,8 @@ export interface OwnedServer {
   error?: string;
   /** 中奖摘要(后端 1h 缓存,只有确实中奖的机器才带)。徽章用,详情在概览页 */
   lottery?: { won: boolean; tier?: number };
+  /** 该服务器归属的 OVH 账户 ID（防止多标签页切账户发生操作串号） */
+  accountId?: string;
 }
 
 export interface HardwareLotteryItem {

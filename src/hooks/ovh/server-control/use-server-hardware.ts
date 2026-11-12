@@ -12,6 +12,7 @@ import type {
   ServerIntervention,
 } from "./types";
 import { errorStatus } from "@/lib/api-error";
+import { useServerAccount, withAccount } from "./account";
 
 export function serverHardwareQueryOptions(serviceName: string, accountId: string) {
   return queryOptions({
@@ -68,10 +69,11 @@ export function useServerLotterySummary() {
 }
 
 export function useServerDiskInfo(serviceName: string | null, enabled = true) {
+  const accountId = useServerAccount();
   return useQuery({
-    queryKey: qk.serverControl.diskInfo(serviceName || ""),
+    queryKey: qk.serverControl.diskInfo(serviceName || "", accountId),
     queryFn: async () => {
-      const res = await api.get(`/server-control/${serviceName}/hardware-disk-info`);
+      const res = await api.get(`/server-control/${serviceName}/hardware-disk-info`, withAccount(accountId));
       return (res.data?.diskGroups || {}) as Record<string, DiskGroup>;
     },
     enabled: !!serviceName && enabled,
@@ -80,11 +82,12 @@ export function useServerDiskInfo(serviceName: string | null, enabled = true) {
 }
 
 export function useServerRaidProfiles(serviceName: string | null, enabled = true) {
+  const accountId = useServerAccount();
   return useQuery({
-    queryKey: qk.serverControl.raidProfiles(serviceName || ""),
+    queryKey: qk.serverControl.raidProfiles(serviceName || "", accountId),
     queryFn: async () => {
       try {
-        const res = await api.get(`/server-control/${serviceName}/hardware-raid-profiles`);
+        const res = await api.get(`/server-control/${serviceName}/hardware-raid-profiles`, withAccount(accountId));
         return {
           supported: res.data?.supported !== false,
           profiles: (res.data?.profiles || []) as Record<string, unknown>[],
@@ -103,11 +106,13 @@ export function useServerRaidProfiles(serviceName: string | null, enabled = true
 }
 
 export function useServerPartitionSchemes(serviceName: string | null, templateName: string | null) {
+  const accountId = useServerAccount();
   return useQuery({
-    queryKey: qk.serverControl.partitionSchemes(serviceName || "", templateName || ""),
+    queryKey: qk.serverControl.partitionSchemes(serviceName || "", accountId, templateName || ""),
     queryFn: async () => {
       const res = await api.get(
-        `/server-control/${serviceName}/partition-schemes?templateName=${encodeURIComponent(templateName || "")}`
+        `/server-control/${serviceName}/partition-schemes?templateName=${encodeURIComponent(templateName || "")}`,
+        withAccount(accountId)
       );
       return (res.data?.schemes || []) as PartitionScheme[];
     },
@@ -117,12 +122,13 @@ export function useServerPartitionSchemes(serviceName: string | null, templateNa
 }
 
 export function useServerBiosSettings(serviceName: string | null, enabled = true) {
+  const accountId = useServerAccount();
   return useQuery({
-    queryKey: qk.serverControl.biosSettings(serviceName || ""),
+    queryKey: qk.serverControl.biosSettings(serviceName || "", accountId),
     queryFn: async () => {
       try {
-        const res = await api.get(`/server-control/${serviceName}/bios-settings`);
-        const sgxRes = await api.get(`/server-control/${serviceName}/bios-settings/sgx`).catch(() => null);
+        const res = await api.get(`/server-control/${serviceName}/bios-settings`, withAccount(accountId));
+        const sgxRes = await api.get(`/server-control/${serviceName}/bios-settings/sgx`, withAccount(accountId)).catch(() => null);
         return {
           settings: (res.data || {}) as Record<string, unknown>,
           sgx: sgxRes?.data?.sgx ?? sgxRes?.data?.data ?? sgxRes?.data ?? null,
@@ -140,6 +146,7 @@ export function useServerBiosSettings(serviceName: string | null, enabled = true
 }
 
 export function useCreateIntervention() {
+  const accountId = useServerAccount();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (args: {
@@ -163,20 +170,21 @@ export function useCreateIntervention() {
         comment: args.comment,
         ...(args.disks?.length ? { disks: args.disks, inverse: !!args.inverse } : {}),
         ...(args.slots?.length ? { slots: args.slots } : {}),
-      });
+      }, withAccount(accountId));
       return res.data;
     },
     onSuccess: (_, vars) => {
-      qc.invalidateQueries({ queryKey: qk.serverControl.interventions(vars.serviceName) });
+      qc.invalidateQueries({ queryKey: qk.serverControl.interventions(vars.serviceName, accountId) });
     },
   });
 }
 
 export function useServerInterventions(serviceName: string | null) {
+  const accountId = useServerAccount();
   return useQuery({
-    queryKey: qk.serverControl.interventions(serviceName || ""),
+    queryKey: qk.serverControl.interventions(serviceName || "", accountId),
     queryFn: async () => {
-      const res = await api.get(`/server-control/${serviceName}/interventions`);
+      const res = await api.get(`/server-control/${serviceName}/interventions`, withAccount(accountId));
       return (res.data?.interventions || []) as ServerIntervention[];
     },
     enabled: !!serviceName,

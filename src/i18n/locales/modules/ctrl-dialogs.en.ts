@@ -117,6 +117,8 @@ const pack: CtrlDialogsPack = {
     customize: {
       title: "OS customizations (official template questions)",
       enable: "Enable",
+      selectPlaceholder: "Select configuration option...",
+      optionalNone: "None (Default)",
       scriptHint: "Post-installation script (bash/PowerShell… with shebang); submitted to OVH as-is",
       sshKeyHint: "ssh-rsa AAAA… your-comment",
       note: "These questions come from the selected OS's official template (SSH key, post-install script, language…); answers go to OVH as-is.",

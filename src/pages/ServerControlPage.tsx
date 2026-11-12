@@ -197,6 +197,7 @@ function RenameDialog({
   onClose: () => void;
 }) {
   const { hidden } = useHideIp();
+  const [accountId] = useActiveServerControlAccount();
   const set = useSetServerAlias();
   const [value, setValue] = useState(currentAlias);
   useEffect(() => {
@@ -206,7 +207,8 @@ function RenameDialog({
   if (!server) return null;
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await set.mutateAsync({ serviceName: server.serviceName, alias: value });
+    // 显式带上本页账户:另一个标签页切账户后,别名仍写到这台机器所属的账户下
+    await set.mutateAsync({ serviceName: server.serviceName, alias: value, accountId });
     onClose();
   };
 
@@ -360,7 +362,7 @@ function ServerTabs({ server }: { server: OwnedServer }) {
           <OverviewTab server={server} />
         </TabsContent>
         <TabsContent value="power" className="mt-4">
-          <PowerTab server={server} />
+          <PowerTab server={server} accountId={server.accountId} />
         </TabsContent>
         <TabsContent value="maintenance" className="mt-4">
           <MaintenanceTab server={server} />
@@ -389,6 +391,7 @@ function ServerTabs({ server }: { server: OwnedServer }) {
         serviceName={server.serviceName}
         open={reinstallOpen}
         onOpenChange={setReinstallOpen}
+        accountId={server.accountId}
       />
 
       {retraction.data && (
