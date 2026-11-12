@@ -563,8 +563,17 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 						m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 价格校验通过 [config-trace:%s]",
 							planCode, dc, configDisplay, configTraceID), "monitor")
 					} else {
-						m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 价格校验失败，原因: %s [config-trace:%s]",
-							planCode, dc, configDisplay, errMsg, configTraceID), "monitor")
+						kind, friendly := ClassifyPriceCheckError(errMsg)
+						if kind == ErrorKindPreSale {
+							m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 底层库存已释出，等待商城开放加车（%s） [config-trace:%s]",
+								planCode, dc, configDisplay, friendly, configTraceID), "monitor")
+						} else if kind == ErrorKindRegionBlocked {
+							m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 跨区配置受限: %s [config-trace:%s]",
+								planCode, dc, configDisplay, errMsg, configTraceID), "monitor")
+						} else {
+							m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 价格校验未通过，原因: %s [config-trace:%s]",
+								planCode, dc, configDisplay, errMsg, configTraceID), "monitor")
+						}
 					}
 				}(dc)
 			}
@@ -601,8 +610,17 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 						actualStatus = "price_check_failed"
 						priceCheckFailed = true
 						priceCheckError = errStr
-						m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 可用性显示有货但价格校验失败，原因: %s，标记为price_check_failed",
-							planCode, dc, configDisplay, errStr), "monitor")
+						kind, friendly := ClassifyPriceCheckError(errStr)
+						if kind == ErrorKindPreSale {
+							m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 可用性检测到库存，进入预售等待蹲守状态（%s）",
+								planCode, dc, configDisplay, friendly), "monitor")
+						} else if kind == ErrorKindRegionBlocked {
+							m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 跨区配置受限: %s，标记为price_check_failed",
+								planCode, dc, configDisplay, errStr), "monitor")
+						} else {
+							m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 可用性显示有货但价格校验未通过，原因: %s，标记为price_check_failed",
+								planCode, dc, configDisplay, errStr), "monitor")
+						}
 					} else {
 						actualStatus = "available"
 						m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 可用性有货且价格校验通过，确认有货",
@@ -646,8 +664,14 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 					planCode, dc, configDisplay), "monitor")
 			case ds.oldStatus == "unavailable" && actualStatus == "price_check_failed":
 				statusChanged, changeType = true, "price_check_failed"
-				m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 从无货变可用性有货但价格校验失败",
-					planCode, dc, configDisplay), "monitor")
+				kind, _ := ClassifyPriceCheckError(priceCheckError)
+				if kind == ErrorKindPreSale {
+					m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 捕获预售信号：底层库存已释出，开始持续蹲守商城放行",
+						planCode, dc, configDisplay), "monitor")
+				} else {
+					m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 从无货变可用性有货但价格校验未通过",
+						planCode, dc, configDisplay), "monitor")
+				}
 			case ds.oldStatus == "price_check_failed" && actualStatus == "available":
 				statusChanged, changeType = true, "available"
 				m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 从价格校验失败变有货（价格校验通过）",

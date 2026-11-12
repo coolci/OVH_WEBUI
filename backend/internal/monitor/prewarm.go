@@ -134,7 +134,14 @@ func (m *Monitor) assemblePrewarmedCartAsync(accountID, planCode, datacenter str
 		globalPrewarmCoord.mu.Lock()
 		globalPrewarmCoord.failedCounts[key]++
 		globalPrewarmCoord.mu.Unlock()
-		m.state.Logger.Warn(fmt.Sprintf("[monitor/prewarm] 预热装车 %s@%s 失败: %v", planCode, datacenter, err), "monitor")
+		kind, friendly := ClassifyPriceCheckError(err.Error())
+		if kind == ErrorKindPreSale {
+			m.state.Logger.Info(fmt.Sprintf("[monitor/prewarm] %s@%s 暂未开放加车（%s，待放行自动预热）", planCode, datacenter, friendly), "monitor")
+		} else if kind == ErrorKindRegionBlocked {
+			m.state.Logger.Info(fmt.Sprintf("[monitor/prewarm] %s@%s 跨区配置受限: %v", planCode, datacenter, err), "monitor")
+		} else {
+			m.state.Logger.Warn(fmt.Sprintf("[monitor/prewarm] 预热装车 %s@%s 失败: %v", planCode, datacenter, err), "monitor")
+		}
 		return
 	}
 

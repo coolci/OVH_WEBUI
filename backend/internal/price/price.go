@@ -625,7 +625,7 @@ func lookupEcoPricing(state *app.State, client *ovhsdk.Client, cartID, planCode,
 		d, pm, ok := orderterm.Pick(def["prices"], preferDuration, "")
 		return d, pm, ok
 	}
-	state.Logger.Warn("在 Eco 目录里未找到 planCode: "+planCode, "price")
+	state.Logger.Debug("在 Eco 目录里未找到 planCode: "+planCode, "price")
 	return "", "", false
 }
 

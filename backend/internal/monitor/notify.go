@@ -681,7 +681,14 @@ func (m *Monitor) SendAvailabilityAlert(planCode, datacenter, status, changeType
 		msg.WriteString("💡 快捷下单指令 (点击即可复制):\n`" + cmdCopy + "`\n")
 
 	case "price_check_failed":
-		msg.WriteString(fmt.Sprintf("⚠️ 价格校验告警 · %s\n", planCode))
+		kind, friendly := ClassifyPriceCheckError(priceCheckError)
+		if kind == ErrorKindPreSale {
+			msg.WriteString(fmt.Sprintf("⏳ 预售等待提醒 · %s\n", planCode))
+		} else if kind == ErrorKindRegionBlocked {
+			msg.WriteString(fmt.Sprintf("🚫 跨区受限提醒 · %s\n", planCode))
+		} else {
+			msg.WriteString(fmt.Sprintf("⚠️ 价格校验告警 · %s\n", planCode))
+		}
 		msg.WriteString(telegram.CardDivider + "\n")
 		if serverName != "" {
 			msg.WriteString("🖥️ 产品名称: " + serverName + "\n")
@@ -695,7 +702,13 @@ func (m *Monitor) SendAvailabilityAlert(planCode, datacenter, status, changeType
 		}
 		msg.WriteString("📊 库存状态: 可用性检测有货\n")
 		if priceCheckError != "" {
-			msg.WriteString(fmt.Sprintf("❌ 校验失败: %s（已安全跳过自动下单）\n", priceCheckError))
+			if kind == ErrorKindPreSale {
+				msg.WriteString(fmt.Sprintf("⏳ 预售等待中: %s（已跳过本轮下单，后台持续蹲守解禁）\n", friendly))
+			} else if kind == ErrorKindRegionBlocked {
+				msg.WriteString(fmt.Sprintf("🚫 跨区受限: %s（建议换绑同大区账户）\n", friendly))
+			} else {
+				msg.WriteString(fmt.Sprintf("❌ 校验失败: %s（已安全跳过自动下单）\n", priceCheckError))
+			}
 		} else {
 			msg.WriteString("❌ 校验失败: 价格校验未通过（已安全跳过自动下单）\n")
 		}
