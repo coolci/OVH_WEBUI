@@ -5,6 +5,7 @@ backend/vendor/
 # build
 dist/
 backend/dist/
+backend/web/
 backend/ovh-webui
 *.exe
 *.test
