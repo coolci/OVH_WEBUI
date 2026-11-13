@@ -147,19 +147,30 @@ func formatAmount(currency string, v float64) string {
 const prewarmVerifyMaxAge = 10 * time.Minute
 
 // 返回 (是否可下单, 失败原因)
-func (m *Monitor) verifyPriceAvailable(planCode, datacenter string, configInfo map[string]interface{}) (bool, string) {
+func (m *Monitor) hasFreshPrewarmedCartForConfig(planCode, datacenter string, configInfo map[string]interface{}) bool {
 	options := optionsFromConfig(configInfo)
 	accountID := accountIDFromConfig(configInfo)
 	duration := durationFromConfig(configInfo)
 	coupon := m.keptCartCoupon(configInfo)
+	return purchase.HasFreshPrewarmedCart(accountID, planCode, datacenter, options, "", duration, prewarmVerifyMaxAge) ||
+		(coupon != "" && purchase.HasFreshPrewarmedCart(accountID, planCode, datacenter, options, coupon, duration, prewarmVerifyMaxAge))
+}
+
+func (m *Monitor) verifyPriceAvailable(planCode, datacenter string, configInfo map[string]interface{}) (verified bool, failReason string) {
+	options := optionsFromConfig(configInfo)
+	accountID := accountIDFromConfig(configInfo)
+	duration := durationFromConfig(configInfo)
+	coupon := m.keptCartCoupon(configInfo)
+	subsidiary, _ := configInfo["subsidiary"].(string)
+	catalogMissing, _ := configInfo["catalog_missing"].(bool)
 
 	// 预热就绪车直通校验闸门：
 	// 若预热池中已存在该机型与配置的预装车，说明此前已在 OVH 侧完成装车验证，
 	// 直接放行，避免在抢购黄金窗口因现场建车删车询价浪费 3.5s~5.0s 甚至踩 429 导致丢单！
 	// 只认刚装好的车(prewarmVerifyMaxAge 内):老车只能说明当时配置有效,
 	// 拿它直通会让"幽灵库存"过滤(price_check_failed)对开了自动下单的订阅形同虚设。
-	if purchase.HasFreshPrewarmedCart(accountID, planCode, datacenter, options, "", duration, prewarmVerifyMaxAge) ||
-		(coupon != "" && purchase.HasFreshPrewarmedCart(accountID, planCode, datacenter, options, coupon, duration, prewarmVerifyMaxAge)) {
+	if m.hasFreshPrewarmedCartForConfig(planCode, datacenter, configInfo) {
+		m.recordPlanVerifySuccess(accountID, subsidiary, planCode)
 		m.state.Logger.Info(fmt.Sprintf("[monitor/prewarm] %s@%s 命中预热就绪车，跳过二次建车验价直通放行", planCode, datacenter), "monitor")
 		return true, ""
 	}
@@ -171,12 +182,16 @@ func (m *Monitor) verifyPriceAvailable(planCode, datacenter string, configInfo m
 	// 询价车按下单的配置装好、绑定过,校验通过就直接留作预热车:自动下单 / 一键下单按钮
 	// 紧接着就能拿它结账,不用再重装一辆。没通过就删掉,不留僵尸车。
 	result, cartID := price.GetInternalCachedKeepCart(m.state, accountID, planCode, datacenter, options, duration)
-	passed := false
 	defer func() {
+		if verified {
+			m.recordPlanVerifySuccess(accountID, subsidiary, planCode)
+		} else if failReason != "" {
+			m.recordPlanVerifyFailure(accountID, subsidiary, planCode, catalogMissing, failReason)
+		}
 		if cartID == "" {
 			return
 		}
-		if passed {
+		if verified {
 			m.keepPriceCheckCart(cartID, accountID, planCode, datacenter, options, duration, coupon)
 			return
 		}
@@ -230,7 +245,6 @@ func (m *Monitor) verifyPriceAvailable(planCode, datacenter string, configInfo m
 		}
 	}
 	m.state.Logger.Debug(fmt.Sprintf("价格校验通过: %s@%s - 价格(未税优先): %v", planCode, datacenter, priceVal), "monitor")
-	passed = true
 	return true, ""
 }
 
@@ -370,6 +384,11 @@ func (m *Monitor) GetPriceInfoText(planCode, datacenter string, configInfo map[s
 		text := formatMoney(p.Currency, p.Monthly)
 		m.state.Logger.Debug("目录纯月费获取成功: "+text, "monitor")
 		return text
+	}
+
+	cfgSubsidiary, _ := configInfo["subsidiary"].(string)
+	if m.isPlanInCooldown(accountID, cfgSubsidiary, planCode) {
+		return ""
 	}
 
 	m.state.Logger.Debug(fmt.Sprintf("开始获取价格(回退购物车询价): plan_code=%s, datacenter=%s, options=%v",

@@ -2,13 +2,18 @@ package monitor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/ovh-webui/server/internal/catalog"
 	"github.com/ovh-webui/server/internal/purchase"
 )
+
+// prewarmSem 限制全进程同时装配预热车的并发数，避免批量开启自动下单订阅时瞬时打爆 OVH 限流。
+var prewarmSem = make(chan struct{}, 4)
 
 type prewarmCoordinator struct {
 	mu           sync.Mutex
@@ -36,6 +41,30 @@ func ResetPrewarmCoordinator() {
 	globalPrewarmCoord.failedCounts = map[string]int{}
 }
 
+func (m *Monitor) shouldSkipPrewarmForAccount(accountID, planCode string) bool {
+	if m.state == nil {
+		return true
+	}
+	acc, ok := m.state.FindAccount(accountID)
+	if !ok {
+		return true
+	}
+	subsidiary := catalog.SubsidiaryOfAccount(acc)
+	if m.isPlanInCooldown(acc.ID, subsidiary, planCode) {
+		m.logPlanCooldownSkip(acc.ID, subsidiary, planCode, "预热")
+		return true
+	}
+	if catalog.IsEcoPlanCode(planCode) {
+		if _, err := catalog.AddonFamiliesForPlan(m.state, acc.ID, planCode); err == nil {
+			m.observePlanCatalogStatus(acc.ID, subsidiary, planCode, true, false)
+		} else if errors.Is(err, catalog.ErrPlanNotInCatalog) {
+			m.markPrewarmCatalogMissing(acc.ID, subsidiary, planCode)
+			return true
+		}
+	}
+	return false
+}
+
 // TriggerPrewarmForSubscription 为指定订阅触发预热装车。
 // 仅对 AutoOrder=true 且指定了 AutoOrderAccountID 的有效订阅生效。
 func (m *Monitor) TriggerPrewarmForSubscription(sub *Subscription) {
@@ -43,7 +72,8 @@ func (m *Monitor) TriggerPrewarmForSubscription(sub *Subscription) {
 		return
 	}
 	cfg := sub.checkConfig()
-	if cfg.Paused || !cfg.AutoOrder || len(NormalizeOrderAccounts(cfg.AutoOrderAccountID, cfg.AutoOrderAccountIDs)) == 0 {
+	accounts := NormalizeOrderAccounts(cfg.AutoOrderAccountID, cfg.AutoOrderAccountIDs)
+	if cfg.Paused || !cfg.AutoOrder || len(accounts) == 0 {
 		return
 	}
 	planCode := sub.PlanCode
@@ -54,12 +84,23 @@ func (m *Monitor) TriggerPrewarmForSubscription(sub *Subscription) {
 		return
 	}
 
+	activeAccounts := make([]string, 0, len(accounts))
+	for _, accountID := range accounts {
+		if m.shouldSkipPrewarmForAccount(accountID, planCode) {
+			continue
+		}
+		activeAccounts = append(activeAccounts, accountID)
+	}
+	if len(activeAccounts) == 0 {
+		return
+	}
+
 	for _, dc := range dcs {
 		dcTrimmed := strings.TrimSpace(dc)
 		if dcTrimmed == "" {
 			continue
 		}
-		for _, accountID := range NormalizeOrderAccounts(cfg.AutoOrderAccountID, cfg.AutoOrderAccountIDs) {
+		for _, accountID := range activeAccounts {
 			go m.assemblePrewarmedCartAsync(accountID, planCode, dcTrimmed, options, "", cfg.Duration)
 		}
 	}
@@ -81,7 +122,13 @@ func (m *Monitor) assemblePrewarmedCartAsync(accountID, planCode, datacenter str
 	if m.state == nil || m.state.OVH == nil {
 		return
 	}
-	if _, ok := m.state.FindAccount(accountID); !ok {
+	acc, ok := m.state.FindAccount(accountID)
+	if !ok {
+		return
+	}
+	subsidiary := catalog.SubsidiaryOfAccount(acc)
+	if m.isPlanInCooldown(acc.ID, subsidiary, planCode) {
+		m.logPlanCooldownSkip(acc.ID, subsidiary, planCode, "预热")
 		return
 	}
 
@@ -123,6 +170,17 @@ func (m *Monitor) assemblePrewarmedCartAsync(accountID, planCode, datacenter str
 		globalPrewarmCoord.mu.Unlock()
 	}()
 
+	prewarmSem <- struct{}{}
+	defer func() { <-prewarmSem }()
+
+	if m.isPlanInCooldown(acc.ID, subsidiary, planCode) {
+		m.logPlanCooldownSkip(acc.ID, subsidiary, planCode, "预热")
+		return
+	}
+	if purchase.HasPrewarmedCart(accountID, planCode, datacenter, options, coupon, duration) {
+		return
+	}
+
 	m.state.Logger.Info(fmt.Sprintf("[monitor/prewarm] 开始为订阅 %s@%s 预热购物车 (账户: %s)...",
 		planCode, datacenter, accountID), "monitor")
 
@@ -133,7 +191,9 @@ func (m *Monitor) assemblePrewarmedCartAsync(accountID, planCode, datacenter str
 	if err != nil {
 		globalPrewarmCoord.mu.Lock()
 		globalPrewarmCoord.failedCounts[key]++
+		globalPrewarmCoord.lastAttempt[key] = time.Now()
 		globalPrewarmCoord.mu.Unlock()
+		m.recordPlanVerifyFailure(acc.ID, subsidiary, planCode, false, err.Error())
 		kind, friendly := ClassifyPriceCheckError(err.Error())
 		if kind == ErrorKindPreSale {
 			m.state.Logger.Info(fmt.Sprintf("[monitor/prewarm] %s@%s 暂未开放加车（%s，待放行自动预热）", planCode, datacenter, friendly), "monitor")
@@ -148,6 +208,7 @@ func (m *Monitor) assemblePrewarmedCartAsync(accountID, planCode, datacenter str
 	globalPrewarmCoord.mu.Lock()
 	globalPrewarmCoord.failedCounts[key] = 0
 	globalPrewarmCoord.mu.Unlock()
+	m.recordPlanVerifySuccess(acc.ID, subsidiary, planCode)
 
 	m.state.Logger.Info(fmt.Sprintf("[monitor/prewarm] ✅ 预热装车就绪！CartID: %s (%s@%s)", cart.CartID, planCode, datacenter), "monitor")
 }

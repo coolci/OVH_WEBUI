@@ -428,6 +428,16 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 			planCode, choice.region, choice.subsidiary), "monitor")
 	}
 
+	hasCatalogMissing := false
+	allConfigsInCatalog := len(currentAvailability) > 0
+	for _, cd := range currentAvailability {
+		if cd.CatalogMissing {
+			hasCatalogMissing = true
+			allConfigsInCatalog = false
+		}
+	}
+	m.observePlanCatalogStatus(choice.accountID, choice.subsidiary, planCode, allConfigsInCatalog, hasCatalogMissing)
+
 	// 状态先在副本上推进,循环结束一次性写回:HTTP 侧读到的要么是上轮的完整状态、
 	// 要么是本轮的完整状态,不会是推进到一半的中间态。
 	lastStatus := sub.statusSnapshot()
@@ -497,6 +507,8 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 		}
 		priceCfg := copyMap(configInfo)
 		priceCfg["account_id"] = choice.accountID
+		priceCfg["subsidiary"] = choice.subsidiary
+		priceCfg["catalog_missing"] = configData.CatalogMissing
 		// 验价车留作预热车时要知道下一步谁来用它:自动下单(不带优惠码)还是 TG 一键下单按钮(带默认优惠码)
 		priceCfg["auto_order"] = cfg.AutoOrder
 
@@ -509,6 +521,7 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 		}
 		dcStatusMap := map[string]dcStatus{}
 		priceCheckTasks := []string{}
+		priceCheckSkipped := map[string]bool{}
 		for dc, status := range configData.Datacenters {
 			if len(monitoredDCs) > 0 && !containsString(monitoredDCs, dc) {
 				continue
@@ -521,8 +534,17 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 			orderable := catalog.IsAvailableForOrder(status)
 			dcStatusMap[dc] = dcStatus{status: status, statusKey: statusKey, oldStatus: old, hasOld: hasOld, orderable: orderable}
 			if NeedsPriceCheck(orderable, hasOld, old) {
+				if !m.hasFreshPrewarmedCartForConfig(planCode, dc, priceCfg) &&
+					m.isPlanInCooldown(choice.accountID, choice.subsidiary, planCode) {
+					priceCheckSkipped[dc] = true
+					continue
+				}
 				priceCheckTasks = append(priceCheckTasks, dc)
 			}
+		}
+		sort.Strings(priceCheckTasks)
+		if len(priceCheckSkipped) > 0 {
+			m.logPlanCooldownSkip(choice.accountID, choice.subsidiary, planCode, "监控验价")
 		}
 
 		// 新出现的有货:先于验价 / 通知,立刻唤醒同型号、同机房的队列任务,
@@ -543,41 +565,82 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 		priceCheckResults := map[string][2]interface{}{}
 		if len(priceCheckTasks) > 0 {
 			var pcMu sync.Mutex
-			var wg sync.WaitGroup
-			workers := len(priceCheckTasks)
-			if workers > 10 {
-				workers = 10
-			}
-			sem := make(chan struct{}, workers)
-			for _, dc := range priceCheckTasks {
-				wg.Add(1)
-				sem <- struct{}{}
-				go func(dc string) {
-					defer wg.Done()
-					defer func() { <-sem }()
-					ok, errMsg := m.verifyPriceAvailable(planCode, dc, priceCfg)
-					pcMu.Lock()
-					priceCheckResults[dc] = [2]interface{}{ok, errMsg}
-					pcMu.Unlock()
-					if ok {
-						m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 价格校验通过 [config-trace:%s]",
-							planCode, dc, configDisplay, configTraceID), "monitor")
+			runPriceVerify := func(dc string) bool {
+				ok, errMsg := m.verifyPriceAvailable(planCode, dc, priceCfg)
+				pcMu.Lock()
+				priceCheckResults[dc] = [2]interface{}{ok, errMsg}
+				pcMu.Unlock()
+				if ok {
+					m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 价格校验通过 [config-trace:%s]",
+						planCode, dc, configDisplay, configTraceID), "monitor")
+				} else {
+					kind, friendly := ClassifyPriceCheckError(errMsg)
+					if kind == ErrorKindPreSale {
+						m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 底层库存已释出，等待商城开放加车（%s） [config-trace:%s]",
+							planCode, dc, configDisplay, friendly, configTraceID), "monitor")
+					} else if kind == ErrorKindRegionBlocked {
+						m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 跨区配置受限: %s [config-trace:%s]",
+							planCode, dc, configDisplay, errMsg, configTraceID), "monitor")
 					} else {
-						kind, friendly := ClassifyPriceCheckError(errMsg)
-						if kind == ErrorKindPreSale {
-							m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 底层库存已释出，等待商城开放加车（%s） [config-trace:%s]",
-								planCode, dc, configDisplay, friendly, configTraceID), "monitor")
-						} else if kind == ErrorKindRegionBlocked {
-							m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 跨区配置受限: %s [config-trace:%s]",
-								planCode, dc, configDisplay, errMsg, configTraceID), "monitor")
-						} else {
-							m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 价格校验未通过，原因: %s [config-trace:%s]",
-								planCode, dc, configDisplay, errMsg, configTraceID), "monitor")
-						}
+						m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 价格校验未通过，原因: %s [config-trace:%s]",
+							planCode, dc, configDisplay, errMsg, configTraceID), "monitor")
 					}
-				}(dc)
+				}
+				return ok
 			}
-			wg.Wait()
+
+			// 命中新鲜预热车的 DC 直接放行；需要真实建车探针的 DC 对目录未收录车型先单点试探 1 个机房，
+			// 首探未通过则跳过其余机房，避免同轮内 N 配置 × M 机房齐发触发 429。
+			prewarmedTasks := make([]string, 0, len(priceCheckTasks))
+			liveTasks := make([]string, 0, len(priceCheckTasks))
+			for _, dc := range priceCheckTasks {
+				if m.hasFreshPrewarmedCartForConfig(planCode, dc, priceCfg) {
+					prewarmedTasks = append(prewarmedTasks, dc)
+				} else {
+					liveTasks = append(liveTasks, dc)
+				}
+			}
+
+			concurrentTasks := make([]string, 0, len(priceCheckTasks))
+			concurrentTasks = append(concurrentTasks, prewarmedTasks...)
+			if len(liveTasks) > 0 && configData.CatalogMissing {
+				if runPriceVerify(liveTasks[0]) {
+					concurrentTasks = append(concurrentTasks, liveTasks[1:]...)
+				} else {
+					for _, skippedDC := range liveTasks[1:] {
+						priceCheckSkipped[skippedDC] = true
+					}
+				}
+			} else {
+				concurrentTasks = append(concurrentTasks, liveTasks...)
+			}
+
+			if len(concurrentTasks) > 0 {
+				var wg sync.WaitGroup
+				workers := len(concurrentTasks)
+				if workers > 10 {
+					workers = 10
+				}
+				sem := make(chan struct{}, workers)
+				for _, dc := range concurrentTasks {
+					wg.Add(1)
+					sem <- struct{}{}
+					go func(dc string) {
+						defer wg.Done()
+						defer func() { <-sem }()
+						if !m.hasFreshPrewarmedCartForConfig(planCode, dc, priceCfg) &&
+							m.isPlanInCooldown(choice.accountID, choice.subsidiary, planCode) {
+							pcMu.Lock()
+							priceCheckSkipped[dc] = true
+							pcMu.Unlock()
+							m.logPlanCooldownSkip(choice.accountID, choice.subsidiary, planCode, "监控验价")
+							return
+						}
+						runPriceVerify(dc)
+					}(dc)
+				}
+				wg.Wait()
+			}
 		}
 
 		notifications := []notification{}
@@ -625,6 +688,14 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 						actualStatus = "available"
 						m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 可用性有货且价格校验通过，确认有货",
 							planCode, dc, configDisplay), "monitor")
+					}
+				} else if priceCheckSkipped[dc] {
+					if configData.CatalogMissing {
+						actualStatus = "unavailable"
+					} else if ds.hasOld && ds.oldStatus == "price_check_failed" {
+						actualStatus = "price_check_failed"
+					} else {
+						actualStatus = "unavailable"
 					}
 				} else {
 					actualStatus = "price_check_failed"

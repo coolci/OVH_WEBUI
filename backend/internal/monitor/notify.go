@@ -954,6 +954,10 @@ func (m *Monitor) prewarmAlertButtons(planCode string, availableDCs []map[string
 			continue
 		}
 		seen[k] = true
+		if m.isPlanInCooldown(acc, "", planCode) {
+			m.logPlanCooldownSkip(acc, "", planCode, "通知按钮预热")
+			continue
+		}
 		n++
 		go m.assemblePrewarmedCartAsync(acc, planCode, dc, options, coupon, "") // TG 一键下单按钮按月付
 	}

@@ -445,6 +445,7 @@ func (m *Monitor) cleanupExpiredCaches() {
 	if len(expUUIDs) > 0 || len(expOpts) > 0 {
 		m.state.Logger.Debug(fmt.Sprintf("清理过期缓存: UUID=%d个, Options=%d个", len(expUUIDs), len(expOpts)), "monitor")
 	}
+	m.cleanupExpiredPlanCooldowns()
 }
 
 // AddMessageUUID 缓存按钮对应的配置

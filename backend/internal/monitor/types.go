@@ -60,6 +60,10 @@ type Monitor struct {
 	// 不放 subsMu 下,简单用单独的锁。
 	tgCheckMu   sync.Mutex
 	lastTGCheck time.Time
+
+	// (accountID, subsidiary, planCode) 维度的异常校验长冷却状态
+	planCooldownMu sync.Mutex
+	planCooldowns  map[string]*planCooldownEntry
 }
 
 type CachedOptions struct {
