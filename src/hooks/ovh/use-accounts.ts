@@ -74,6 +74,11 @@ function followDefaultAccount(qc: QueryClient, id: string) {
   qc.invalidateQueries({ queryKey: ["support-tickets"] });
   qc.invalidateQueries({ queryKey: ["vps-control"] });
   qc.invalidateQueries({ queryKey: ["vps-monitor"] });
+  qc.invalidateQueries({ queryKey: ["ovh", "account", "ssh-keys"] });
+  qc.invalidateQueries({ queryKey: ["ovh", "payment-default"] });
+  qc.invalidateQueries({ queryKey: ["ovh", "security"] });
+  qc.invalidateQueries({ queryKey: ["all-owned-servers"] });
+  qc.invalidateQueries({ queryKey: ["all-owned-vps"] });
 }
 
 /**
@@ -151,7 +156,7 @@ export function useUpdateAccount() {
   return useMutation({
     mutationFn: async ({ id, input }: { id: string; input: Partial<AccountInput> }) => {
       try {
-        const res = await api.put<{ account: OVHAccount } & AccountVerifyResult>(`/accounts/${id}`, input);
+        const res = await api.put<{ account: OVHAccount } & AccountVerifyResult>(`/accounts/${encodeURIComponent(id)}`, input);
         return res.data;
       } catch (err: unknown) {
         if (errorStatus(err) === 422 && errorBody(err).account) {
@@ -189,7 +194,7 @@ export function useUpdateAccount() {
 export function useDeleteAccount() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (id: string) => (await api.delete(`/accounts/${id}`)).data,
+    mutationFn: async (id: string) => (await api.delete(`/accounts/${encodeURIComponent(id)}`)).data,
     onSuccess: (_d, id) => {
       qc.invalidateQueries({ queryKey: ACCOUNTS_KEY });
       qc.invalidateQueries({ queryKey: qk.accounts.proxyStatus() });
@@ -211,7 +216,7 @@ export function useDeleteAccount() {
 export function useSetDefaultAccount() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (id: string) => (await api.post(`/accounts/${id}/set-default`)).data,
+    mutationFn: async (id: string) => (await api.post(`/accounts/${encodeURIComponent(id)}/set-default`)).data,
     onSuccess: (_d, id) => {
       qc.invalidateQueries({ queryKey: ACCOUNTS_KEY });
       followDefaultAccount(qc, id);
@@ -225,7 +230,7 @@ export function useSetDefaultAccount() {
 export function useVerifyAccount() {
   return useMutation({
     mutationFn: async (id: string) =>
-      (await api.post<AccountVerifyResult>(`/accounts/${id}/verify`)).data,
+      (await api.post<AccountVerifyResult>(`/accounts/${encodeURIComponent(id)}/verify`)).data,
     onSuccess: (data) => {
       if (data.valid) {
         toast.success(i18n.t("hooksMsg.account.verifyOk"));
@@ -345,7 +350,7 @@ export function useProxyTest() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) =>
-      (await api.post<ProxyTestResult>(`/accounts/${id}/proxy-test`)).data,
+      (await api.post<ProxyTestResult>(`/accounts/${encodeURIComponent(id)}/proxy-test`)).data,
     onSuccess: (data, id) => {
       const rec: ProxyTestRecord = { ...data, testedAt: Date.now() };
       qc.setQueryData(qk.accounts.proxyTest(id), rec);
@@ -516,7 +521,7 @@ export function useProxyCheck() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) =>
-      (await api.post<ProxyCheckResult>(`/accounts/${id}/proxy-check`)).data,
+      (await api.post<ProxyCheckResult>(`/accounts/${encodeURIComponent(id)}/proxy-check`)).data,
     onSuccess: (data, id) => {
       const rec: ProxyCheckRecord = { ...data, receivedAt: Date.now() };
       qc.setQueryData(qk.accounts.proxyCheck(id), rec);

@@ -871,35 +871,57 @@ func InstallOS(state *app.State) gin.HandlerFunc {
 			diskCount := 2
 			var diskGroupID interface{}
 			var hardware map[string]interface{}
-			if err := client.Get("/dedicated/server/"+svc+"/specifications/hardware", &hardware); err == nil {
-				if v, ok := numconv.ToInt64(hardware["defaultDiskGroupId"]); ok {
-					diskGroupID = v
-				}
-				if dgs, ok := hardware["diskGroups"].([]interface{}); ok && len(dgs) > 0 {
-					if dg, ok := dgs[0].(map[string]interface{}); ok {
-						if v, ok := numconv.ToInt64(dg["numberOfDisks"]); ok {
-							diskCount = int(v)
-						}
-						// 容量是按 diskGroups[0] 算的，diskGroupId 就得跟着它走；
-						// 之前写死 0 会出现"按 A 组算容量、往默认组下分区"
-						if v, ok := numconv.ToInt64(dg["diskGroupId"]); ok {
-							diskGroupID = v
-						}
-						if singleDiskGB, ok := diskSizeToGB(dg["diskSize"]); ok {
-							if raidLevel == 0 {
-								totalCapacityGB = singleDiskGB * diskCount
+			if err := client.Get("/dedicated/server/"+svc+"/specifications/hardware", &hardware); err != nil {
+				state.Logger.Error("获取硬件信息失败，无法安全计算 ZFS 分区容量: "+err.Error(), "server_control")
+				respondOVHError(c, err)
+				return
+			}
+			if v, ok := numconv.ToInt64(hardware["defaultDiskGroupId"]); ok {
+				diskGroupID = v
+			}
+			if dgs, ok := hardware["diskGroups"].([]interface{}); ok && len(dgs) > 0 {
+				if dg, ok := dgs[0].(map[string]interface{}); ok {
+					if v, ok := numconv.ToInt64(dg["numberOfDisks"]); ok {
+						diskCount = int(v)
+					}
+					// 容量是按 diskGroups[0] 算的，diskGroupId 就得跟着它走；
+					// 之前写死 0 会出现"按 A 组算容量、往默认组下分区"
+					if v, ok := numconv.ToInt64(dg["diskGroupId"]); ok {
+						diskGroupID = v
+					}
+					if singleDiskGB, ok := diskSizeToGB(dg["diskSize"]); ok {
+						switch raidLevel {
+						case 0:
+							totalCapacityGB = singleDiskGB * diskCount
+						case 1:
+							totalCapacityGB = singleDiskGB
+						case 5:
+							if diskCount > 1 {
+								totalCapacityGB = singleDiskGB * (diskCount - 1)
 							} else {
 								totalCapacityGB = singleDiskGB
 							}
-							state.Logger.Info(fmt.Sprintf("📊 检测到磁盘: %dx%dGB, RAID%d 总容量: %dGB",
-								diskCount, singleDiskGB, raidLevel, totalCapacityGB), "server_control")
-						} else {
-							state.Logger.Warn(fmt.Sprintf("磁盘容量或单位无法识别，使用默认容量: %dGB", totalCapacityGB), "server_control")
+						case 6, 7:
+							if diskCount > 2 {
+								totalCapacityGB = singleDiskGB * (diskCount - 2)
+							} else {
+								totalCapacityGB = singleDiskGB
+							}
+						case 10:
+							if diskCount >= 2 {
+								totalCapacityGB = singleDiskGB * (diskCount / 2)
+							} else {
+								totalCapacityGB = singleDiskGB
+							}
+						default:
+							totalCapacityGB = singleDiskGB
 						}
+						state.Logger.Info(fmt.Sprintf("📊 检测到磁盘: %dx%dGB, RAID%d 总容量: %dGB",
+							diskCount, singleDiskGB, raidLevel, totalCapacityGB), "server_control")
+					} else {
+						state.Logger.Warn(fmt.Sprintf("磁盘容量或单位无法识别，使用默认容量: %dGB", totalCapacityGB), "server_control")
 					}
 				}
-			} else {
-				state.Logger.Warn(fmt.Sprintf("获取硬件信息失败，使用默认容量: %dGB - %s", totalCapacityGB, err.Error()), "server_control")
 			}
 
 			if diskCount < 2 && raidLevel != 0 {

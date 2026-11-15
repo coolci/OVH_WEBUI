@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -119,6 +120,13 @@ func SelfUpdate(state *app.State, restart func(exePath string)) gin.HandlerFunc 
 		state.Logger.Info("[更新] 开始自更新: "+Version+" → "+latest, "version")
 
 		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					errMsg := fmt.Sprintf("自更新异常中止: %v", r)
+					state.Logger.Error("[更新] "+errMsg, "version")
+					setProgress(updater.Progress{Phase: "failed", Version: latest, Error: errMsg, Message: "更新失败"})
+				}
+			}()
 			// 注意:goroutine 不持锁。并发防护靠上面 TryLock 段置的 phase
 			// (downloading → updateRunning() → 409),不靠长持锁。
 			// 如果 goroutine defer 持锁,内部 setProgress(内部 Lock)就死锁
@@ -150,7 +158,9 @@ func SelfUpdate(state *app.State, restart func(exePath string)) gin.HandlerFunc 
 
 			// 给前端一点时间把 restarting 这个状态轮询走,不然它只会看到连接中断
 			time.Sleep(1500 * time.Millisecond)
-			restart(exe)
+			if restart != nil {
+				restart(exe)
+			}
 		}()
 
 		c.JSON(http.StatusOK, gin.H{

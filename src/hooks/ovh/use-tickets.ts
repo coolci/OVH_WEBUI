@@ -106,7 +106,7 @@ export function useSupportTicket(ticketId?: number | null, account?: string) {
     queryKey: ["support-ticket", ticketId, account],
     queryFn: async () => {
       if (!ticketId) return null;
-      const res = await api.get<SupportTicketDetailResponse>(`/support/tickets/${ticketId}`, {
+      const res = await api.get<SupportTicketDetailResponse>(`/support/tickets/${encodeURIComponent(String(ticketId))}`, {
         params: account ? { account } : undefined,
       });
       return res.data.ticket;
@@ -122,7 +122,7 @@ export function useSupportMessages(ticketId?: number | null, account?: string) {
     queryKey: ["support-messages", ticketId, account],
     queryFn: async () => {
       if (!ticketId) return [];
-      const res = await api.get<SupportTicketMessagesResponse>(`/support/tickets/${ticketId}/messages`, {
+      const res = await api.get<SupportTicketMessagesResponse>(`/support/tickets/${encodeURIComponent(String(ticketId))}/messages`, {
         params: account ? { account } : undefined,
       });
       return res.data.messages || [];
@@ -164,7 +164,7 @@ export function useReplyTicket(ticketId: number, account?: string) {
   return useMutation({
     mutationFn: async (body: string) => {
       const res = await api.post<{ success: boolean }>(
-        `/support/tickets/${ticketId}/reply`,
+        `/support/tickets/${encodeURIComponent(String(ticketId))}/reply`,
         { body },
         { params: account ? { account } : undefined }
       );
@@ -191,7 +191,7 @@ export function useCloseTicket(ticketId: number, account?: string) {
   return useMutation({
     mutationFn: async () => {
       const res = await api.post<{ success: boolean }>(
-        `/support/tickets/${ticketId}/close`,
+        `/support/tickets/${encodeURIComponent(String(ticketId))}/close`,
         {},
         { params: account ? { account } : undefined }
       );
@@ -217,7 +217,7 @@ export function useReopenTicket(ticketId: number, account?: string) {
   return useMutation({
     mutationFn: async (body: string) => {
       const res = await api.post<{ success: boolean }>(
-        `/support/tickets/${ticketId}/reopen`,
+        `/support/tickets/${encodeURIComponent(String(ticketId))}/reopen`,
         { body },
         { params: account ? { account } : undefined }
       );

@@ -5,7 +5,7 @@ import { Helmet } from "react-helmet-async";
 import { User, Mail, RefreshCw, FileText, Inbox, ShieldCheck, ShoppingCart, ExternalLink, CalendarClock, Undo2, type LucideIcon } from "lucide-react";
 import { formatDate, formatDateTime } from "@/lib/format-os";
 import { useState } from "react";
-import { cn } from "@/lib/utils";
+import { cn, safeHttpsUrl } from "@/lib/utils";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -293,7 +293,7 @@ function OrdersTab() {
                       <OrderPaymentButton
                         accountId={o.accountId || accountId}
                         orderId={o.orderId}
-                        managerUrl={typeof o.url === "string" ? o.url : undefined}
+                        managerUrl={typeof o.url === "string" ? safeHttpsUrl(o.url) : undefined}
                       />
                     )}
                     {o.paymentStatusError && (
@@ -301,9 +301,9 @@ function OrdersTab() {
                         付款状态未能读取，请刷新核对
                       </span>
                     )}
-                    {o.url && (
+                    {safeHttpsUrl(typeof o.url === "string" ? o.url : undefined) && (
                       <a
-                        href={String(o.url)}
+                        href={safeHttpsUrl(String(o.url))}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1 text-[11px] text-foreground hover:underline min-h-8"
@@ -312,9 +312,9 @@ function OrdersTab() {
                         打开
                       </a>
                     )}
-                    {o.pdfUrl && (
+                    {safeHttpsUrl(typeof o.pdfUrl === "string" ? o.pdfUrl : undefined) && (
                       <a
-                        href={String(o.pdfUrl)}
+                        href={safeHttpsUrl(String(o.pdfUrl))}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-[11px] text-muted-foreground hover:underline min-h-8 inline-flex items-center"
@@ -373,8 +373,8 @@ function RefundsTab() {
                 </div>
                 <div className="text-right flex-shrink-0">
                   <p className="text-lg font-bold text-success">{r.priceWithTax.text}</p>
-                  {r.pdfUrl && (
-                    <a href={r.pdfUrl} target="_blank" rel="noopener noreferrer" className="text-[11px] text-foreground hover:underline">
+                  {safeHttpsUrl(r.pdfUrl) && (
+                    <a href={safeHttpsUrl(r.pdfUrl)} target="_blank" rel="noopener noreferrer" className="text-[11px] text-foreground hover:underline">
                       下载 PDF
                     </a>
                   )}

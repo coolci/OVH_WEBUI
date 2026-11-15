@@ -111,10 +111,10 @@ func loadOrderPayment(ctx context.Context, state *app.State, accountID string, o
 		return info, err
 	}
 	info.Amount, info.Currency, info.PriceText, info.ExpirationDate = order.Price.Value, order.Price.Currency, order.Price.Text, order.ExpirationDate
-	if state.DB == nil {
+	if !state.HasDB() {
 		return info, fmt.Errorf("数据库不可用,不能安全确认付款状态")
 	}
-	info.Attempted, err = state.DB.GetKV(db.OrderPaymentKey(acc.ID, orderID), &struct {
+	info.Attempted, err = state.GetKV(db.OrderPaymentKey(acc.ID, orderID), &struct {
 		State string `json:"state"`
 	}{})
 	if err != nil {
@@ -242,18 +242,18 @@ func PayAccountOrder(state *app.State) gin.HandlerFunc {
 			c.JSON(409, gin.H{"error": "订单已过期或该支付方式不可用,请刷新后重新选择"})
 			return
 		}
-		claimed, err := state.DB.ClaimOrderPayment(info.AccountID, id)
+		client, err := state.OVH.IsolatedClientFor(info.AccountID)
+		if err != nil {
+			c.JSON(500, gin.H{"error": "账户不可用,付款未发起"})
+			return
+		}
+		claimed, err := state.ClaimOrderPayment(info.AccountID, id)
 		if err != nil {
 			c.JSON(500, gin.H{"error": "付款请求未能登记,没有发起扣款"})
 			return
 		}
 		if !claimed {
 			c.JSON(409, gin.H{"error": "已有付款请求,请在 OVH 控制台核对,不要重复付款"})
-			return
-		}
-		client, err := state.OVH.IsolatedClientFor(info.AccountID)
-		if err != nil {
-			c.JSON(500, gin.H{"error": "账户不可用,付款未发起"})
 			return
 		}
 		method := map[string]interface{}{"id": body.MethodID}
@@ -268,14 +268,14 @@ func PayAccountOrder(state *app.State) gin.HandlerFunc {
 		if err != nil {
 			var apiErr *ovhsdk.APIError
 			if errors.As(err, &apiErr) && apiErr.Code >= 400 && apiErr.Code < 500 && apiErr.Code != 408 && apiErr.Code != 409 && apiErr.Code != 429 {
-				_ = state.DB.DeleteKV(db.OrderPaymentKey(info.AccountID, id))
+				_ = state.DeleteKV(db.OrderPaymentKey(info.AccountID, id))
 				c.JSON(http.StatusBadGateway, gin.H{"error": "OVH 拒绝付款: " + ovh.Explain(err)})
 				return
 			}
 			c.JSON(http.StatusConflict, gin.H{"error": "付款结果尚不能确认,请到 OVH 控制台核对,不要重复发起。" + ovh.Explain(err)})
 			return
 		}
-		_ = state.DB.SetKV(db.OrderPaymentKey(info.AccountID, id), map[string]string{"state": "submitted"})
+		_ = state.SetKV(db.OrderPaymentKey(info.AccountID, id), map[string]string{"state": "submitted"})
 		state.Logger.Info(fmt.Sprintf("账户 %s 订单 %d 已提交绑定方式付款", info.AccountID, id), "payment")
 		c.JSON(200, gin.H{"status": "submitted", "message": "付款请求已提交,请刷新核对订单状态；如需银行验证,请在 OVH 控制台完成。"})
 	}

@@ -28,8 +28,8 @@ func GetSubscriptions(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 // AddSubscription POST /api/monitor/subscriptions
 func AddSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 监控订阅必须有可用的 Telegram 通知,否则没意义
-		if ok, reason := notify.AnyAvailable(state, true); !ok {
+		// 监控订阅必须有已配置的通知通道(不阻塞请求线程做远端连通性探测)
+		if ok, reason := notify.AnyAvailable(state, false); !ok {
 			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "没有可用的通知通道(Telegram / Webhook 至少配一个):" + reason})
 			return
 		}
@@ -158,8 +158,8 @@ func AddSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 // BatchAddAll POST /api/monitor/subscriptions/batch-add-all
 func BatchAddAll(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 同 AddSubscription:批量添加也要求 TG 有效
-		if ok, reason := notify.AnyAvailable(state, true); !ok {
+		// 同 AddSubscription:批量添加要求已配置通知通道
+		if ok, reason := notify.AnyAvailable(state, false); !ok {
 			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "没有可用的通知通道(Telegram / Webhook 至少配一个):" + reason})
 			return
 		}
@@ -344,8 +344,8 @@ func GetSubscriptionHistory(state *app.State, mon *monitor.Monitor) gin.HandlerF
 // StartMonitor POST /api/monitor/start
 func StartMonitor(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 启动前先验 TG,broken TG 不让起,免得起来一圈检查发不出去白跑
-		if ok, reason := notify.AnyAvailable(state, true); !ok {
+		// 启动前先做本地通知配置校验,避免请求线程同步拨号卡死
+		if ok, reason := notify.AnyAvailable(state, false); !ok {
 			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "Telegram 通知未配置或无效,无法启动监控:" + reason})
 			return
 		}

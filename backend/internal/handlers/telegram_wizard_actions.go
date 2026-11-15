@@ -200,16 +200,19 @@ func enqueueFromNotifyButton(state *app.State, mon *monitor.Monitor, cbID string
 
 	var opts []string
 	if !claimed {
-		if cached := mon.MessageUUIDCacheLookup(buttonID); cached != nil {
-			mon.MessageUUIDCacheDelete(buttonID)
-			planCode, datacenter = cached.PlanCode, cached.Datacenter
-			opts = cached.Options
-			if cached.ConfigInfo != nil {
-				if d, ok := cached.ConfigInfo["display"].(string); ok {
-					cfgLabel = d
+		if mon != nil {
+			if cached := mon.MessageUUIDCacheLookup(buttonID); cached != nil {
+				mon.MessageUUIDCacheDelete(buttonID)
+				planCode, datacenter = cached.PlanCode, cached.Datacenter
+				opts = cached.Options
+				if cached.ConfigInfo != nil {
+					if d, ok := cached.ConfigInfo["display"].(string); ok {
+						cfgLabel = d
+					}
 				}
 			}
-		} else {
+		}
+		if planCode == "" || datacenter == "" {
 			telegram.AnswerCallback(state, cbID, "按钮已失效", true)
 			return
 		}

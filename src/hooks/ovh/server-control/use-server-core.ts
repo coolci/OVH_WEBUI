@@ -32,7 +32,7 @@ export function useServerServiceInfo(serviceName: string | null) {
   return useQuery({
     queryKey: qk.serverControl.serviceInfo(serviceName || "", accountId),
     queryFn: async () => {
-      const res = await api.get(`/server-control/${serviceName}/serviceinfo`, withAccount(accountId));
+      const res = await api.get(`/server-control/${encodeURIComponent(serviceName || "")}/serviceinfo`, withAccount(accountId));
       return (res.data?.serviceInfo || null) as ServiceInfo | null;
     },
     enabled: !!serviceName,
@@ -47,7 +47,7 @@ export function useUpdateRenewal(serviceName: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (vars: { mode: "auto" | "manual" | "delete"; period?: number }) => {
-      const res = await api.put(`/server-control/${serviceName}/serviceinfo/renewal`, vars, withAccount(accountId));
+      const res = await api.put(`/server-control/${encodeURIComponent(serviceName)}/serviceinfo/renewal`, vars, withAccount(accountId));
       return res.data;
     },
     onSuccess: () => {
@@ -110,7 +110,7 @@ export function useUpdateTerminationPolicy(serviceName: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (vars: { policy: string }) =>
-      (await api.put(`/server-control/${serviceName}/termination-policy`, vars, withAccount(accountId))).data as {
+      (await api.put(`/server-control/${encodeURIComponent(serviceName)}/termination-policy`, vars, withAccount(accountId))).data as {
         success: boolean;
         message: string;
       },

@@ -319,6 +319,36 @@ paths:
                     type: boolean
         '404':
           $ref: '#/components/responses/NotFound'
+    put:
+      summary: Update configuration or fields of a queue item
+      operationId: UpdateQueueItem
+      tags:
+        - F04
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Queue item updated
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /queue/{id}/interval:
     put:
@@ -5830,6 +5860,748 @@ paths:
       responses:
         '200':
           description: Update progress status
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /app/devices:
+    get:
+      summary: List paired mobile/desktop app devices
+      operationId: ListAppDevices
+      tags:
+        - F11
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Paired app devices list
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /app/devices/{id}:
+    delete:
+      summary: Revoke a paired app device
+      operationId: RevokeAppDevice
+      tags:
+        - F11
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Device revoked
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /app/pair:
+    post:
+      summary: Redeem a one-time pairing code for a device token
+      operationId: RedeemAppPairingCode
+      tags:
+        - F11
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Device paired successfully
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /app/pairing-codes:
+    post:
+      summary: Generate a one-time pairing code for app onboarding
+      operationId: CreateAppPairingCode
+      tags:
+        - F11
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Pairing code created
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /ovh/account/orders/{order_id}/payment:
+    get:
+      summary: Get payment options and status for an OVH order
+      operationId: GetAccountOrderPayment
+      tags:
+        - F01b
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Order payment metadata
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /ovh/account/orders/{order_id}/pay:
+    post:
+      summary: Pay an unpaid OVH order using registered payment method
+      operationId: PayAccountOrder
+      tags:
+        - F01b
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Payment submitted
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /ovh/account/ssh-keys:
+    get:
+      summary: List SSH keys registered on the OVH account
+      operationId: ListAccountSSHKeys
+      tags:
+        - F01b
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Account SSH keys
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /ovh/support/chat/session:
+    post:
+      summary: Prepare OVH official support live chat session token
+      operationId: CreateSupportChatSession
+      tags:
+        - F01b
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Support chat session details
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /support/tickets:
+    get:
+      summary: List OVH support tickets across accounts
+      operationId: ListSupportTickets
+      tags:
+        - F01b
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Support tickets list
+          content:
+            application/json:
+              schema:
+                type: object
+    post:
+      summary: Create a new OVH support ticket
+      operationId: CreateSupportTicket
+      tags:
+        - F01b
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Ticket created
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /support/tickets/{ticket_id}:
+    get:
+      summary: Get details of a specific support ticket
+      operationId: GetSupportTicket
+      tags:
+        - F01b
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: ticket_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Support ticket details
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /support/tickets/{ticket_id}/messages:
+    get:
+      summary: List messages in a support ticket thread
+      operationId: ListSupportTicketMessages
+      tags:
+        - F01b
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: ticket_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Support ticket messages
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /support/tickets/{ticket_id}/close:
+    post:
+      summary: Close a support ticket
+      operationId: CloseSupportTicket
+      tags:
+        - F01b
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: ticket_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Support ticket closed
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /support/tickets/{ticket_id}/reopen:
+    post:
+      summary: Reopen a closed support ticket
+      operationId: ReopenSupportTicket
+      tags:
+        - F01b
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: ticket_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Support ticket reopened
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /support/tickets/{ticket_id}/reply:
+    post:
+      summary: Reply to a support ticket
+      operationId: ReplySupportTicket
+      tags:
+        - F01b
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: ticket_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Reply posted
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /telegram/poller:
+    get:
+      summary: Get Telegram long-polling worker status
+      operationId: GetTelegramPollerStatus
+      tags:
+        - F07
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Telegram poller status
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /monitor/subscriptions/{planCode}/pause:
+    post:
+      summary: Pause or resume a server monitor subscription
+      operationId: PauseMonitorSubscription
+      tags:
+        - F05
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: planCode
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Subscription pause state updated
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /purchase/prewarm:
+    post:
+      summary: Prewarm an OVH cart for a selected plan and datacenter
+      operationId: PrewarmPurchaseOrder
+      tags:
+        - F04
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Prewarm cart status
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /server-control/{service_name}/rescue:
+    get:
+      summary: Get rescue mode status and options for a dedicated server
+      operationId: GetServerRescueStatus
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Server rescue status
+          content:
+            application/json:
+              schema:
+                type: object
+    post:
+      summary: Enter rescue mode on a dedicated server
+      operationId: EnterServerRescueMode
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Rescue mode requested
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /server-control/{service_name}/rescue/exit:
+    post:
+      summary: Exit rescue mode and return dedicated server to disk boot
+      operationId: ExitServerRescueMode
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Exited rescue mode
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /server-control/{service_name}/retraction:
+    get:
+      summary: Get retraction eligibility for a dedicated server order
+      operationId: GetServerRetractionEligibility
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Retraction eligibility
+          content:
+            application/json:
+              schema:
+                type: object
+    post:
+      summary: Submit retraction (order withdrawal) for a dedicated server
+      operationId: SubmitServerRetraction
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Retraction submitted
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /vps-control/{service_name}/reinstall:
+    post:
+      summary: Rebuild/reinstall a VPS instance
+      operationId: ReinstallVpsInstance
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: VPS rebuild initiated
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /vps-control/{service_name}/retraction:
+    get:
+      summary: Get retraction eligibility for a VPS order
+      operationId: GetVpsRetractionEligibility
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: VPS retraction eligibility
+          content:
+            application/json:
+              schema:
+                type: object
+    post:
+      summary: Submit retraction (order withdrawal) for a VPS instance
+      operationId: SubmitVpsRetraction
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: VPS retraction submitted
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /vps-control/{service_name}/ssh-keys:
+    get:
+      summary: List SSH keys available for VPS installation
+      operationId: ListVpsSSHKeys
+      tags:
+        - F09
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: VPS SSH keys
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /catalog-watch:
+    get:
+      summary: Get catalog watch configuration and jobs
+      operationId: GetCatalogWatch
+      tags:
+        - F03
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Catalog watch state
+          content:
+            application/json:
+              schema:
+                type: object
+    put:
+      summary: Update catalog watch configuration
+      operationId: UpdateCatalogWatch
+      tags:
+        - F03
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Catalog watch updated
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /order/durations:
+    get:
+      summary: List available order durations and pricing modes for a plan
+      operationId: GetOrderDurations
+      tags:
+        - F02
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Order durations
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /ovh/os-availability:
+    get:
+      summary: Get operating system availability for a server plan
+      operationId: GetOVHOSAvailability
+      tags:
+        - F02
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: OS availability list
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /ovh/payment-default:
+    get:
+      summary: Get default payment method for an OVH account
+      operationId: GetOVHDefaultPayment
+      tags:
+        - F01b
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Default payment method
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /ovh/orders/{orderId}/followup:
+    get:
+      summary: Get follow-up steps and delivery progress for an OVH order
+      operationId: GetOVHOrderFollowUp
+      tags:
+        - F01b
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Order follow-up history
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /ovh/carts/cleanup:
+    post:
+      summary: Clean up leftover OVH shopping carts across accounts
+      operationId: CleanupOVHCarts
+      tags:
+        - F01b
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Cart cleanup summary
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /ovh/security/credentials:
+    get:
+      summary: List active OVH API credentials for the account
+      operationId: ListOVHSecurityCredentials
+      tags:
+        - F01b
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: OVH API credentials list
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /ovh/security/credentials/{credentialId}:
+    delete:
+      summary: Revoke an OVH API credential by ID
+      operationId: RevokeOVHSecurityCredential
+      tags:
+        - F01b
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: credentialId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Credential revoked
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /ovh/security/api-logs:
+    get:
+      summary: List recent OVH API security and access logs
+      operationId: ListOVHSecurityAPILogs
+      tags:
+        - F01b
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: OVH API access logs
           content:
             application/json:
               schema:

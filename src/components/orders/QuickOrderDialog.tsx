@@ -204,8 +204,16 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
   const totalTasks = selectedDCs.length * qty;
   const busy = create.isPending;
   const canSubmit = Boolean(accountId && planCode.trim() && selectedDCs.length > 0) && !busy && !preorderMismatch;
+  const selectedOptionsKey = useMemo(
+    () => [...selectedValues].map((v) => v.trim()).filter(Boolean).sort().join(","),
+    [selectedValues]
+  );
   const existingMonitor = planCode
-    ? monitorList.data?.find((s) => s.planCode === planCode)
+    ? monitorList.data?.find(
+        (s) =>
+          s.planCode === planCode &&
+          [...(s.options || [])].map((v) => v.trim()).filter(Boolean).sort().join(",") === selectedOptionsKey
+      )
     : undefined;
 
   const handleClose = (next: boolean) => {

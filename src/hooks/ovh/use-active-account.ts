@@ -17,11 +17,16 @@ function invalidateServerControl(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: ["ssh-keys"] });
   qc.invalidateQueries({ queryKey: ["payment-methods"] });
   qc.invalidateQueries({ queryKey: ["support-tickets"] });
+  qc.invalidateQueries({ queryKey: ["ovh", "account", "ssh-keys"] });
+  qc.invalidateQueries({ queryKey: ["ovh", "payment-default"] });
+  qc.invalidateQueries({ queryKey: ["ovh", "security"] });
+  qc.invalidateQueries({ queryKey: ["all-owned-servers"] });
 }
 
 function invalidateVpsControl(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: ["vps-control"] });
   qc.invalidateQueries({ queryKey: ["vps-monitor"] });
+  qc.invalidateQueries({ queryKey: ["all-owned-vps"] });
 }
 
 const EVT = "ovh-active-account-changed";

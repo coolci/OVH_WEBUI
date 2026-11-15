@@ -74,7 +74,9 @@ func (s *Supervisor) Start() {
 		})
 	}
 	state.OVH.SetProxyErrorHook(proxyguard.Report)
+	state.OVH.SetProxySuccessHook(proxyguard.ReportSuccess)
 	state.SetProxyErrorHook(proxyguard.Report)
+	state.SetProxySuccessHook(proxyguard.ReportSuccess)
 	ApplySharedProxy(state)
 	state.OVH.SetLogf(func(format string, args ...interface{}) {
 		state.Logger.Warn(fmt.Sprintf(format, args...), "proxy")

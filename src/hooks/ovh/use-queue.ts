@@ -181,7 +181,7 @@ export function useToggleQueueItem() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, action }: { id: string; action: "pause" | "resume" }) =>
-      (await api.put(`/queue/${id}/status`, { status: action === "pause" ? "paused" : "running" })).data,
+      (await api.put(`/queue/${encodeURIComponent(id)}/status`, { status: action === "pause" ? "paused" : "running" })).data,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.queue.list() });
       // 暂停/恢复改变仪表盘 activeQueues
@@ -197,7 +197,7 @@ export function useUpdateQueueInterval() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, retryInterval }: { id: string; retryInterval: number }) =>
-      (await api.put(`/queue/${id}/interval`, { retryInterval })).data,
+      (await api.put(`/queue/${encodeURIComponent(id)}/interval`, { retryInterval })).data,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.queue.list() });
       toast.success(i18n.t("hooksMsg.queue.intervalUpdated"));
@@ -209,7 +209,7 @@ export function useUpdateQueueInterval() {
 export function useRemoveQueueItem() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (id: string) => (await api.delete(`/queue/${id}`)).data,
+    mutationFn: async (id: string) => (await api.delete(`/queue/${encodeURIComponent(id)}`)).data,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.queue.list() });
       qc.invalidateQueries({ queryKey: qk.stats() });

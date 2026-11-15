@@ -49,8 +49,12 @@ function VPSMonitorPage() {
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
-      await Promise.all([list.refetch(), status.refetch()]);
-      toast.success("已刷新 VPS 监控与订阅状态");
+      const [r1, r2] = await Promise.all([list.refetch(), status.refetch()]);
+      if (r1.isError || r2.isError) {
+        toast.error("刷新失败，请检查后端连接");
+      } else {
+        toast.success("已刷新 VPS 监控与订阅状态");
+      }
     } finally {
       setTimeout(() => setIsRefreshing(false), 450);
     }

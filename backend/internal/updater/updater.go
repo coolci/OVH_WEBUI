@@ -153,10 +153,24 @@ func fetchChecksum(rel *Release, target string) (string, error) {
 		// 文件名可能带 * 前缀(shasum 的二进制模式)
 		fname := strings.TrimPrefix(fields[len(fields)-1], "*")
 		if filepath.Base(fname) == target {
-			return strings.ToLower(fields[0]), nil
+			sum := strings.ToLower(fields[0])
+			if len(sum) != 64 {
+				return "", fmt.Errorf("校验和格式不合法(长度 %d != 64)", len(sum))
+			}
+			if _, err := hex.DecodeString(sum); err != nil {
+				return "", fmt.Errorf("校验和不是有效的十六进制字符串: %w", err)
+			}
+			return sum, nil
 		}
 	}
 	return "", fmt.Errorf("%s 里没有 %s 的校验和", ChecksumAsset, target)
+}
+
+func shortSum(s string) string {
+	if len(s) > 12 {
+		return s[:12] + "…"
+	}
+	return s
 }
 
 // downloadVerified 下载附件到 dst,边下边算 SHA256,校验不过就删掉临时文件并报错
@@ -220,7 +234,7 @@ func downloadVerified(a *Asset, dst, wantSum string, onProgress func(pct int)) e
 	got := hex.EncodeToString(h.Sum(nil))
 	if !strings.EqualFold(got, wantSum) {
 		os.Remove(dst)
-		return fmt.Errorf("校验和不匹配(期望 %s,实际 %s),文件可能被篡改或下载损坏,已丢弃", wantSum[:12]+"…", got[:12]+"…")
+		return fmt.Errorf("校验和不匹配(期望 %s,实际 %s),文件可能被篡改或下载损坏,已丢弃", shortSum(wantSum), shortSum(got))
 	}
 	return nil
 }

@@ -139,12 +139,17 @@ func processQueueLoop(loopCtx context.Context, state *app.State, purchase func(c
 	// 现在任务到点且不在执行中就派发,并发上限仍是 concurrentBatchSize。
 	// 循环退出前等全部在途任务返回:Supervisor.Stop 依赖它保证"没有在途结账"再关库。
 	var workers sync.WaitGroup
-	defer workers.Wait()
 	var inFlightMu sync.Mutex
 	inFlight := map[string]bool{}
 	slots := make(chan struct{}, concurrentBatchSize)
 	var finished atomic.Int64
 	var savedAt int64
+	defer func() {
+		workers.Wait()
+		if finished.Load() != savedAt {
+			_ = state.SaveQueue()
+		}
+	}()
 	for loopCtx.Err() == nil {
 		// 历史未读出时不能确认是否已下单,停止调度以免重复购买。
 		if state.SaveBlocked("history") != nil || state.SaveBlocked("queue") != nil {
@@ -209,22 +214,20 @@ func processQueueLoop(loopCtx context.Context, state *app.State, purchase func(c
 		state.QueueMu.Unlock()
 		sort.SliceStable(sorted, func(i, j int) bool {
 			a, b := sorted[i], sorted[j]
-			ap, bp := 1, 1
-			if a.QuickOrder {
-				ap = 0
+			if a.QuickOrder != b.QuickOrder {
+				return a.QuickOrder
 			}
-			if b.QuickOrder {
-				bp = 0
-			}
-			if ap != bp {
-				return ap < bp
+			if a.Priority != b.Priority {
+				return a.Priority > b.Priority
 			}
 			// CreatedAt 是 types.NowISO() 写的,不带时区,RFC3339Nano 解不出来。
-			// 以前这里两个 t 都是零值 → at.After(bt) 恒 false → 同优先级的任务
-			// 排序完全没生效,先入队的不一定先跑。ParseTS 两种历史格式都认。
-			at, _ := types.ParseTS(a.CreatedAt)
-			bt, _ := types.ParseTS(b.CreatedAt)
-			return at.After(bt)
+			// ParseTS 两种历史格式都认;同优先级任务按创建时间正序(FIFO:先入队的先跑)。
+			at, okA := types.ParseTS(a.CreatedAt)
+			bt, okB := types.ParseTS(b.CreatedAt)
+			if okA && okB && !at.Equal(bt) {
+				return at.Before(bt)
+			}
+			return false
 		})
 
 		current := time.Now().Unix()
@@ -479,6 +482,9 @@ func processQueueLoop(loopCtx context.Context, state *app.State, purchase func(c
 					}
 				}
 				state.QueueMu.Unlock()
+				if err := state.SaveQueue(); err != nil {
+					state.Logger.Error("保存失败任务状态失败: "+err.Error(), "queue")
+				}
 				// 任务死了必须告诉用户。
 				//
 				// 以前这里只写日志:成功会 Broadcast 一条通知,失败终止却完全静默 ——

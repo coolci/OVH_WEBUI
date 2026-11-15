@@ -248,12 +248,15 @@ export function StoragePartitionSection({
           ) : (ps.data || []).length === 0 ? (
             <p className="text-[12px] text-muted-foreground">{t("ctrl.reinstall.scheme.empty")}</p>
           ) : (
-            <Select value={partitionSchemeName} onValueChange={setPartitionSchemeName}>
+            <Select
+              value={partitionSchemeName || "__default__"}
+              onValueChange={(v) => setPartitionSchemeName(v === "__default__" ? "" : v)}
+            >
               <SelectTrigger>
                 <SelectValue placeholder={t("ctrl.reinstall.mode.default")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value=" ">{t("ctrl.reinstall.mode.default")}</SelectItem>
+                <SelectItem value="__default__">{t("ctrl.reinstall.mode.default")}</SelectItem>
                 {(ps.data || []).map((s) => (
                   <SelectItem key={s.name} value={s.name}>
                     {t("ctrl.reinstall.scheme.item", { name: s.name, priority: s.priority })}

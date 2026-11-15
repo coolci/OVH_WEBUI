@@ -216,11 +216,22 @@ func loadLedger(path string) ([]Row, error) {
 	return rows, nil
 }
 
+var (
+	paramSegmentRe    = regexp.MustCompile(`:[A-Za-z0-9_]+|\{[^}]+\}`)
+	wildcardSegmentRe = regexp.MustCompile(`\*[A-Za-z0-9_]+`)
+	pkgPathRe         = regexp.MustCompile(`^\./backend/internal/[a-zA-Z0-9_/-]+$`)
+	testNameRe        = regexp.MustCompile(`^Test[A-Za-z0-9_]+$`)
+
+	cachedContractContent string
+	cachedContractKeys    map[string]bool
+	cachedContractValid   bool
+)
+
 func routeKey(method, path string) string {
 	// Parameter names do not change the route contract; wildcard and single
 	// segment parameters remain distinct.
-	path = regexp.MustCompile(`:[A-Za-z0-9_]+|\{[^}]+\}`).ReplaceAllString(path, ":param")
-	path = regexp.MustCompile(`\*[A-Za-z0-9_]+`).ReplaceAllString(path, "*param")
+	path = paramSegmentRe.ReplaceAllString(path, ":param")
+	path = wildcardSegmentRe.ReplaceAllString(path, "*param")
 	return strings.ToUpper(method) + " " + path
 }
 func loadRoutes() error {
@@ -248,20 +259,27 @@ func loadRoutes() error {
 	return nil
 }
 func contractExists(r *Row, content string) bool {
-	var contract struct {
-		Paths map[string]map[string]interface{} `yaml:"paths"`
-	}
-	if yaml.Unmarshal([]byte(content), &contract) != nil {
-		return false
-	}
-	for path, methods := range contract.Paths {
-		target := strings.ReplaceAll(r.Target, "*planCode", ":planCode")
-		if routeKey(r.Method, path) == routeKey(r.Method, target) {
-			_, ok := methods[strings.ToLower(r.Method)]
-			return ok
+	if content != cachedContractContent || cachedContractKeys == nil {
+		cachedContractContent = content
+		cachedContractKeys = map[string]bool{}
+		cachedContractValid = false
+		var contract struct {
+			Paths map[string]map[string]interface{} `yaml:"paths"`
+		}
+		if yaml.Unmarshal([]byte(content), &contract) == nil {
+			cachedContractValid = true
+			for path, methods := range contract.Paths {
+				for method := range methods {
+					cachedContractKeys[routeKey(method, path)] = true
+				}
+			}
 		}
 	}
-	return false
+	if !cachedContractValid {
+		return false
+	}
+	target := strings.ReplaceAll(r.Target, "*planCode", ":planCode")
+	return cachedContractKeys[routeKey(r.Method, target)]
 }
 func deriveStatus(r *Row, content string) string {
 	implemented := registeredRoutes[routeKey(r.Method, r.CurrentPath)]
@@ -288,7 +306,7 @@ func verifiedTest(evidence string) bool {
 		return result
 	}
 	parts := strings.Split(strings.TrimPrefix(evidence, prefix), "#")
-	if len(parts) != 2 || !regexp.MustCompile(`^\./backend/internal/[a-zA-Z0-9_/-]+$`).MatchString(parts[0]) || !regexp.MustCompile(`^Test[A-Za-z0-9_]+$`).MatchString(parts[1]) {
+	if len(parts) != 2 || !pkgPathRe.MatchString(parts[0]) || !testNameRe.MatchString(parts[1]) {
 		return false
 	}
 	cmd := exec.Command("go", "test", parts[0], "-run", "^"+parts[1]+"$", "-count=1", "-json")

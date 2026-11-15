@@ -79,6 +79,7 @@ function BurstPane({ serviceName }: { serviceName: string }) {
   const q = useServerBurst(serviceName);
   const mut = useSetBurst();
   if (q.isPending) return <PaneSkeleton />;
+  if (q.isError) return <LoadFailed icon={Zap} title={t("maint.advanced.burst.unavailable")} error={q.error} onRetry={() => q.refetch()} />;
   const data = q.data;
   if (!data || data.notAvailable) return <NotAvailable icon={Zap} title={t("maint.advanced.burst.unavailable")} message={data?.error} />;
   const burst = data.burst;
@@ -123,6 +124,7 @@ function FirewallPane({ serviceName }: { serviceName: string }) {
   const q = useServerFirewall(serviceName);
   const mut = useSetFirewall();
   if (q.isPending) return <PaneSkeleton />;
+  if (q.isError) return <LoadFailed icon={Shield} title={t("maint.advanced.firewall.unavailable")} error={q.error} onRetry={() => q.refetch()} />;
   const data = q.data;
   if (!data || data.notAvailable) return <NotAvailable icon={Shield} title={t("maint.advanced.firewall.unavailable")} message={data?.error} />;
   const fw = data.firewall;
@@ -187,6 +189,7 @@ function BackupFtpPane({ serviceName }: { serviceName: string }) {
     );
   }
   if (q.isPending) return <PaneSkeleton />;
+  if (q.isError) return <LoadFailed icon={FolderArchive} title={t("maint.advanced.ftp.unavailable")} error={q.error} onRetry={() => q.refetch()} />;
   const data = q.data;
   if (!data) return <EmptyState icon={FolderArchive} title={t("maint.advanced.ftp.empty")} />;
   // unknownService = 切错账户（这台机器不属于当前账户）。此时给「激活」按钮等于给一个必然
@@ -391,6 +394,7 @@ function BackupCloudPane({ serviceName }: { serviceName: string }) {
   const [newPassword, setNewPassword] = useState<string | null>(null);
 
   if (q.isPending) return <PaneSkeleton />;
+  if (q.isError) return <LoadFailed icon={Cloud} title={t("maint.advanced.cloud.unavailable", "云备份不可用")} error={q.error} onRetry={() => q.refetch()} />;
   const data = q.data;
   if (!data) return <EmptyState icon={Cloud} title={t("maint.advanced.cloud.empty", "无云备份信息")} />;
   if (data.unknownService) {
@@ -690,6 +694,7 @@ function OrderablePane({ serviceName }: { serviceName: string }) {
   const { t } = useTranslation();
   const q = useServerOrderable(serviceName);
   if (q.isPending) return <PaneSkeleton />;
+  if (q.isError) return <LoadFailed icon={ShoppingBag} title={t("maint.advanced.orderable.empty")} error={q.error} onRetry={() => q.refetch()} />;
   const data = q.data;
   if (!data || (!data.bandwidth && !data.traffic && !data.ip)) {
     return <EmptyState icon={ShoppingBag} title={t("maint.advanced.orderable.empty")} />;
@@ -889,6 +894,7 @@ function IpSpecsPane({ serviceName }: { serviceName: string }) {
   const { t } = useTranslation();
   const q = useServerIpSpecs(serviceName);
   if (q.isPending) return <PaneSkeleton />;
+  if (q.isError) return <LoadFailed icon={MapPin} title={t("maint.advanced.ip.title")} error={q.error} onRetry={() => q.refetch()} />;
   const data = q.data;
   if (!data) return <EmptyState icon={MapPin} title={t("maint.advanced.ip.noSpecs")} />;
   const ipv4 = Array.isArray(data.ipv4) ? data.ipv4 : [];

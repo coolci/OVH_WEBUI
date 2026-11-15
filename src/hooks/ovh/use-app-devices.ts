@@ -46,7 +46,7 @@ export function useCreatePairingCode() {
 export function useRevokeAppDevice() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (id: number) => (await api.delete(`/app/devices/${id}`)).data,
+    mutationFn: async (id: number) => (await api.delete(`/app/devices/${encodeURIComponent(String(id))}`)).data,
     onSuccess: () => {
       toast.success(i18n.t("hooksMsg.app.revoked"));
       qc.invalidateQueries({ queryKey: qk.app.devices() });

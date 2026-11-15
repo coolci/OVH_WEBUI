@@ -349,7 +349,7 @@ func ReinstallVps(state *app.State) gin.HandlerFunc {
 		var task map[string]interface{}
 		if err := client.Post("/vps/"+svc+"/rebuild", params, &task); err != nil {
 			state.Logger.Error("VPS "+svc+" rebuild 失败: "+err.Error(), "vps_control")
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
+			respondOVHError(c, err)
 			return
 		}
 		state.Logger.Audit("reinstall_vps", c.ClientIP(), svc, fmt.Sprintf("imageId=%s taskId=%v", imageID, task["id"]))

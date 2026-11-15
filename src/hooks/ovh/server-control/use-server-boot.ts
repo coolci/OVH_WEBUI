@@ -12,7 +12,7 @@ export function useServerBootModes(serviceName: string | null, enabled = true) {
   return useQuery({
     queryKey: qk.serverControl.bootModes(serviceName || "", accountId),
     queryFn: async () => {
-      const res = await api.get(`/server-control/${serviceName}/boot-mode`, withAccount(accountId));
+      const res = await api.get(`/server-control/${encodeURIComponent(serviceName || "")}/boot-mode`, withAccount(accountId));
       return (res.data?.bootModes || []) as BootMode[];
     },
     enabled: !!serviceName && enabled,
@@ -24,7 +24,7 @@ export function useSetServerBootMode() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ serviceName, bootId }: { serviceName: string; bootId: number }) => {
-      const res = await api.put(`/server-control/${serviceName}/boot-mode`, { bootId }, withAccount(accountId));
+      const res = await api.put(`/server-control/${encodeURIComponent(serviceName)}/boot-mode`, { bootId }, withAccount(accountId));
       return res.data;
     },
     onSuccess: (_, vars) => {
@@ -38,7 +38,7 @@ export function useServerTasks(serviceName: string | null, enabled = true) {
   return useQuery({
     queryKey: qk.serverControl.tasks(serviceName || "", accountId),
     queryFn: async () => {
-      const res = await api.get(`/server-control/${serviceName}/tasks`, withAccount(accountId));
+      const res = await api.get(`/server-control/${encodeURIComponent(serviceName || "")}/tasks`, withAccount(accountId));
       return (res.data?.tasks || []) as ServerTask[];
     },
     enabled: !!serviceName && enabled,
@@ -49,7 +49,7 @@ export function useRebootServer() {
   const accountId = useServerAccount();
   return useMutation({
     mutationFn: async (serviceName: string) => {
-      const res = await api.post(`/server-control/${serviceName}/reboot`, undefined, withAccount(accountId));
+      const res = await api.post(`/server-control/${encodeURIComponent(serviceName)}/reboot`, undefined, withAccount(accountId));
       return res.data;
     },
   });
@@ -60,7 +60,7 @@ export function useRescueStatus(serviceName: string | null, enabled = true) {
   return useQuery({
     queryKey: qk.serverControl.rescue(serviceName || "", accountId),
     queryFn: async (): Promise<RescueStatus> => {
-      const d = (await api.get(`/server-control/${serviceName}/rescue`, withAccount(accountId))).data;
+      const d = (await api.get(`/server-control/${encodeURIComponent(serviceName || "")}/rescue`, withAccount(accountId))).data;
       return {
         inRescue: d?.inRescue === true,
         currentBoot: Number(d?.currentBoot) || 0,
@@ -81,7 +81,7 @@ export function useEnterRescue(serviceName: string) {
     // 邮箱留空时必须显式声明 useDefaultEmail,否则后端拒绝(省略 rescueMail 会沿用旧地址)。
     mutationFn: async (v: { email?: string; sshKey?: string; bootId?: number; expectedBoot?: number }) =>
       (
-        await api.post(`/server-control/${serviceName}/rescue`, {
+        await api.post(`/server-control/${encodeURIComponent(serviceName)}/rescue`, {
           ...v,
           useDefaultEmail: !v.email && !v.sshKey,
           confirm: true,
@@ -101,7 +101,7 @@ export function useExitRescue(serviceName: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (expectedBoot?: number) =>
-      (await api.post(`/server-control/${serviceName}/rescue/exit`, { confirm: true, expectedBoot }, withAccount(accountId))).data,
+      (await api.post(`/server-control/${encodeURIComponent(serviceName)}/rescue/exit`, { confirm: true, expectedBoot }, withAccount(accountId))).data,
     onSuccess: (d: BodyMessage) => {
       qc.invalidateQueries({ queryKey: qk.serverControl.bootModes(serviceName, accountId) });
       toast.success(bodyMessage(d) || i18n.t("hooksMsg.server.rescueExited"));
@@ -123,7 +123,7 @@ export function useTaskTimeslots(
     queryKey: qk.serverControl.taskTimeslots(serviceName || "", accountId, taskId || 0, periodStart, periodEnd),
     queryFn: async () => {
       const res = await api.get(
-        `/server-control/${serviceName}/tasks/${taskId}/available-timeslots?periodStart=${encodeURIComponent(periodStart)}&periodEnd=${encodeURIComponent(periodEnd)}`,
+        `/server-control/${encodeURIComponent(serviceName || "")}/tasks/${encodeURIComponent(String(taskId || 0))}/available-timeslots?periodStart=${encodeURIComponent(periodStart)}&periodEnd=${encodeURIComponent(periodEnd)}`,
         withAccount(accountId)
       );
       return {
@@ -145,7 +145,7 @@ export function useScheduleTask() {
       wantedBeginingDate: string;
       hasPerformedBackup: boolean;
     }) => {
-      const res = await api.post(`/server-control/${args.serviceName}/tasks/${args.taskId}/schedule`, {
+      const res = await api.post(`/server-control/${encodeURIComponent(args.serviceName)}/tasks/${encodeURIComponent(String(args.taskId))}/schedule`, {
         wantedBeginingDate: args.wantedBeginingDate,
         hasPerformedBackup: args.hasPerformedBackup,
       }, withAccount(accountId));

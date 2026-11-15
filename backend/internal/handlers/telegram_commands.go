@@ -650,6 +650,13 @@ func handleTelegramText(state *app.State, mon *monitor.Monitor, text string, cha
 		}
 	}
 	if cmd != nil {
+		if !authorized {
+			state.Logger.Warn(fmt.Sprintf("拒绝未授权: chat=%v user=%v cmd=/%s", chatID, userID, cmd.Name), "telegram")
+			telegram.SendReply(state, chatID,
+				"❌ 未授权。请在网页「设置」中配置正确的 Telegram Chat ID，并确保用该会话发消息。",
+				int64(messageID))
+			return
+		}
 		if cmd.Name == "start" {
 			// 1. 发送底部常驻快捷键盘（在移动端持久驻留于输入框下方，随时可点）
 			_, _ = telegram.SendToChat(state, chatID, "⚡ 控制中枢已连接", telegram.PersistentReplyKeyboard())
@@ -662,13 +669,6 @@ func handleTelegramText(state *app.State, mon *monitor.Monitor, text string, cha
 				{telegram.CallbackButton("🔙 返回控制中心", "i:dash:refresh")},
 			})
 			_, _ = telegram.SendToChat(state, chatID, telegram.HelpMessage(), markup)
-			return
-		}
-		if !authorized {
-			state.Logger.Warn(fmt.Sprintf("拒绝未授权: chat=%v user=%v cmd=/%s", chatID, userID, cmd.Name), "telegram")
-			telegram.SendReply(state, chatID,
-				"❌ 未授权。请在网页「设置」中配置正确的 Telegram Chat ID，并确保用该会话发消息。",
-				int64(messageID))
 			return
 		}
 		if !telegram.IsKnownCommand(cmd.Name) {

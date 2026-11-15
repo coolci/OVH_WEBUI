@@ -42,6 +42,9 @@ func TestGetSettings_MasksCredentials(t *testing.T) {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 
+	if resp.AppKey == "public-app-key" || !isMasked(resp.AppKey) {
+		t.Fatalf("AppKey should be masked, got %q", resp.AppKey)
+	}
 	if resp.AppSecret == rawSecret || !isMasked(resp.AppSecret) {
 		t.Fatalf("AppSecret should be masked, got %q", resp.AppSecret)
 	}

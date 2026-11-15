@@ -182,33 +182,43 @@ func AssemblePrewarmedCart(ctx context.Context, state *app.State, accountID, pla
 
 	g2, ctx2 := errgroup.WithContext(ctx)
 	g2.Go(func() error {
-		if err := client.PostWithContext(ctx2, "/order/cart/"+cartID+"/assign", nil, nil); err != nil {
+		isoClient, ierr := ovh.IsolateClient(client)
+		if ierr != nil {
+			assignErr = ierr
+			return ierr
+		}
+		if err := isoClient.PostWithContext(ctx2, "/order/cart/"+cartID+"/assign", nil, nil); err != nil {
 			assignErr = err
 			return err
 		}
 		return nil
 	})
 	g2.Go(func() error {
+		isoClient, ierr := ovh.IsolateClient(client)
+		if ierr != nil {
+			postBaseErr = ierr
+			return ierr
+		}
 		// 非月付先查 OVH 给这个型号的真实计价;查不到该周期就是买不到,不装车
 		if selectedDuration != orderterm.Default {
-			d, pm, found := lookupEcoPricing(state, client, cartID, planCode, selectedDuration)
+			d, pm, found := lookupEcoPricing(state, isoClient, cartID, planCode, selectedDuration)
 			if !found {
 				postBaseErr = fmt.Errorf("OVH 不支持 %s 按 %s 购买", planCode, orderterm.Label(selectedDuration))
 				return postBaseErr
 			}
 			baseDuration, basePricingMode = d, pm
 		}
-		err := client.PostWithContext(ctx2, "/order/cart/"+cartID+"/eco", map[string]interface{}{
+		err := isoClient.PostWithContext(ctx2, "/order/cart/"+cartID+"/eco", map[string]interface{}{
 			"planCode":    planCode,
 			"pricingMode": basePricingMode,
 			"duration":    baseDuration,
 			"quantity":    1,
 		}, &itemResult)
 		if err != nil {
-			if d, pm, found := lookupEcoPricing(state, client, cartID, planCode, selectedDuration); found &&
+			if d, pm, found := lookupEcoPricing(state, isoClient, cartID, planCode, selectedDuration); found &&
 				(d != baseDuration || pm != basePricingMode) {
 				baseDuration, basePricingMode = d, pm
-				err = client.PostWithContext(ctx2, "/order/cart/"+cartID+"/eco", map[string]interface{}{
+				err = isoClient.PostWithContext(ctx2, "/order/cart/"+cartID+"/eco", map[string]interface{}{
 					"planCode":    planCode,
 					"pricingMode": basePricingMode,
 					"duration":    baseDuration,
@@ -302,14 +312,22 @@ func AssemblePrewarmedCart(ctx context.Context, state *app.State, accountID, pla
 	for _, cfg := range configurations {
 		c := cfg
 		g3.Go(func() error {
-			return client.PostWithContext(ctx3, fmt.Sprintf("/order/cart/%s/item/%d/configuration", cartID, itemID),
+			isoClient, ierr := ovh.IsolateClient(client)
+			if ierr != nil {
+				return ierr
+			}
+			return isoClient.PostWithContext(ctx3, fmt.Sprintf("/order/cart/%s/item/%d/configuration", cartID, itemID),
 				map[string]interface{}{"label": c.label, "value": c.value}, nil)
 		})
 	}
 	for _, t := range todo {
 		opt := t
 		g3.Go(func() error {
-			return client.PostWithContext(ctx3, fmt.Sprintf("/order/cart/%s/eco/options", cartID), opt.body, nil)
+			isoClient, ierr := ovh.IsolateClient(client)
+			if ierr != nil {
+				return ierr
+			}
+			return isoClient.PostWithContext(ctx3, fmt.Sprintf("/order/cart/%s/eco/options", cartID), opt.body, nil)
 		})
 	}
 

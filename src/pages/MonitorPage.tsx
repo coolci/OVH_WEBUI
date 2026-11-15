@@ -64,8 +64,12 @@ function MonitorPage() {
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
-      await Promise.all([list.refetch(), status.refetch()]);
-      toast.success("已刷新监控状态与订阅列表");
+      const [r1, r2] = await Promise.all([list.refetch(), status.refetch()]);
+      if (r1.isError || r2.isError) {
+        toast.error("刷新失败，请检查后端连接");
+      } else {
+        toast.success("已刷新监控状态与订阅列表");
+      }
     } finally {
       setTimeout(() => setIsRefreshing(false), 450);
     }

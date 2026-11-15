@@ -122,6 +122,9 @@ export function MonitorSubscribeDialog({
   const grouped = useMemo(() => groupOptions(matchedServer?.availableOptions), [matchedServer]);
   const selectedOptions = useMemo(() => parseOptionCodes(optionsInput), [optionsInput]);
 
+  const initTargetKey = open
+    ? `${mode}:${initial?.planCode || planCodeProp || ""}:${[...(initial?.options || [])].sort().join(",")}`
+    : "";
   useEffect(() => {
     if (!open) return;
     setPlanCode((initial?.planCode || planCodeProp || "").trim());
@@ -134,9 +137,9 @@ export function MonitorSubscribeDialog({
     setDuration(normalizeDuration(initial?.duration));
     // 打开时的型号就是基准,不算"换型号",否则会把刚载入的已保存时长冲掉
     lastPlanRef.current = (initial?.planCode || planCodeProp || "").trim();
-    // 只在打开瞬间快照，避免父组件每次 render 把正在改的表单冲掉
+    // 只在打开或切换目标订阅瞬间快照，避免父组件每次 render 把正在改的表单冲掉
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [initTargetKey]);
 
   useEffect(() => {
     if (!open || accountsInitialized.current || !accountsQ.data) return;

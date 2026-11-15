@@ -7,6 +7,7 @@ import { useServerAccount, withAccount } from "@/hooks/ovh/server-control/accoun
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { errorMessage } from "@/lib/api-error";
+import { safeHttpsUrl } from "@/lib/utils";
 
 /**
  * IPMI / KVM 控制台对话框：
@@ -77,7 +78,7 @@ export function IpmiDialog({
     setTypesLoading(true);
     (async () => {
       try {
-        const res = await api.get(`/server-control/${serviceName}/ipmi-types`, withAccount(accountId, { signal: ac.signal }));
+        const res = await api.get(`/server-control/${encodeURIComponent(serviceName)}/ipmi-types`, withAccount(accountId, { signal: ac.signal }));
         if (sid !== sessionRef.current) return;
         setTypes({
           supportedTypes: res.data?.supportedTypes || [],
@@ -129,7 +130,7 @@ export function IpmiDialog({
 
     (async () => {
       try {
-        const res = await api.get(`/server-control/${serviceName}/console`, withAccount(accountId, { params: { type: chosen }, signal }));
+        const res = await api.get(`/server-control/${encodeURIComponent(serviceName)}/console`, withAccount(accountId, { params: { type: chosen }, signal }));
         stopCountdown();
         // 对话框已关闭或换了服务器:这份结果不属于当前界面
         if (sid !== sessionRef.current) return;
@@ -246,9 +247,9 @@ export function IpmiDialog({
           ) : result ? (
             <div className="w-full space-y-3">
               <p className="text-[13px] text-success font-semibold text-center">{t("ctrl.ipmi.ready")}</p>
-              {result.url ? (
+              {safeHttpsUrl(result.url) ? (
                 <a
-                  href={result.url}
+                  href={safeHttpsUrl(result.url)}
                   target="_blank"
                   rel="noreferrer"
                   className="flex items-center justify-center gap-2 w-full px-4 py-3 border border-border rounded-2xl hover:bg-secondary/50 transition-colors text-[13px] font-semibold"
@@ -274,7 +275,13 @@ export function IpmiDialog({
             {t("common.close")}
           </Button>
           {result ? (
-            <Button onClick={openConsole} disabled={loading}>
+            <Button
+              onClick={() => {
+                setResult(null);
+                setError(null);
+              }}
+              disabled={loading}
+            >
               {t("ctrl.ipmi.retryOther")}
             </Button>
           ) : (

@@ -70,19 +70,35 @@ function QueuePage() {
   const handlePauseAll = async () => {
     const runningItems = items.filter((it) => it.status === "running");
     if (runningItems.length === 0) return;
+    let okCount = 0;
     for (const it of runningItems) {
-      await toggle.mutateAsync({ id: it.id, action: "pause" });
+      try {
+        await toggle.mutateAsync({ id: it.id, action: "pause" });
+        okCount++;
+      } catch {
+        // 单个失败由 useToggleQueueItem.onError 提示,继续暂停其余任务
+      }
     }
-    toast.success(`已暂停 ${runningItems.length} 个任务`);
+    if (okCount > 0) {
+      toast.success(`已暂停 ${okCount} 个任务`);
+    }
   };
 
   const handleResumeAll = async () => {
     const pausedItems = items.filter((it) => it.status === "paused");
     if (pausedItems.length === 0) return;
+    let okCount = 0;
     for (const it of pausedItems) {
-      await toggle.mutateAsync({ id: it.id, action: "resume" });
+      try {
+        await toggle.mutateAsync({ id: it.id, action: "resume" });
+        okCount++;
+      } catch {
+        // 单个失败由 useToggleQueueItem.onError 提示,继续恢复其余任务
+      }
     }
-    toast.success(`已恢复 ${pausedItems.length} 个任务`);
+    if (okCount > 0) {
+      toast.success(`已恢复 ${okCount} 个任务`);
+    }
   };
 
   const filteredItems = useMemo(() => {

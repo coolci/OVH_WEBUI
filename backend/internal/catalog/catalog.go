@@ -745,23 +745,57 @@ func LoadServerList(state *app.State, accountID string) ([]types.ServerPlan, int
 	sem := make(chan struct{}, 8)
 	var wg sync.WaitGroup
 	availFailed := 0
+	var rateLimited sync.Once
+	isRateLimited := false
 	for _, pc := range planCodes {
 		wg.Add(1)
 		sem <- struct{}{}
 		go func(planCode string) {
 			defer wg.Done()
 			defer func() { <-sem }()
+			availMu.Lock()
+			abort := isRateLimited
+			availMu.Unlock()
+			if abort {
+				availMu.Lock()
+				availFailed++
+				availByPlan[planCode] = &availEntry{}
+				availMu.Unlock()
+				return
+			}
+			isoClient, ierr := ovh.IsolateClient(client)
+			if ierr != nil {
+				availMu.Lock()
+				availFailed++
+				availByPlan[planCode] = &availEntry{}
+				availMu.Unlock()
+				return
+			}
 			var avs []map[string]interface{}
 			q := url.Values{}
 			q.Set("planCode", planCode)
-			err := client.Get("/dedicated/server/datacenter/availabilities?"+q.Encode(), &avs)
+			err := isoClient.Get("/dedicated/server/datacenter/availabilities?"+q.Encode(), &avs)
 			if err != nil {
-				// 限流/瞬断退避重试一次,仍失败才计入失败数
+				if strings.Contains(err.Error(), "429") || strings.Contains(strings.ToLower(err.Error()), "too many requests") {
+					availMu.Lock()
+					isRateLimited = true
+					availFailed++
+					availByPlan[planCode] = &availEntry{availabilities: avs}
+					availMu.Unlock()
+					rateLimited.Do(func() {
+						state.Logger.Warn(fmt.Sprintf("预拉 %s 可用性触发 OVH 429 限流，提前中止本轮剩余并发预拉", planCode), "")
+					})
+					return
+				}
+				// 瞬断退避重试一次,仍失败才计入失败数
 				time.Sleep(500 * time.Millisecond)
-				err = client.Get("/dedicated/server/datacenter/availabilities?"+q.Encode(), &avs)
+				err = isoClient.Get("/dedicated/server/datacenter/availabilities?"+q.Encode(), &avs)
 			}
 			availMu.Lock()
 			if err != nil {
+				if strings.Contains(err.Error(), "429") || strings.Contains(strings.ToLower(err.Error()), "too many requests") {
+					isRateLimited = true
+				}
 				availFailed++
 				state.Logger.Warn(fmt.Sprintf("预拉 %s 的可用性失败: %s（该机型的机房列表将为空）", planCode, err.Error()), "")
 			}

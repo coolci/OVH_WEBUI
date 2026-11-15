@@ -41,7 +41,10 @@ type securityCredential struct {
 }
 
 func securityAccount(c *gin.Context, state *app.State) (string, bool) {
-	accountID := strings.TrimSpace(c.Query("account_id"))
+	accountID := strings.TrimSpace(c.Query("account"))
+	if accountID == "" {
+		accountID = strings.TrimSpace(c.Query("account_id"))
+	}
 	if _, ok := state.FindAccount(accountID); !ok || accountID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少有效账户"})
 		return "", false
@@ -49,7 +52,7 @@ func securityAccount(c *gin.Context, state *app.State) (string, bool) {
 	return accountID, true
 }
 
-// GetAPICredentials GET /api/ovh/security/credentials?account_id=
+// GetAPICredentials GET /api/ovh/security/credentials?account=
 func GetAPICredentials(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		accountID, ok := securityAccount(c, state)
@@ -88,8 +91,13 @@ func GetAPICredentials(state *app.State) gin.HandlerFunc {
 				defer wg.Done()
 				sem <- struct{}{}
 				defer func() { <-sem }()
+				isoClient, err := ovh.IsolateClient(client)
+				if err != nil {
+					creds[i] = securityCredential{CredentialID: id, Status: "unknown"}
+					return
+				}
 				var cr securityCredential
-				if err := client.GetWithContext(ctx, fmt.Sprintf("/me/api/credential/%d", id), &cr); err != nil {
+				if err := isoClient.GetWithContext(ctx, fmt.Sprintf("/me/api/credential/%d", id), &cr); err != nil {
 					cr = securityCredential{CredentialID: id, Status: "unknown"}
 				}
 				cr.CredentialID = id
@@ -103,7 +111,7 @@ func GetAPICredentials(state *app.State) gin.HandlerFunc {
 							Name        string `json:"name"`
 							Description string `json:"description"`
 						}
-						if err := client.GetWithContext(ctx, fmt.Sprintf("/me/api/credential/%d/application", id), &app); err == nil {
+						if err := isoClient.GetWithContext(ctx, fmt.Sprintf("/me/api/credential/%d/application", id), &app); err == nil {
 							a = struct{ name, desc string }{app.Name, app.Description}
 							appsMu.Lock()
 							apps[cr.ApplicationID] = a
@@ -208,8 +216,11 @@ func GetAPILogs(state *app.State) gin.HandlerFunc {
 				sem <- struct{}{}
 				defer func() { <-sem }()
 				var l apiLog
-				if err := client.GetWithContext(ctx, fmt.Sprintf("/me/api/logs/self/%d", id), &l); err != nil {
-					l = apiLog{}
+				isoClient, err := ovh.IsolateClient(client)
+				if err == nil {
+					if err := isoClient.GetWithContext(ctx, fmt.Sprintf("/me/api/logs/self/%d", id), &l); err != nil {
+						l = apiLog{}
+					}
 				}
 				l.LogID = id
 				logs[i] = l

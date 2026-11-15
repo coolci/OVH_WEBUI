@@ -536,13 +536,7 @@ func GetIPMIConsole(state *app.State) gin.HandlerFunc {
 			return
 		}
 		state.Logger.Info("[IPMI] 请求KVM控制台访问，类型: "+accessType, "server_control")
-		clientIP := c.GetHeader("X-Forwarded-For")
-		if clientIP == "" {
-			clientIP = c.ClientIP()
-		}
-		if idx := strings.Index(clientIP, ","); idx != -1 {
-			clientIP = strings.TrimSpace(clientIP[:idx])
-		}
+		clientIP := strings.TrimSpace(c.ClientIP())
 		params := map[string]interface{}{
 			"type": accessType,
 			// ttl 是 dedicated.server.CacheTTLEnum(enumType=long)，合法值 1/3/5/10/15，15 是上限

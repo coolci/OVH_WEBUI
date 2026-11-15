@@ -17,7 +17,7 @@ export function useServerMonitoring(serviceName: string | null) {
   return useQuery({
     queryKey: qk.serverControl.monitoring(serviceName || "", accountId),
     queryFn: async () => {
-      const res = await api.get(`/server-control/${serviceName}/monitoring`, withAccount(accountId));
+      const res = await api.get(`/server-control/${encodeURIComponent(serviceName || "")}/monitoring`, withAccount(accountId));
       return !!res.data?.monitoring;
     },
     enabled: !!serviceName,
@@ -29,7 +29,7 @@ export function useToggleMonitoring() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ serviceName, enabled }: { serviceName: string; enabled: boolean }) => {
-      const res = await api.put(`/server-control/${serviceName}/monitoring`, { monitoring: enabled }, withAccount(accountId));
+      const res = await api.put(`/server-control/${encodeURIComponent(serviceName)}/monitoring`, { monitoring: enabled }, withAccount(accountId));
       return res.data;
     },
     onSuccess: (_, vars) => {
@@ -44,7 +44,7 @@ export function useServerBurst(serviceName: string | null) {
     queryKey: qk.serverControl.burst(serviceName || "", accountId),
     queryFn: async (): Promise<BurstResult> => {
       try {
-        const res = await api.get(`/server-control/${serviceName}/burst`, withAccount(accountId));
+        const res = await api.get(`/server-control/${encodeURIComponent(serviceName || "")}/burst`, withAccount(accountId));
         return { burst: res.data?.burst || null, notAvailable: false };
       } catch (e: unknown) {
         if (errorStatus(e) === 404) {
@@ -63,7 +63,7 @@ export function useSetBurst() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ serviceName, status }: { serviceName: string; status: string }) => {
-      const res = await api.put(`/server-control/${serviceName}/burst`, { status }, withAccount(accountId));
+      const res = await api.put(`/server-control/${encodeURIComponent(serviceName)}/burst`, { status }, withAccount(accountId));
       return res.data;
     },
     onSuccess: (_, vars) => {
@@ -78,7 +78,7 @@ export function useServerFirewall(serviceName: string | null) {
     queryKey: qk.serverControl.firewall(serviceName || "", accountId),
     queryFn: async (): Promise<FirewallResult> => {
       try {
-        const res = await api.get(`/server-control/${serviceName}/firewall`, withAccount(accountId));
+        const res = await api.get(`/server-control/${encodeURIComponent(serviceName || "")}/firewall`, withAccount(accountId));
         return { firewall: res.data?.firewall || null, notAvailable: false };
       } catch (e: unknown) {
         if (errorStatus(e) === 404) {
@@ -97,7 +97,7 @@ export function useSetFirewall() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ serviceName, enabled }: { serviceName: string; enabled: boolean }) => {
-      const res = await api.put(`/server-control/${serviceName}/firewall`, { enabled }, withAccount(accountId));
+      const res = await api.put(`/server-control/${encodeURIComponent(serviceName)}/firewall`, { enabled }, withAccount(accountId));
       return res.data;
     },
     onSuccess: (_, vars) => {
@@ -111,8 +111,9 @@ export function useServerBackupFtp(serviceName: string | null) {
   return useQuery({
     queryKey: qk.serverControl.backupFtp(serviceName || "", accountId),
     queryFn: async (): Promise<BackupFtpResult> => {
+      const enc = encodeURIComponent(serviceName || "");
       try {
-        const res = await api.get(`/server-control/${serviceName}/backup-ftp`, withAccount(accountId));
+        const res = await api.get(`/server-control/${enc}/backup-ftp`, withAccount(accountId));
         if (res.data?.success === false) {
           return {
             notAvailable: true,
@@ -125,7 +126,7 @@ export function useServerBackupFtp(serviceName: string | null) {
         let accessFailedCount = 0;
         let accessError: string | undefined;
         try {
-          const accRes = await api.get(`/server-control/${serviceName}/backup-ftp/access`, withAccount(accountId));
+          const accRes = await api.get(`/server-control/${enc}/backup-ftp/access`, withAccount(accountId));
           accessList = (accRes.data?.accessList || []) as BackupFtpAccessEntry[];
           accessFailedCount = Number(accRes.data?.failedCount) || 0;
         } catch (e: unknown) {
@@ -139,7 +140,7 @@ export function useServerBackupFtp(serviceName: string | null) {
           }
           return { notActivated: true };
         }
-        return { notAvailable: true, error: apiMessage(e) || errorText(e) };
+        throw e;
       }
     },
     enabled: !!serviceName,
@@ -151,7 +152,7 @@ export function useActivateBackupFtp() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (serviceName: string) => {
-      const res = await api.post(`/server-control/${serviceName}/backup-ftp`, undefined, withAccount(accountId));
+      const res = await api.post(`/server-control/${encodeURIComponent(serviceName)}/backup-ftp`, undefined, withAccount(accountId));
       return res.data;
     },
     onSuccess: (_, serviceName) => {
@@ -165,7 +166,7 @@ export function useDeleteBackupFtp() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (serviceName: string) => {
-      const res = await api.delete(`/server-control/${serviceName}/backup-ftp`, withAccount(accountId));
+      const res = await api.delete(`/server-control/${encodeURIComponent(serviceName)}/backup-ftp`, withAccount(accountId));
       return res.data;
     },
     onSuccess: (_, serviceName) => {
@@ -178,7 +179,7 @@ export function useResetBackupFtpPassword() {
   const accountId = useServerAccount();
   return useMutation({
     mutationFn: async (serviceName: string) => {
-      const res = await api.post(`/server-control/${serviceName}/backup-ftp/password`, undefined, withAccount(accountId));
+      const res = await api.post(`/server-control/${encodeURIComponent(serviceName)}/backup-ftp/password`, undefined, withAccount(accountId));
       return res.data;
     },
   });
@@ -189,7 +190,7 @@ export function useBackupFtpAuthorizableBlocks(serviceName: string | null, enabl
   return useQuery({
     queryKey: [...qk.serverControl.backupFtpAccess(serviceName || "", accountId), "authorizable"] as const,
     queryFn: async () => {
-      const res = await api.get(`/server-control/${serviceName}/backup-ftp/authorizable-blocks`, withAccount(accountId));
+      const res = await api.get(`/server-control/${encodeURIComponent(serviceName || "")}/backup-ftp/authorizable-blocks`, withAccount(accountId));
       return (res.data?.blocks || []) as string[];
     },
     enabled: !!serviceName && enabled,
@@ -207,7 +208,7 @@ export function useAddBackupFtpAccess() {
       nfs?: boolean;
       cifs?: boolean;
     }) => {
-      const res = await api.post(`/server-control/${vars.serviceName}/backup-ftp/access`, {
+      const res = await api.post(`/server-control/${encodeURIComponent(vars.serviceName)}/backup-ftp/access`, {
         ipBlock: vars.ipBlock,
         ftp: vars.ftp ?? true,
         nfs: !!vars.nfs,
@@ -227,7 +228,7 @@ export function useDeleteBackupFtpAccess() {
   return useMutation({
     mutationFn: async (vars: { serviceName: string; ipBlock: string }) => {
       const res = await api.delete(
-        `/server-control/${vars.serviceName}/backup-ftp/access?ipBlock=${encodeURIComponent(vars.ipBlock)}`,
+        `/server-control/${encodeURIComponent(vars.serviceName)}/backup-ftp/access?ipBlock=${encodeURIComponent(vars.ipBlock)}`,
         withAccount(accountId)
       );
       return res.data;
@@ -244,7 +245,7 @@ export function useServerBackupCloud(serviceName: string | null) {
     queryKey: qk.serverControl.backupCloud(serviceName || "", accountId),
     queryFn: async (): Promise<BackupCloudResult> => {
       try {
-        const res = await api.get(`/server-control/${serviceName}/backup-cloud`, withAccount(accountId));
+        const res = await api.get(`/server-control/${encodeURIComponent(serviceName || "")}/backup-cloud`, withAccount(accountId));
         if (res.data?.success === false) {
           return {
             notAvailable: true,
@@ -267,8 +268,9 @@ export function useServerBackupCloud(serviceName: string | null) {
           if (errorBody(e).notActivated === true) {
             return { notActivated: true };
           }
+          return { notAvailable: true, error: apiMessage(e) || errorText(e) };
         }
-        return { notAvailable: true, error: apiMessage(e) || errorText(e) };
+        throw e;
       }
     },
     enabled: !!serviceName,
@@ -280,7 +282,7 @@ export function useActivateBackupCloud() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (vars: { serviceName: string; cloudProjectId?: string; projectDescription?: string }) => {
-      const res = await api.post(`/server-control/${vars.serviceName}/backup-cloud`, {
+      const res = await api.post(`/server-control/${encodeURIComponent(vars.serviceName)}/backup-cloud`, {
         cloudProjectId: vars.cloudProjectId,
         projectDescription: vars.projectDescription,
       }, withAccount(accountId));
@@ -297,7 +299,7 @@ export function useDeleteBackupCloud() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (serviceName: string) => {
-      const res = await api.delete(`/server-control/${serviceName}/backup-cloud`, withAccount(accountId));
+      const res = await api.delete(`/server-control/${encodeURIComponent(serviceName)}/backup-cloud`, withAccount(accountId));
       return res.data;
     },
     onSuccess: (_, serviceName) => {
@@ -311,7 +313,7 @@ export function useChangeBackupCloudPassword() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (serviceName: string) => {
-      const res = await api.post(`/server-control/${serviceName}/backup-cloud/password`, undefined, withAccount(accountId));
+      const res = await api.post(`/server-control/${encodeURIComponent(serviceName)}/backup-cloud/password`, undefined, withAccount(accountId));
       return res.data;
     },
     onSuccess: (_, serviceName) => {
@@ -325,7 +327,7 @@ export function useBackupCloudOfferDetails(serviceName: string | null) {
   return useQuery({
     queryKey: qk.serverControl.backupCloudOffer(serviceName || "", accountId),
     queryFn: async () => {
-      const res = await api.get(`/server-control/${serviceName}/backup-cloud/offer-details`, withAccount(accountId));
+      const res = await api.get(`/server-control/${encodeURIComponent(serviceName || "")}/backup-cloud/offer-details`, withAccount(accountId));
       return res.data;
     },
     enabled: !!serviceName,

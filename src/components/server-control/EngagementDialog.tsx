@@ -18,6 +18,7 @@ import { Trans, useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { errorMessage } from "@/lib/api-error";
 import { fmtDate, fmtDateTime } from "@/i18n/format";
+import { openSafeHttpsUrl, safeHttpsUrl } from "@/lib/utils";
 import type { EngagementInfo, EngagementRequest } from "@/hooks/ovh/server-control/types";
 
 /** EngagementDialog 钩子绑定 —— dedicated / vps 各自传入。
@@ -95,10 +96,8 @@ export function EngagementDialog({
       const data = await createReq.mutateAsync({ pricingMode });
       const orderUrl: string | undefined = data?.request?.order?.url;
       setConfirmMode(null);
-      if (orderUrl) {
+      if (orderUrl && openSafeHttpsUrl(orderUrl)) {
         toast.success(t("maint.engagement.toast.orderCreated"));
-        // 在新标签打开,不影响当前页面
-        window.open(orderUrl, "_blank", "noopener,noreferrer");
       } else {
         toast.success(t("maint.engagement.toast.requestSubmitted"));
       }
@@ -226,11 +225,11 @@ export function EngagementDialog({
                     )}
                   </div>
                   <div className="flex gap-2 flex-wrap pt-1">
-                    {ongoing.data.order?.url && (
+                    {safeHttpsUrl(ongoing.data.order?.url) && (
                       <Button
                         size="sm"
                         variant="default"
-                        onClick={() => window.open(ongoing.data!.order!.url, "_blank", "noopener,noreferrer")}
+                        onClick={() => openSafeHttpsUrl(ongoing.data!.order!.url)}
                       >
                         <ExternalLink className="w-3.5 h-3.5 mr-1" />
                         {t("maint.engagement.payBtn")}

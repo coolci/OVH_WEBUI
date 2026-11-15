@@ -17,7 +17,7 @@ import (
 // 这条测试直接读那个 .ts 文件核对。不是什么优雅做法,但重复已经存在了,
 // 与其指望人记得改两处,不如让忘记的那次当场红。
 func TestOrderLimitsMatchFrontend(t *testing.T) {
-	const path = "../../../web/src/lib/order-limits.ts"
+	const path = "../../../src/lib/order-limits.ts"
 	src, err := os.ReadFile(path)
 	if err != nil {
 		t.Skipf("读不到前端常量文件(%s),跳过:%v", path, err)

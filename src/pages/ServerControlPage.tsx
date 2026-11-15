@@ -12,6 +12,7 @@ import { Chip } from "@/components/common/Chip";
 import { StatusDot } from "@/components/common/StatusDot";
 import { Skeleton } from "@/components/common/Skeleton";
 import { EmptyState } from "@/components/common/EmptyState";
+import { LoadFailed } from "@/components/common/LoadFailed";
 import {
   useServerLotterySummary,
   useServerServiceInfo,
@@ -41,7 +42,7 @@ import { DeviceMetaCapsules } from "@/components/common/DeviceMetaCapsules";
 import { DeviceSwitcherCard } from "@/components/common/DeviceSwitcherCard";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { errorField } from "@/lib/api-error";
+import { errorMessage } from "@/lib/api-error";
 
 const EMPTY_SERVERS: OwnedServer[] = [];
 
@@ -169,6 +170,15 @@ function ServerControlPage() {
 
       {q.isPending ? (
         <Skeleton className="h-[500px] rounded-xl" />
+      ) : q.isError ? (
+        <Card className="surface-card rounded-xl border-border">
+          <LoadFailed
+            icon={Server}
+            title="服务器列表读取失败"
+            error={q.error}
+            onRetry={() => void refresh()}
+          />
+        </Card>
       ) : servers.length === 0 ? (
         <Card className="surface-card rounded-xl border-border">
           <EmptyState
@@ -207,9 +217,17 @@ function RenameDialog({
   if (!server) return null;
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // 显式带上本页账户:另一个标签页切账户后,别名仍写到这台机器所属的账户下
-    await set.mutateAsync({ serviceName: server.serviceName, alias: value, accountId });
-    onClose();
+    try {
+      // 显式带上本页账户:另一个标签页切账户后,别名仍写到这台机器所属的账户下
+      await set.mutateAsync({
+        serviceName: server.serviceName,
+        alias: value,
+        accountId: server.accountId || accountId,
+      });
+      onClose();
+    } catch {
+      // useSetServerAlias.onError 已弹出错误提示,保持弹窗打开以便重试
+    }
   };
 
   return (
@@ -266,7 +284,7 @@ function ServerTabs({ server }: { server: OwnedServer }) {
       await toggleMon.mutateAsync({ serviceName: server.serviceName, enabled: !monitoring.data });
       toast.success(monitoring.data ? "OVH 监控已关闭" : "OVH 监控已开启");
     } catch (e: unknown) {
-      toast.error(errorField(e, "error") || "操作失败");
+      toast.error(errorMessage(e) || "操作失败");
     }
   };
 
@@ -324,7 +342,7 @@ function ServerTabs({ server }: { server: OwnedServer }) {
           size="sm"
           className="h-9 text-xs font-normal border-border/80 justify-center"
           onClick={handleToggleMonitoring}
-          disabled={toggleMon.isPending}
+          disabled={toggleMon.isPending || monitoring.isPending}
         >
           <Activity className={`w-3.5 h-3.5 mr-1.5 ${monitoring.data ? "text-success" : "text-muted-foreground"}`} />
           <span className="truncate">{monitoring.data ? "监控: 已开启" : "监控: 已关闭"}</span>

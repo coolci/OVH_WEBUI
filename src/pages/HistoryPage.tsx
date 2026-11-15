@@ -30,7 +30,7 @@ import {
   useRefreshOrderStatus,
   type PurchaseHistory,
 } from "@/hooks/use-history";
-import { cn } from "@/lib/utils";
+import { cn, safeHttpsUrl } from "@/lib/utils";
 import { OrderDurationBadge } from "@/components/orders/OrderDurationField";
 import { OrderProgressButton } from "@/components/history/OrderProgressButton";
 
@@ -300,7 +300,7 @@ function HistoryPage() {
             onRetry={() => list.refetch()}
           />
           <p className="px-6 pb-5 text-[11px] text-muted-foreground text-center">
-            未付款的订单仍在走 15 天倒计时,别把这片空白当成"没有订单"。
+            未付款的订单仍在走 15 分钟倒计时,别把这片空白当成"没有订单"。
             请重试,或直接去 OVH 管理面板确认待付款的订单。
           </p>
         </Card>
@@ -429,9 +429,9 @@ function HistoryRow({ item, now }: { item: PurchaseHistory; now: number }) {
       <td className="px-4 py-3">
         <div className="flex items-center gap-2">
           {item.status === "success" && item.orderId && <OrderProgressButton accountId={item.accountId} orderId={item.orderId} />}
-          {item.status === "success" && item.orderUrl ? (
+          {item.status === "success" && safeHttpsUrl(item.orderUrl) ? (
             <a
-              href={item.orderUrl}
+              href={safeHttpsUrl(item.orderUrl)}
               target="_blank"
               rel="noopener noreferrer"
               aria-disabled={isExpired}
@@ -508,7 +508,7 @@ function HistoryCard({ item, now }: { item: PurchaseHistory; now: number }) {
               minute: "2-digit",
             })}
           </span>
-          {item.price?.withTax != null ? <HistoryPrice item={item} strike={isExpired} /> : null}
+          {(item.price?.withoutTax ?? item.price?.withTax) != null ? <HistoryPrice item={item} strike={isExpired} /> : null}
         </div>
         <div className="flex items-center justify-between gap-2 flex-wrap">
           {showCountdown ? (
@@ -518,9 +518,9 @@ function HistoryCard({ item, now }: { item: PurchaseHistory; now: number }) {
           )}
           <div className="flex items-center gap-2">
             {item.status === "success" && item.orderId && <OrderProgressButton accountId={item.accountId} orderId={item.orderId} />}
-            {item.status === "success" && item.orderUrl ? (
+            {item.status === "success" && safeHttpsUrl(item.orderUrl) ? (
               <a
-                href={item.orderUrl}
+                href={safeHttpsUrl(item.orderUrl)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className={`inline-flex items-center gap-1 text-foreground hover:underline text-[12px] ${isExpired ? "pointer-events-none opacity-50" : ""

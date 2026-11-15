@@ -49,8 +49,8 @@ type annotatedVPSSub struct {
 // AddVPSSubscription POST /api/vps-monitor/subscriptions
 func AddVPSSubscription(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// VPS 监控同样要求 TG 通知可用
-		if ok, reason := notify.AnyAvailable(state, true); !ok {
+		// VPS 监控同样要求已配置通知通道(不阻塞请求线程做远端连通性探测)
+		if ok, reason := notify.AnyAvailable(state, false); !ok {
 			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "没有可用的通知通道(Telegram / Webhook 至少配一个):" + reason})
 			return
 		}
@@ -283,7 +283,7 @@ func StartVPSMonitor(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusOK, gin.H{"status": "info", "message": "VPS监控已在运行中", "code": "E38A29D80"})
 			return
 		}
-		if ok, reason := notify.AnyAvailable(state, true); !ok {
+		if ok, reason := notify.AnyAvailable(state, false); !ok {
 			httperr.BadRequest(c, "Telegram 通知未配置或无效,无法启动 VPS 监控:"+reason, "")
 			return
 		}
@@ -374,7 +374,7 @@ func ManualCheckVPS(state *app.State) gin.HandlerFunc {
 // BatchAddAllVPS POST /api/vps-monitor/subscriptions/batch-add-all
 func BatchAddAllVPS(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if ok, reason := notify.AnyAvailable(state, true); !ok {
+		if ok, reason := notify.AnyAvailable(state, false); !ok {
 			httperr.BadRequest(c, "没有可用的通知通道(Telegram / Webhook 至少配一个):"+reason, "")
 			return
 		}

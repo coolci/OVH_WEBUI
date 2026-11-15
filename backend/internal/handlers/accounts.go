@@ -311,7 +311,10 @@ func UpdateAccount(state *app.State) gin.HandlerFunc {
 		// 改完下面会 Invalidate + ReloadAccounts,已缓存的 client 会带着
 		// 新的出站配置重建 —— 中途换代理、或者从直连改成走代理,都能立刻生效。
 		if in.ProxyURL != nil {
-			acc.ProxyURL = strings.TrimSpace(*in.ProxyURL)
+			p := strings.TrimSpace(*in.ProxyURL)
+			if !strings.Contains(p, ":***@") && p != netfp.ScrubProxyURL(existing.ProxyURL) {
+				acc.ProxyURL = p
+			}
 		}
 		if in.Fingerprint != nil {
 			acc.Fingerprint = strings.TrimSpace(*in.Fingerprint)
@@ -329,13 +332,13 @@ func UpdateAccount(state *app.State) gin.HandlerFunc {
 				acc.IAM = in.IAM
 			}
 		}
-		if in.AppKey != "" {
+		if in.AppKey != "" && !isMasked(in.AppKey) {
 			acc.AppKey = in.AppKey
 		}
-		if in.AppSecret != "" {
+		if in.AppSecret != "" && !isMasked(in.AppSecret) {
 			acc.AppSecret = in.AppSecret
 		}
-		if in.ConsumerKey != "" {
+		if in.ConsumerKey != "" && !isMasked(in.ConsumerKey) {
 			acc.ConsumerKey = in.ConsumerKey
 		}
 
@@ -513,7 +516,7 @@ func verifyAccountCreds(state *app.State, accountID string) CredentialVerificati
 			case apiErr.Code == 401 || apiErr.Code == 403:
 				credState = "invalid"
 				remediations = []string{"reissue_token"}
-			case apiErr.Code >= 500:
+			case apiErr.Code == 429 || apiErr.Code >= 500:
 				credState = "unverified"
 				remediations = []string{"retry_later"}
 			default:

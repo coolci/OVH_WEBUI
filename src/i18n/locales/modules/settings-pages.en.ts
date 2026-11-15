@@ -140,6 +140,9 @@ const pack: SettingsPagesPack = {
     },
     accounts: {
       title: "OVH account management",
+      appKeyLabel: "App Key *",
+      appSecretLabel: "App Secret *",
+      consumerKeyLabel: "Consumer Key *",
       intro:
         "Each OVH account (set of credentials) is stored separately; the order queue, sniping and subscription creation each pick their own account. Deleting an account also removes its related queue / history / sniper tasks.",
       addAccount: "Add account",

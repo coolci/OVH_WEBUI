@@ -82,8 +82,10 @@ export function useToggleVPSMonitor() {
 export function useVPSMonitorHistory(id: string | null) {
   return useQuery({
     queryKey: qk.vpsMonitor.history(id || ""),
-    queryFn: async () =>
-      (await api.get<VPSMonitorHistoryEntry[]>(`/vps-monitor/subscriptions/${id}/history`)).data,
+    queryFn: async () => {
+      const d = (await api.get<VPSMonitorHistoryEntry[]>(`/vps-monitor/subscriptions/${encodeURIComponent(id || "")}/history`)).data;
+      return Array.isArray(d) ? d : [];
+    },
     enabled: !!id,
   });
 }
@@ -112,7 +114,7 @@ export function useRemoveVPSSubscription() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) =>
-      (await api.delete(`/vps-monitor/subscriptions/${id}`)).data,
+      (await api.delete(`/vps-monitor/subscriptions/${encodeURIComponent(id)}`)).data,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.vpsMonitor.list() });
       qc.invalidateQueries({ queryKey: qk.vpsMonitor.status() });

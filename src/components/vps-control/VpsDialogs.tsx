@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { useChangeVpsContact } from "@/hooks/use-vps-control";
 import { useServerAliases, useSetServerAlias, aliasOf } from "@/hooks/use-server-aliases";
-import { errorField, errorText } from "@/lib/api-error";
+import { errorMessage } from "@/lib/api-error";
 
 /** 简化版变更联系人 */
 export function ChangeContactInline({
@@ -46,7 +46,7 @@ export function ChangeContactInline({
       setTech("");
       setBilling("");
     } catch (e: unknown) {
-      toast.error(errorField(e, "error") || "提交失败");
+      toast.error(errorMessage(e) || "提交失败");
     }
   };
 
@@ -108,7 +108,7 @@ export function AliasEditor({
             await onSetAlias.mutateAsync({ serviceName, alias: v, accountId });
             toast.success("别名已保存");
           } catch (e: unknown) {
-            toast.error(errorText(e) || "保存失败");
+            toast.error(errorMessage(e) || "保存失败");
           }
         }}
         disabled={onSetAlias.isPending}
@@ -157,7 +157,7 @@ export function VpsPowerDialogs({
   return (
     <>
       {/* 关机确认 */}
-      <Dialog open={stopOpen} onOpenChange={setStopOpen}>
+      <Dialog open={stopOpen} onOpenChange={(v) => { if (!isStopPending) setStopOpen(v); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>确认关机?</DialogTitle>
@@ -167,7 +167,7 @@ export function VpsPowerDialogs({
             注意:OVH 不会因为关机停止计费,VPS 仍占用 hypervisor 配额,只是物理上不再消耗 CPU/磁盘 IO。
           </p>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setStopOpen(false)}>取消</Button>
+            <Button variant="outline" onClick={() => setStopOpen(false)} disabled={isStopPending}>取消</Button>
             <Button variant="destructive" onClick={onStop} disabled={isStopPending}>
               {isStopPending ? "提交中…" : "确认关机"}
             </Button>
@@ -176,7 +176,7 @@ export function VpsPowerDialogs({
       </Dialog>
 
       {/* 重启确认 */}
-      <Dialog open={rebootOpen} onOpenChange={setRebootOpen}>
+      <Dialog open={rebootOpen} onOpenChange={(v) => { if (!isRebootPending) setRebootOpen(v); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>确认重启 VPS？</DialogTitle>
@@ -186,7 +186,7 @@ export function VpsPowerDialogs({
             重启期间网络连接将短暂中断，通常在 1-2 分钟内恢复正常。
           </p>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setRebootOpen(false)}>取消</Button>
+            <Button variant="outline" onClick={() => setRebootOpen(false)} disabled={isRebootPending}>取消</Button>
             <Button variant="destructive" onClick={onReboot} disabled={isRebootPending}>
               {isRebootPending ? "重启中…" : "确认重启"}
             </Button>
@@ -195,7 +195,7 @@ export function VpsPowerDialogs({
       </Dialog>
 
       {/* 确认终止(已收到邮件 token) */}
-      <Dialog open={terminateOpen} onOpenChange={setTerminateOpen}>
+      <Dialog open={terminateOpen} onOpenChange={(v) => { if (!isConfirmTermPending) setTerminateOpen(v); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>确认终止 VPS</DialogTitle>
@@ -207,8 +207,8 @@ export function VpsPowerDialogs({
             placeholder="邮件中的 token 字符串"
           />
           <DialogFooter>
-            <Button variant="outline" onClick={() => setTerminateOpen(false)}>取消</Button>
-            <Button variant="destructive" onClick={onConfirmTerm} disabled={!termToken || isConfirmTermPending}>
+            <Button variant="outline" onClick={() => setTerminateOpen(false)} disabled={isConfirmTermPending}>取消</Button>
+            <Button variant="destructive" onClick={onConfirmTerm} disabled={!termToken.trim() || isConfirmTermPending}>
               {isConfirmTermPending ? "确认中…" : "确认终止"}
             </Button>
           </DialogFooter>

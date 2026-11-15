@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { api } from "@/lib/api";
+import { apiRequest } from "@/lib/http";
 
 export function useBackendConnection() {
   const [isConnected, setIsConnected] = useState(false);
@@ -8,9 +8,9 @@ export function useBackendConnection() {
   const checkConnection = useCallback(async () => {
     setIsChecking(true);
     try {
-      // 1) 优先走配置的 api.health（可能经 backendUrl）
+      // 1) 优先走配置的 /health（可能经 backendUrl）
       try {
-        await api.health();
+        await apiRequest("/health");
         setIsConnected(true);
         return true;
       } catch {

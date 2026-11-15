@@ -15,6 +15,7 @@ import { OptionGroupSection } from "@/components/common/OptionGroupSection";
 import { type ServerPlan } from "@/hooks/use-servers";
 import { useCreateQueueItem } from "@/hooks/use-queue";
 import { useDefaultAccount } from "@/hooks/use-accounts";
+import { useActiveServerControlAccount } from "@/hooks/use-active-account";
 import { useSettings, RETRY_INTERVAL } from "@/hooks/use-settings";
 import { usePrewarmOrder } from "@/hooks/use-prewarm";
 import { useOrderDurations } from "@/hooks/use-order-durations";
@@ -63,11 +64,14 @@ export function ServerDetailDialog({
 }: ServerDetailDialogProps) {
   const create = useCreateQueueItem();
   const defaultAcc = useDefaultAccount();
+  const [activeAccId] = useActiveServerControlAccount();
 
-  const [accountId, setAccountId] = useState("");
+  const [accountId, setAccountId] = useState(() => activeAccId || defaultAcc?.id || "");
   useEffect(() => {
-    if (!accountId && defaultAcc) setAccountId(defaultAcc.id);
-  }, [defaultAcc, accountId]);
+    if (!accountId && (activeAccId || defaultAcc?.id)) {
+      setAccountId(activeAccId || defaultAcc?.id || "");
+    }
+  }, [activeAccId, defaultAcc, accountId]);
 
   const [selectedDCs, setSelectedDCs] = useState<string[]>([]);
   const [quantity, setQuantity] = useState("1");
@@ -386,48 +390,52 @@ export function ServerDetailDialog({
                 toast.error("请选择 OVH 账户");
                 return;
               }
-              const result = await create.mutateAsync({
-                account_id: accountId,
-                planCode: server.planCode,
-                datacenters: selectedDCs,
-                quantity: qty,
-                retryInterval: Number(retryInterval) || cfgDefault,
-                options: selectedValues,
-                autoPay,
-                coupon: coupon.trim() || undefined,
-                duration,
-                preorder,
-              });
-              if (result.success > 0) {
-                toast.success(`已创建 ${result.success}/${result.total} 个抢购任务`);
-                onClose();
-                return;
-              }
-              if (result.canForce) {
-                const ok = window.confirm(`型号【${server.planCode}】未在当前账户所在区域目录收录（${result.firstError || "可能为新品/跨区机型"}）。\n\n是否以强制模式（force=true）继续添加任务？`);
-                if (ok) {
-                  const forceResult = await create.mutateAsync({
-                    account_id: accountId,
-                    planCode: server.planCode,
-                    datacenters: selectedDCs,
-                    quantity: qty,
-                    retryInterval: Number(retryInterval) || cfgDefault,
-                    options: selectedValues,
-                    autoPay,
-                    coupon: coupon.trim() || undefined,
-                    duration,
-                    preorder,
-                    force: true,
-                  });
-                  if (forceResult.success > 0) {
-                    toast.success(`已强制创建 ${forceResult.success}/${forceResult.total} 个抢购任务`);
-                    onClose();
-                    return;
+              try {
+                const result = await create.mutateAsync({
+                  account_id: accountId,
+                  planCode: server.planCode,
+                  datacenters: selectedDCs,
+                  quantity: qty,
+                  retryInterval: Number(retryInterval) || cfgDefault,
+                  options: selectedValues,
+                  autoPay,
+                  coupon: coupon.trim() || undefined,
+                  duration,
+                  preorder,
+                });
+                if (result.success > 0) {
+                  toast.success(`已创建 ${result.success}/${result.total} 个抢购任务`);
+                  onClose();
+                  return;
+                }
+                if (result.canForce) {
+                  const ok = window.confirm(`型号【${server.planCode}】未在当前账户所在区域目录收录（${result.firstError || "可能为新品/跨区机型"}）。\n\n是否以强制模式（force=true）继续添加任务？`);
+                  if (ok) {
+                    const forceResult = await create.mutateAsync({
+                      account_id: accountId,
+                      planCode: server.planCode,
+                      datacenters: selectedDCs,
+                      quantity: qty,
+                      retryInterval: Number(retryInterval) || cfgDefault,
+                      options: selectedValues,
+                      autoPay,
+                      coupon: coupon.trim() || undefined,
+                      duration,
+                      preorder,
+                      force: true,
+                    });
+                    if (forceResult.success > 0) {
+                      toast.success(`已强制创建 ${forceResult.success}/${forceResult.total} 个抢购任务`);
+                      onClose();
+                      return;
+                    }
                   }
                 }
-              }
-              if (result.failed > 0 && !result.firstError) {
-                toast.error(`${result.failed} 个任务创建失败`);
+                if (result.failed > 0 && !result.firstError) {
+                  toast.error(`${result.failed} 个任务创建失败`);
+                }
+              } catch {
+                // useCreateQueueItem.onError 已弹出错误提示
               }
             }}
           >

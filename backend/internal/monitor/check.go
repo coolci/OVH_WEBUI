@@ -565,10 +565,14 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 		priceCheckResults := map[string][2]interface{}{}
 		if len(priceCheckTasks) > 0 {
 			var pcMu sync.Mutex
+			var roundHit429 bool
 			runPriceVerify := func(dc string) bool {
 				ok, errMsg := m.verifyPriceAvailable(planCode, dc, priceCfg)
 				pcMu.Lock()
 				priceCheckResults[dc] = [2]interface{}{ok, errMsg}
+				if !ok && isRateLimit429Error(errMsg) {
+					roundHit429 = true
+				}
 				pcMu.Unlock()
 				if ok {
 					m.state.Logger.Info(fmt.Sprintf("%s@%s [%s] 价格校验通过 [config-trace:%s]",
@@ -628,6 +632,15 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 					go func(dc string) {
 						defer wg.Done()
 						defer func() { <-sem }()
+						pcMu.Lock()
+						abort429 := roundHit429
+						pcMu.Unlock()
+						if abort429 {
+							pcMu.Lock()
+							priceCheckSkipped[dc] = true
+							pcMu.Unlock()
+							return
+						}
 						if !m.hasFreshPrewarmedCartForConfig(planCode, dc, priceCfg) &&
 							m.isPlanInCooldown(choice.accountID, choice.subsidiary, planCode) {
 							pcMu.Lock()
@@ -974,12 +987,12 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 		for _, n := range priceFailed {
 			m.state.Logger.Info(fmt.Sprintf("准备发送价格校验失败提醒: %s@%s [%s] - 可用性有货但价格校验失败",
 				planCode, n.dc, configDisplay), "monitor")
-			priceTextFailed := m.GetPriceInfoText(planCode, n.dc, priceCfg)
+			priceTextFailed := m.resolvePlanPriceInfo(planCode, accountIDFromConfig(priceCfg), optionsFromConfig(priceCfg)).MonthlyText
 			configInfoFailed := copyMap(priceCfg)
 			if priceTextFailed != "" {
 				configInfoFailed["cached_price"] = priceTextFailed
-				configInfoFailed["price_check_error"] = n.priceCheckError
 			}
+			configInfoFailed["price_check_error"] = n.priceCheckError
 			if !m.checkCurrent(sub, cfg) {
 				if sideEffects {
 					commitConfig()

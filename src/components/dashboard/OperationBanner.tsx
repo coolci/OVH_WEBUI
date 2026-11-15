@@ -6,6 +6,7 @@ import type { OVHAccount } from "@/hooks/use-accounts";
 
 interface OperationBannerProps {
   stats?: StatsResponse;
+  statsError?: boolean;
   poller?: TelegramPollerStatus;
   defaultAccount?: OVHAccount;
   monitorCount: number;
@@ -13,10 +14,12 @@ interface OperationBannerProps {
 
 export function OperationBanner({
   stats,
+  statsError,
   poller,
   defaultAccount,
   monitorCount,
 }: OperationBannerProps) {
+  const isOnline = !statsError && !!stats;
   return (
     <div className="surface-card rounded-2xl p-3 sm:p-4 border border-border/80 bg-card/75 backdrop-blur-md shadow-sm">
       {/* 桌面端流线布局 (md 及以上) */}
@@ -25,11 +28,13 @@ export function OperationBanner({
           {/* 系统在线状态徽章 */}
           <div className="flex items-center gap-2 pr-4 border-r border-border/70 flex-shrink-0">
             <span className="relative flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+              {isOnline && (
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+              )}
+              <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${isOnline ? "bg-emerald-500" : statsError ? "bg-destructive" : "bg-amber-500"}`} />
             </span>
             <span className="text-xs font-semibold tracking-tight text-foreground whitespace-nowrap">
-              系统全勤在线
+              {isOnline ? "系统全勤在线" : statsError ? "状态拉取异常" : "正在连接中枢…"}
             </span>
           </div>
 
@@ -82,11 +87,13 @@ export function OperationBanner({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+              {isOnline && (
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+              )}
+              <span className={`relative inline-flex rounded-full h-2 w-2 ${isOnline ? "bg-emerald-500" : statsError ? "bg-destructive" : "bg-amber-500"}`} />
             </span>
             <span className="text-xs font-semibold tracking-tight text-foreground">
-              系统全勤在线
+              {isOnline ? "系统全勤在线" : statsError ? "状态拉取异常" : "正在连接中枢…"}
             </span>
           </div>
           <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-mono">

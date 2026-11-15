@@ -31,8 +31,8 @@ export function serverHardwareQueryOptions(serviceName: string, accountId: strin
 }
 
 /** 硬件信息（后端返回 { success, hardware: {...}, lottery: {...} }） */
-export function useServerHardware(serviceName: string | null) {
-  const [accountId] = useActiveAccount();
+export function useServerHardware(serviceName: string | null, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   return useQuery(serverHardwareQueryOptions(serviceName || "", accountId));
 }
 
@@ -68,12 +68,12 @@ export function useServerLotterySummary() {
   };
 }
 
-export function useServerDiskInfo(serviceName: string | null, enabled = true) {
-  const accountId = useServerAccount();
+export function useServerDiskInfo(serviceName: string | null, enabled = true, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   return useQuery({
     queryKey: qk.serverControl.diskInfo(serviceName || "", accountId),
     queryFn: async () => {
-      const res = await api.get(`/server-control/${serviceName}/hardware-disk-info`, withAccount(accountId));
+      const res = await api.get(`/server-control/${encodeURIComponent(serviceName || "")}/hardware-disk-info`, withAccount(accountId));
       return (res.data?.diskGroups || {}) as Record<string, DiskGroup>;
     },
     enabled: !!serviceName && enabled,
@@ -81,13 +81,13 @@ export function useServerDiskInfo(serviceName: string | null, enabled = true) {
   });
 }
 
-export function useServerRaidProfiles(serviceName: string | null, enabled = true) {
-  const accountId = useServerAccount();
+export function useServerRaidProfiles(serviceName: string | null, enabled = true, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   return useQuery({
     queryKey: qk.serverControl.raidProfiles(serviceName || "", accountId),
     queryFn: async () => {
       try {
-        const res = await api.get(`/server-control/${serviceName}/hardware-raid-profiles`, withAccount(accountId));
+        const res = await api.get(`/server-control/${encodeURIComponent(serviceName || "")}/hardware-raid-profiles`, withAccount(accountId));
         return {
           supported: res.data?.supported !== false,
           profiles: (res.data?.profiles || []) as Record<string, unknown>[],
@@ -105,30 +105,35 @@ export function useServerRaidProfiles(serviceName: string | null, enabled = true
   });
 }
 
-export function useServerPartitionSchemes(serviceName: string | null, templateName: string | null) {
-  const accountId = useServerAccount();
+export function useServerPartitionSchemes(
+  serviceName: string | null,
+  templateName: string | null,
+  enabled = true,
+  overrideAccountId?: string,
+) {
+  const accountId = useServerAccount(overrideAccountId);
   return useQuery({
     queryKey: qk.serverControl.partitionSchemes(serviceName || "", accountId, templateName || ""),
     queryFn: async () => {
       const res = await api.get(
-        `/server-control/${serviceName}/partition-schemes?templateName=${encodeURIComponent(templateName || "")}`,
+        `/server-control/${encodeURIComponent(serviceName || "")}/partition-schemes?templateName=${encodeURIComponent(templateName || "")}`,
         withAccount(accountId)
       );
       return (res.data?.schemes || []) as PartitionScheme[];
     },
-    enabled: !!serviceName && !!templateName,
+    enabled: !!serviceName && !!templateName && enabled,
     staleTime: 5 * 60_000,
   });
 }
 
-export function useServerBiosSettings(serviceName: string | null, enabled = true) {
-  const accountId = useServerAccount();
+export function useServerBiosSettings(serviceName: string | null, enabled = true, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   return useQuery({
     queryKey: qk.serverControl.biosSettings(serviceName || "", accountId),
     queryFn: async () => {
       try {
-        const res = await api.get(`/server-control/${serviceName}/bios-settings`, withAccount(accountId));
-        const sgxRes = await api.get(`/server-control/${serviceName}/bios-settings/sgx`, withAccount(accountId)).catch(() => null);
+        const res = await api.get(`/server-control/${encodeURIComponent(serviceName || "")}/bios-settings`, withAccount(accountId));
+        const sgxRes = await api.get(`/server-control/${encodeURIComponent(serviceName || "")}/bios-settings/sgx`, withAccount(accountId)).catch(() => null);
         return {
           settings: (res.data || {}) as Record<string, unknown>,
           sgx: sgxRes?.data?.sgx ?? sgxRes?.data?.data ?? sgxRes?.data ?? null,
@@ -145,8 +150,8 @@ export function useServerBiosSettings(serviceName: string | null, enabled = true
   });
 }
 
-export function useCreateIntervention() {
-  const accountId = useServerAccount();
+export function useCreateIntervention(overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (args: {
@@ -164,7 +169,7 @@ export function useCreateIntervention() {
         ticketNumber?: string;
         ticketId?: string;
         notice?: string;
-      }>(`/server-control/${args.serviceName}/hardware/replace`, {
+      }>(`/server-control/${encodeURIComponent(args.serviceName)}/hardware/replace`, {
         componentType: args.type,
         details: args.details,
         comment: args.comment,
@@ -179,12 +184,12 @@ export function useCreateIntervention() {
   });
 }
 
-export function useServerInterventions(serviceName: string | null) {
-  const accountId = useServerAccount();
+export function useServerInterventions(serviceName: string | null, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   return useQuery({
     queryKey: qk.serverControl.interventions(serviceName || "", accountId),
     queryFn: async () => {
-      const res = await api.get(`/server-control/${serviceName}/interventions`, withAccount(accountId));
+      const res = await api.get(`/server-control/${encodeURIComponent(serviceName || "")}/interventions`, withAccount(accountId));
       return (res.data?.interventions || []) as ServerIntervention[];
     },
     enabled: !!serviceName,

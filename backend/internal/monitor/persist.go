@@ -120,9 +120,11 @@ func (m *Monitor) LoadFromDB() {
 
 	m.subsMu.Lock()
 	defer m.subsMu.Unlock()
-	m.subscriptions = make([]*Subscription, 0, len(subs))
-	for _, s := range subs {
-		m.subscriptions = append(m.subscriptions, fromDBSub(s))
+	if err == nil {
+		m.subscriptions = make([]*Subscription, 0, len(subs))
+		for _, s := range subs {
+			m.subscriptions = append(m.subscriptions, fromDBSub(s))
+		}
 	}
 	knownSet := map[string]struct{}{}
 	for _, k := range known {
@@ -133,11 +135,12 @@ func (m *Monitor) LoadFromDB() {
 	m.publishPausedQueueScopesLocked()
 	var stopped bool
 	_, stopErr := m.state.DB.GetKV("monitor-manually-stopped", &stopped)
-	m.state.SetMonitorStopped(stopped || stopErr != nil)
-	scopes := m.queueScopesLocked(false)
-	if stopped || stopErr != nil {
-		scopes = m.queueScopesLocked(true)
+	if stopErr != nil {
+		m.state.Logger.Warn("读取监控停止状态失败: "+stopErr.Error(), "monitor")
+	} else {
+		m.state.SetMonitorStopped(stopped)
 	}
+	scopes := m.queueScopesLocked(stopped && stopErr == nil)
 	if _, err := m.state.PauseMonitorQueues(scopes); err != nil {
 		m.state.Logger.Error("恢复关联抢购暂停状态失败: "+err.Error(), "monitor")
 	}

@@ -13,11 +13,11 @@ const TEMPLATES_LS_PREFIX = "ovh_sniper_templates_v2_";
 
 export function useServerTemplates(serviceName: string | null, enabled = true, overrideAccountId?: string) {
   const accountId = useServerAccount(overrideAccountId);
-  const lsKey = serviceName ? TEMPLATES_LS_PREFIX + serviceName : "";
+  const lsKey = serviceName ? `${TEMPLATES_LS_PREFIX}${accountId || "default"}:${serviceName}` : "";
   return useQuery({
     queryKey: qk.serverControl.osTemplates(serviceName || "", accountId),
     queryFn: async () => {
-      const res = await api.get(`/server-control/${serviceName}/templates`, withAccount(accountId));
+      const res = await api.get(`/server-control/${encodeURIComponent(serviceName || "")}/templates`, withAccount(accountId));
       const list = (res.data?.templates || []) as OSTemplate[];
       if (lsKey) {
         try {
@@ -192,25 +192,33 @@ export function useReinstallServer(overrideAccountId?: string) {
         installData.partitionSchemeName = args.partitionSchemeName;
       }
 
-      const res = await api.post(`/server-control/${args.serviceName}/install`, installData, withAccount(targetAcc));
+      const res = await api.post(`/server-control/${encodeURIComponent(args.serviceName)}/install`, installData, withAccount(targetAcc));
       return res.data as ReinstallResult;
     },
   });
 }
 
-export function useInstallStatus(serviceName: string | null, enabled = true) {
-  const accountId = useServerAccount();
+export function useInstallStatus(serviceName: string | null, enabled = true, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   return useQuery({
     queryKey: qk.serverControl.installStatus(serviceName || "", accountId),
     queryFn: async () => {
-      const res = await api.get(`/server-control/${serviceName}/install/status`, withAccount(accountId));
+      const res = await api.get(`/server-control/${encodeURIComponent(serviceName || "")}/install/status`, withAccount(accountId));
       return {
         hasInstallation: res.data?.hasInstallation !== false,
         status: (res.data?.status || null) as InstallStatus | null,
       };
     },
     enabled: !!serviceName && enabled,
-    refetchInterval: enabled ? 5_000 : false,
+    refetchInterval: (query) => {
+      if (!enabled) return false;
+      const d = query.state.data;
+      if (d) {
+        if (!d.hasInstallation) return false;
+        if (d.status && (d.status.allDone || d.status.hasError)) return false;
+      }
+      return 5_000;
+    },
     staleTime: 0,
   });
 }

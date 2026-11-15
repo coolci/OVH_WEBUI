@@ -181,6 +181,8 @@ type Options struct {
 	// OnProxyError 代理层面失败时回调(同步)。用来停任务 + 通知。
 	// 只在配了代理时才可能触发。
 	OnProxyError func(error)
+	// OnProxySuccess 代理层面请求成功时回调(同步)。用来清零故障计数。
+	OnProxySuccess func()
 }
 
 // Client 构造出站 HTTP 客户端。
@@ -277,9 +279,10 @@ func Transport(o Options) (http.RoundTripper, error) {
 	}
 	// 配了代理才包这一层:直连时"连不上"就是 OVH 那边的事,不该被当成代理故障
 	return &proxyAwareTransport{
-		base:    wrap(base, o.Profile),
-		proxy:   ScrubProxyURL(raw),
-		onError: o.OnProxyError,
+		base:      wrap(base, o.Profile),
+		proxy:     ScrubProxyURL(raw),
+		onError:   o.OnProxyError,
+		onSuccess: o.OnProxySuccess,
 	}, nil
 }
 
@@ -369,14 +372,18 @@ func IsProxyError(err error) bool {
 // 为什么要在 transport 这一层判而不是在调用点：只有这里知道"这个请求本来
 // 应该走代理"。到了调用点，一个 dial 失败和 OVH 超时长得一模一样。
 type proxyAwareTransport struct {
-	base    http.RoundTripper
-	proxy   string // 已打码，只用于错误信息
-	onError func(error)
+	base      http.RoundTripper
+	proxy     string // 已打码，只用于错误信息
+	onError   func(error)
+	onSuccess func()
 }
 
 func (t *proxyAwareTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	resp, err := t.base.RoundTrip(req)
 	if err == nil {
+		if t.onSuccess != nil {
+			t.onSuccess()
+		}
 		return resp, nil
 	}
 	if !looksLikeProxyFailure(err) {
@@ -405,8 +412,6 @@ func looksLikeProxyFailure(err error) bool {
 		"unknown socks",          // SOCKS 协议错
 		"socks5",                 // 其余 socks 相关
 		"proxy authentication",   // 407
-		"gateway timeout",        //
-		"bad gateway",            //
 		"connection refused",     // 拨不通代理端口
 		"no such host",           // 代理域名解析不了
 		"i/o timeout",            // 拨号超时

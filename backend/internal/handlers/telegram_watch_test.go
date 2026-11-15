@@ -25,12 +25,17 @@ func newWatchTestMonitor(t *testing.T) (*app.State, *monitor.Monitor) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	t.Cleanup(func() { database.Close() })
 	lg := logger.New(filepath.Join(dir, "t.log"),
 		slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError})))
 	_ = os.Stdout
 	st := app.NewState(storage.Paths{DataDir: dir}, config.New(database), lg, database)
-	return st, monitor.New(st)
+	mon := monitor.New(st)
+	t.Cleanup(func() {
+		mon.Stop()
+		lg.Flush()
+		_ = database.Close()
+	})
+	return st, mon
 }
 
 // /watch 是 TG 上唯一能挂「等补货」的入口 —— 参数解析错了,

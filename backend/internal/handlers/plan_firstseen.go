@@ -25,14 +25,14 @@ type planFirstSeenData struct {
 var planFirstSeenMu sync.Mutex
 
 func stampPlanFirstSeen(state *app.State, bucket string, plans []types.ServerPlan) map[string]int64 {
-	if state == nil || state.DB == nil || len(plans) == 0 {
+	if state == nil || !state.HasDB() || len(plans) == 0 {
 		return nil
 	}
 	planFirstSeenMu.Lock()
 	defer planFirstSeenMu.Unlock()
 
 	var data planFirstSeenData
-	if _, err := state.DB.GetKV(kvPlanFirstSeen, &data); err != nil {
+	if _, err := state.GetKV(kvPlanFirstSeen, &data); err != nil {
 		return nil
 	}
 	if data.Buckets == nil {
@@ -60,7 +60,7 @@ func stampPlanFirstSeen(state *app.State, bucket string, plans []types.ServerPla
 		changed = true
 	}
 	if changed {
-		if err := state.DB.SetKV(kvPlanFirstSeen, data); err != nil {
+		if err := state.SetKV(kvPlanFirstSeen, data); err != nil {
 			state.Logger.Warn("记录型号首次上架时间失败: "+err.Error(), "servers")
 		}
 	}

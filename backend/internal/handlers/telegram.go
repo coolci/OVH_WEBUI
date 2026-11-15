@@ -195,14 +195,17 @@ func handleTelegramCallback(state *app.State, mon *monitor.Monitor, cb map[strin
 				return
 			}
 			// 库里没有 → 退回内存缓存（升级前发出、只存在内存里的老按钮）
-			if cached := mon.MessageUUIDCacheLookup(buttonID); cached != nil {
-				// 命中即消费:一次性语义不能靠只读不删的缓存维持
-				mon.MessageUUIDCacheDelete(buttonID)
-				planCode = cached.PlanCode
-				dc = cached.Datacenter
-				options = cached.Options
-				state.Logger.Info("从内存缓存恢复按钮配置（旧按钮）: "+buttonID, "telegram")
-			} else {
+			if mon != nil {
+				if cached := mon.MessageUUIDCacheLookup(buttonID); cached != nil {
+					// 命中即消费:一次性语义不能靠只读不删的缓存维持
+					mon.MessageUUIDCacheDelete(buttonID)
+					planCode = cached.PlanCode
+					dc = cached.Datacenter
+					options = cached.Options
+					state.Logger.Info("从内存缓存恢复按钮配置（旧按钮）: "+buttonID, "telegram")
+				}
+			}
+			if planCode == "" || dc == "" {
 				// 库里没有、内存缓存也没有 → 拒绝。
 				// 以前这里只打一行 Warn 就继续往下走,照样拿 JSON 里的 p/d 下单 ——
 				// 按钮行被 DeleteExpiredTelegramButtons 清掉、换库、换机器都会落进
@@ -221,7 +224,7 @@ func handleTelegramCallback(state *app.State, mon *monitor.Monitor, cb map[strin
 		telegram.AnswerCallback(state, idToString(cb["id"]), "缺少型号或机房", true)
 		return
 	}
-	if len(options) == 0 {
+	if len(options) == 0 && mon != nil {
 		if cachedOpts := mon.OptionsCacheLookup(planCode + "|" + dc); len(cachedOpts) > 0 {
 			options = cachedOpts
 			state.Logger.Info("✅ 从缓存恢复 options: "+planCode+"|"+dc, "telegram")

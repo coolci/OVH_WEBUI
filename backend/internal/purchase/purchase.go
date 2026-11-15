@@ -341,8 +341,8 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 		var postBaseErr error
 		termUnavailable := false
 
-		postBase := func(callCtx context.Context) error {
-			return client.PostWithContext(callCtx, "/order/cart/"+cartID+"/eco", map[string]interface{}{
+		postBase := func(callCtx context.Context, cli *ovhsdk.Client) error {
+			return cli.PostWithContext(callCtx, "/order/cart/"+cartID+"/eco", map[string]interface{}{
 				"planCode":    item.PlanCode,
 				"pricingMode": basePricingMode,
 				"duration":    baseDuration,
@@ -383,8 +383,13 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 
 		// 1. assign
 		g2.Go(func() error {
+			isoClient, ierr := ovh.IsolateClient(client)
+			if ierr != nil {
+				assignErr = ierr
+				return ierr
+			}
 			state.Logger.Info("绑定购物车 "+cartID, "purchase")
-			if err := client.PostWithContext(ctx2, "/order/cart/"+cartID+"/assign", nil, nil); err != nil {
+			if err := isoClient.PostWithContext(ctx2, "/order/cart/"+cartID+"/assign", nil, nil); err != nil {
 				assignErr = err
 				return err
 			}
@@ -394,9 +399,14 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 
 		// 2. eco
 		g2.Go(func() error {
+			isoClient, ierr := ovh.IsolateClient(client)
+			if ierr != nil {
+				postBaseErr = ierr
+				return ierr
+			}
 			state.Logger.Info(fmt.Sprintf("添加基础商品 %s 到购物车 (使用 /eco)", item.PlanCode), "purchase")
 			if selectedDuration != orderterm.Default {
-				d, pm, found := lookupEcoPricing(state, client, cartID, item.PlanCode, selectedDuration)
+				d, pm, found := lookupEcoPricing(state, isoClient, cartID, item.PlanCode, selectedDuration)
 				if !found {
 					termUnavailable = true
 					postBaseErr = fmt.Errorf("OVH 不支持 %s 按 %s 购买,请修改任务的购买时长后重试", item.PlanCode, orderterm.Label(selectedDuration))
@@ -404,17 +414,17 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 				}
 				baseDuration, basePricingMode = d, pm
 			}
-			if err := postBase(ctx2); err != nil {
+			if err := postBase(ctx2, isoClient); err != nil {
 				if ctx2.Err() != nil {
 					postBaseErr = err
 					return err
 				}
-				if d, pm, found := lookupEcoPricing(state, client, cartID, item.PlanCode, selectedDuration); found &&
+				if d, pm, found := lookupEcoPricing(state, isoClient, cartID, item.PlanCode, selectedDuration); found &&
 					(d != baseDuration || pm != basePricingMode) {
 					state.Logger.Warn(fmt.Sprintf("以 %s/%s 加购 %s 失败(%s)，改用目录计价 %s/%s 重试",
 						baseDuration, basePricingMode, item.PlanCode, err.Error(), d, pm), "purchase")
 					baseDuration, basePricingMode = d, pm
-					err = postBase(ctx2)
+					err = postBase(ctx2, isoClient)
 				}
 				if err != nil {
 					postBaseErr = err
@@ -643,8 +653,12 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 		for _, cfg := range configurations {
 			c := cfg
 			g3.Go(func() error {
+				isoClient, ierr := ovh.IsolateClient(client)
+				if ierr != nil {
+					return ierr
+				}
 				state.Logger.Info(fmt.Sprintf("配置项目 %d: 设置必需项 %s = %s", itemID, c.label, c.value), "purchase")
-				if err := client.PostWithContext(ctx3, fmt.Sprintf("/order/cart/%s/item/%d/configuration", cartID, itemID),
+				if err := isoClient.PostWithContext(ctx3, fmt.Sprintf("/order/cart/%s/item/%d/configuration", cartID, itemID),
 					map[string]interface{}{"label": c.label, "value": c.value}, nil); err != nil {
 					return fmt.Errorf("config %s error: %w", c.label, err)
 				}
@@ -656,8 +670,12 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 		for _, t := range todo {
 			opt := t
 			g3.Go(func() error {
+				isoClient, ierr := ovh.IsolateClient(client)
+				if ierr != nil {
+					return ierr
+				}
 				state.Logger.Info(fmt.Sprintf("添加 Eco 选项: %s", opt.planCode), "purchase")
-				if err := client.PostWithContext(ctx3, fmt.Sprintf("/order/cart/%s/eco/options", cartID), opt.body, nil); err != nil {
+				if err := isoClient.PostWithContext(ctx3, fmt.Sprintf("/order/cart/%s/eco/options", cartID), opt.body, nil); err != nil {
 					return fmt.Errorf("option %s error: %w", opt.planCode, err)
 				}
 				state.Logger.Info(fmt.Sprintf("成功添加 Eco 选项: %s", opt.planCode), "purchase")
@@ -817,6 +835,7 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 					"任务已暂停。请到 OVH 订单页查看是否已有一笔未付订单:\n"+
 					"- 有:等付款即可,任务不需要恢复\n"+
 					"- 没有:在队列页把任务恢复运行", item.PlanCode, item.Datacenter), nil)
+			success = true // 结账结果未决时保留原购物车供后续核对,禁止 defer 删车
 			return Outcome{Attempted: false, PauseTask: true, CheckoutUncertain: true, Reason: "结账超时且对账未能确认是否已建单"}
 		}
 		if item.Preorder && listingNotReady(err) {

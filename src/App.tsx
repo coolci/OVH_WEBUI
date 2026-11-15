@@ -2,7 +2,7 @@ import { lazy, Suspense } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { HelmetProvider } from "react-helmet-async";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
@@ -10,6 +10,7 @@ import { AuthGate } from "@/components/common/AuthGate";
 import { OvhCredsGate } from "@/components/common/OvhCredsGate";
 import { ActiveAccountSync } from "@/components/common/ActiveAccountSync";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
+import { queryClient } from "@/lib/query";
 
 // 首页同步加载;其余页面按路由拆包,首屏不再下载全部页面(原单包约 1.9 MB)
 import Index from "./pages/Index";
@@ -26,16 +27,6 @@ const ServerControlPage = lazy(() => import("./pages/ServerControlPage"));
 const VpsControlPage = lazy(() => import("./pages/VpsControlPage"));
 const TelegramOrderPage = lazy(() => import("./pages/TelegramOrderPage"));
 const TicketsPage = lazy(() => import("./pages/TicketsPage"));
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      retry: 1,
-      refetchOnWindowFocus: false,
-      staleTime: 15_000,
-    },
-  },
-});
 
 const App = () => (
   <HelmetProvider>

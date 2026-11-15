@@ -22,7 +22,7 @@ func tgClient(timeout time.Duration) *http.Client {
 }
 
 // tokenRe 匹配 Telegram API URL 里的 bot token 段。
-var tokenRe = regexp.MustCompile(`/bot[0-9]+:[A-Za-z0-9_-]+`)
+var tokenRe = regexp.MustCompile(`/bot[^/\s"?]+`)
 
 // scrub 抹掉字符串里的 Bot Token。
 //
@@ -200,13 +200,13 @@ func DeleteWebhook(token string) error {
 	payload, _ := json.Marshal(map[string]any{"drop_pending_updates": false})
 	req, err := http.NewRequest(http.MethodPost, "https://api.telegram.org/bot"+token+"/deleteWebhook", bytes.NewReader(payload))
 	if err != nil {
-		return err
+		return fmt.Errorf("%s", scrub(err.Error()))
 	}
 	req.Header.Set("Content-Type", "application/json")
 	client := tgClient(10 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("%s", scrub(err.Error()))
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
@@ -489,12 +489,12 @@ func SetMyCommands(state *app.State) string {
 	client := tgClient(10 * time.Second)
 	req, err := http.NewRequest(http.MethodPost, apiURL, bytes.NewReader(payload))
 	if err != nil {
-		return err.Error()
+		return scrub(err.Error())
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := client.Do(req)
 	if err != nil {
-		return err.Error()
+		return scrub(err.Error())
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)

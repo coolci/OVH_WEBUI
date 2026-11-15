@@ -33,6 +33,7 @@ func GetSettings(state *app.State) gin.HandlerFunc {
 				cfg.ConsumerKey = defAcc.ConsumerKey
 			}
 		}
+		cfg.AppKey = maskCred(cfg.AppKey)
 		cfg.AppSecret = maskCred(cfg.AppSecret)
 		cfg.ConsumerKey = maskCred(cfg.ConsumerKey)
 		cfg.TgToken = maskCred(cfg.TgToken)
@@ -41,7 +42,11 @@ func GetSettings(state *app.State) gin.HandlerFunc {
 }
 
 func isMasked(v string) bool {
-	return strings.Contains(v, "••") || strings.Contains(v, "...") || strings.Contains(v, "***")
+	v = strings.TrimSpace(v)
+	if v == "" || strings.Contains(v, "://") {
+		return false
+	}
+	return strings.Contains(v, "••") || strings.Contains(v, "***") || strings.Contains(v, "...")
 }
 
 // SaveSettings POST /api/settings
@@ -62,6 +67,9 @@ func SaveSettings(state *app.State) gin.HandlerFunc {
 		newCfg.TgToken = strings.TrimSpace(newCfg.TgToken)
 
 		// 若提交的是脱敏掩码，保留原配置中的实际凭据
+		if isMasked(newCfg.AppKey) {
+			newCfg.AppKey = prev.AppKey
+		}
 		if isMasked(newCfg.AppSecret) {
 			newCfg.AppSecret = prev.AppSecret
 		}

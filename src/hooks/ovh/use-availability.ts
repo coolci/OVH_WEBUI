@@ -314,10 +314,10 @@ function installationPrice(pricings: CatalogPricing[] | undefined): { price: num
   return { price: 0, tax: 0 };
 }
 
-/** 在 family.addons 里按前缀匹配 fqn 维度，返回 addon planCode（旧 ovhjk 同款逻辑） */
+/** 在 family.addons 里精确或按 '-' 分隔前缀匹配 fqn 维度，返回 addon planCode */
 function matchAddonCode(addons: string[], fqnDim: string): string {
   if (!fqnDim) return "";
-  return addons.find((c) => c.startsWith(fqnDim)) || "";
+  return addons.find((c) => c === fqnDim || c.startsWith(`${fqnDim}-`)) || "";
 }
 
 /** 对应 family 在 FQN 里的维度值 */

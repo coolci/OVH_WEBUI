@@ -27,13 +27,14 @@ export interface MrtgResponse {
  */
 export function useMrtgTraffic(serviceName: string | null, period: MrtgPeriod) {
   const accountId = useServerAccount();
+  const enc = encodeURIComponent(serviceName || "");
   const results = useQueries({
     queries: [
       {
         queryKey: qk.serverControl.mrtg(serviceName || "", accountId, period, "download"),
         queryFn: async () => {
           const res = await api.get<MrtgResponse>(
-            `/server-control/${serviceName}/mrtg?period=${period}&type=traffic:download`,
+            `/server-control/${enc}/mrtg?period=${period}&type=traffic:download`,
             withAccount(accountId)
           );
           return res.data;
@@ -45,7 +46,7 @@ export function useMrtgTraffic(serviceName: string | null, period: MrtgPeriod) {
         queryKey: qk.serverControl.mrtg(serviceName || "", accountId, period, "upload"),
         queryFn: async () => {
           const res = await api.get<MrtgResponse>(
-            `/server-control/${serviceName}/mrtg?period=${period}&type=traffic:upload`,
+            `/server-control/${enc}/mrtg?period=${period}&type=traffic:upload`,
             withAccount(accountId)
           );
           return res.data;

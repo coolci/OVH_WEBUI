@@ -35,7 +35,8 @@ import {
   useSaveSettings,
   type SettingsConfig,
 } from "@/hooks/use-settings";
-import { getApiSecretKey, setApiSecretKey } from "@/lib/api";
+import { getApiSecretKey, setApiSecretKey } from "@/lib/http";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 const SECTIONS = [
@@ -78,25 +79,34 @@ function SettingsPage() {
     setForm((prev) => ({ ...prev, [k]: v }));
   };
 
+  const isConfigSection =
+    active === "purchase" || active === "telegram" || active === "notify";
+
   const onSave = () => {
     if (active === "password") {
-      setApiSecretKey(apiKey);
+      const trimmed = apiKey.trim();
+      setApiSecretKey(trimmed);
+      setApiKey(trimmed);
+      toast.success(t("hooksMsg.settings.saved"));
       return;
     }
-    if (!loaded) return;
+    if (!isConfigSection || !loaded) return;
     const zone = form.zone || "IE";
-    save.mutate(
-      { ...form, zone, endpoint: endpointForZone(zone) },
-      {
-        // 保存成功后才接受服务端的最新值(保存会触发重拉)
-        onSuccess: () => {
-          dirtyRef.current = false;
-        },
+    const cleaned: SettingsConfig = { ...form, zone, endpoint: endpointForZone(zone) };
+    (Object.keys(cleaned) as (keyof SettingsConfig)[]).forEach((k) => {
+      if (cleaned[k] === "***") {
+        delete cleaned[k];
+      }
+    });
+    save.mutate(cleaned, {
+      // 保存成功后才接受服务端的最新值(保存会触发重拉)
+      onSuccess: () => {
+        dirtyRef.current = false;
       },
-    );
+    });
   };
 
-  const savableSection = active === "password" || loaded;
+  const savableSection = active === "password" || (isConfigSection && loaded);
 
   return (
     <div className="space-y-3 sm:space-y-6">

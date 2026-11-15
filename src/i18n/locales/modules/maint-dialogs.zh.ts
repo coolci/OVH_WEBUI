@@ -503,8 +503,11 @@ export const maintDialogsZh = {
         newPwdTitle: "新生成的云备份密码：",
         newPwdDesc: "请妥善保管此密码，页面刷新后将无法再次查看。",
         pwdResetToast: "云备份密码已重置",
+        resetPwd: "重置密码",
         resettingPwd: "重置密码中…",
+        confirmDelete: "确定要终止云备份服务吗？",
         delToast: "云备份服务已请求终止",
+        deleteBtn: "终止云备份",
         deleting: "终止中…",
       },
       dns: {

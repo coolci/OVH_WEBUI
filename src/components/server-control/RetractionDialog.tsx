@@ -14,6 +14,7 @@ import { useRequestRetraction, type RetractionInfo } from "@/hooks/use-server-co
 import { useTranslation } from "react-i18next";
 import { Trans } from "react-i18next";
 import { fmtDate, fmtDateTime } from "@/i18n/format";
+import { safeHttpsUrl } from "@/lib/utils";
 
 /**
  * 14 天无理由撤单。
@@ -115,10 +116,10 @@ export function RetractionDialog({
               💡 提示：OVH 依据欧盟/加拿大法规对个人消费者提供 14 天撤回权（从下单起算）。企业账户、美区或已过期的订单无法线上撤单。
             </div>
 
-            {info.orderUrl && (
+            {safeHttpsUrl(info.orderUrl) && (
               <div className="text-right">
                 <a
-                  href={info.orderUrl}
+                  href={safeHttpsUrl(info.orderUrl)}
                   target="_blank"
                   rel="noreferrer"
                   className="text-xs text-primary hover:underline inline-flex items-center gap-1 font-medium"

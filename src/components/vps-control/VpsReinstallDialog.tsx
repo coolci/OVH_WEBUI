@@ -27,13 +27,12 @@ export function VpsReinstallDialog({
   onOpenChange: (v: boolean) => void;
   accountId?: string;
 }) {
-  const templates = useVpsTemplates(open ? serviceName : null);
-  const currentOS = useVpsCurrentOS(open ? serviceName : null);
-  const reinstall = useReinstallVps(serviceName);
-  const { t } = useTranslation();
-
   const [activeVpsAccount] = useActiveVpsControlAccount();
   const effectiveAccount = accountId || activeVpsAccount;
+  const templates = useVpsTemplates(open ? serviceName : null, open, effectiveAccount);
+  const currentOS = useVpsCurrentOS(open ? serviceName : null, open, effectiveAccount);
+  const reinstall = useReinstallVps(serviceName, effectiveAccount);
+  const { t } = useTranslation();
   const sshKeysQ = useAccountSshKeys(effectiveAccount);
   const registeredKeys = sshKeysQ.data || [];
 

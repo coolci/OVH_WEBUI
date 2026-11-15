@@ -9,7 +9,7 @@ function load(file, imports = {}) {
   const js = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
-  vm.runInNewContext(js, { exports, require: id => {
+  vm.runInNewContext(js, { exports, URL, require: id => {
     if (!(id in imports)) throw Error(`Unexpected import ${id}`);
     return imports[id];
   } }, { filename: file });
@@ -47,7 +47,7 @@ test('maskSensitive masks every embedded form', () => {
   assert.equal(maskSensitive('plain text', true), 'plain text');
 });
 
-const i18nMock = { default: { t: (_k, o) => o?.defaultValue ?? _k } };
+const i18nMock = { default: { t: (_k, o) => o?.defaultValue ?? _k, exists: () => false } };
 const regions = load('src/lib/ovh-regions.ts', { '@/i18n': i18nMock });
 const subs = load('src/lib/ovh-subsidiaries.ts', {
   '@/lib/ovh-regions': regions,
@@ -70,3 +70,88 @@ test('price subsidiary follows the account zone and stays inside its region', ()
   // 同一账户但选的是别的大区的子公司(账户改了 endpoint 等):退回账户自己的
   assert.equal(resolvePriceSubsidiary({ account: 'us-acc', code: 'WE' }, 'us-acc', 'US', 'ovh-us'), 'US');
 });
+
+// QA-P1-03: 外部 URL 必须校验 https: 协议,拦截 javascript:/data:/http: 伪协议注入
+test('safeHttpsUrl only permits valid https URLs', () => {
+  const { safeHttpsUrl } = load('src/lib/utils.ts', {
+    clsx: { clsx: (...args) => args.join(' ') },
+    'tailwind-merge': { twMerge: s => s },
+  });
+  assert.equal(
+    safeHttpsUrl('https://eu.ovh.com/manager/#/billing/orders'),
+    'https://eu.ovh.com/manager/#/billing/orders',
+  );
+  assert.equal(safeHttpsUrl('javascript:alert(1)'), undefined);
+  assert.equal(safeHttpsUrl('data:text/html,<script>alert(1)</script>'), undefined);
+  assert.equal(safeHttpsUrl('http://insecure.example.com/order.pdf'), undefined);
+  assert.equal(safeHttpsUrl(''), undefined);
+  assert.equal(safeHttpsUrl(null), undefined);
+  assert.equal(safeHttpsUrl(undefined), undefined);
+});
+
+// QA-P1-05: api-error 必须兼容 AxiosError 与 http.ts 抛出的自定义 ApiError
+test('api-error extracts status, code, body and message from both AxiosError and ApiError', () => {
+  const apiErrMod = load('src/lib/api-error.ts', {
+    '@/i18n': i18nMock,
+    '@/i18n/translate-api': { translateApiText: s => s },
+  });
+  const axiosErr = {
+    response: {
+      status: 429,
+      data: { error: 'Rate limit exceeded', code: 'RATE_LIMITED', extra: 'retry-after-5s' },
+    },
+    message: 'Request failed with status code 429',
+  };
+  assert.equal(apiErrMod.errorStatus(axiosErr), 429);
+  assert.equal(apiErrMod.apiMessage(axiosErr), 'Rate limit exceeded');
+  assert.equal(apiErrMod.errorField(axiosErr, 'extra'), 'retry-after-5s');
+  assert.deepEqual(apiErrMod.errorBody(axiosErr), axiosErr.response.data);
+
+  const customApiErr = {
+    name: 'ApiError',
+    status: 403,
+    code: 'FORBIDDEN_ACTION',
+    data: { error: 'Permission denied on this resource', detail: 'readonly' },
+    message: 'Permission denied on this resource',
+  };
+  assert.equal(apiErrMod.errorStatus(customApiErr), 403);
+  assert.equal(apiErrMod.apiMessage(customApiErr), 'Permission denied on this resource');
+  assert.equal(apiErrMod.errorField(customApiErr, 'detail'), 'readonly');
+  assert.deepEqual(apiErrMod.errorBody(customApiErr), customApiErr.data);
+});
+
+// QA-P0-02: qk.vpsControl 所有单实例查询 key 必须包含 accountId,防止跨账户缓存串号
+test('qk.vpsControl scopes all per-VPS query keys by accountId', () => {
+  const { qk } = load('src/lib/query.ts', {
+    '@tanstack/react-query': { QueryClient: class {} },
+  });
+  const singleArgBuilders = [
+    'info',
+    'status',
+    'serviceInfo',
+    'ips',
+    'datacenter',
+    'templates',
+    'currentOS',
+    'tasks',
+    'snapshot',
+    'secondaryDns',
+    'options',
+    'automatedBackup',
+    'engagement',
+    'engagementAvailable',
+    'engagementRequest',
+    'mitigation',
+  ];
+  for (const name of singleArgBuilders) {
+    const keyA = qk.vpsControl[name]('vps-123.ovh.net', 'acc-a');
+    const keyB = qk.vpsControl[name]('vps-123.ovh.net', 'acc-b');
+    assert.notDeepEqual(keyA, keyB, `qk.vpsControl.${name} must differ across accounts`);
+    assert.ok(keyA.includes('acc-a'), `qk.vpsControl.${name} must include accountId`);
+  }
+  const taskKeyA = qk.vpsControl.task('vps-123.ovh.net', 42, 'acc-a');
+  const taskKeyB = qk.vpsControl.task('vps-123.ovh.net', 42, 'acc-b');
+  assert.notDeepEqual(taskKeyA, taskKeyB);
+  assert.ok(taskKeyA.includes('acc-a'));
+});
+

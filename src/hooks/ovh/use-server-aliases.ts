@@ -3,6 +3,7 @@ import { api, getActiveAccount } from "@/lib/http";
 import { toast } from "sonner";
 import i18n from "@/i18n";
 import { apiMessage } from "@/lib/api-error";
+import { useActiveServerControlAccount } from "./use-active-account";
 
 /** 服务器本地别名 map: { service_name: alias }。
  *  - axios interceptor 会自动给 /server-control/* 加 ?account=<id>,所以不用手传
@@ -10,7 +11,8 @@ import { apiMessage } from "@/lib/api-error";
  *  - alias 为空字符串等于"未设置",后端会去删除该行
  */
 export function useServerAliases(explicitAccountId?: string) {
-  const account = explicitAccountId ?? getActiveAccount();
+  const [activeAccount] = useActiveServerControlAccount();
+  const account = explicitAccountId ?? activeAccount;
   return useQuery<Record<string, string>>({
     queryKey: ["server-control", "aliases", account],
     queryFn: async () => (await api.get<Record<string, string>>("/server-control/aliases", {
@@ -25,10 +27,11 @@ export function useServerAliases(explicitAccountId?: string) {
 /** 设置 / 删除一台机器的别名 */
 export function useSetServerAlias() {
   const qc = useQueryClient();
+  const [activeAccount] = useActiveServerControlAccount();
   return useMutation({
     mutationFn: async ({ serviceName, alias, accountId }: { serviceName: string; alias: string; accountId?: string }) => {
       const trimmed = alias.trim();
-      const account = accountId ?? getActiveAccount();
+      const account = accountId ?? (activeAccount || getActiveAccount());
       const params = account ? { account } : undefined;
       if (trimmed === "") {
         await api.delete(`/server-control/${encodeURIComponent(serviceName)}/alias`, { params });

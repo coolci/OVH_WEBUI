@@ -127,6 +127,9 @@ export const settingsPagesZh = {
     },
     accounts: {
       title: "OVH 账户管理",
+      appKeyLabel: "App Key *",
+      appSecretLabel: "App Secret *",
+      consumerKeyLabel: "Consumer Key *",
       intro:
         "每个 OVH 账户(凭据)单独保存,抢购队列 / 狙击 / 订阅创建时各自指定账户。删账户会一并清除关联的 queue / history / sniper tasks。",
       addAccount: "添加账户",

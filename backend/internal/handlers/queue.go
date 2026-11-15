@@ -311,7 +311,7 @@ func UpdateQueueStatus(state *app.State) gin.HandlerFunc {
 				state.Queue[i].Status = body.Status
 				state.Queue[i].UpdatedAt = types.NowISO()
 				if body.Status != "running" {
-					state.UnregisterTaskCancel(id)
+					state.CancelTask(id)
 				}
 				target = state.Queue[i]
 				found = true

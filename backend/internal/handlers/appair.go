@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -69,6 +70,8 @@ func (w *globalFailureWindow) fail() {
 	}
 }
 
+const maxTrackedPairIPs = 4096
+
 // ipFailureWindow 简单的按 IP 失败计数(与 auth.MaxAuthFailures 同思路,独立实例化)
 type ipFailureWindow struct {
 	max     int
@@ -77,6 +80,38 @@ type ipFailureWindow struct {
 	mu      sync.Mutex
 	fails   map[string][]time.Time
 	blocked map[string]time.Time
+}
+
+func (w *ipFailureWindow) evictIfNeededLocked(now time.Time) {
+	if len(w.fails)+len(w.blocked) < maxTrackedPairIPs {
+		return
+	}
+	for k, until := range w.blocked {
+		if now.Sub(until) >= w.lockMs {
+			delete(w.blocked, k)
+		}
+	}
+	for k, ts := range w.fails {
+		keep := ts[:0]
+		for _, t := range ts {
+			if now.Sub(t) < w.window {
+				keep = append(keep, t)
+			}
+		}
+		if len(keep) == 0 {
+			delete(w.fails, k)
+		} else {
+			w.fails[k] = keep
+		}
+	}
+	if len(w.fails)+len(w.blocked) >= maxTrackedPairIPs {
+		for k := range w.fails {
+			delete(w.fails, k)
+			if len(w.fails)+len(w.blocked) < maxTrackedPairIPs {
+				break
+			}
+		}
+	}
 }
 
 // allow 该 IP 当前是否放行
@@ -94,23 +129,35 @@ func (w *ipFailureWindow) allow(ip string) bool {
 		delete(w.blocked, ip)
 	}
 	now := time.Now()
-	keep := w.fails[ip][:0]
-	for _, t := range w.fails[ip] {
-		if now.Sub(t) < w.window {
-			keep = append(keep, t)
+	if ts, ok := w.fails[ip]; ok {
+		keep := ts[:0]
+		for _, t := range ts {
+			if now.Sub(t) < w.window {
+				keep = append(keep, t)
+			}
+		}
+		if len(keep) == 0 {
+			delete(w.fails, ip)
+		} else {
+			w.fails[ip] = keep
 		}
 	}
-	w.fails[ip] = keep
-	return true
+	return len(w.fails[ip]) < w.max
 }
 
 // fail 记一次失败;达到 max 后锁 lockMs
 func (w *ipFailureWindow) fail(ip string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.fails[ip] = append(w.fails[ip], time.Now())
+	if w.fails == nil {
+		w.fails = map[string][]time.Time{}
+		w.blocked = map[string]time.Time{}
+	}
+	now := time.Now()
+	w.evictIfNeededLocked(now)
+	w.fails[ip] = append(w.fails[ip], now)
 	if len(w.fails[ip]) >= w.max {
-		w.blocked[ip] = time.Now()
+		w.blocked[ip] = now
 		delete(w.fails, ip)
 	}
 }
@@ -134,6 +181,15 @@ func CreatePairingCode(state *app.State) gin.HandlerFunc {
 	}
 }
 
+func isTrustedProxyPeer(remoteAddr string) bool {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = remoteAddr
+	}
+	ip := net.ParseIP(strings.TrimSpace(host))
+	return ip != nil && (ip.IsLoopback() || ip.IsPrivate())
+}
+
 // pairURL 生成 App 可识别的配对 URL(ovhconsole://pair?host=...&code=...)
 func pairURL(c *gin.Context, code string) string {
 	if pub := strings.TrimRight(strings.TrimSpace(os.Getenv("PUBLIC_BASE_URL")), "/"); pub != "" {
@@ -141,7 +197,8 @@ func pairURL(c *gin.Context, code string) string {
 	}
 	scheme := "https"
 	if c.Request.TLS == nil {
-		if proto := strings.ToLower(strings.TrimSpace(c.Request.Header.Get("X-Forwarded-Proto"))); proto == "https" {
+		proto := strings.ToLower(strings.TrimSpace(c.Request.Header.Get("X-Forwarded-Proto")))
+		if proto == "https" && isTrustedProxyPeer(c.Request.RemoteAddr) {
 			scheme = "https"
 		} else {
 			// 本地 http 部署(127.0.0.1:19998)也要能配对;App 侧对私有地址允许明文
@@ -179,12 +236,14 @@ func RedeemPairingCode(state *app.State) gin.HandlerFunc {
 		_ = c.ShouldBindJSON(&body)
 		code := strings.ToUpper(strings.TrimSpace(body.Code))
 		if code == "" {
+			pairFailureLimiter.fail(ip)
+			pairGlobalLimiter.fail()
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少配对码", "code": "E6641AC88"})
 			return
 		}
 		name := strings.TrimSpace(body.DeviceName)
-		if len(name) > 60 {
-			name = name[:60]
+		if runes := []rune(name); len(runes) > 60 {
+			name = string(runes[:60])
 		}
 		token, deviceID, err := state.DeviceRepo.RedeemPairingCode(code, name)
 		if err != nil {

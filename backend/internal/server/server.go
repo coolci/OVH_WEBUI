@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ovh-webui/server/internal/app"
+	"github.com/ovh-webui/server/internal/logger"
 	"github.com/ovh-webui/server/internal/updater"
 )
 
@@ -46,7 +47,12 @@ type Config struct {
 // New 创建应用服务实例
 func New(cfg Config) *Server {
 	return &Server{
-		httpServer:         &http.Server{Addr: cfg.Addr, Handler: cfg.Handler},
+		httpServer: &http.Server{
+			Addr:              cfg.Addr,
+			Handler:           cfg.Handler,
+			ReadHeaderTimeout: 10 * time.Second,
+			IdleTimeout:       120 * time.Second,
+		},
 		sqlDB:              cfg.SqlDB,
 		state:              cfg.State,
 		supervisor:         cfg.Supervisor,
@@ -194,16 +200,15 @@ func (s *Server) Run() error {
 		if s.console != nil {
 			s.console.Info("shutdown", "signal", sig.String())
 		}
-		var lg *app.State
+		var lg *logger.Logger
 		if s.state != nil {
-			lg = s.state
+			lg = s.state.Logger
 		}
-		_ = lg
 		GracefulShutdown(
 			s.httpServer,
 			s.sqlDB,
 			s.supervisor,
-			s.state.Logger,
+			lg,
 			s.console,
 			sig.String(),
 			15*time.Second,
@@ -212,7 +217,9 @@ func (s *Server) Run() error {
 	}()
 
 	if err := s.httpServer.Serve(ln); err != nil && err != http.ErrServerClosed {
-		s.console.Error("server run", "err", err)
+		if s.console != nil {
+			s.console.Error("server run", "err", err)
+		}
 		return err
 	}
 	if s.shutdownPending.Load() {

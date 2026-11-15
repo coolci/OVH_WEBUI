@@ -150,8 +150,9 @@ func purchaseVPSInternal(state *app.State, sub types.VPSSubscription, dcCode str
 		"quantity":    qty,
 	}, &itemResult); err != nil {
 		msg := ovh.Explain(err)
+		lowMsg := strings.ToLower(msg)
 		// 停售机型在这一步会被拒,而且重试没有意义
-		if strings.Contains(msg, "not found") || strings.Contains(msg, "invalid planCode") {
+		if strings.Contains(lowMsg, "not found") || strings.Contains(lowMsg, "invalid plancode") {
 			return Outcome{Fatal: true, Reason: fmt.Sprintf(
 				"加购 %s 失败(%s)：这个型号在 %s 可能已经停售", sub.PlanCode, msg, subsidiary)}
 		}
@@ -166,7 +167,8 @@ func purchaseVPSInternal(state *app.State, sub types.VPSSubscription, dcCode str
 	// 三个站点的 region / 机房取值完全不同,猜的代价是整单失败。
 	required, err := fetchRequiredConfig(client, cartID, itemID)
 	if err != nil {
-		state.Logger.Warn("[VPS下单] 拉必需配置失败(按默认继续): "+err.Error(), "vps_purchase")
+		state.Logger.Warn("[VPS下单] 拉必需配置失败,中止本轮下单: "+err.Error(), "vps_purchase")
+		return Outcome{Reason: fmt.Sprintf("拉必需配置失败: %s", ovh.Explain(err))}
 	}
 
 	configs := buildVPSConfig(required, dcCode, sub.OS)

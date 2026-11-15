@@ -15,6 +15,7 @@ import (
 	ovhsdk "github.com/ovh/go-ovh/ovh"
 
 	"github.com/ovh-webui/server/internal/app"
+	"github.com/ovh-webui/server/internal/ovh"
 )
 
 // OVH 支持工单。官方路径是 /support/tickets，创建要打到 /support/tickets/create。
@@ -458,8 +459,13 @@ func fetchSupportTickets(client *ovhsdk.Client, ids []int64) ([]supportTicket, [
 		go func(idx int, ticketID int64) {
 			defer wg.Done()
 			defer func() { <-sem }()
+			isoClient, err := ovh.IsolateClient(client)
+			if err != nil {
+				errs[idx] = err
+				return
+			}
 			var ticket supportTicket
-			if err := client.Get(fmt.Sprintf("/support/tickets/%d", ticketID), &ticket); err != nil {
+			if err := isoClient.Get(fmt.Sprintf("/support/tickets/%d", ticketID), &ticket); err != nil {
 				errs[idx] = err
 				return
 			}

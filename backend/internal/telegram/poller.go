@@ -306,11 +306,11 @@ func fetchUpdates(ctx context.Context, client *http.Client, token string, offset
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
 		"https://api.telegram.org/bot"+token+"/getUpdates?"+q.Encode(), nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s", scrub(err.Error()))
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s", scrub(err.Error()))
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
@@ -357,7 +357,7 @@ func parseGetUpdatesBody(body []byte) (ok bool, desc string, updates []map[strin
 func fetchBotUsername(client *http.Client, token string) (string, error) {
 	resp, err := client.Get("https://api.telegram.org/bot" + token + "/getMe")
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("%s", scrub(err.Error()))
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))

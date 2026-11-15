@@ -22,8 +22,17 @@ import {
   type OrderMode, type CommandHistory,
   HISTORY_STORAGE_KEY, MAX_HISTORY_ITEMS,
 } from "@/components/telegram-order/types";
-import { api, type TelegramActionResult } from "@/lib/api";
+import { api } from "@/lib/http";
 import { apiMessage } from "@/lib/api-error";
+
+interface TelegramActionResult {
+  success: boolean;
+  mode?: string;
+  command: string;
+  message?: string;
+  error?: string;
+  data?: unknown;
+}
 import { useServers } from "@/hooks/use-servers";
 import { useAccounts } from "@/hooks/use-accounts";
 import { useAvailability, buildAvailabilityMap } from "@/hooks/use-availability";
@@ -85,7 +94,11 @@ const TelegramOrderPage = () => {
 
   const handleRegisterCommands = async () => {
     try {
-      const result = await api.registerTelegramCommands();
+      const result = (
+        await api.post<{ success: boolean; message?: string; error?: string }>(
+          "/telegram/register-commands"
+        )
+      ).data;
       if (result.success) {
         toast.success("Bot 命令菜单已注册（/buy /stock /tasks /accounts /subs 等）");
       } else {
@@ -171,9 +184,11 @@ const TelegramOrderPage = () => {
     }
     setIsExecutingRaw(true);
     try {
-      const result = await api.telegramQuickOrder({
-        rawCommand: targetCmd,
-      });
+      const result = (
+        await api.post<TelegramActionResult>("/telegram/quick-order", {
+          rawCommand: targetCmd,
+        })
+      ).data;
       setLastResult(result);
       addToHistory(targetCmd, result.mode || 'cli', '', undefined, result.success);
 
@@ -208,14 +223,16 @@ const TelegramOrderPage = () => {
     const command = generateCommand();
     setIsSubmitting(true);
     try {
-      const result = await api.telegramQuickOrder({
-        mode: selectedMode,
-        planCode: isGlobalQuery ? undefined : planCode,
-        datacenter: datacenter || undefined,
-        quantity: selectedMode === 'buy' || selectedMode === 'watch' ? quantity : undefined,
-        accountRef: accountRef || undefined,
-        coupon: (selectedMode === 'buy' || selectedMode === 'queue') && coupon.trim() ? coupon.trim() : undefined,
-      });
+      const result = (
+        await api.post<TelegramActionResult>("/telegram/quick-order", {
+          mode: selectedMode,
+          planCode: isGlobalQuery ? undefined : planCode,
+          datacenter: datacenter || undefined,
+          quantity: selectedMode === 'buy' || selectedMode === 'watch' ? quantity : undefined,
+          accountRef: accountRef || undefined,
+          coupon: (selectedMode === 'buy' || selectedMode === 'queue') && coupon.trim() ? coupon.trim() : undefined,
+        })
+      ).data;
 
       setLastResult(result);
       addToHistory(command, selectedMode, planCode, datacenter || undefined, result.success);

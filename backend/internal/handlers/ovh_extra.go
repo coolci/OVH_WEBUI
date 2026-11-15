@@ -59,7 +59,10 @@ var defaultPaymentCache = struct {
 // 促销单 15 分钟不付就作废。开启自动付款时前端用它提前提示。结果缓存 10 分钟。
 func GetDefaultPayment(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		accountID := strings.TrimSpace(c.Query("account_id"))
+		accountID := strings.TrimSpace(c.Query("account"))
+		if accountID == "" {
+			accountID = strings.TrimSpace(c.Query("account_id"))
+		}
 		account, ok := state.FindAccount(accountID)
 		if !ok || accountID == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "缺少有效账户"})
@@ -142,7 +145,10 @@ type OrderFollowUpStep struct {
 // 注意:/me/order/{id}/associatedObject 返回的是账单/退款对象,不是服务器,所以不用它。
 func GetOrderFollowUp(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		accountID := strings.TrimSpace(c.Query("account_id"))
+		accountID := strings.TrimSpace(c.Query("account"))
+		if accountID == "" {
+			accountID = strings.TrimSpace(c.Query("account_id"))
+		}
 		orderID := strings.TrimSpace(c.Param("orderId"))
 		if _, ok := state.FindAccount(accountID); !ok || accountID == "" || orderID == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "缺少有效账户或订单号"})
@@ -217,7 +223,10 @@ func GetOSAvailability(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "缺少有效型号"})
 			return
 		}
-		accountID := strings.TrimSpace(c.Query("account_id"))
+		accountID := strings.TrimSpace(c.Query("account"))
+		if accountID == "" {
+			accountID = strings.TrimSpace(c.Query("account_id"))
+		}
 		if accountID == "" {
 			if acc, ok := state.FindAccount(""); ok {
 				accountID = acc.ID

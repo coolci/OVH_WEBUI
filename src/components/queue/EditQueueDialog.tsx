@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Loader2, Save } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
@@ -63,31 +63,41 @@ export function EditQueueDialog({ open, onOpenChange, item }: EditQueueDialogPro
     [servers.data, item?.planCode]
   );
 
+  const initKeyRef = useRef<string>("");
   useEffect(() => {
-    if (open && item) {
+    if (!open || !item) {
+      initKeyRef.current = "";
+      return;
+    }
+    const nextKey = `${item.id}:${matchedServer ? "matched" : "raw"}`;
+    if (initKeyRef.current === nextKey) return;
+    const isFirstInitForItem = !initKeyRef.current.startsWith(`${item.id}:`);
+    initKeyRef.current = nextKey;
+
+    if (isFirstInitForItem) {
       setDatacenter(item.datacenter.toLowerCase());
       setRetryInterval(String(item.retryInterval || 60));
       setAutoPay(!!item.autoPay);
       setCoupon(item.coupon || "");
       setDuration(normalizeDuration(item.duration));
+    }
 
-      const wantedList = item.options || [];
-      const consumed = new Set<string>();
-      const next: Partial<Record<OptionGroupKey, string>> = {};
-      const groupedMap = matchedServer ? groupOptions(matchedServer.availableOptions) : null;
-      if (groupedMap) {
-        for (const g of Object.keys(groupedMap) as OptionGroupKey[]) {
-          const hit = groupedMap[g].find((o) => wantedList.includes(o.value));
-          if (hit) {
-            next[g] = hit.value;
-            consumed.add(hit.value);
-          }
+    const wantedList = item.options || [];
+    const consumed = new Set<string>();
+    const next: Partial<Record<OptionGroupKey, string>> = {};
+    const groupedMap = matchedServer ? groupOptions(matchedServer.availableOptions) : null;
+    if (groupedMap) {
+      for (const g of Object.keys(groupedMap) as OptionGroupKey[]) {
+        const hit = groupedMap[g].find((o) => wantedList.includes(o.value));
+        if (hit) {
+          next[g] = hit.value;
+          consumed.add(hit.value);
         }
       }
-      setPicked(next);
-      const leftover = wantedList.filter((v) => !consumed.has(v));
-      setExtraInput(leftover.join(", "));
     }
+    setPicked(next);
+    const leftover = wantedList.filter((v) => !consumed.has(v));
+    setExtraInput(leftover.join(", "));
   }, [open, item, matchedServer]);
 
   const grouped = useMemo(

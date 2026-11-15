@@ -75,14 +75,18 @@ function DashboardPage() {
   const handleRefreshAll = async () => {
     setIsRefreshingAll(true);
     try {
-      await Promise.all([
+      const results = await Promise.all([
         stats.refetch(),
         queue.refetch(),
         monitorList.refetch(),
         sys.refetch(),
         poller.refetch(),
       ]);
-      toast.success("仪表盘核心数据已刷新至最新状态");
+      if (results.some((r) => r.isError)) {
+        toast.warning("部分数据刷新失败，请检查后端连接");
+      } else {
+        toast.success("仪表盘核心数据已刷新至最新状态");
+      }
     } finally {
       setTimeout(() => setIsRefreshingAll(false), 500);
     }
@@ -135,6 +139,7 @@ function DashboardPage() {
       {/* 2. 运维中控指挥条 (响应式对称布局) */}
       <OperationBanner
         stats={stats.data}
+        statsError={stats.isError}
         poller={poller.data}
         defaultAccount={defaultAccount}
         monitorCount={monitorCount}

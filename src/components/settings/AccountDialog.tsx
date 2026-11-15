@@ -204,14 +204,19 @@ export function AccountDialog({ acc, onClose }: { acc?: OVHAccount; onClose: () 
   const save = async (): Promise<string | null> => {
     if (!canSubmit) return null;
     const payload = buildPayload();
-    if (saved) {
-      const res = await update.mutateAsync({ id: saved.id, input: payload });
+    try {
+      if (saved) {
+        const res = await update.mutateAsync({ id: saved.id, input: payload });
+        applySaved(res.account);
+        return res.account.id;
+      }
+      const res = await create.mutateAsync(payload as AccountInput);
       applySaved(res.account);
       return res.account.id;
+    } catch {
+      // useCreateAccount / useUpdateAccount 的 onError 已负责弹出错误提示
+      return null;
     }
-    const res = await create.mutateAsync(payload as AccountInput);
-    applySaved(res.account);
-    return res.account.id;
   };
 
   const verify = useVerifyAccount();

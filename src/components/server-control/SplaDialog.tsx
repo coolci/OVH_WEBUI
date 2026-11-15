@@ -65,7 +65,7 @@ export function SplaDialog({
   const [busy, setBusy] = useState(false);
   const [unlocking, setUnlocking] = useState(false);
   const qc = useQueryClient();
-  const spla = useSplaList(serviceName, open);
+  const spla = useSplaList(serviceName, open, accountId);
   // 只看 os:SQL Server 那两类是另一回事(要真买了 SQL 授权才谈得上登记),
   // 一键按钮不碰它们,交给下面的手填表单。
   const unlocked = hasActiveSpla(spla.data, "os");
@@ -77,7 +77,7 @@ export function SplaDialog({
   const unlockWindows = async () => {
     setUnlocking(true);
     try {
-      await api.post(`/server-control/${serviceName}/spla`, {
+      await api.post(`/server-control/${encodeURIComponent(serviceName)}/spla`, {
         type: "os",
         serialNumber: WINDOWS_GVLK,
       }, withAccount(accountId));
@@ -99,7 +99,7 @@ export function SplaDialog({
     }
     setBusy(true);
     try {
-      await api.post(`/server-control/${serviceName}/spla`, { type, serialNumber: sn }, withAccount(accountId));
+      await api.post(`/server-control/${encodeURIComponent(serviceName)}/spla`, { type, serialNumber: sn }, withAccount(accountId));
       toast.success(t("maint.spla.toast.submitted"));
       setSerial("");
       qc.invalidateQueries({ queryKey: qk.serverControl.spla(serviceName, accountId) });

@@ -73,7 +73,11 @@ func RefreshOrderStatuses(state *app.State, force bool) int {
 
 	now := time.Now()
 	updated := 0
+	rateLimitedAcct := map[string]bool{}
 	for _, t := range targets {
+		if rateLimitedAcct[t.accountID] {
+			continue
+		}
 		// 这两处以前用 time.Parse(time.RFC3339, ...) 解 NowISO 写出来的时间戳,
 		// 而 NowISO 不带时区 → 每次都解析失败 → `err == nil &&` 短路 → 两个节流
 		// 全是死代码:30 天上限没生效,2 分钟最小间隔也没生效,
@@ -101,6 +105,9 @@ func RefreshOrderStatuses(state *app.State, force bool) int {
 		status, err := FetchOrderStatus(client, t.orderID)
 		if err != nil {
 			state.Logger.Warn(fmt.Sprintf("查询订单 %s 状态失败: %s", t.orderID, err.Error()), "purchase")
+			if strings.Contains(err.Error(), "429") || strings.Contains(strings.ToLower(err.Error()), "too many requests") {
+				rateLimitedAcct[t.accountID] = true
+			}
 			continue
 		}
 		if applyOrderStatus(state, t.entryID, status) {

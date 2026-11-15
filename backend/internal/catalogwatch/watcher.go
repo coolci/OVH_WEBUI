@@ -487,9 +487,29 @@ func (w *Watcher) Attempt(ctx context.Context) {
 	}
 	_ = w.save()
 }
+func (w *Watcher) runnableJobCount() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if !w.data.Enabled || w.data.BaselineAt == "" || w.loadErr != nil || len(w.active) >= maxConcurrentAttempts || !w.accountOK() {
+		return 0
+	}
+	slots := maxConcurrentAttempts - len(w.active)
+	now := time.Now().UnixMilli()
+	ready := 0
+	for _, j := range w.data.Jobs {
+		if j.Status == "pending" && j.Due <= now {
+			ready++
+			if ready >= slots {
+				return slots
+			}
+		}
+	}
+	return ready
+}
+
 func (w *Watcher) Run(ctx context.Context) {
 	w.once.Do(func() {
-		w.loops.Add(2 + maxConcurrentAttempts)
+		w.loops.Add(3)
 		go func() {
 			defer w.loops.Done()
 			ticker := time.NewTicker(2 * time.Second)
@@ -528,21 +548,26 @@ func (w *Watcher) Run(ctx context.Context) {
 				}
 			}
 		}()
-		for worker := 0; worker < maxConcurrentAttempts; worker++ {
-			go func() {
-				defer w.loops.Done()
-				ticker := time.NewTicker(time.Second)
-				defer ticker.Stop()
-				for {
-					select {
-					case <-ctx.Done():
-						return
-					case <-ticker.C:
-						w.Attempt(ctx)
+		go func() {
+			defer w.loops.Done()
+			ticker := time.NewTicker(time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					n := w.runnableJobCount()
+					for i := 0; i < n; i++ {
+						w.loops.Add(1)
+						go func() {
+							defer w.loops.Done()
+							w.Attempt(ctx)
+						}()
 					}
 				}
-			}()
-		}
+			}
+		}()
 	})
 }
 

@@ -31,10 +31,10 @@ func ValidateServiceName() gin.HandlerFunc {
 			c.Next()
 			return
 		}
-		if len(svc) > maxServiceNameLen {
+		if len(svc) > maxServiceNameLen || svc == "." || svc == ".." {
 			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
 				"success": false,
-				"error":   "服务名过长,不像是一个有效的 OVH 服务名", "code": "E9A400893",
+				"error":   "服务名过长或格式不合法,不像是一个有效的 OVH 服务名", "code": "E9A400893",
 			})
 			return
 		}
@@ -48,6 +48,7 @@ func ValidateServiceName() gin.HandlerFunc {
 					"success": false,
 					"error": "服务名里有非法字符。OVH 的服务名只会包含字母、数字、点、连字符和下划线" +
 						"(比如 ns3001234.ip-1-2-3.eu);请从列表里重新选一台机器",
+					"code": "E9A400893",
 				})
 				return
 			}

@@ -413,8 +413,12 @@ func respondOVHError(c *gin.Context, err error) {
 	}
 	var apiErr *ovhsdk.APIError
 	if errors.As(err, &apiErr) && apiErr.Code >= 400 && apiErr.Code < 500 {
-		c.JSON(apiErr.Code, gin.H{"success": false, "error": msg})
+		code := "OVH_UPSTREAM_ERROR"
+		if apiErr.Code == http.StatusUnauthorized {
+			code = "OVH_AUTH_INVALID"
+		}
+		c.JSON(apiErr.Code, gin.H{"success": false, "error": msg, "code": code})
 		return
 	}
-	c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": msg})
+	c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": msg, "code": "OVH_UPSTREAM_ERROR"})
 }

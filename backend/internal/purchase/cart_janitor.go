@@ -3,6 +3,7 @@ package purchase
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/ovh-webui/server/internal/app"
@@ -61,6 +62,10 @@ func CleanupLeftoverCarts(ctx context.Context, state *app.State) []CartCleanupRe
 			}
 			if err := client.GetWithContext(ctx, "/order/cart/"+id, &cart); err != nil {
 				res.Kept++
+				if strings.Contains(err.Error(), "429") {
+					res.Error = ovh.Explain(err)
+					break
+				}
 				continue
 			}
 			if cart.Description != ovh.CartMarker || cart.ReadOnly || ovh.CartInUse(id) {
@@ -70,6 +75,10 @@ func CleanupLeftoverCarts(ctx context.Context, state *app.State) []CartCleanupRe
 			if err := client.DeleteWithContext(ctx, "/order/cart/"+id, nil); err != nil {
 				res.Kept++
 				state.Logger.Debug(fmt.Sprintf("删除遗留购物车 %s 失败: %s", id, err.Error()), "purchase")
+				if strings.Contains(err.Error(), "429") {
+					res.Error = ovh.Explain(err)
+					break
+				}
 				continue
 			}
 			res.Deleted++

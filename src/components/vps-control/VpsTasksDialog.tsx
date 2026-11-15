@@ -22,9 +22,8 @@ export function VpsTasksDialog({
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }) {
-  const q = useVpsTasks(open ? serviceName : null);
+  const q = useVpsTasks(open ? serviceName : null, { refetchInterval: open ? 5000 : false });
   const { t } = useTranslation();
-  // refetchInterval 在 q 选项里设不上,简单做法:用户点刷新
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -141,7 +140,7 @@ function translateTaskState(s: string): string {
 /** OVH vps.TaskTypeEnum 全集 —— 注意 OVH 命名大多带 Vm 后缀(rebootVm 不是 reboot)。
  *  表里存 i18n key(vps.tasks.type.*),渲染处统一 t();没收录的枚举原样透传。 */
 function translateTaskType(t: string): string {
-  return ({
+  const map: Record<string, string> = {
     addVeeamBackupJob: "vps.tasks.type.addVeeamBackupJob",
     changeRootPassword: "vps.tasks.type.changeRootPassword",
     createSnapshot: "vps.tasks.type.createSnapshot",
@@ -166,5 +165,9 @@ function translateTaskType(t: string): string {
     startVm: "vps.tasks.type.startVm",
     stopVm: "vps.tasks.type.stopVm",
     upgradeVm: "vps.tasks.type.upgradeVm",
-  } as Record<string, string>)[t] || t;
+  };
+  if (map[t]) return map[t];
+  const lower = t.toLowerCase();
+  const foundKey = Object.keys(map).find((k) => k.toLowerCase() === lower);
+  return foundKey ? map[foundKey] : t;
 }

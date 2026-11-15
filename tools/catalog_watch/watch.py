@@ -282,19 +282,26 @@ def dispatch_one(store, http):
     return True
 
 
+MAX_RECONCILE_ATTEMPTS = 10
+
+
 def reconcile(store, http):
-    rows = store.db.execute("SELECT id,payload FROM jobs WHERE status IN ('sending','uncertain') AND due<=?", (time.time(),)).fetchall()
+    rows = store.db.execute("SELECT id,payload,attempts FROM jobs WHERE status IN ('sending','uncertain') AND due<=?", (time.time(),)).fetchall()
     if not rows:
         return
     status, items, _ = http.request('/api/queue', local=True)
     if status != 200 or not isinstance(items, list):
         return
-    for key, raw in rows:
+    for key, raw, attempts in rows:
         matched = next((item for item in items if same_order(item, json.loads(raw))), None)
         if matched:
             store.finish(key, 'accepted', f"reconciled queue task {matched.get('id', '')}")
+        elif attempts >= MAX_RECONCILE_ATTEMPTS:
+            store.finish(key, 'blocked', 'reconcile retries exhausted; do not resubmit automatically', 0)
         else:
             # No match is not proof that no order was created (queue may have been cleared).
+            with store.db:
+                store.db.execute('UPDATE jobs SET attempts=attempts+1 WHERE id=?', (key,))
             store.finish(key, 'uncertain', 'no queue evidence; do not resubmit automatically', 60)
 
 

@@ -131,7 +131,11 @@ func ListVps(state *app.State) gin.HandlerFunc {
 		for i, name := range names {
 			r := results[i]
 			if r.err != nil || r.info == nil {
-				list = append(list, gin.H{"name": name, "serviceName": name, "error": "fetch failed"})
+				errDetail := "fetch failed"
+				if r.err != nil {
+					errDetail = "fetch failed: " + ovh.Explain(r.err)
+				}
+				list = append(list, gin.H{"name": name, "serviceName": name, "error": errDetail})
 				continue
 			}
 			info := r.info
@@ -143,6 +147,9 @@ func ListVps(state *app.State) gin.HandlerFunc {
 				state.Logger.Warn("VPS "+name+" serviceInfos 获取失败,续费/状态列返回 null: "+r.svcErr.Error(), "vps_control")
 			} else if r.svc != nil {
 				svcStatus = valueOr(r.svc, "status", "unknown")
+				if s, ok := svcStatus.(string); ok && strings.EqualFold(s, "expired") {
+					continue
+				}
 				renewalType = false
 				if rn, ok := r.svc["renew"].(map[string]interface{}); ok {
 					if a, ok := rn["automatic"].(bool); ok {

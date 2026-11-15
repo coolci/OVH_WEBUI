@@ -508,8 +508,11 @@ const pack: MaintDialogsPack = {
         newPwdTitle: "Newly generated Cloud Backup password:",
         newPwdDesc: "Please save this password securely. It will not be shown again after refresh.",
         pwdResetToast: "Cloud backup password reset",
+        resetPwd: "Reset password",
         resettingPwd: "Resetting password…",
+        confirmDelete: "Are you sure you want to terminate the cloud backup service?",
         delToast: "Cloud backup service termination requested",
+        deleteBtn: "Terminate cloud backup",
         deleting: "Terminating…",
       },
       dns: {

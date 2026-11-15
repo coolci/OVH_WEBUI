@@ -6,6 +6,7 @@ import { useSelfUpdate, useUpdateProgress, type UpdateCheck } from "@/hooks/use-
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { errorField } from "@/lib/api-error";
+import { safeHttpsUrl } from "@/lib/utils";
 
 /**
  * 在线更新按钮。
@@ -176,16 +177,23 @@ export function UpdateButton({ check }: { check?: UpdateCheck }) {
 
   return (
     <span className="inline-flex items-center gap-1.5">
-      <a
-        href={check!.url}
-        target="_blank"
-        rel="noreferrer noopener"
-        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
-        title={t("commons.update.latestTitle", { version: check!.latest })}
-      >
-        <Sparkles className="w-3 h-3" />
-        v{check!.latest}
-      </a>
+      {safeHttpsUrl(check!.url) ? (
+        <a
+          href={safeHttpsUrl(check!.url)}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+          title={t("commons.update.latestTitle", { version: check!.latest })}
+        >
+          <Sparkles className="w-3 h-3" />
+          v{check!.latest}
+        </a>
+      ) : (
+        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary">
+          <Sparkles className="w-3 h-3" />
+          v{check!.latest}
+        </span>
+      )}
       <Button size="sm" variant="outline" className="h-6 px-2 text-[11px]" onClick={start} disabled={mut.isPending}>
         {mut.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3 mr-1" />}
         {t("commons.update.updateNow")}

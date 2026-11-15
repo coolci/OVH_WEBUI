@@ -12,12 +12,14 @@ export function InstallProgressDialog({
   serviceName,
   open,
   onOpenChange,
+  accountId,
 }: {
   serviceName: string;
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  accountId?: string;
 }) {
-  const q = useInstallStatus(serviceName, open);
+  const q = useInstallStatus(serviceName, open, accountId);
   const { t } = useTranslation();
   const data = q.data;
   const status = data?.status;

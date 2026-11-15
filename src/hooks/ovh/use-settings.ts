@@ -49,6 +49,7 @@ export function useSaveSettings() {
       qc.invalidateQueries({ queryKey: ["telegram", "verify"] });
       qc.invalidateQueries({ queryKey: qk.settings.telegramPoller() });
       qc.invalidateQueries({ queryKey: ["telegram"] });
+      qc.invalidateQueries({ queryKey: ["notify", "channels"] });
       toast.success(i18n.t("hooksMsg.settings.saved"));
     },
     onError: (e: unknown) => toast.error(apiMessage(e) || i18n.t("hooksMsg.settings.saveFailed")),

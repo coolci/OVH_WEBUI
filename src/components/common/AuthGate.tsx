@@ -11,6 +11,7 @@ import {
   onAuthFailure,
 } from "@/lib/http";
 import { errorStatus, errorField, errorText } from "@/lib/api-error";
+import { queryClient } from "@/lib/query";
 
 type AuthState = "checking" | "needs-auth" | "authed";
 
@@ -34,6 +35,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (state !== "authed") return;
     return onAuthFailure(() => {
+      queryClient.clear();
       setErrMsg("登录状态已失效，请重新输入 API 密钥");
       setState("needs-auth");
     });
@@ -51,13 +53,14 @@ export function AuthGate({ children }: { children: ReactNode }) {
         if (ok) setState("authed");
         else {
           clearApiSecretKey();
+          queryClient.clear();
           setErrMsg("已保存的 API 密钥失效，请重新输入");
           setState("needs-auth");
         }
       })
-      .catch(() => {
-        // 网络错误：放行进入应用，让单个请求的拦截器 / 业务层处理报错
-        setState("authed");
+      .catch((e: unknown) => {
+        setErrMsg(errorText(e) || "无法连接后端验证密钥，请确认服务在线后重试");
+        setState("needs-auth");
       });
   }, []);
 
@@ -74,6 +77,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
       <LoginOverlay
         initialError={errMsg}
         onSuccess={(key) => {
+          queryClient.clear();
           setApiSecretKey(key);
           setErrMsg("");
           setState("authed");
@@ -182,7 +186,10 @@ function LoginOverlay({
 async function verifyKey(key: string): Promise<boolean> {
   try {
     const res = await axios.get(resolveAbsoluteUrl("/api/stats"), {
-      headers: { "X-API-Key": key },
+      headers: {
+        "X-API-Key": key.trim(),
+        "X-Request-Time": Date.now().toString(),
+      },
       timeout: 10000,
       validateStatus: () => true,
     });

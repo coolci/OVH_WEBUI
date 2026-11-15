@@ -27,12 +27,12 @@ import (
 // AllowLocalWebhookForTesting 仅在单元测试中临时允许回环地址
 var AllowLocalWebhookForTesting = false
 
-// IsPrivateOrLocalIP 检查 IP 是否为本地回环、RFC1918 私网、链路本地、云元数据地址
+// IsPrivateOrLocalIP 检查 IP 是否为本地回环、RFC1918 私网、CGNAT、多播、链路本地、云元数据地址
 func IsPrivateOrLocalIP(ip net.IP) bool {
 	if ip == nil {
 		return true
 	}
-	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() {
 		return true
 	}
 	if ip4 := ip.To4(); ip4 != nil {
@@ -40,6 +40,9 @@ func IsPrivateOrLocalIP(ip net.IP) bool {
 			return true
 		}
 		if ip4[0] == 10 { // 10.0.0.0/8
+			return true
+		}
+		if ip4[0] == 100 && ip4[1] >= 64 && ip4[1] <= 127 { // 100.64.0.0/10 (RFC6598 CGNAT)
 			return true
 		}
 		if ip4[0] == 172 && ip4[1] >= 16 && ip4[1] <= 31 { // 172.16.0.0/12
@@ -166,40 +169,7 @@ func BroadcastWithStatus(state *app.State, message string, replyMarkup map[strin
 	return delivered, []Channel{tg, wh}
 }
 
-// sendWebhook 发文本消息,同时检查 HTTP 状态和常见的业务状态码。
-func sendWebhook(webhookURL, message string) error {
-	if err := ValidateWebhookURL(webhookURL); err != nil {
-		return err
-	}
-	target, err := url.Parse(webhookURL)
-	if err != nil {
-		return err
-	}
-	host := strings.ToLower(target.Hostname())
-	feishu := host == "open.feishu.cn" || host == "open.larksuite.com"
-	dingtalk := host == "oapi.dingtalk.com"
-	var p webhookPayload
-	p.Text = message
-	p.Message = message
-	p.Title = "OVH 控制台"
-	p.MsgType = "text"
-	p.Content.Text = message
-	p.FeishuMsgType = "text"
-	p.FeishuContent.Text = message
-	// 钉钉的 text 必须是对象;自建服务保持原来的字符串字段。
-	if dingtalk {
-		p.Text = map[string]string{"content": message}
-	}
-	body, err := json.Marshal(p)
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequest(http.MethodPost, webhookURL, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
+func newWebhookClient() *http.Client {
 	transport := http.DefaultTransport
 	if tr, ok := transport.(*http.Transport); ok {
 		cloned := tr.Clone()
@@ -243,10 +213,50 @@ func sendWebhook(webhookURL, message string) error {
 		transport = cloned
 	}
 
-	client := &http.Client{
+	return &http.Client{
 		Transport: transport,
 		Timeout:   10 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
 	}
+}
+
+// sendWebhook 发文本消息,同时检查 HTTP 状态和常见的业务状态码。
+func sendWebhook(webhookURL, message string) error {
+	if err := ValidateWebhookURL(webhookURL); err != nil {
+		return err
+	}
+	target, err := url.Parse(webhookURL)
+	if err != nil {
+		return err
+	}
+	host := strings.ToLower(target.Hostname())
+	feishu := host == "open.feishu.cn" || host == "open.larksuite.com"
+	dingtalk := host == "oapi.dingtalk.com"
+	var p webhookPayload
+	p.Text = message
+	p.Message = message
+	p.Title = "OVH 控制台"
+	p.MsgType = "text"
+	p.Content.Text = message
+	p.FeishuMsgType = "text"
+	p.FeishuContent.Text = message
+	// 钉钉的 text 必须是对象;自建服务保持原来的字符串字段。
+	if dingtalk {
+		p.Text = map[string]string{"content": message}
+	}
+	body, err := json.Marshal(p)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest(http.MethodPost, webhookURL, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := newWebhookClient()
 	resp, err := client.Do(req)
 	if err != nil {
 		return err

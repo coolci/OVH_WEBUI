@@ -29,7 +29,8 @@ type Factory struct {
 	// logf 可选日志钩子。指纹名不认识这类事要说出来,但 ovh 包不该依赖 logger。
 	logf func(format string, args ...interface{})
 	// onProxyError 代理层面失败时回调(accountID, err)。由 main 接到 proxyguard。
-	onProxyError func(accountID string, err error)
+	onProxyError   func(accountID string, err error)
+	onProxySuccess func(accountID string)
 
 	mu    sync.Mutex
 	cache map[string]*ovh.Client // accountID → client
@@ -57,6 +58,14 @@ func (f *Factory) SetProxyErrorHook(fn func(accountID string, err error)) {
 	f.mu.Lock()
 	f.onProxyError = fn
 	f.cache = map[string]*ovh.Client{} // 让已缓存的 client 重建,带上钩子
+	f.mu.Unlock()
+}
+
+// SetProxySuccessHook 注入代理恢复回调。
+func (f *Factory) SetProxySuccessHook(fn func(accountID string)) {
+	f.mu.Lock()
+	f.onProxySuccess = fn
+	f.cache = map[string]*ovh.Client{}
 	f.mu.Unlock()
 }
 
@@ -101,6 +110,7 @@ func (f *Factory) ClientFor(accountID string) (*ovh.Client, error) {
 	// 在锁内取出钩子并按值捕获:闭包是在请求时刻跑的,
 	// 那时候没有持锁,直接读 f.onProxyError 就是数据竞争。
 	hook := f.onProxyError
+	okHook := f.onProxySuccess
 	httpCli, herr := netfp.Client(netfp.Options{
 		ProxyURL: acc.ProxyURL,
 		Profile:  prof,
@@ -113,6 +123,11 @@ func (f *Factory) ClientFor(accountID string) (*ovh.Client, error) {
 		OnProxyError: func(e error) {
 			if hook != nil {
 				hook(accID, e)
+			}
+		},
+		OnProxySuccess: func() {
+			if okHook != nil {
+				okHook(accID)
 			}
 		},
 	})

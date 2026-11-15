@@ -197,7 +197,8 @@ type State struct {
 	QueueProcessorRunning bool
 
 	// onProxyError 代理故障回调,由 main 接到 proxyguard。
-	onProxyError func(accountID string, err error)
+	onProxyError   func(accountID string, err error)
+	onProxySuccess func(accountID string)
 
 	// 领域应用服务层 (Clean Architecture Application Services)
 	AccountService account.Service
@@ -285,6 +286,43 @@ func (s *State) DBPath() string {
 		return s.DB.Path
 	}
 	return ""
+}
+
+// HasDB 底层 SQLite 数据库是否已就绪。
+func (s *State) HasDB() bool {
+	return s != nil && s.DB != nil
+}
+
+// GetKV 从底层 SQLite KV 表读取 JSON 值。
+func (s *State) GetKV(key string, dst interface{}) (bool, error) {
+	if s == nil || s.DB == nil {
+		return false, errors.New("database not initialized")
+	}
+	return s.DB.GetKV(key, dst)
+}
+
+// SetKV 写入 JSON 值到底层 SQLite KV 表。
+func (s *State) SetKV(key string, val interface{}) error {
+	if s == nil || s.DB == nil {
+		return errors.New("database not initialized")
+	}
+	return s.DB.SetKV(key, val)
+}
+
+// DeleteKV 从底层 SQLite KV 表删除指定键。
+func (s *State) DeleteKV(key string) error {
+	if s == nil || s.DB == nil {
+		return errors.New("database not initialized")
+	}
+	return s.DB.DeleteKV(key)
+}
+
+// ClaimOrderPayment 原子登记某账户某订单的付款请求。
+func (s *State) ClaimOrderPayment(accountID string, orderID int64) (bool, error) {
+	if s == nil || s.DB == nil {
+		return false, errors.New("database not initialized")
+	}
+	return s.DB.ClaimOrderPayment(accountID, orderID)
 }
 
 // HasAnyAccount 是否至少有一个 OVH 账户。
@@ -1007,10 +1045,20 @@ func (s *State) HTTPClientFor(accountID string, timeout time.Duration) (*http.Cl
 				s.onProxyError(acc.ID, e)
 			}
 		},
+		OnProxySuccess: func() {
+			if s.onProxySuccess != nil {
+				s.onProxySuccess(acc.ID)
+			}
+		},
 	})
 }
 
 // SetProxyErrorHook 注入代理故障回调，供 HTTPClientFor 建出来的客户端使用。
 func (s *State) SetProxyErrorHook(fn func(accountID string, err error)) {
 	s.onProxyError = fn
+}
+
+// SetProxySuccessHook 注入代理恢复回调，供 HTTPClientFor 建出来的客户端使用。
+func (s *State) SetProxySuccessHook(fn func(accountID string)) {
+	s.onProxySuccess = fn
 }

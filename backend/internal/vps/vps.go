@@ -563,13 +563,17 @@ func monitorLoopGen(state *app.State, gen int64) {
 					matchedDC = true
 					oldStatus, hasOld := lastStatus[code]
 					if !hasOld {
-						initialAvailable = append(initialAvailable, map[string]interface{}{
+						item := map[string]interface{}{
 							"name":   name,
 							"code":   code,
 							"status": currentStatus,
 							"days":   days,
-						})
+						}
+						initialAvailable = append(initialAvailable, item)
 						if vpsStockAvailable(currentStatus) {
+							if !isFirstCheckOverall {
+								newAvailable = append(newAvailable, item)
+							}
 							sub.History = append(sub.History, map[string]interface{}{
 								"timestamp":      time.Now().Format(time.RFC3339Nano),
 								"datacenter":     name,

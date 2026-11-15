@@ -38,7 +38,7 @@ export function PowerTab({ server, accountId: propAccountId }: { server: OwnedSe
     // 按下就发,不给第二次机会 —— 所以必须先确认、发的过程中必须禁用。
     setRebooting(true);
     try {
-      await api.post(`/server-control/${server.serviceName}/reboot`, undefined, withAccount(accountId));
+      await api.post(`/server-control/${encodeURIComponent(server.serviceName)}/reboot`, undefined, withAccount(accountId));
       toast.success(t("maint.power.toast.rebootSent"));
       setRebootOpen(false);
     } catch (e: unknown) {
@@ -125,7 +125,7 @@ export function PowerTab({ server, accountId: propAccountId }: { server: OwnedSe
       <TasksDialog serviceName={server.serviceName} open={tasksOpen} onOpenChange={setTasksOpen} />
       <ReinstallDialog serviceName={server.serviceName} open={reinstallOpen} onOpenChange={setReinstallOpen} accountId={accountId} />
       <BiosDialog serviceName={server.serviceName} open={biosOpen} onOpenChange={setBiosOpen} />
-      <InstallProgressDialog serviceName={server.serviceName} open={progressOpen} onOpenChange={setProgressOpen} />
+      <InstallProgressDialog serviceName={server.serviceName} open={progressOpen} onOpenChange={setProgressOpen} accountId={accountId} />
       <IpmiDialog serviceName={server.serviceName} open={ipmiOpen} onOpenChange={setIpmiOpen} accountId={accountId} />
 
       {/* 重启确认。

@@ -41,8 +41,8 @@ export function ReinstallDialog({
   accountId?: string;
 }) {
   const tpl = useServerTemplates(serviceName, open, accountId);
-  const disk = useServerDiskInfo(serviceName, open);
-  const raid = useServerRaidProfiles(serviceName, open);
+  const disk = useServerDiskInfo(serviceName, open, accountId);
+  const raid = useServerRaidProfiles(serviceName, open, accountId);
   const mut = useReinstallServer(accountId);
   const { t } = useTranslation();
   const brandDark = useTheme().resolved === "dark";
@@ -71,7 +71,12 @@ export function ReinstallDialog({
   const [showSmart, setShowSmart] = useState(false);
 
   // 内置分区方案
-  const ps = useServerPartitionSchemes(serviceName, templateName || null);
+  const ps = useServerPartitionSchemes(
+    serviceName,
+    templateName || null,
+    open && storageMode === "scheme",
+    accountId,
+  );
   const smartPlan = useMemo(
     () => buildSmartPlan(disk.data || {}, detectOsKind(templateName)),
     [disk.data, templateName]
@@ -231,7 +236,10 @@ export function ReinstallDialog({
         useProxmox9Zfs,
         zfsRaidLevel: useProxmox9Zfs ? zfsRaidLevel : undefined,
         zfsVzSize: useProxmox9Zfs ? zfsVzSize : undefined,
-        partitionSchemeName: storageMode === "scheme" && partitionSchemeName ? partitionSchemeName : undefined,
+        partitionSchemeName:
+          storageMode === "scheme" && partitionSchemeName && partitionSchemeName.trim() && partitionSchemeName !== "__default__"
+            ? partitionSchemeName.trim()
+            : undefined,
         hardwareRaid: useCustomStorage ? hardwareRaid : undefined,
         useSoftwareRaid: useCustomStorage && useSoftwareRaid,
         softwareRaidLevel: useCustomStorage && useSoftwareRaid ? softwareRaidLevel : undefined,
@@ -258,6 +266,7 @@ export function ReinstallDialog({
   const reset = () => {
     setSearch("");
     setTemplateName("");
+    setActiveGroup(null);
     setHostname("");
     setStorageMode("default");
     setZfsRaidLevel(1);
@@ -274,6 +283,10 @@ export function ReinstallDialog({
     setPartitionSchemeName("");
     setConfirming(false);
   };
+
+  useEffect(() => {
+    reset();
+  }, [serviceName, accountId]);
 
   return (
     <Dialog
@@ -414,7 +427,13 @@ export function ReinstallDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button
+            variant="outline"
+            onClick={() => {
+              onOpenChange(false);
+              reset();
+            }}
+          >
             {t("common.cancel")}
           </Button>
           <Button

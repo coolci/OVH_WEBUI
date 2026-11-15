@@ -481,7 +481,7 @@ func (m *Monitor) buildAvailabilityAlert(planCode string, availableDCs []map[str
 		_ = m.state.DB.SetTelegramButtonAccount(masterUUID, btnAccountID)
 	}
 
-	hasMultiAccounts := m.state != nil && len(m.state.Accounts) > 1
+	hasMultiAccounts := m.state != nil && len(m.state.AccountsSnapshot()) > 1
 	var actionRow []btn
 	if len(availableDCs) > 1 {
 		cbAll, _ := json.Marshal(map[string]string{"a": "queue_all", "u": masterUUID})
@@ -782,6 +782,9 @@ func (m *Monitor) SendAvailabilityAlert(planCode, datacenter, status, changeType
 			kb = append(kb, accRow)
 			masterUUID := uuid.NewString()
 			m.AddMessageUUID(masterUUID, planCode, datacenter, options, configInfo)
+			if btnAccID := m.resolveNotifyAccountID(planCode); btnAccID != "" && m.state.DB != nil {
+				_ = m.state.DB.SetTelegramButtonAccount(masterUUID, btnAccID)
+			}
 			cbQ, _ := json.Marshal(map[string]string{"a": "add_to_queue", "u": masterUUID})
 			cbPick, _ := json.Marshal(map[string]string{"a": "pick_acc", "u": masterUUID})
 			kb = append(kb, []btn{
@@ -799,7 +802,7 @@ func (m *Monitor) SendAvailabilityAlert(planCode, datacenter, status, changeType
 			kb = append(kb, []btn{
 				{Text: "⚡ 立即抢购 (" + dcButtonLabel(datacenter) + ")", CallbackData: string(cb)},
 			})
-			if m.state != nil && len(m.state.Accounts) > 1 {
+			if m.state != nil && len(m.state.AccountsSnapshot()) > 1 {
 				cbPick, _ := json.Marshal(map[string]string{"a": "pick_acc", "u": btnUUID})
 				kb = append(kb, []btn{
 					{Text: "📥 加入抢购队列", CallbackData: string(cb)},

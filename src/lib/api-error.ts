@@ -12,16 +12,41 @@ import type { AxiosError } from "axios";
  * 拼接类动态消息(含 OVH 原文的那些)后端不带 code,始终透传 —— 那类
  * 文案本来就以后端为准。
  */
-export function apiMessage(e: unknown): string {
-  const err = e as AxiosError<{ error?: string; message?: string; code?: string; params?: Record<string, unknown> }>;
-  const data = err?.response?.data;
-  const raw = data?.error || data?.message || err?.message || "";
+type ErrorPayload = {
+  error?: string;
+  message?: string;
+  detail?: string;
+  title?: string;
+  code?: string;
+  params?: Record<string, unknown>;
+};
 
-  if (data?.code) {
-    const key = `api.${data.code}`;
+type HybridError = AxiosError<ErrorPayload> & {
+  status?: number;
+  data?: ErrorPayload;
+  code?: string;
+};
+
+function extractErrorPayload(e: unknown): ErrorPayload | undefined {
+  const err = e as HybridError | undefined;
+  const respData = err?.response?.data;
+  if (respData && typeof respData === "object") return respData;
+  const directData = err?.data;
+  if (directData && typeof directData === "object") return directData;
+  return undefined;
+}
+
+export function apiMessage(e: unknown): string {
+  const err = e as HybridError | undefined;
+  const data = extractErrorPayload(e);
+  const code = data?.code || (typeof err?.code === "string" && !err.code.startsWith("ERR_") && err.code !== "ECONNABORTED" ? err.code : undefined);
+  const raw = data?.error || data?.message || data?.detail || data?.title || err?.message || "";
+
+  if (code) {
+    const key = `api.${code}`;
     if (i18n.exists(key)) {
       // 结构化校验错误带 params:按当前语言插值出译文(值可能是数字)
-      const params = data.params as Record<string, string | number> | undefined;
+      const params = data?.params as Record<string, string | number> | undefined;
       if (params && Object.keys(params).length > 0) {
         return i18n.t(key, params) as string;
       }
@@ -48,15 +73,16 @@ export function bodyMessage(data: BodyMessage | undefined | null): string | unde
   return data.message || undefined;
 }
 
-/** 错误上的 HTTP 状态码(只有请求到达后端的 axios 错误才有) */
+/** 错误上的 HTTP 状态码(兼容 AxiosError 与 ApiError) */
 export function errorStatus(e: unknown): number | undefined {
-  return (e as AxiosError | undefined)?.response?.status;
+  const err = e as HybridError | undefined;
+  return err?.response?.status ?? (typeof err?.status === "number" ? err.status : undefined);
 }
 
 /** 后端错误响应体;不是 JSON 对象时返回空对象,读字段前不用再判空 */
 export function errorBody(e: unknown): Record<string, unknown> {
-  const data = (e as AxiosError | undefined)?.response?.data;
-  return data && typeof data === "object" ? (data as Record<string, unknown>) : {};
+  const data = extractErrorPayload(e);
+  return data ? (data as Record<string, unknown>) : {};
 }
 
 /** 后端错误响应体里的某个字符串字段(默认 error) */

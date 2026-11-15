@@ -127,6 +127,10 @@ func ReconcileRecentOrderEx(client *ovhsdk.Client, endpoint, planCode string, si
 		var order map[string]interface{}
 		if err := client.Get(fmt.Sprintf("/me/order/%d", id), &order); err != nil {
 			uncertain = true
+			var apiErr *ovhsdk.APIError
+			if errors.As(err, &apiErr) && apiErr.Code == http.StatusTooManyRequests {
+				break
+			}
 			continue
 		}
 		dateStr, _ := order["date"].(string)
@@ -137,16 +141,26 @@ func ReconcileRecentOrderEx(client *ovhsdk.Client, endpoint, planCode string, si
 		var detailIDs []int64
 		if err := client.Get(fmt.Sprintf("/me/order/%d/details", id), &detailIDs); err != nil {
 			uncertain = true
+			var apiErr *ovhsdk.APIError
+			if errors.As(err, &apiErr) && apiErr.Code == http.StatusTooManyRequests {
+				break
+			}
 			continue
 		}
 		if len(detailIDs) > reconcileDetailCap {
 			detailIDs = detailIDs[:reconcileDetailCap]
 		}
 		matched := false
+		rateLimited := false
 		for _, did := range detailIDs {
 			var detail map[string]interface{}
 			if err := client.Get(fmt.Sprintf("/me/order/%d/details/%d", id, did), &detail); err != nil {
 				uncertain = true
+				var apiErr *ovhsdk.APIError
+				if errors.As(err, &apiErr) && apiErr.Code == http.StatusTooManyRequests {
+					rateLimited = true
+					break
+				}
 				continue
 			}
 			if orderDetailMatchesPlan(detail, planCode) {
@@ -156,6 +170,9 @@ func ReconcileRecentOrderEx(client *ovhsdk.Client, endpoint, planCode string, si
 				matched = true
 				break
 			}
+		}
+		if rateLimited {
+			break
 		}
 		if !matched {
 			continue
@@ -182,7 +199,7 @@ func orderDetailContradictsDC(detail map[string]interface{}, targetDC string) bo
 	domain, _ := detail["domain"].(string)
 	blob := strings.ToLower(desc + "\n" + domain)
 
-	knownDCs := []string{"rbx", "gra", "sbg", "bhs", "waw", "fra", "lon", "syd", "sgp", "vin", "hil"}
+	knownDCs := []string{"rbx", "gra", "sbg", "bhs", "waw", "fra", "lon", "syd", "sgp", "vin", "hil", "par", "eri", "lim", "tor", "yyz", "ynm", "mum"}
 	// 必须按完整机房记号匹配,不能用子串:"graphics" 含 gra、"along" 含 lon、
 	// "saving" 含 vin、"frame" 含 fra。子串匹配会把一张真实建成的订单判成"别的机房",
 	// 对账就认不出它,结账超时后的重试会再买一台。

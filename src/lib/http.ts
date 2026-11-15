@@ -62,8 +62,13 @@ export function getApiSecretKey(): string {
 }
 
 export function setApiSecretKey(key: string): void {
-  lsSet(API_KEY_STORAGE, key);
-  lsSet("apiSecretKey", key);
+  const trimmed = key.trim();
+  if (trimmed) {
+    lsSet(API_KEY_STORAGE, trimmed);
+  } else {
+    lsRemove(API_KEY_STORAGE);
+  }
+  lsRemove("apiSecretKey");
 }
 
 export function clearApiSecretKey(): void {
@@ -218,12 +223,13 @@ function createApiClient(): AxiosInstance {
       url.startsWith("ovh/") ||
       url.startsWith("support/tickets");
 
-    if (needAccount && !(config.params && (config.params as Record<string, unknown>).account)) {
+    const existingParams = (config.params || {}) as Record<string, unknown>;
+    if (needAccount && !existingParams.account && !existingParams.account_id) {
       const acc = isVps
         ? (getActiveVpsControlAccount() || getActiveServerControlAccount())
         : getActiveServerControlAccount();
       if (acc) {
-        config.params = { ...(config.params || {}), account: acc };
+        config.params = { ...existingParams, account: acc };
       }
     }
     return config;
@@ -236,10 +242,18 @@ function createApiClient(): AxiosInstance {
       if (error.response?.status === 401 && !silent) {
         // 只有 auth 中间件的 401 才算会话失效 —— 它带专属 code。OVH 侧 401
         // (某账户 ConsumerKey 被吊销,被 respondOVHError 透传)不该把用户整个登出
-        const code = error.response.data?.code;
+        const data = error.response.data;
+        const code = data?.code;
+        const isNonJsonGateway401 =
+          !data ||
+          typeof data !== "object" ||
+          (data.success === undefined && !data.error && !data.message && !code);
         const isAuthLevel =
-          code === "NO_API_KEY" || code === "INVALID_API_KEY" || code === "INVALID_DEVICE_TOKEN" ||
-          error.response.data?.success === undefined; // 非业务 JSON(反代/基础认证)也按会话失效
+          code === "NO_API_KEY" ||
+          code === "INVALID_API_KEY" ||
+          code === "INVALID_DEVICE_TOKEN" ||
+          code === "TIMESTAMP_EXPIRED" ||
+          isNonJsonGateway401;
         if (isAuthLevel) notifyAuthFailure();
       }
       return Promise.reject(error);

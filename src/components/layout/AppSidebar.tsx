@@ -185,7 +185,7 @@ export function AppSidebar({ onNavigate }: AppSidebarProps) {
         </div>
       </div>
 
-      <QuickOrderDialog open={quickOrderOpen} onOpenChange={setQuickOrderOpen} />
+      {quickOrderOpen && <QuickOrderDialog open={quickOrderOpen} onOpenChange={setQuickOrderOpen} />}
     </div>
   );
 }

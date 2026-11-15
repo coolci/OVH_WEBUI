@@ -30,7 +30,10 @@ export interface DefaultPaymentInfo {
 export function useDefaultPayment(accountId: string | undefined, enabled: boolean) {
   return useQuery({
     queryKey: ["ovh", "payment-default", accountId || ""],
-    queryFn: async () => (await api.get<DefaultPaymentInfo>("/ovh/payment-default", { params: { account_id: accountId } })).data,
+    queryFn: async () =>
+      (await api.get<DefaultPaymentInfo>("/ovh/payment-default", {
+        params: { account: accountId, account_id: accountId },
+      })).data,
     enabled: enabled && !!accountId,
     staleTime: 5 * 60_000,
     retry: false,
@@ -50,7 +53,7 @@ export function useOrderFollowUp(accountId: string | undefined, orderId: string 
     queryFn: async () =>
       (await api.get<{ steps: OrderFollowUpStep[]; services: string[] }>(
         `/ovh/orders/${encodeURIComponent(orderId || "")}/followup`,
-        { params: { account_id: accountId } },
+        { params: { account: accountId, account_id: accountId } },
       )).data,
     enabled: enabled && !!accountId && !!orderId,
     staleTime: 60_000,
@@ -63,7 +66,9 @@ export function useOSAvailability(planCode: string | undefined, accountId: strin
   return useQuery({
     queryKey: ["ovh", "os-availability", planCode || "", accountId || ""],
     queryFn: async () =>
-      (await api.get<{ os: string[] }>("/ovh/os-availability", { params: { planCode, account_id: accountId || undefined } })).data.os,
+      (await api.get<{ os?: string[] }>("/ovh/os-availability", {
+        params: { planCode, account: accountId || undefined, account_id: accountId || undefined },
+      })).data?.os || [],
     enabled: enabled && !!planCode,
     staleTime: 60 * 60_000,
     retry: false,
@@ -88,7 +93,9 @@ export function useApiCredentials(accountId: string | undefined) {
   return useQuery({
     queryKey: ["ovh", "security", "credentials", accountId || ""],
     queryFn: async () =>
-      (await api.get<{ credentials: ApiCredential[]; truncated: boolean }>("/ovh/security/credentials", { params: { account_id: accountId } })).data,
+      (await api.get<{ credentials: ApiCredential[]; truncated: boolean }>("/ovh/security/credentials", {
+        params: { account: accountId, account_id: accountId },
+      })).data,
     enabled: !!accountId,
     staleTime: 60_000,
     retry: false,
@@ -99,7 +106,9 @@ export function useRevokeApiCredential(accountId: string | undefined) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: number) =>
-      (await api.delete(`/ovh/security/credentials/${id}`, { params: { account_id: accountId } })).data,
+      (await api.delete(`/ovh/security/credentials/${encodeURIComponent(String(id))}`, {
+        params: { account: accountId, account_id: accountId },
+      })).data,
     onSuccess: (_d, id) => {
       toast.success(i18n.t("ovhExtra.security.revoked", { id }));
       qc.invalidateQueries({ queryKey: ["ovh", "security", "credentials", accountId || ""] });
@@ -121,7 +130,9 @@ export function useApiLogs(accountId: string | undefined, enabled: boolean) {
   return useQuery({
     queryKey: ["ovh", "security", "api-logs", accountId || ""],
     queryFn: async () =>
-      (await api.get<{ logs: ApiLog[]; unsupported?: boolean }>("/ovh/security/api-logs", { params: { account_id: accountId } })).data,
+      (await api.get<{ logs: ApiLog[]; unsupported?: boolean }>("/ovh/security/api-logs", {
+        params: { account: accountId, account_id: accountId },
+      })).data,
     enabled: enabled && !!accountId,
     staleTime: 60_000,
     retry: false,

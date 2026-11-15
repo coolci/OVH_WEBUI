@@ -74,7 +74,7 @@ func toDTO(a types.OVHAccount) AccountDTO {
 		Name:          a.Name,
 		Endpoint:      a.Endpoint,
 		Zone:          a.Zone,
-		AppKey:        a.AppKey,
+		AppKey:        maskSecret(a.AppKey),
 		AppSecret:     maskSecret(a.AppSecret),
 		ConsumerKey:   maskSecret(a.ConsumerKey),
 		IAM:           a.IAM,

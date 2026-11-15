@@ -38,8 +38,8 @@ import { useHideIp, maskSensitive } from "@/hooks/use-hide-ip";
 import { useServerAliases, useSetServerAlias, aliasOf } from "@/hooks/use-server-aliases";
 import { formatDate } from "@/lib/format-os";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
-import { errorField } from "@/lib/api-error";
+import { cn, openSafeHttpsUrl } from "@/lib/utils";
+import { errorMessage } from "@/lib/api-error";
 
 interface VpsDetailProps {
   server: OwnedVps;
@@ -73,6 +73,7 @@ export function VpsDetail({
   const [reinstallOpen, setReinstallOpen] = useState(false);
   const [stopOpen, setStopOpen] = useState(false);
   const [rebootOpen, setRebootOpen] = useState(false);
+  const [terminateRequestOpen, setTerminateRequestOpen] = useState(false);
   const [terminateOpen, setTerminateOpen] = useState(false);
   const [termToken, setTermToken] = useState("");
   const [renewalOpen, setRenewalOpen] = useState(false);
@@ -87,10 +88,18 @@ export function VpsDetail({
   const contactMutation = useChangeVpsContact();
 
   useEffect(() => {
+    setReinstallOpen(false);
     setStopOpen(false);
     setRebootOpen(false);
+    setTerminateRequestOpen(false);
     setTerminateOpen(false);
     setTermToken("");
+    setRenewalOpen(false);
+    setReverseDialogOpen(false);
+    setContactOpen(false);
+    setEngagementOpen(false);
+    setTasksOpen(false);
+    setRetractOpen(false);
   }, [server.serviceName]);
 
   const vpsEngagementHooks: EngagementHooks = {
@@ -123,7 +132,7 @@ export function VpsDetail({
       await start.mutateAsync();
       toast.success("启动任务已提交");
     } catch (e: unknown) {
-      toast.error(errorField(e, "error") || "启动失败");
+      toast.error(errorMessage(e) || "启动失败");
     }
   };
   const handleStop = async () => {
@@ -132,7 +141,7 @@ export function VpsDetail({
       toast.success("关机任务已提交");
       setStopOpen(false);
     } catch (e: unknown) {
-      toast.error(errorField(e, "error") || "关机失败");
+      toast.error(errorMessage(e) || "关机失败");
     }
   };
   const handleReboot = async () => {
@@ -141,38 +150,51 @@ export function VpsDetail({
       toast.success("重启任务已提交");
       setRebootOpen(false);
     } catch (e: unknown) {
-      toast.error(errorField(e, "error") || "重启失败");
+      toast.error(errorMessage(e) || "重启失败");
     }
   };
   const handleConsole = async () => {
     try {
       const url = await console_.mutateAsync();
-      if (url) {
-        window.open(url, "_blank", "noopener,noreferrer");
+      if (url && openSafeHttpsUrl(url)) {
         toast.success("控制台 URL 已生成,5 分钟内有效");
       } else {
-        toast.error("获取控制台 URL 失败");
+        toast.error("获取安全控制台 URL 失败");
       }
     } catch (e: unknown) {
-      toast.error(errorField(e, "error") || "获取失败");
+      toast.error(errorMessage(e) || "获取失败");
     }
   };
   const handleTerminate = async () => {
     try {
       await terminate.mutateAsync({ serviceName: server.serviceName });
       toast.success("终止请求已提交,请查邮件获取 token");
+      setTerminateRequestOpen(false);
     } catch (e: unknown) {
-      toast.error(errorField(e, "error") || "提交失败");
+      toast.error(errorMessage(e) || "提交失败");
     }
   };
   const handleConfirmTerm = async () => {
-    if (!termToken) return toast.error("请输入邮件里的 token");
+    const trimmed = termToken.trim();
+    if (!trimmed) return toast.error("请输入邮件里的 token");
     try {
-      await confirmTerm.mutateAsync({ serviceName: server.serviceName, token: termToken });
+      await confirmTerm.mutateAsync({ serviceName: server.serviceName, token: trimmed });
       toast.success("VPS 已确认终止");
       setTerminateOpen(false);
     } catch (e: unknown) {
-      toast.error(errorField(e, "error") || "确认失败");
+      toast.error(errorMessage(e) || "确认失败");
+    }
+  };
+  const handleOpenRenewal = async () => {
+    if (info.data) {
+      setRenewalOpen(true);
+      return;
+    }
+    const res = await info.refetch();
+    if (res.data) {
+      setRenewalOpen(true);
+    } else {
+      toast.error(errorMessage(res.error) || "续费信息尚未加载完成，请稍后重试");
     }
   };
 
@@ -220,7 +242,7 @@ export function VpsDetail({
             expiration={info.data?.expiration}
             creation={info.data?.creation}
             renewal={info.data}
-            onRenewalClick={() => setRenewalOpen(true)}
+            onRenewalClick={() => { void handleOpenRenewal(); }}
           />
         </CardContent>
       </Card>
@@ -460,15 +482,36 @@ export function VpsDetail({
               <h3 className="text-sm font-semibold text-destructive">终止 VPS</h3>
             </div>
             <p className="text-[12px] text-muted-foreground">提交终止请求后 OVH 邮件发 token,确认后立即销毁。</p>
-            <div className="flex gap-2 flex-wrap">
-              <Button variant="destructive" size="sm" onClick={handleTerminate} disabled={terminate.isPending}>
-                <CalendarPlus className="w-3.5 h-3.5 mr-1" />
-                提交终止请求
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setTerminateOpen(true)}>
-                有 token,直接确认终止
-              </Button>
-            </div>
+            {terminateRequestOpen ? (
+              <div className="rounded-xl border border-destructive/40 bg-background/80 p-3 space-y-2">
+                <p className="text-[12px] text-destructive font-medium">
+                  确认向 OVH 提交终止请求 ({server.serviceName})？提交后您将收到包含销毁确认 token 的邮件。
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setTerminateRequestOpen(false)}
+                    disabled={terminate.isPending}
+                  >
+                    取消
+                  </Button>
+                  <Button variant="destructive" size="sm" onClick={handleTerminate} disabled={terminate.isPending}>
+                    {terminate.isPending ? "提交中…" : "确认提交终止请求"}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-2 flex-wrap">
+                <Button variant="destructive" size="sm" onClick={() => setTerminateRequestOpen(true)} disabled={terminate.isPending}>
+                  <CalendarPlus className="w-3.5 h-3.5 mr-1" />
+                  提交终止请求
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setTerminateOpen(true)}>
+                  有 token,直接确认终止
+                </Button>
+              </div>
+            )}
           </div>
         </TabsContent>
       </Tabs>
