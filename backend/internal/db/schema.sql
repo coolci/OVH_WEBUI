@@ -227,3 +227,9 @@ CREATE INDEX IF NOT EXISTS idx_short_ids_created ON telegram_short_ids(created_a
 
 -- Independent discovery baseline and one-order-per-configuration ledger.
 CREATE TABLE IF NOT EXISTS catalog_watch (id INTEGER PRIMARY KEY CHECK(id=1), data TEXT NOT NULL);
+
+-- Deleted account tombstones to prevent concurrent in-flight snapshots from resurrecting deleted account rows.
+CREATE TABLE IF NOT EXISTS deleted_ovh_accounts (
+  id         TEXT PRIMARY KEY,
+  deleted_at TEXT NOT NULL
+);

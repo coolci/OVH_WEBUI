@@ -361,6 +361,18 @@ func UpdateAccount(state *app.State) gin.HandlerFunc {
 				return
 			}
 		}
+		// 防止 OVH_DB_KEY 失配恢复时静默抹除加密代理暴露宿主机真实 IP（BUG-SEC-06）：
+		// 当数据库原存有 proxy_url 密文但解密后 existing.ProxyURL == "" 时，若管理员仅重填 AK/AS/CK 而未显式传 proxyUrl，
+		// 拒绝把 proxy_url 覆盖为空串直连；要求显式重填代理地址或显式传空串 "" 确认切换直连。
+		if existing.ProxyURL == "" && (in.ProxyURL == nil || strings.Contains(strings.TrimSpace(*in.ProxyURL), ":***@")) {
+			if raw, ok, _ := state.AccountService.GetAccountRaw(id); ok && raw.HasProxyCiphertext() {
+				c.JSON(http.StatusConflict, gin.H{
+					"error": "该账户原本配置了加密代理，当前密钥无法解密(OVH_DB_KEY 不匹配)。为防止静默切换为直连暴露源站 IP，已拒绝保存：请显式重新填写 proxyUrl，或显式传入空字符串 \"\" 确认直连",
+					"code":  "PROXY_CIPHERTEXT_LOCKED",
+				})
+				return
+			}
+		}
 		acc.IsDefault = acc.IsDefault || in.SetDefault
 
 		// 校验的是「合并之后」的那一对,不是请求体里的那一对。
@@ -419,16 +431,22 @@ func UpdateAccount(state *app.State) gin.HandlerFunc {
 func DeleteAccountByID(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
-		if err := state.AccountService.DeleteAccount(id); err != nil {
-			httperr.InternalError(c, err.Error(), "ERR_DELETE_ACCOUNT")
+		delErr, qErr, hErr := state.DeleteAccountSynchronized(id, state.AccountService.DeleteAccount)
+		if delErr != nil {
+			httperr.InternalError(c, delErr.Error(), "ERR_DELETE_ACCOUNT")
 			return
+		}
+		if qErr != nil {
+			state.Logger.Warn("删账户后重载队列失败: "+qErr.Error(), "accounts")
+		}
+		if hErr != nil {
+			state.Logger.Warn("删账户后重载购买历史失败: "+hErr.Error(), "accounts")
 		}
 		state.OVH.Invalidate(id)
 		invalidateOrderMappingCache(id) // 订单映射按账户缓存,账户没了缓存也得走
 		_ = state.ReloadAccounts()
 		RefreshSharedProxy(state)
-		// 关联的内存数据也得清掉(queue / history / sniper_tasks)
-		reloadAfterAccountDelete(state, id)
+		reloadMonitorAndVPSAfterAccountDelete(state, id)
 		state.Logger.Info("删除账户 + 级联清理: "+id, "accounts")
 		c.JSON(http.StatusOK, gin.H{"status": "success"})
 	}
@@ -575,10 +593,10 @@ func reloadAfterAccountDelete(state *app.State, accountID string) {
 	if err := state.ReloadHistoryFromDB(); err != nil {
 		state.Logger.Warn("删账户后重载购买历史失败: "+err.Error(), "accounts")
 	}
-	// 监控订阅的 auto_order_account_id 已经被 SQL UPDATE 清空,内存也必须同步清:
-	// SaveToDB 是拿内存整表 Replace 回写的,不清内存的话,下一次任何订阅增删改
-	// 都会把已删账户 ID 复活回数据库 —— 之前这里写着"由 monitor 包自己 LoadFromDB"
-	// 但那个重载从未发生,级联清理等于白做
+	reloadMonitorAndVPSAfterAccountDelete(state, accountID)
+}
+
+func reloadMonitorAndVPSAfterAccountDelete(state *app.State, accountID string) {
 	if mon := monitorRef; mon != nil {
 		if n := mon.ClearAccountRefs(accountID); n > 0 {
 			state.Logger.Info(fmt.Sprintf("删账户 %s:已解除 %d 条监控订阅的自动下单绑定", accountID, n), "accounts")

@@ -27,7 +27,8 @@ services:
       DATA_DIR: /data
       GIN_MODE: release
       ENABLE_API_KEY_AUTH: ${ENABLE_API_KEY_AUTH:-true}
-      API_SECRET_KEY: ${API_SECRET_KEY:-change-me-to-a-long-random-string}
+      API_SECRET_KEY: ${API_SECRET_KEY:-}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-172.16.0.0/12,127.0.0.1,::1}
       TZ: ${TZ:-Asia/Shanghai}
       OVH_ENV_FILE: /data/.env
     volumes:

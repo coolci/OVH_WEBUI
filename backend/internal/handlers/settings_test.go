@@ -192,4 +192,33 @@ func TestGetSettings_ReflectsDefaultAccount(t *testing.T) {
 	if st.Config.Get().Zone != "FR" {
 		t.Fatalf("st.Config.Get().Zone should be 'FR', got %q", st.Config.Get().Zone)
 	}
+	if resp.AppKey != maskCred("fr-app-key") {
+		t.Fatalf("expected masked FR AppKey %q, got %q", maskCred("fr-app-key"), resp.AppKey)
+	}
+
+	// 切换默认账户到美区后，GetSettings 即使原 Config 非空也必须同步新默认账户密钥（BUG-BE-04）
+	st.Accounts = []types.OVHAccount{
+		{
+			ID:          "acc-us",
+			Name:        "US Account",
+			Zone:        "US",
+			IAM:         "go-ovh-us",
+			Endpoint:    "ovh-us",
+			AppKey:      "us-new-app-key-999",
+			AppSecret:   "us-new-secret-999",
+			ConsumerKey: "us-new-consumer-999",
+			IsDefault:   true,
+		},
+	}
+	st.SyncDefaultAccountConfig()
+	w2 := httptest.NewRecorder()
+	router.ServeHTTP(w2, httptest.NewRequest(http.MethodGet, "/api/settings", nil))
+	var resp2 types.Config
+	if err := json.Unmarshal(w2.Body.Bytes(), &resp2); err != nil {
+		t.Fatalf("decode resp2: %v", err)
+	}
+	if resp2.Endpoint != "ovh-us" || resp2.Zone != "US" || resp2.AppKey != maskCred("us-new-app-key-999") {
+		t.Fatalf("expected GetSettings to reflect switched US default account, got endpoint=%q zone=%q appKey=%q",
+			resp2.Endpoint, resp2.Zone, resp2.AppKey)
+	}
 }

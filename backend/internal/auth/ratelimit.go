@@ -187,6 +187,32 @@ func clearAuthFailures(ip string) {
 	failMu.Unlock()
 }
 
+// authRecordValid 在合法凭据通过核验时调用:
+// 若该 IP 尚未触发暴力锁定(count < MaxAuthFailures),清零偶发输错计数;
+// 若该共享出口 IP 正处于暴力锁定窗口内,合法请求直接放行但保留对错误凭据的锁定,防止攻击者借合法流量重置爆破配额。
+func authRecordValid(ip string, now time.Time) {
+	if ip == "" {
+		ip = "unknown"
+	}
+	failMu.Lock()
+	defer failMu.Unlock()
+	b, ok := failByIP[ip]
+	if !ok {
+		return
+	}
+	if now.Sub(b.windowStart) >= AuthFailureWindow && b.inflight == 0 {
+		delete(failByIP, ip)
+		return
+	}
+	if b.count < MaxAuthFailures {
+		b.count = 0
+		b.windowStart = now
+		if b.inflight == 0 {
+			delete(failByIP, ip)
+		}
+	}
+}
+
 // ResetAuthFailures 仅供测试:清空全局状态,避免用例之间互相污染。
 func ResetAuthFailures() {
 	failMu.Lock()

@@ -29,6 +29,34 @@ function New-ApiSecretKey {
   return (-join ($bytes | ForEach-Object { $_.ToString("x2") }))
 }
 
+function Test-WeakApiSecretKey([string]$Key) {
+  if ([string]::IsNullOrWhiteSpace($Key) -or $Key.Trim().Length -lt 24) {
+    return $true
+  }
+  $lower = $Key.Trim().ToLowerInvariant()
+  $weakExact = @("123456", "12345678", "1234567890", "password", "admin", "secret", "changeme", "default", "ovh-webui-dev-key")
+  if ($weakExact -contains $lower) {
+    return $true
+  }
+  foreach ($prefix in @("change-me", "your-api-key", "replace-me")) {
+    if ($lower.StartsWith($prefix)) {
+      return $true
+    }
+  }
+  return $false
+}
+
+function Assert-EnvApiKeyWritten([string]$Path, [string]$ExpectedKey) {
+  if (Test-WeakApiSecretKey $ExpectedKey) {
+    throw "Refusing weak or empty API_SECRET_KEY for $Path"
+  }
+  $writtenLines = Get-Content $Path -Encoding UTF8
+  $expectedLine = "API_SECRET_KEY=$ExpectedKey"
+  if (-not ($writtenLines -contains $expectedLine)) {
+    throw "Failed to verify API_SECRET_KEY written to $Path"
+  }
+}
+
 function Write-Step([string]$msg) {
   Write-Host ""
   Write-Host "==> $msg" -ForegroundColor Cyan
@@ -47,10 +75,13 @@ $apiKey = $null
 if ((Test-Path $EnvFile) -and (-not $ForceEnv)) {
   Write-Host "  keep existing backend/.env (use -ForceEnv to regenerate)"
   foreach ($line in Get-Content $EnvFile -Encoding UTF8) {
-    if ($line -match '^\s*API_SECRET_KEY\s*=\s*(.+)\s*$') {
+    if ($line -match '^\s*API_SECRET_KEY\s*=\s*(.*)\s*$') {
       $apiKey = $Matches[1].Trim().Trim('"').Trim("'")
       break
     }
+  }
+  if (Test-WeakApiSecretKey $apiKey) {
+    throw "Existing $EnvFile has empty or weak API_SECRET_KEY; re-run with -ForceEnv to regenerate."
   }
 } else {
   if (Test-Path $EnvFile) {
@@ -61,18 +92,26 @@ if ((Test-Path $EnvFile) -and (-not $ForceEnv)) {
   $apiKey = New-ApiSecretKey
   $lines = Get-Content $EnvExample -Encoding UTF8
   $out = New-Object System.Collections.Generic.List[string]
+  $replaced = $false
   foreach ($line in $lines) {
     if ($line -match 'INSPECTION_ALLOWLIST|ALLOW_FULL_INSPECTION') {
       continue
     }
-    if ($line -match '^\s*API_SECRET_KEY\s*=') {
-      $out.Add("API_SECRET_KEY=$apiKey")
+    if ($line -match '^API_SECRET_KEY=.*' -or $line -match '^\s*API_SECRET_KEY\s*=') {
+      if (-not $replaced) {
+        $out.Add("API_SECRET_KEY=$apiKey")
+        $replaced = $true
+      }
     } else {
       $out.Add($line)
     }
   }
+  if (-not $replaced) {
+    $out.Add("API_SECRET_KEY=$apiKey")
+  }
   $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
   [System.IO.File]::WriteAllLines($EnvFile, $out, $utf8NoBom)
+  Assert-EnvApiKeyWritten -Path $EnvFile -ExpectedKey $apiKey
   Write-Host "  wrote backend/.env with random API_SECRET_KEY"
 }
 
@@ -91,15 +130,23 @@ if ((Test-Path $RootEnvExample) -and ((-not (Test-Path $RootEnv)) -or $ForceEnv)
   }
   $rlines = Get-Content $RootEnvExample -Encoding UTF8
   $rout = New-Object System.Collections.Generic.List[string]
+  $rReplaced = $false
   foreach ($line in $rlines) {
-    if ($line -match '^\s*API_SECRET_KEY\s*=') {
-      $rout.Add("API_SECRET_KEY=$rootKey")
+    if ($line -match '^API_SECRET_KEY=.*' -or $line -match '^\s*API_SECRET_KEY\s*=') {
+      if (-not $rReplaced) {
+        $rout.Add("API_SECRET_KEY=$rootKey")
+        $rReplaced = $true
+      }
     } else {
       $rout.Add($line)
     }
   }
+  if (-not $rReplaced) {
+    $rout.Add("API_SECRET_KEY=$rootKey")
+  }
   $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
   [System.IO.File]::WriteAllLines($RootEnv, $rout, $utf8NoBom)
+  Assert-EnvApiKeyWritten -Path $RootEnv -ExpectedKey $rootKey
   Write-Host "  wrote root .env"
 } elseif (Test-Path $RootEnv) {
   Write-Host "  keep existing root .env"

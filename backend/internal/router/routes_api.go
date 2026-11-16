@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/ovh-webui/server/internal/auth"
 	"github.com/ovh-webui/server/internal/handlers"
 )
 
@@ -21,13 +22,17 @@ func availabilityHandler(h gin.HandlerFunc) gin.HandlerFunc {
 func registerAPIRoutes(api *gin.RouterGroup, cfg Config) {
 	state := cfg.State
 	mon := cfg.Monitor
+	masterOnly := auth.RequireMasterKey(auth.Config{
+		APIKey:  state.APIKey,
+		Enabled: cfg.EnableAuth,
+	})
 
 	// Health
 	api.GET("/health", handlers.Health())
 
 	// Settings
 	api.GET("/settings", handlers.GetSettings(state))
-	api.POST("/settings", handlers.SaveSettings(state))
+	api.POST("/settings", masterOnly, handlers.SaveSettings(state))
 	api.POST("/verify-auth", handlers.VerifyAuth(state))
 	api.GET("/endpoint-config", handlers.EndpointConfig(state))
 
@@ -103,20 +108,20 @@ func registerAPIRoutes(api *gin.RouterGroup, cfg Config) {
 
 	// App pairing
 	api.POST("/app/pair", handlers.RedeemPairingCode(state))
-	api.POST("/app/pairing-codes", handlers.CreatePairingCode(state))
+	api.POST("/app/pairing-codes", masterOnly, handlers.CreatePairingCode(state))
 	api.GET("/app/devices", handlers.ListAppDevices(state))
-	api.DELETE("/app/devices/:id", handlers.RevokeAppDevice(state))
+	api.DELETE("/app/devices/:id", masterOnly, handlers.RevokeAppDevice(state))
 	api.GET("/version/check-update", handlers.CheckUpdate(state))
-	api.POST("/version/update", handlers.SelfUpdate(state, cfg.OnRestart))
+	api.POST("/version/update", masterOnly, handlers.SelfUpdate(state, cfg.OnRestart))
 	api.GET("/version/update/status", handlers.GetUpdateStatus(state))
 
 	// Accounts
 	api.GET("/accounts", handlers.ListAccounts(state))
 	api.GET("/accounts/:id", handlers.GetAccountByID(state))
-	api.POST("/accounts", handlers.CreateAccount(state))
-	api.PUT("/accounts/:id", handlers.UpdateAccount(state))
-	api.DELETE("/accounts/:id", handlers.DeleteAccountByID(state))
-	api.POST("/accounts/:id/set-default", handlers.SetDefaultAccountByID(state))
+	api.POST("/accounts", masterOnly, handlers.CreateAccount(state))
+	api.PUT("/accounts/:id", masterOnly, handlers.UpdateAccount(state))
+	api.DELETE("/accounts/:id", masterOnly, handlers.DeleteAccountByID(state))
+	api.POST("/accounts/:id/set-default", masterOnly, handlers.SetDefaultAccountByID(state))
 	api.POST("/accounts/:id/verify", handlers.VerifyAccount(state))
 
 	// Quick order & Intent prewarm

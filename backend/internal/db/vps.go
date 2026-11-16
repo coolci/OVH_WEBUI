@@ -129,9 +129,26 @@ func (db *DB) ListVPSSubscriptions() ([]types.VPSSubscription, error) {
 // 取的是"这次 INSERT 尝试插入的值",列不在 INSERT 列表里时它等于列默认值(空串),
 // 于是每次更新都会把订阅的自动下单账户清空。
 func (db *DB) UpsertVPSSubscription(s types.VPSSubscription) error {
+	preserveLast := 0
+	if s.LastStatus == nil {
+		preserveLast = 1
+	}
+	preserveHist := 0
+	if s.History == nil {
+		preserveHist = 1
+	}
 	r, err := vpsSubToRow(s)
 	if err != nil {
 		return err
+	}
+	args := struct {
+		vpsSubRow
+		PreserveLastStatus int `db:"preserve_last_status"`
+		PreserveHistory    int `db:"preserve_history"`
+	}{
+		vpsSubRow:          r,
+		PreserveLastStatus: preserveLast,
+		PreserveHistory:    preserveHist,
 	}
 	_, err = db.NamedExec(`
 		INSERT INTO vps_subscriptions
@@ -150,14 +167,14 @@ func (db *DB) UpsertVPSSubscription(s types.VPSSubscription) error {
 		  monitor_windows    = excluded.monitor_windows,
 		  notify_available   = excluded.notify_available,
 		  notify_unavailable = excluded.notify_unavailable,
-		  last_status            = CASE WHEN excluded.last_status != '' AND excluded.last_status != '{}' THEN excluded.last_status ELSE vps_subscriptions.last_status END,
-		  history                = CASE WHEN excluded.history != '' AND excluded.history != '[]' THEN excluded.history ELSE vps_subscriptions.history END,
+		  last_status            = CASE WHEN :preserve_last_status = 1 THEN vps_subscriptions.last_status ELSE excluded.last_status END,
+		  history                = CASE WHEN :preserve_history = 1 THEN vps_subscriptions.history ELSE excluded.history END,
 		  auto_order_account_id  = excluded.auto_order_account_id,
 		  auto_order             = excluded.auto_order,
 		  quantity               = excluded.quantity,
 		  auto_pay               = excluded.auto_pay,
 		  os                     = excluded.os
-	`, r)
+	`, args)
 	if err != nil {
 		return fmt.Errorf("upsert vps sub %s: %w", s.ID, err)
 	}

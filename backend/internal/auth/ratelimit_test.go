@@ -54,9 +54,15 @@ func TestBruteForceGetsBlocked(t *testing.T) {
 	if n, err := strconv.Atoi(ra); err != nil || n <= 0 {
 		t.Errorf("Retry-After 头缺失或不合法: %q", ra)
 	}
-	// 被限流期间,**正确**的密钥也进不来 —— 否则爆破者只要在被挡后继续试就行
-	if got := req(r, "correct-key", ip).Code; got != http.StatusTooManyRequests {
-		t.Errorf("限流期间正确密钥也应被挡,实际 %d", got)
+	// 被限流期间,缺失或错误密钥持续返回 429;但携带正确主密钥的合法管理员必须放行(BUG-SEC-03 防连坐锁死)
+	if got := req(r, "", ip).Code; got != http.StatusTooManyRequests {
+		t.Errorf("限流期间缺失密钥应被挡(429),实际 %d", got)
+	}
+	if got := req(r, "correct-key", ip).Code; got != http.StatusOK {
+		t.Errorf("携带正确密钥的合法管理员不应被共享 IP 限流误封,期望 200,实际 %d", got)
+	}
+	if got := req(r, "still-wrong", ip).Code; got != http.StatusTooManyRequests {
+		t.Errorf("合法管理员通过后,同 IP 上的错误密钥爆破仍须维持 429 封禁,实际 %d", got)
 	}
 }
 

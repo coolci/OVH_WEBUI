@@ -7,7 +7,10 @@
 package db
 
 import (
+	"context"
+	"database/sql"
 	_ "embed"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"time"
@@ -18,42 +21,131 @@ import (
 //go:embed schema.sql
 var schemaSQL string
 
-// DB 包装 *sqlx.DB，所有表的 CRUD 方法都挂在它上面（按文件分散）
+// DB 包装读写分离双连接池：
+//   - 内嵌 *sqlx.DB 为串行写连接池（MaxOpenConns=1 + _txlock=immediate），彻底根绝 DEFERRED 锁升级引发的 <1ms SQLITE_BUSY (517)；
+//   - readDB 为并发只读连接池（MaxOpenConns=8 + query_only=ON），保障高并发查询互不阻塞。
 type DB struct {
 	*sqlx.DB
+	readDB *sqlx.DB
 	Path   string
 	Driver string // 当前实际使用的 driver 名（"sqlite3" / "sqlite"），便于日志展示
+}
+
+func (db *DB) reader() *sqlx.DB {
+	if db != nil && db.readDB != nil {
+		return db.readDB
+	}
+	return db.DB
+}
+
+// Close 同时关闭只读连接池与写连接池，防止 Windows 下临时目录清理报文件句柄占用。
+// 先关只读池再关读写池，使最后一个关闭的写连接可正常完成 WAL/SHM 收尾回收。
+func (db *DB) Close() error {
+	if db == nil {
+		return nil
+	}
+	var readErr, writeErr error
+	if db.readDB != nil {
+		readErr = db.readDB.Close()
+	}
+	if db.DB != nil {
+		writeErr = db.DB.Close()
+	}
+	return errors.Join(readErr, writeErr)
+}
+
+// 并发只读查询统一路由至 readDB 连接池（保持与 *sqlx.DB 完全一致的方法签名）
+func (db *DB) Select(dest interface{}, query string, args ...interface{}) error {
+	return db.reader().Select(dest, query, args...)
+}
+
+func (db *DB) SelectContext(ctx context.Context, dest interface{}, query string, args ...interface{}) error {
+	return db.reader().SelectContext(ctx, dest, query, args...)
+}
+
+func (db *DB) Get(dest interface{}, query string, args ...interface{}) error {
+	return db.reader().Get(dest, query, args...)
+}
+
+func (db *DB) GetContext(ctx context.Context, dest interface{}, query string, args ...interface{}) error {
+	return db.reader().GetContext(ctx, dest, query, args...)
+}
+
+func (db *DB) Query(query string, args ...interface{}) (*sql.Rows, error) {
+	return db.reader().Query(query, args...)
+}
+
+func (db *DB) QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
+	return db.reader().QueryContext(ctx, query, args...)
+}
+
+func (db *DB) QueryRow(query string, args ...interface{}) *sql.Row {
+	return db.reader().QueryRow(query, args...)
+}
+
+func (db *DB) QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row {
+	return db.reader().QueryRowContext(ctx, query, args...)
+}
+
+func (db *DB) Queryx(query string, args ...interface{}) (*sqlx.Rows, error) {
+	return db.reader().Queryx(query, args...)
+}
+
+func (db *DB) QueryxContext(ctx context.Context, query string, args ...interface{}) (*sqlx.Rows, error) {
+	return db.reader().QueryxContext(ctx, query, args...)
+}
+
+func (db *DB) QueryRowx(query string, args ...interface{}) *sqlx.Row {
+	return db.reader().QueryRowx(query, args...)
+}
+
+func (db *DB) QueryRowxContext(ctx context.Context, query string, args ...interface{}) *sqlx.Row {
+	return db.reader().QueryRowxContext(ctx, query, args...)
 }
 
 // Open 打开 SQLite 数据库，启动时调一次。
 // dataDir 是数据目录（与原 storage.Paths.DataDir 同一个），DB 文件落在 <dataDir>/sniper.db。
 //
-// PRAGMA 配置（两个 driver 等价，只是 DSN 语法不同）：
-//   - journal_mode=WAL：单 writer 多 reader 并发，性能远高于 DELETE 模式
-//   - synchronous=NORMAL：WAL 模式下足够安全（断电最多丢最后几次提交，不会损坏库）
-//   - foreign_keys=ON：标准实践
-//   - busy_timeout=5000：被其它写阻塞时最多等 5 秒再 SQLITE_BUSY
+// 连接池与 PRAGMA 配置：
+//   - writeDB（内嵌 *sqlx.DB）：MaxOpenConns(1) + _txlock=immediate + journal_mode=WAL + busy_timeout=5000
+//   - readDB：MaxOpenConns(8) + query_only=ON + busy_timeout=5000
 func Open(dataDir string) (*DB, error) {
 	path := filepath.Join(dataDir, "sniper.db")
-	sx, err := sqlx.Open(driverName, makeDSN(path))
+	writeSX, err := sqlx.Open(driverName, makeDSN(path))
 	if err != nil {
-		return nil, fmt.Errorf("open sqlite (%s) %s: %w", driverName, path, err)
+		return nil, fmt.Errorf("open sqlite write pool (%s) %s: %w", driverName, path, err)
 	}
-	// 控制连接池：写时单连接更安全（避免 SQLITE_LOCKED），读用默认池
-	sx.SetMaxOpenConns(8)
-	sx.SetMaxIdleConns(2)
-	sx.SetConnMaxLifetime(time.Hour)
+	writeSX.SetMaxOpenConns(1)
+	writeSX.SetMaxIdleConns(1)
+	writeSX.SetConnMaxLifetime(time.Hour)
 
-	if err := sx.Ping(); err != nil {
-		_ = sx.Close()
-		return nil, fmt.Errorf("ping sqlite (%s): %w", driverName, err)
+	if err := writeSX.Ping(); err != nil {
+		_ = writeSX.Close()
+		return nil, fmt.Errorf("ping sqlite write pool (%s): %w", driverName, err)
 	}
 
-	db := &DB{DB: sx, Path: path, Driver: driverName}
+	db := &DB{DB: writeSX, Path: path, Driver: driverName}
 	if err := db.migrate(); err != nil {
-		_ = sx.Close()
+		_ = writeSX.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
+
+	readSX, err := sqlx.Open(driverName, makeReadDSN(path))
+	if err != nil {
+		_ = writeSX.Close()
+		return nil, fmt.Errorf("open sqlite read pool (%s) %s: %w", driverName, path, err)
+	}
+	readSX.SetMaxOpenConns(8)
+	readSX.SetMaxIdleConns(2)
+	readSX.SetConnMaxLifetime(time.Hour)
+
+	if err := readSX.Ping(); err != nil {
+		_ = readSX.Close()
+		_ = writeSX.Close()
+		return nil, fmt.Errorf("ping sqlite read pool (%s): %w", driverName, err)
+	}
+	db.readDB = readSX
+
 	return db, nil
 }
 

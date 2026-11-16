@@ -42,7 +42,7 @@ func auditAuthRouter(trusted []string) func(client, key string) int {
 	}
 }
 
-// 代理已在 TRUSTED_PROXIES 中声明时,失败锁定按真实客户端隔离。
+// 代理已在 TRUSTED_PROXIES 中声明时,失败锁定按真实客户端隔离;合法密钥不因限流误封(BUG-SEC-03)。
 func TestAuditProxyAuthFailuresAreClientIsolated(t *testing.T) {
 	auth.ResetAuthFailures()
 	defer auth.ResetAuthFailures()
@@ -50,11 +50,20 @@ func TestAuditProxyAuthFailuresAreClientIsolated(t *testing.T) {
 	for i := 0; i < auth.MaxAuthFailures; i++ {
 		call("198.51.100.10", "wrong")
 	}
+	if got := call("198.51.100.20", "wrong"); got != http.StatusUnauthorized {
+		t.Fatalf("different client with wrong key should receive 401 (isolated bucket), got %d", got)
+	}
 	if got := call("198.51.100.20", "audit-key"); got != http.StatusOK {
 		t.Fatalf("different client with correct key received %d after other client failed", got)
 	}
-	if got := call("198.51.100.10", "audit-key"); got != http.StatusTooManyRequests {
-		t.Fatalf("locked client was not rate limited: %d", got)
+	if got := call("198.51.100.10", "wrong"); got != http.StatusTooManyRequests {
+		t.Fatalf("locked client with wrong key was not rate limited: %d", got)
+	}
+	if got := call("198.51.100.10", "audit-key"); got != http.StatusOK {
+		t.Fatalf("valid API key must not be locked out by rate limit (BUG-SEC-03): got %d", got)
+	}
+	if got := call("198.51.100.10", "wrong"); got != http.StatusTooManyRequests {
+		t.Fatalf("locked client must remain rate limited for wrong keys after valid call: %d", got)
 	}
 }
 

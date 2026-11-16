@@ -184,6 +184,9 @@ func (db *DB) UpsertAccount(a types.OVHAccount) error {
 	if err != nil {
 		return fmt.Errorf("upsert account %s: %w", a.ID, err)
 	}
+	if _, err := tx.Exec(`DELETE FROM deleted_ovh_accounts WHERE id = ?`, a.ID); err != nil {
+		return fmt.Errorf("clear deleted account tombstone %s: %w", a.ID, err)
+	}
 	return tx.Commit()
 }
 
@@ -273,7 +276,7 @@ func (db *DB) DeleteAccount(id string) error {
 		}
 	}
 	if _, err := tx.Exec(
-		`UPDATE vps_subscriptions SET auto_order_account_id = '' WHERE auto_order_account_id = ?`, id,
+		`UPDATE vps_subscriptions SET auto_order_account_id = '', auto_order = 0, auto_pay = 0 WHERE auto_order_account_id = ?`, id,
 	); err != nil {
 		return fmt.Errorf("clear vps auto_order_account_id: %w", err)
 	}
@@ -282,6 +285,12 @@ func (db *DB) DeleteAccount(id string) error {
 	}
 	if _, err := tx.Exec(`DELETE FROM ovh_accounts WHERE id = ?`, id); err != nil {
 		return fmt.Errorf("delete account: %w", err)
+	}
+	if _, err := tx.Exec(
+		`INSERT INTO deleted_ovh_accounts(id, deleted_at) VALUES(?, ?) ON CONFLICT(id) DO UPDATE SET deleted_at = excluded.deleted_at`,
+		id, types.NowISO(),
+	); err != nil {
+		return fmt.Errorf("record deleted account tombstone: %w", err)
 	}
 	// Deletion must revoke the old migration source in the same transaction.
 	if _, err := tx.Exec(`INSERT INTO kv(key,value) VALUES(?, 'true') ON CONFLICT(key) DO UPDATE SET value='true'`, LegacyAccountMigrationKey); err != nil {
@@ -331,10 +340,24 @@ func (db *DB) DeleteAccount(id string) error {
 	return tx.Commit()
 }
 
+// DeletedAccountIDSet 返回已删除且当前未重新创建的账户 ID 集合，用于拦截并发旧快照把已删账户数据重新写回。
+func (db *DB) DeletedAccountIDSet() (map[string]struct{}, error) {
+	var ids []string
+	if err := db.Select(&ids, `SELECT id FROM deleted_ovh_accounts WHERE id NOT IN (SELECT id FROM ovh_accounts)`); err != nil {
+		return nil, err
+	}
+	out := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		out[id] = struct{}{}
+	}
+	return out, nil
+}
+
 // RawAccount 未解密的账户凭据。只用来判断"库里到底有没有密文",
-// 不参与任何业务逻辑 —— 所以不导出具体内容,只暴露判定方法。
+// 不参与任何业务逻辑。
 type RawAccount struct {
 	appKey, appSecret, consumerKey string
+	ProxyURL                       string
 }
 
 // HasCiphertext 三个凭据里是否还有加密过的内容。
@@ -349,6 +372,12 @@ func (r RawAccount) HasCiphertext() bool {
 	return false
 }
 
+// HasProxyCiphertext proxy_url 列是否保存着已加密的代理凭据。
+// 当 OVH_DB_KEY 失配导致解密后 ProxyURL 为空串时，据此拦截静默抹除代理回退直连的行为。
+func (r RawAccount) HasProxyCiphertext() bool {
+	return secret.IsEncrypted(r.ProxyURL)
+}
+
 // GetAccountRaw 取未解密的凭据字段
 func (db *DB) GetAccountRaw(id string) (RawAccount, bool, error) {
 	var r accountRow
@@ -359,7 +388,12 @@ func (db *DB) GetAccountRaw(id string) (RawAccount, bool, error) {
 		}
 		return RawAccount{}, false, fmt.Errorf("get account raw %s: %w", id, err)
 	}
-	return RawAccount{appKey: r.AppKey, appSecret: r.AppSecret, consumerKey: r.ConsumerKey}, true, nil
+	return RawAccount{
+		appKey:      r.AppKey,
+		appSecret:   r.AppSecret,
+		consumerKey: r.ConsumerKey,
+		ProxyURL:    r.ProxyURL,
+	}, true, nil
 }
 
 // UpdateAccountCredState 更新账户凭据校验状态 (PRD D-01)
