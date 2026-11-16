@@ -2,6 +2,7 @@ package schemacheck
 
 import (
 	"encoding/json"
+	"go/parser"
 	"os"
 	"path/filepath"
 	"testing"
@@ -83,5 +84,79 @@ func TestRegression_BUG_OVH_17_SchemacheckNormalizesUSOrderDetailAndDedupesSuppo
 		if _, ok := regionsGot[r]; !ok {
 			t.Fatalf("collectWithFetcher lost region %s: %+v", r, regionsGot)
 		}
+	}
+}
+
+func TestRegression_SchemacheckPathTemplateSafeBuilders(t *testing.T) {
+	cases := []struct {
+		expr string
+		want string
+	}{
+		{`ovh.BuildPath("dedicated", "server", svc, "ips")`, `/dedicated/server/{}/ips`},
+		{`buildOVHPath("vps", svc, "reboot")`, `/vps/{}/reboot`},
+		{`safePathFn("me", "order", orderID)`, `/me/order/{}`},
+		{`buildOVHPathQuery(q, "dedicated", "server", svc, "tasks")`, `/dedicated/server/{}/tasks`},
+		{`ovhPathOrAbort(c, "vps", svc, "snapshot")`, `/vps/{}/snapshot`},
+		{`ovhPathQueryOrAbort(c, q, "me", "bill", billID)`, `/me/bill/{}`},
+		{`ovh.WithQuery(buildOVHPath("me", "order"), q)`, `/me/order`},
+		// Slice ellipsis and all-variable arguments must yield "{}" (never "/{}")
+		{`buildOVHPath(baseSegs...)`, `{}`},
+		{`buildOVHPathQuery(q, baseSegs...)`, `{}`},
+		{`ovhPathOrAbort(c, baseSegs...)`, `{}`},
+		{`ovhPathQueryOrAbort(c, q, baseSegs...)`, `{}`},
+		{`buildOVHPath(segA, segB)`, `{}`},
+		{`ovhPathOrAbort(c, segA, segB)`, `{}`},
+		{`ovhPathQueryOrAbort(c, q, segA)`, `{}`},
+		{`buildOVHPath()`, `{}`},
+	}
+
+	for _, tc := range cases {
+		parsed, err := parser.ParseExpr(tc.expr)
+		if err != nil {
+			t.Fatalf("ParseExpr(%s): %v", tc.expr, err)
+		}
+		if got := pathTemplate(parsed); got != tc.want {
+			t.Fatalf("pathTemplate(%s) = %q, want %q", tc.expr, got, tc.want)
+		}
+	}
+
+	// Verify scanCalls handles multi-return safe helpers while ignoring baseSegs... / all-variable calls
+	tmpDir := t.TempDir()
+	sampleSrc := `package sample
+
+func demo(c, q, cli any, svc string, baseSegs []string, segA string) {
+	p1, ok := ovhPathOrAbort(c, "vps", svc, "ips")
+	if !ok { return }
+	cli.Get(p1, nil)
+
+	p2, ok := ovhPathQueryOrAbort(c, q, "dedicated", "server", svc, "tasks")
+	if !ok { return }
+	cli.Get(p2, nil)
+
+	p3, _ := buildOVHPath(baseSegs...)
+	cli.Get(p3, nil)
+
+	p4, _ := buildOVHPathQuery(q, baseSegs...)
+	cli.Get(p4, nil)
+
+	p5, _ := safePathFn(segA)
+	cli.Get(p5, nil)
+}
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "sample.go"), []byte(sampleSrc), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	scanned := scanCalls(t, tmpDir)
+	if _, ok := scanned["GET /vps/{}/ips"]; !ok {
+		t.Fatalf("expected GET /vps/{}/ips in scanned calls, got %v", scanned)
+	}
+	if _, ok := scanned["GET /dedicated/server/{}/tasks"]; !ok {
+		t.Fatalf("expected GET /dedicated/server/{}/tasks in scanned calls, got %v", scanned)
+	}
+	if _, bad := scanned["GET /{}"]; bad {
+		t.Fatalf("must not emit bogus GET /{} from baseSegs... or all-variable calls: %v", scanned)
+	}
+	if len(scanned) != 2 {
+		t.Fatalf("expected exactly 2 scanned endpoints, got %d: %v", len(scanned), scanned)
 	}
 }
