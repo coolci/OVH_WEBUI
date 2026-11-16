@@ -27,6 +27,7 @@ services:
       GIN_MODE: release
       ENABLE_API_KEY_AUTH: ${ENABLE_API_KEY_AUTH:-true}
       API_SECRET_KEY: ${API_SECRET_KEY:?Set API_SECRET_KEY in .env}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-172.16.0.0/12,127.0.0.1,::1}
       PUBLIC_BASE_URL: https://${DOMAIN:?Set DOMAIN in .env}
       TZ: ${TZ:-Asia/Shanghai}
       OVH_ENV_FILE: /data/.env

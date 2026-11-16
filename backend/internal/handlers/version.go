@@ -2,13 +2,16 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/updater"
@@ -27,10 +30,30 @@ func GetVersion(state *app.State) gin.HandlerFunc {
 	}
 }
 
-// 上游仓库与更新源都在 internal/updater 里定义(updater.Repo / updater.LatestReleaseURL),
-// 这里不再另存一份 —— 两处各写一份的话,换源时漏改一边就会出现"检查到的版本"和
-// "实际装上的版本"不是同一个的诡异现象。
-const updateUserAgent = "OVH-Console-UpdateChecker"
+const (
+	updateUserAgent      = "OVH-Console-UpdateChecker"
+	updateCheckCacheTTL  = 15 * time.Minute
+	maxReleaseJSONBytes  = 1 << 20 // 1 MiB 响应体上限（BUG-SEC-08）
+)
+
+type cachedUpdateResult struct {
+	payload   gin.H
+	expiresAt time.Time
+}
+
+var (
+	updateCacheMu   sync.RWMutex
+	updateCacheByKey = map[string]cachedUpdateResult{}
+	updateCheckGroup singleflight.Group
+	updateHTTPClient = &http.Client{Timeout: 15 * time.Second}
+)
+
+// ResetUpdateCheckCache 清空更新检查内存缓存（仅供单元测试隔离使用）
+func ResetUpdateCheckCache() {
+	updateCacheMu.Lock()
+	updateCacheByKey = map[string]cachedUpdateResult{}
+	updateCacheMu.Unlock()
+}
 
 // githubRelease 只挑要用的字段反序列化
 type githubRelease struct {
@@ -46,8 +69,7 @@ type githubRelease struct {
 // trimV 去掉 tag 的 v 前缀
 func trimV(s string) string { return strings.TrimPrefix(strings.TrimSpace(s), "v") }
 
-// parseSemver 把 "v0.0.2" / "0.1.10" 切成 [0 0 2] / [0 1 10],
-// 解析失败的段当 0,简单稳定的字典序比较够用
+// parseSemver 把 "v0.0.2" / "0.1.10" 切成 [0 0 2] / [0 1 10]
 func parseSemver(s string) [3]int {
 	s = strings.TrimSpace(s)
 	s = strings.TrimPrefix(s, "v")
@@ -79,68 +101,121 @@ func semverGreater(latest, current string) bool {
 	return false
 }
 
-// CheckUpdate GET /api/version/check-update
-// 收到请求 → 直连 GitHub 拉 gokele/ovh 最新 release,跟本地 Version 比一下。
-// 后端不缓存、不定时跑、不存任何状态,纯粹被动响应:每次访问触发一次拉取。
-// 频率控制全交给前端 React Query 的 staleTime(同一会话 1h 内不重复请求)。
-// dev 版本(未注入 ldflags)也返回 latest 信息,但 hasUpdate 始终 false,避免开发时刷屏。
+func cloneUpdatePayload(in gin.H) gin.H {
+	out := make(gin.H, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+// CheckUpdate GET /api/version/check-update（需鉴权，BUG-SEC-08）：
+//   - 15 分钟内存缓存 + singleflight 并发请求合并，杜绝打满上游 GitHub API 匿名限额；
+//   - io.LimitReader(resp.Body, 1<<20) 限制最大响应体；
+//   - 上游非 200 状态统一收敛为 502 BadGateway，不反射上游状态码与原始响应体。
 func CheckUpdate(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 与真正执行更新的 updater 用同一个来源:否则设了 OVH_UPDATE_API(私有镜像)之后,
-		// 这里显示"有 v1.2.3",更新器却去 GitHub 抓另一个版本,用户看到的和装上的对不上
-		url := updater.LatestReleaseURL()
-		client := &http.Client{Timeout: 15 * time.Second}
-		req, _ := http.NewRequest(http.MethodGet, url, nil)
-		req.Header.Set("Accept", "application/vnd.github+json")
-		req.Header.Set("User-Agent", updateUserAgent)
+		releaseURL := updater.LatestReleaseURL()
+		cacheKey := releaseURL + "|" + Version
+		now := time.Now()
 
-		resp, err := client.Do(req)
-		if err != nil {
-			state.Logger.Warn("update check 拉取失败: "+err.Error(), "version")
-			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error(), "current": Version})
+		updateCacheMu.RLock()
+		if cached, ok := updateCacheByKey[cacheKey]; ok && now.Before(cached.expiresAt) {
+			respCopy := cloneUpdatePayload(cached.payload)
+			updateCacheMu.RUnlock()
+			c.JSON(http.StatusOK, respCopy)
 			return
 		}
-		defer resp.Body.Close()
+		updateCacheMu.RUnlock()
 
-		body, err := io.ReadAll(resp.Body)
+		val, err, _ := updateCheckGroup.Do(cacheKey, func() (interface{}, error) {
+			updateCacheMu.RLock()
+			if cached, ok := updateCacheByKey[cacheKey]; ok && time.Now().Before(cached.expiresAt) {
+				cp := cloneUpdatePayload(cached.payload)
+				updateCacheMu.RUnlock()
+				return cp, nil
+			}
+			updateCacheMu.RUnlock()
+
+			req, reqErr := http.NewRequest(http.MethodGet, releaseURL, nil)
+			if reqErr != nil {
+				return nil, fmt.Errorf("构建更新检查请求失败")
+			}
+			req.Header.Set("Accept", "application/vnd.github+json")
+			req.Header.Set("User-Agent", updateUserAgent)
+
+			resp, doErr := updateHTTPClient.Do(req)
+			if doErr != nil {
+				if state != nil && state.Logger != nil {
+					state.Logger.Warn("update check 拉取失败: "+doErr.Error(), "version")
+				}
+				return nil, fmt.Errorf("连接上游版本服务失败")
+			}
+			defer resp.Body.Close()
+
+			limited := io.LimitReader(resp.Body, maxReleaseJSONBytes+1)
+			body, readErr := io.ReadAll(limited)
+			if readErr != nil {
+				return nil, fmt.Errorf("读取上游版本响应失败")
+			}
+			if len(body) > maxReleaseJSONBytes {
+				if state != nil && state.Logger != nil {
+					state.Logger.Warn("update check 响应体超过 1MB 上限，已拦截", "version")
+				}
+				return nil, fmt.Errorf("上游版本响应体超过安全上限")
+			}
+			if resp.StatusCode != http.StatusOK {
+				if state != nil && state.Logger != nil {
+					snippet := string(body)
+					if len(snippet) > 200 {
+						snippet = snippet[:200]
+					}
+					state.Logger.Warn(fmt.Sprintf("update check 上游返回非 200 (%d): %s", resp.StatusCode, strings.TrimSpace(snippet)), "version")
+				}
+				return nil, fmt.Errorf("上游版本服务暂不可用")
+			}
+
+			var rel githubRelease
+			if decErr := json.Unmarshal(body, &rel); decErr != nil {
+				return nil, fmt.Errorf("解析上游版本信息失败")
+			}
+
+			latest := strings.TrimPrefix(rel.TagName, "v")
+			hasUpdate := Version != "dev" && semverGreater(latest, Version)
+			payload := gin.H{
+				"current":     Version,
+				"latest":      latest,
+				"tag":         rel.TagName,
+				"name":        rel.Name,
+				"hasUpdate":   hasUpdate,
+				"url":         rel.HTMLURL,
+				"publishedAt": rel.PublishedAt,
+				"body":        rel.Body,
+				"prerelease":  rel.Prerelease,
+				"checkedAt":   time.Now().UTC().Format(time.RFC3339),
+				"inContainer": updater.InContainer(),
+				"updateHint":  containerHintIfNeeded(),
+			}
+
+			updateCacheMu.Lock()
+			updateCacheByKey[cacheKey] = cachedUpdateResult{
+				payload:   cloneUpdatePayload(payload),
+				expiresAt: time.Now().Add(updateCheckCacheTTL),
+			}
+			updateCacheMu.Unlock()
+			return payload, nil
+		})
+
 		if err != nil {
-			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error(), "current": Version})
-			return
-		}
-		if resp.StatusCode != http.StatusOK {
-			c.JSON(resp.StatusCode, gin.H{
-				"error":   "upstream returned " + strconv.Itoa(resp.StatusCode),
-				"detail":  strings.TrimSpace(string(body)),
+			c.JSON(http.StatusBadGateway, gin.H{
+				"error":   err.Error(),
+				"code":    "UPDATE_CHECK_FAILED",
 				"current": Version,
 			})
 			return
 		}
 
-		var rel githubRelease
-		if err := json.Unmarshal(body, &rel); err != nil {
-			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error(), "current": Version})
-			return
-		}
-
-		latest := strings.TrimPrefix(rel.TagName, "v")
-		hasUpdate := Version != "dev" && semverGreater(latest, Version)
-
-		c.JSON(http.StatusOK, gin.H{
-			"current":     Version,
-			"latest":      latest,
-			"tag":         rel.TagName,
-			"name":        rel.Name,
-			"hasUpdate":   hasUpdate,
-			"url":         rel.HTMLURL,
-			"publishedAt": rel.PublishedAt,
-			"body":        rel.Body,
-			"prerelease":  rel.Prerelease,
-			"checkedAt":   time.Now().UTC().Format(time.RFC3339),
-			// 容器里自更新是停用的 —— 界面据此把"立即更新"换成"怎么拉新镜像",
-			// 而不是给一个点了必然失败的按钮。
-			"inContainer": updater.InContainer(),
-			"updateHint":  containerHintIfNeeded(),
-		})
+		c.JSON(http.StatusOK, val.(gin.H))
 	}
 }
 

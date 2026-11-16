@@ -88,10 +88,19 @@ func main() {
 	// 没配置 API_SECRET_KEY 时生成随机密钥并持久化到数据目录(.api-secret,0600),
 	// 不再退回固定的 123456 —— 那等于任何能访问端口的人都能用你的 OVH 账户下单、重装。
 	// 密钥文件读写失败时停止启动,绝不退回弱密钥。
+	enableAuth := !strings.EqualFold(os.Getenv("ENABLE_API_KEY_AUTH"), "false")
 	apiKey, generatedAPIKey, err := auth.ResolveAPIKey(paths.DataDir, os.Getenv("API_SECRET_KEY"))
 	if err != nil {
 		console.Error("无法安全初始化 API 密钥,已停止启动", "err", err)
+		_ = sqliteDB.Close()
 		os.Exit(1)
+	}
+	if enableAuth {
+		if err := auth.ValidateStartupAPIKey(apiKey); err != nil {
+			console.Error("API_SECRET_KEY 安全性校验未通过，拒绝在开启鉴权模式下带弱口令启动", "err", err)
+			_ = sqliteDB.Close()
+			os.Exit(1)
+		}
 	}
 	state.APIKey = apiKey
 	if generatedAPIKey {
@@ -135,8 +144,6 @@ func main() {
 	// 后台工作协程统一管理编排
 	sup := worker.NewSupervisor(state, mon)
 	sup.Start()
-
-	enableAuth := !strings.EqualFold(os.Getenv("ENABLE_API_KEY_AUTH"), "false")
 
 	// 路由引擎解耦装配
 	var srv *server.Server

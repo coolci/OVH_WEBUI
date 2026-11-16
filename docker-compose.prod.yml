@@ -12,6 +12,7 @@ services:
     environment:
       GIN_MODE: release
       ENABLE_API_KEY_AUTH: "true"
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-172.16.0.0/12,127.0.0.1,::1}
     deploy:
       resources:
         limits:

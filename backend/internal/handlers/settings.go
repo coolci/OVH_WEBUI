@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -13,30 +14,60 @@ import (
 	"github.com/ovh-webui/server/internal/types"
 )
 
+// maskWebhookURL 对包含机器人鉴权密钥的 Webhook URL 做脱敏回显（保留 scheme://host/••••••••）。
+func maskWebhookURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return maskCred(raw)
+	}
+	return u.Scheme + "://" + u.Host + "/••••••••"
+}
+
+// isMaskedWebhookURL 识别前端原样回传的 Webhook 脱敏掩码（独立于 isMasked，因其包含 "://"）。
+func isMaskedWebhookURL(v, prev string) bool {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return false
+	}
+	if strings.Contains(v, "••") || strings.Contains(v, "***") {
+		return true
+	}
+	if prev != "" && v == maskWebhookURL(prev) {
+		return true
+	}
+	return false
+}
+
 // GetSettings GET /api/settings
 func GetSettings(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		cfg := state.Config.Get()
+		// 无条件与当前默认账户同步区域、端点及凭据（BUG-BE-04），消除切换默认账户后残留旧密钥串配
 		if defAcc, ok := state.FindAccount(""); ok {
 			if defAcc.Zone != "" {
 				cfg.Zone = defAcc.Zone
 			}
 			if defAcc.IAM != "" {
 				cfg.IAM = defAcc.IAM
+			} else if defAcc.Zone != "" {
+				cfg.IAM = "go-ovh-" + strings.ToLower(defAcc.Zone)
 			}
 			if defAcc.Endpoint != "" {
 				cfg.Endpoint = defAcc.Endpoint
 			}
-			if defAcc.AppKey != "" && cfg.AppKey == "" {
-				cfg.AppKey = defAcc.AppKey
-				cfg.AppSecret = defAcc.AppSecret
-				cfg.ConsumerKey = defAcc.ConsumerKey
-			}
+			cfg.AppKey = defAcc.AppKey
+			cfg.AppSecret = defAcc.AppSecret
+			cfg.ConsumerKey = defAcc.ConsumerKey
 		}
 		cfg.AppKey = maskCred(cfg.AppKey)
 		cfg.AppSecret = maskCred(cfg.AppSecret)
 		cfg.ConsumerKey = maskCred(cfg.ConsumerKey)
 		cfg.TgToken = maskCred(cfg.TgToken)
+		cfg.NotifyWebhookURL = maskWebhookURL(cfg.NotifyWebhookURL)
 		c.JSON(http.StatusOK, cfg)
 	}
 }
@@ -80,10 +111,12 @@ func SaveSettings(state *app.State) gin.HandlerFunc {
 			newCfg.TgToken = prev.TgToken
 		}
 		newCfg.TgChatID = strings.TrimSpace(newCfg.TgChatID)
-		// 同样去空白:webhook 地址末尾带个换行,POST 出去就是 DNS 解析失败
+
+		// 必须在调用 notify.ValidateWebhookURL 之前识别脱敏掩码并保留 prev.NotifyWebhookURL（BUG-SEC-07）
 		newCfg.NotifyWebhookURL = strings.TrimSpace(newCfg.NotifyWebhookURL)
-		// 在保存这一步就把地址挡下来。校验完整 URL 以及内网 SSRF 风险目标。
-		if newCfg.NotifyWebhookURL != "" {
+		if isMaskedWebhookURL(newCfg.NotifyWebhookURL, prev.NotifyWebhookURL) {
+			newCfg.NotifyWebhookURL = prev.NotifyWebhookURL
+		} else if newCfg.NotifyWebhookURL != "" {
 			if err := notify.ValidateWebhookURL(newCfg.NotifyWebhookURL); err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"status": "error",
 					"message": err.Error(), "code": "E3CAC8031"})
@@ -119,18 +152,11 @@ func SaveSettings(state *app.State) gin.HandlerFunc {
 		}
 		state.Logger.Info("API settings updated in config.json", "system")
 
-		// Token 变了就得重拉长轮询。
-		//
-		// 收 update 只有这一条路,而循环是拿着旧 Token 在跑的 ——
-		// 不重启的话用户换完 Token 保存,界面一切正常,但从此一条命令、
-		// 一个按钮都收不到,而且没有任何地方会提示他。
-		// 首次填 Token 同理:启动时没有 Token,poller 根本没起来。
 		if newCfg.TgToken != prev.TgToken || newCfg.TgChatID != prev.TgChatID || (newCfg.TgToken != "" && !telegram.SnapshotPoller().Running) {
 			state.Logger.Info("Telegram 配置已变更，唤醒并重启长轮询", "telegram")
 			go RestartPoller(state)
 		}
 		if newCfg.TgChatID != prev.TgChatID || newCfg.TgToken != prev.TgToken {
-			// 旧的"未授权"提示是按旧配置算的,改完就不再适用
 			telegram.ClearRejected()
 		}
 

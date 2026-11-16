@@ -243,6 +243,13 @@ func downloadVerified(a *Asset, dst, wantSum string, onProgress func(pct int)) e
 // 真去替换测试进程自己的话,go test 会当场爆炸。
 var selfPathFn = defaultSelfPath
 
+// SetSelfPathForTesting 仅供回归测试将目标可执行文件路径指向沙箱中的真实运行进程，返回恢复闭包。
+func SetSelfPathForTesting(fn func() (string, error)) func() {
+	orig := selfPathFn
+	selfPathFn = fn
+	return func() { selfPathFn = orig }
+}
+
 func selfPath() (string, error) { return selfPathFn() }
 
 // defaultSelfPath 当前可执行文件的真实路径(解掉符号链接)
@@ -292,7 +299,7 @@ func Prepare(rel *Release, onProgress func(pct int)) (tmpPath, exePath string, e
 	return tmpPath, exePath, nil
 }
 
-// CleanupStale 启动时清理上一次更新留下的残骸(Windows 的 .old,以及中断的临时文件)
+// CleanupStale 启动时清理上一次更新留下的残骸(中断的临时文件与回滚遗留的 .failed)
 func CleanupStale() {
 	exe, err := selfPath()
 	if err != nil {
@@ -301,12 +308,13 @@ func CleanupStale() {
 	// 注意:.old 是回滚用的后路,由 MarkHealthy(启动正常)或 RollbackIfStale(启动失败)
 	// 决定去留,这里**不能**无脑删 —— 删了等于取消了回滚能力。
 	dir := filepath.Dir(exe)
+	failedName := filepath.Base(exe) + failedSuffix
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return
 	}
 	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), ".ovh-server-new-") || e.Name() == ".ovh-server-update-probe" {
+		if strings.HasPrefix(e.Name(), ".ovh-server-new-") || e.Name() == ".ovh-server-update-probe" || e.Name() == failedName {
 			_ = os.Remove(filepath.Join(dir, e.Name()))
 		}
 	}
@@ -316,6 +324,36 @@ func CleanupStale() {
 // Windows 一直在用它(系统不允许覆盖运行中的 exe,只能先改名);
 // Unix 现在也留一份,作为"新版本起不来"时的后路。
 const backupSuffix = ".old"
+
+// failedSuffix Windows 回滚时将当前运行中的故障 exe 临时改名移走的后缀。
+const failedSuffix = ".failed"
+
+// rollbackExecutable 将 backup 恢复为 exe。
+// Windows 内核允许对运行中的进程映像执行 os.Rename 移走，但严禁将其作为覆盖目标(Access is denied)；
+// 因此在 Windows 下必须参照 Install 先把当前运行中的 exe 改名为 exe.failed 让路，再把 backup 改回 exe。
+func rollbackExecutable(backup, exe string) error {
+	if runtime.GOOS != "windows" {
+		return os.Rename(backup, exe)
+	}
+	failed := exe + failedSuffix
+	_ = os.Remove(failed)
+	movedCurrent := false
+	if _, statErr := os.Stat(exe); statErr == nil {
+		if err := os.Rename(exe, failed); err != nil {
+			return err
+		}
+		movedCurrent = true
+	}
+	if err := os.Rename(backup, exe); err != nil {
+		if movedCurrent {
+			_ = os.Rename(failed, exe)
+		}
+		return err
+	}
+	// 当前进程仍在运行时 os.Remove(failed) 可能因文件映射句柄占用失败，忽略即可，下次健康启动由 CleanupStale 清理。
+	_ = os.Remove(failed)
+	return nil
+}
 
 // copyFile 硬链接建不了时的退路
 func copyFile(src, dst string) error {
@@ -417,7 +455,7 @@ func RollbackIfStale(state *app.State) bool {
 	// 先 rename 后删标记:rename 失败(权限/EBUSY/杀软)时标记必须保留,
 	// 下次启动还能重试回滚。以前反过来 —— 删完标记 rename 一失败,
 	// 下次启动走"有备份无标记=上次正常"分支把备份也删了,坏版本从此无人能救
-	if err := os.Rename(backup, exe); err != nil {
+	if err := rollbackExecutable(backup, exe); err != nil {
 		state.Logger.Error("[更新] 回滚失败(标记已保留,下次启动将重试): "+err.Error(), "version")
 		return false
 	}
