@@ -110,7 +110,11 @@ func ListSupportTickets(state *app.State) gin.HandlerFunc {
 			return
 		}
 		var ids []int64
-		if err := client.Get("/support/tickets?"+query.Encode(), &ids); err != nil {
+		listPath, ok := ovhPathQueryOrAbort(c, query, "support", "tickets")
+		if !ok {
+			return
+		}
+		if err := client.Get(listPath, &ids); err != nil {
 			respondOVHError(c, err)
 			return
 		}
@@ -149,7 +153,11 @@ func GetSupportTicket(state *app.State) gin.HandlerFunc {
 			return
 		}
 		var ticket supportTicket
-		if err := client.Get(fmt.Sprintf("/support/tickets/%s", id), &ticket); err != nil {
+		detailPath, ok := ovhPathOrAbort(c, "support", "tickets", id)
+		if !ok {
+			return
+		}
+		if err := client.Get(detailPath, &ticket); err != nil {
 			respondOVHError(c, err)
 			return
 		}
@@ -171,7 +179,11 @@ func ListSupportTicketMessages(state *app.State) gin.HandlerFunc {
 			return
 		}
 		var messages []supportMessage
-		if err := client.Get(fmt.Sprintf("/support/tickets/%s/messages", id), &messages); err != nil {
+		msgPath, ok := ovhPathOrAbort(c, "support", "tickets", id, "messages")
+		if !ok {
+			return
+		}
+		if err := client.Get(msgPath, &messages); err != nil {
 			respondOVHError(c, err)
 			return
 		}
@@ -231,7 +243,11 @@ func ReplySupportTicket(state *app.State) gin.HandlerFunc {
 		if !ok {
 			return
 		}
-		if err := client.Post(fmt.Sprintf("/support/tickets/%s/reply", id), map[string]string{"body": body}, nil); err != nil {
+		replyPath, ok := ovhPathOrAbort(c, "support", "tickets", id, "reply")
+		if !ok {
+			return
+		}
+		if err := client.Post(replyPath, map[string]string{"body": body}, nil); err != nil {
 			respondOVHError(c, err)
 			return
 		}
@@ -247,7 +263,11 @@ func ReopenSupportTicket(state *app.State) gin.HandlerFunc {
 		if !ok {
 			return
 		}
-		if err := client.Post(fmt.Sprintf("/support/tickets/%s/reopen", id), map[string]string{"body": body}, nil); err != nil {
+		reopenPath, ok := ovhPathOrAbort(c, "support", "tickets", id, "reopen")
+		if !ok {
+			return
+		}
+		if err := client.Post(reopenPath, map[string]string{"body": body}, nil); err != nil {
 			respondOVHError(c, err)
 			return
 		}
@@ -268,7 +288,11 @@ func CloseSupportTicket(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
 			return
 		}
-		if err := client.Post(fmt.Sprintf("/support/tickets/%s/close", id), nil, nil); err != nil {
+		closePath, ok := ovhPathOrAbort(c, "support", "tickets", id, "close")
+		if !ok {
+			return
+		}
+		if err := client.Post(closePath, nil, nil); err != nil {
 			respondOVHError(c, err)
 			return
 		}
@@ -465,7 +489,12 @@ func fetchSupportTickets(client *ovhsdk.Client, ids []int64) ([]supportTicket, [
 				return
 			}
 			var ticket supportTicket
-			if err := isoClient.Get(fmt.Sprintf("/support/tickets/%d", ticketID), &ticket); err != nil {
+			tPath, pErr := buildOVHPath("support", "tickets", strconv.FormatInt(ticketID, 10))
+			if pErr != nil {
+				errs[idx] = pErr
+				return
+			}
+			if err := isoClient.Get(tPath, &ticket); err != nil {
 				errs[idx] = err
 				return
 			}

@@ -42,14 +42,21 @@ const templatesCacheTTL = 10 * time.Minute
 // 否则重装对话框只是不显示「当前系统」,用户不知道是读失败还是真没有。
 func GetVpsCurrentOS(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		imgPath, ok := ovhPathOrAbort(c, "vps", svc, "images", "current")
+		if !ok {
+			return
+		}
 		var img map[string]interface{}
-		if err := client.Get("/vps/"+svc+"/images/current", &img); err != nil {
+		if err := client.Get(imgPath, &img); err != nil {
 			if ovhIsNotFound(err) {
 				c.JSON(http.StatusOK, gin.H{"success": true, "currentOS": nil})
 				return
@@ -84,9 +91,21 @@ func GetVpsCurrentOS(state *app.State) gin.HandlerFunc {
 // 缓存:同一账户的同一 VPS 模板列表缓存 10 分钟。详情拉取走 10 并发。
 func GetVpsTemplates(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
-		acc, _ := ovhAccountFor(state, c)
-		cacheKey := acc.ID + ":" + svc
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
+		client, err := ovhClientFor(state, c)
+		if err != nil {
+			noOVHResp(c)
+			return
+		}
+		acc, ok := ovhAccountFor(state, c)
+		if !ok {
+			noOVHResp(c)
+			return
+		}
+		cacheKey := accountCacheFingerprint(acc) + "|" + svc
 
 		// 命中缓存直接返
 		templatesCacheMu.Lock()
@@ -100,14 +119,12 @@ func GetVpsTemplates(state *app.State) gin.HandlerFunc {
 		}
 		templatesCacheMu.Unlock()
 
-		client, err := ovhClientFor(state, c)
-		if err != nil {
-			noOVHResp(c)
+		availPath, ok := ovhPathOrAbort(c, "vps", svc, "images", "available")
+		if !ok {
 			return
 		}
-
 		var imageIDs []string
-		if err := client.Get("/vps/"+svc+"/images/available", &imageIDs); err != nil {
+		if err := client.Get(availPath, &imageIDs); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
@@ -160,6 +177,10 @@ func parallelGetVpsDetails(client *ovhsdk.Client, paths []string, concurrency in
 		go func(idx int, p string) {
 			defer wg.Done()
 			defer func() { <-sem }()
+			if p == "" {
+				failed[idx] = true
+				return
+			}
 			var d map[string]interface{}
 			client, err := ovh.IsolateClient(client)
 			if err != nil {
@@ -202,7 +223,7 @@ func cacheTemplates(key string, list []gin.H, kind string) {
 func buildUsImageList(client *ovhsdk.Client, svc string, ids []string) ([]gin.H, int) {
 	paths := make([]string, len(ids))
 	for i, id := range ids {
-		paths[i] = "/vps/" + svc + "/images/available/" + id
+		paths[i] = safePathFn("vps", svc, "images", "available", id)
 	}
 	details, failed := parallelGetVpsDetails(client, paths, 10)
 	list := []gin.H{}
@@ -272,7 +293,10 @@ func sortTemplatesByDistribution(list []gin.H) []gin.H {
 // OVH 不认会在 400 里说清楚。
 func ReinstallVps(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -338,16 +362,20 @@ func ReinstallVps(state *app.State) gin.HandlerFunc {
 				params["sshKey"] = key
 			}
 		}
-		// 与独服 InstallOS 同款 per-service 锁:重装连点在 OVH 侧撞任务冲突,
+		// 与独服 InstallOS 同款 per-account+service 锁:重装连点在 OVH 侧撞任务冲突,
 		// 第二发显示"失败"而重装其实已开跑 —— 用户极易再点第三次
-		mu, ok := acquireInstallLock("vps:" + svc)
+		mu, ok := acquireInstallLock("vps|" + acc.ID + "|" + svc)
 		if !ok {
 			c.JSON(http.StatusConflict, gin.H{"success": false, "error": "该 VPS 已有重装任务正在执行,请等待完成后再试(进度看任务历史)", "code": "EF9E440A0"})
 			return
 		}
 		defer mu.Unlock()
+		rebuildPath, ok := ovhPathOrAbort(c, "vps", svc, "rebuild")
+		if !ok {
+			return
+		}
 		var task map[string]interface{}
-		if err := client.Post("/vps/"+svc+"/rebuild", params, &task); err != nil {
+		if err := client.Post(rebuildPath, params, &task); err != nil {
 			state.Logger.Error("VPS "+svc+" rebuild 失败: "+err.Error(), "vps_control")
 			respondOVHError(c, err)
 			return
@@ -362,14 +390,21 @@ func ReinstallVps(state *app.State) gin.HandlerFunc {
 // /vps/{name}/tasks 返回 long[](taskId 数组),每个 /tasks/{id} 是 vps.Task
 func GetVpsTasks(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		tasksPath, ok := ovhPathOrAbort(c, "vps", svc, "tasks")
+		if !ok {
+			return
+		}
 		var ids []int64
-		if err := client.Get("/vps/"+svc+"/tasks", &ids); err != nil {
+		if err := client.Get(tasksPath, &ids); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
@@ -391,7 +426,7 @@ func GetVpsTasks(state *app.State) gin.HandlerFunc {
 			keys[i] = id
 		}
 		details := parallelGetDetails(client, keys, func(k interface{}) string {
-			return fmt.Sprintf("/vps/%s/tasks/%v", svc, k)
+			return safePathFn("vps", svc, "tasks", idToString(k))
 		}, 10)
 		tasks := []gin.H{}
 		for i, id := range recent {
@@ -419,15 +454,25 @@ func GetVpsTasks(state *app.State) gin.HandlerFunc {
 // 用于轮询单个任务进度
 func GetVpsTaskDetail(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
-		taskID := c.Param("task_id")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
+		taskID, ok := requirePositiveIDParam(c, "task_id", "任务 ID", "INVALID_TASK_ID")
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		detailPath, ok := ovhPathOrAbort(c, "vps", svc, "tasks", taskID)
+		if !ok {
+			return
+		}
 		var d map[string]interface{}
-		if err := client.Get(fmt.Sprintf("/vps/%s/tasks/%s", svc, taskID), &d); err != nil {
+		if err := client.Get(detailPath, &d); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}

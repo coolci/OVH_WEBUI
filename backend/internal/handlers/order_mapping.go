@@ -47,8 +47,14 @@ const usOrderScanLimit = 100
 
 // invalidateOrderMappingCache 清掉指定账户的订单映射缓存(删账户时调)
 func invalidateOrderMappingCache(accountID string) {
+	prefix := accountID + "|"
 	orderMappingMu.Lock()
 	delete(orderMappingCache, accountID)
+	for k := range orderMappingCache {
+		if strings.HasPrefix(k, prefix) {
+			delete(orderMappingCache, k)
+		}
+	}
 	orderMappingMu.Unlock()
 }
 
@@ -65,9 +71,10 @@ func orderMappingFor(state *app.State, c *gin.Context) (map[string]interface{}, 
 	if !ok {
 		return nil, fmt.Errorf("未配置 OVH 账户")
 	}
+	cacheKey := accountCacheFingerprint(acc)
 	orderMappingMu.Lock()
 	defer orderMappingMu.Unlock()
-	entry, hit := orderMappingCache[acc.ID]
+	entry, hit := orderMappingCache[cacheKey]
 	ttl := entry.ttl
 	if ttl <= 0 {
 		ttl = orderMappingDuration
@@ -91,8 +98,8 @@ func GetOrderMapping(state *app.State) gin.HandlerFunc {
 			noOVHResp(c)
 			return
 		}
-		// 用解析后的账户 ID 做 key,保证 ?account= 省略(默认账户)和显式传默认账户 id 命中同一条
-		cacheKey := acc.ID
+		// 用账户指纹做 key,保证 ?account= 省略(默认账户)和显式传默认账户 id 命中同一条,且轮换密钥后立即失效
+		cacheKey := accountCacheFingerprint(acc)
 		forceRefresh := strings.EqualFold(c.Query("forceRefresh"), "true")
 
 		orderMappingMu.Lock()
@@ -155,7 +162,7 @@ func GetOrderMapping(state *app.State) gin.HandlerFunc {
 		}
 
 		svcDetails, svcFailed, svcErr := parallelGetStringsCounted(client, serverList, func(sn string) string {
-			return "/dedicated/server/" + sn + "/serviceInfos"
+			return safePathFn("dedicated", "server", sn, "serviceInfos")
 		}, 10)
 		if svcFailed > 0 {
 			degraded = true
@@ -264,7 +271,13 @@ func GetOrderMapping(state *app.State) gin.HandlerFunc {
 			dateFromStr := dateFrom.UTC().Format("2006-01-02T15:04:05+00:00")
 			dateToStr := dateTo.UTC().Format("2006-01-02T15:04:05+00:00")
 			state.Logger.Debug("日期范围查询: from="+dateFromStr+", to="+dateToStr, "server_control")
-			path := "/me/order?date.from=" + url.QueryEscape(dateFromStr) + "&date.to=" + url.QueryEscape(dateToStr)
+			path, ok := ovhPathQueryOrAbort(c, url.Values{
+				"date.from": {dateFromStr},
+				"date.to":   {dateToStr},
+			}, "me", "order")
+			if !ok {
+				return
+			}
 			if err := client.Get(path, &allOrderIDs); err != nil {
 				state.Logger.Error("获取订单列表失败: "+err.Error(), "server_control")
 				c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "获取订单列表失败: " + ovh.Explain(err)})
@@ -323,7 +336,8 @@ func GetOrderMapping(state *app.State) gin.HandlerFunc {
 						muVal.Unlock()
 						return
 					}
-					if err := ovhGetWithRetry(isoClient, fmt.Sprintf("/me/order/%d/status", id), &status); err != nil {
+					statusPath, pErr := buildOVHPath("me", "order", strconv.FormatInt(id, 10), "status")
+					if pErr != nil || ovhGetWithRetry(isoClient, statusPath, &status) != nil {
 						muVal.Lock()
 						statusFailed++
 						muVal.Unlock()
@@ -381,7 +395,8 @@ func GetOrderMapping(state *app.State) gin.HandlerFunc {
 						muMap.Unlock()
 						return
 					}
-					if err := ovhGetWithRetry(isoClient, fmt.Sprintf("/me/order/%d/details", id), &detailIDs); err != nil {
+					detailsPath, pErr := buildOVHPath("me", "order", strconv.FormatInt(id, 10), "details")
+					if pErr != nil || ovhGetWithRetry(isoClient, detailsPath, &detailIDs) != nil {
 						muMap.Lock()
 						errorCount++
 						muMap.Unlock()
@@ -396,7 +411,8 @@ func GetOrderMapping(state *app.State) gin.HandlerFunc {
 
 					for _, did := range detailIDs {
 						var d map[string]interface{}
-						if err := ovhGetWithRetry(isoClient, fmt.Sprintf("/me/order/%d/details/%d", id, did), &d); err != nil {
+						itemPath, iErr := buildOVHPath("me", "order", strconv.FormatInt(id, 10), "details", strconv.FormatInt(did, 10))
+						if iErr != nil || ovhGetWithRetry(isoClient, itemPath, &d) != nil {
 							muMap.Lock()
 							detailItemFailed++
 							muMap.Unlock()
@@ -530,7 +546,8 @@ func fetchOrderDates(client *ovhsdk.Client, ids []int64, concurrency int) (map[i
 				mu.Unlock()
 				return
 			}
-			if err := ovhGetWithRetry(client, fmt.Sprintf("/me/order/%d", id), &info); err != nil {
+			orderPath, pErr := buildOVHPath("me", "order", strconv.FormatInt(id, 10))
+			if pErr != nil || ovhGetWithRetry(client, orderPath, &info) != nil {
 				mu.Lock()
 				failed[id] = true
 				mu.Unlock()

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -31,7 +32,8 @@ func ValidateServiceName() gin.HandlerFunc {
 			c.Next()
 			return
 		}
-		if len(svc) > maxServiceNameLen || svc == "." || svc == ".." {
+		if len(svc) > maxServiceNameLen || svc == "." || svc == ".." ||
+			strings.Contains(svc, "..") || strings.HasPrefix(svc, ".") || strings.HasSuffix(svc, ".") {
 			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
 				"success": false,
 				"error":   "服务名过长或格式不合法,不像是一个有效的 OVH 服务名", "code": "E9A400893",

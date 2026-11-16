@@ -21,6 +21,15 @@ import (
 )
 
 func noOVHRespAccount(c *gin.Context) {
+	if statusVal, exists := c.Get(ctxOVHErrStatusKey); exists {
+		status, _ := statusVal.(int)
+		code := c.GetString(ctxOVHErrCodeKey)
+		msg := c.GetString(ctxOVHErrMsgKey)
+		if status == http.StatusNotFound || code == "ACCOUNT_PROXY_INVALID" {
+			c.JSON(status, gin.H{"error": msg, "code": code})
+			return
+		}
+	}
 	c.JSON(http.StatusBadRequest, gin.H{"error": "未配置OVH API", "code": "E855DF392"})
 }
 
@@ -80,6 +89,10 @@ func parallelGetPaths(client *ovhsdk.Client, paths []string, concurrency int) ([
 		go func(idx int, path string) {
 			defer wg.Done()
 			defer func() { <-sem }()
+			if path == "" {
+				errs[idx] = errUnsafeOVHSegment
+				return
+			}
 			isolated, err := ovh.IsolateClient(client)
 			if err != nil {
 				errs[idx] = err
@@ -174,13 +187,21 @@ var billingListWindows = []int{1, 3, 12, 36}
 // OVH US 认不认 "2026-08-25T00:00:00+00:00" 这种写法无法离线确认;
 // 而这两个端点是「退款记录」「账单」两个 tab 的唯一数据源,一旦被拒就是整页 500,
 // 代价远大于"少一层服务端过滤、多拉几条详情"。
-func fetchRecentBillingIDs(client *ovhsdk.Client, basePath string, want int) ([]string, string, error) {
+func fetchRecentBillingIDs(client *ovhsdk.Client, baseSegs []string, want int) ([]string, string, error) {
+	basePath, err := buildOVHPath(baseSegs...)
+	if err != nil {
+		return nil, "", err
+	}
 	var ids []string
 	warn := ""
 	for _, months := range billingListWindows {
 		from := time.Now().UTC().AddDate(0, -months, 0).Format("2006-01-02T15:04:05+00:00")
+		qPath, qErr := buildOVHPathQuery(url.Values{"date.from": {from}}, baseSegs...)
+		if qErr != nil {
+			return nil, "", qErr
+		}
 		var raw []interface{}
-		if err := client.Get(basePath+"?date.from="+url.QueryEscape(from), &raw); err != nil {
+		if err := client.Get(qPath, &raw); err != nil {
 			warn = fmt.Sprintf("date.from 窗口查询(%s)被拒绝,已降级为全量列表 + 本地排序: %s", from, err.Error())
 			ids = nil
 			break
@@ -336,7 +357,7 @@ func GetAccountRefunds(state *app.State) gin.HandlerFunc {
 			noOVHRespAccount(c)
 			return
 		}
-		ids, warn, err := fetchRecentBillingIDs(client, "/me/refund", accountBillingListSize)
+		ids, warn, err := fetchRecentBillingIDs(client, []string{"me", "refund"}, accountBillingListSize)
 		if err != nil {
 			state.Logger.Error("获取退款列表失败: "+err.Error(), "account_management")
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取退款列表失败: " + ovh.Explain(err)})
@@ -351,7 +372,7 @@ func GetAccountRefunds(state *app.State) gin.HandlerFunc {
 		}
 		// 并发拉详情：10 并发,原 20 * 200ms = 4 秒 -> 2 * 200ms = 0.4 秒
 		details, failed, firstErr := parallelGetStringsCounted(client, scanIDs, func(s string) string {
-			return "/me/refund/" + s
+			return safePathFn("me", "refund", s)
 		}, 10)
 		list := collectDetails(state, c, details, failed, firstErr, "退款", "account_management")
 		if c.IsAborted() {
@@ -382,7 +403,7 @@ func GetCreditBalance(state *app.State) gin.HandlerFunc {
 		}
 		// 并发拉详情
 		details, failed, firstErr := parallelGetStringsCounted(client, names, func(n string) string {
-			return "/me/credit/balance/" + n
+			return safePathFn("me", "credit", "balance", n)
 		}, 10)
 		balances := collectDetails(state, c, details, failed, firstErr, "信用余额", "account_management")
 		if c.IsAborted() {
@@ -417,7 +438,7 @@ func GetEmailHistory(state *app.State) gin.HandlerFunc {
 		}
 		// 并发拉 50 封邮件详情：原 50 * 200ms = 10 秒 -> 5 * 200ms = 1 秒
 		details, failed, firstErr := parallelGetDetailsCounted(client, ids[:max], func(k interface{}) string {
-			return "/me/notification/email/history/" + idToString(k)
+			return safePathFn("me", "notification", "email", "history", idToString(k))
 		}, 10)
 		list := collectDetails(state, c, details, failed, firstErr, "邮件", "account_management")
 		if c.IsAborted() {
@@ -499,7 +520,7 @@ func GetContactChangeRequests(state *app.State) gin.HandlerFunc {
 		}
 		// 并发拉详情
 		details, failed, firstErr := parallelGetDetailsCounted(client, ids, func(k interface{}) string {
-			return "/me/task/contactChange/" + idToString(k)
+			return safePathFn("me", "task", "contactChange", idToString(k))
 		}, 10)
 		list := collectDetails(state, c, details, failed, firstErr, "联系人变更请求", "server_control")
 		if c.IsAborted() {
@@ -531,7 +552,11 @@ func GetContactChangeRequestDetail(state *app.State) gin.HandlerFunc {
 			return
 		}
 		var d map[string]interface{}
-		if err := client.Get(fmt.Sprintf("/me/task/contactChange/%d", taskID), &d); err != nil {
+		detailPath, ok := ovhPathOrAbort(c, "me", "task", "contactChange", strconv.FormatInt(taskID, 10))
+		if !ok {
+			return
+		}
+		if err := client.Get(detailPath, &d); err != nil {
 			state.Logger.Error(fmt.Sprintf("获取联系人变更请求 %d 详情失败: %s", taskID, err.Error()), "server_control")
 			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "获取联系人变更请求详情失败: " + ovh.Explain(err)})
 			return
@@ -564,7 +589,11 @@ func AcceptContactChangeRequest(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "缺少必需的 token 参数。请从邮件中获取 token 并输入。", "code": "EBC948D95"})
 			return
 		}
-		if err := client.Post(fmt.Sprintf("/me/task/contactChange/%d/accept", taskID), map[string]interface{}{
+		acceptPath, ok := ovhPathOrAbort(c, "me", "task", "contactChange", strconv.FormatInt(taskID, 10), "accept")
+		if !ok {
+			return
+		}
+		if err := client.Post(acceptPath, map[string]interface{}{
 			"token": body.Token,
 		}, nil); err != nil {
 			state.Logger.Error(fmt.Sprintf("接受联系人变更请求 %d 失败: %s", taskID, err.Error()), "server_control")
@@ -602,7 +631,11 @@ func RefuseContactChangeRequest(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "缺少必需的 token 参数。请从邮件中获取 token 并输入。", "code": "EBC948D95"})
 			return
 		}
-		if err := client.Post(fmt.Sprintf("/me/task/contactChange/%d/refuse", taskID), map[string]interface{}{
+		refusePath, ok := ovhPathOrAbort(c, "me", "task", "contactChange", strconv.FormatInt(taskID, 10), "refuse")
+		if !ok {
+			return
+		}
+		if err := client.Post(refusePath, map[string]interface{}{
 			"token": body.Token,
 		}, nil); err != nil {
 			state.Logger.Error(fmt.Sprintf("拒绝联系人变更请求 %d 失败: %s", taskID, err.Error()), "server_control")
@@ -632,7 +665,11 @@ func ResendContactChangeEmail(state *app.State) gin.HandlerFunc {
 			noOVHRespAccount(c)
 			return
 		}
-		if err := client.Post(fmt.Sprintf("/me/task/contactChange/%d/resendEmail", taskID), map[string]interface{}{}, nil); err != nil {
+		resendPath, ok := ovhPathOrAbort(c, "me", "task", "contactChange", strconv.FormatInt(taskID, 10), "resendEmail")
+		if !ok {
+			return
+		}
+		if err := client.Post(resendPath, map[string]interface{}{}, nil); err != nil {
 			state.Logger.Error(fmt.Sprintf("重发联系人变更请求 %d 邮件失败: %s", taskID, err.Error()), "server_control")
 			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "重发邮件失败: " + ovh.Explain(err)})
 			return
@@ -658,7 +695,7 @@ func GetSubAccounts(state *app.State) gin.HandlerFunc {
 		}
 		// 并发拉详情
 		details, failed, firstErr := parallelGetDetailsCounted(client, ids, func(k interface{}) string {
-			return "/me/subAccount/" + idToString(k)
+			return safePathFn("me", "subAccount", idToString(k))
 		}, 10)
 		list := collectDetails(state, c, details, failed, firstErr, "子账户", "account_management")
 		if c.IsAborted() {
@@ -677,7 +714,7 @@ func GetAccountBills(state *app.State) gin.HandlerFunc {
 			noOVHRespAccount(c)
 			return
 		}
-		ids, warn, err := fetchRecentBillingIDs(client, "/me/bill", accountBillingListSize)
+		ids, warn, err := fetchRecentBillingIDs(client, []string{"me", "bill"}, accountBillingListSize)
 		if err != nil {
 			state.Logger.Error("获取账单列表失败: "+err.Error(), "account_management")
 			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "获取账单列表失败: " + ovh.Explain(err)})
@@ -692,7 +729,7 @@ func GetAccountBills(state *app.State) gin.HandlerFunc {
 		}
 		// 并发拉账单详情
 		details, failed, firstErr := parallelGetStringsCounted(client, scanIDs, func(s string) string {
-			return "/me/bill/" + s
+			return safePathFn("me", "bill", s)
 		}, 10)
 		list := collectDetails(state, c, details, failed, firstErr, "账单", "account_management")
 		if c.IsAborted() {
@@ -740,7 +777,7 @@ func GetAccountOrders(state *app.State) gin.HandlerFunc {
 			limit = accountBillingMaxDetails
 		}
 
-		ids, warn, err := fetchRecentBillingIDs(client, "/me/order", limit)
+		ids, warn, err := fetchRecentBillingIDs(client, []string{"me", "order"}, limit)
 		if err != nil {
 			state.Logger.Error("获取订单列表失败: "+err.Error(), "account_management")
 			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "获取订单列表失败: " + ovh.Explain(err)})
@@ -757,7 +794,7 @@ func GetAccountOrders(state *app.State) gin.HandlerFunc {
 
 		// 并发拉订单详情
 		details, failed, firstErr := parallelGetStringsCounted(client, scanIDs, func(s string) string {
-			return "/me/order/" + s
+			return safePathFn("me", "order", s)
 		}, 10)
 		list := collectDetails(state, c, details, failed, firstErr, "订单", "account_management")
 		if c.IsAborted() {

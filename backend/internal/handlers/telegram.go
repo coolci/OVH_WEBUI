@@ -405,10 +405,14 @@ func getNumOrFloat(v interface{}) (float64, bool) {
 }
 
 func truncate(s string, n int) string {
-	if len(s) <= n {
+	if n <= 0 {
+		return ""
+	}
+	r := []rune(s)
+	if len(r) <= n {
 		return s
 	}
-	return s[:n]
+	return string(r[:n])
 }
 
 func strOr(m map[string]interface{}, keys ...string) string {

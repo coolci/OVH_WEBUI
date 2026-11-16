@@ -104,23 +104,28 @@ const hwLotteryTTL = time.Hour
 
 // hwLotteryFor 取(或补算)一台机器的中奖结果。任何失败都返回 nil:
 // 列表页的徽章是锦上添花,不允许它拖慢或报错影响列表本身。
-func hwLotteryFor(client *ovhsdk.Client, svc string) *hwLottery {
-	if v, ok := hwLotteryCache.Load(svc); ok {
+func hwLotteryFor(client *ovhsdk.Client, cacheScope, svc string) *hwLottery {
+	cacheKey := cacheScope + "|" + svc
+	if v, ok := hwLotteryCache.Load(cacheKey); ok {
 		if e := v.(hwLotteryEntry); time.Since(e.at) < hwLotteryTTL {
 			lot := e.lot
 			return &lot
 		}
 	}
-	spec, err := fetchOrderedSpec(client, svc)
+	spec, err := fetchOrderedSpec(client, cacheScope, svc)
+	if err != nil {
+		return nil
+	}
+	hwPath, err := buildOVHPath("dedicated", "server", svc, "specifications", "hardware")
 	if err != nil {
 		return nil
 	}
 	var hardware map[string]interface{}
-	if err := client.Get("/dedicated/server/"+svc+"/specifications/hardware", &hardware); err != nil {
+	if err := client.Get(hwPath, &hardware); err != nil {
 		return nil
 	}
 	lot := computeHardwareLottery(spec, hardware)
-	hwLotteryCache.Store(svc, hwLotteryEntry{lot: lot, at: time.Now()})
+	hwLotteryCache.Store(cacheKey, hwLotteryEntry{lot: lot, at: time.Now()})
 	return &lot
 }
 
@@ -133,12 +138,21 @@ var (
 	reHasDigit = regexp.MustCompile(`\d`)
 )
 
-// fetchOrderedSpec 拉订购配置(带缓存)
-func fetchOrderedSpec(client *ovhsdk.Client, svc string) (*orderedSpec, error) {
-	if v, ok := orderedSpecCache.Load(svc); ok {
+// fetchOrderedSpec 拉订购配置(带账户指纹隔离缓存)
+func fetchOrderedSpec(client *ovhsdk.Client, cacheScope, svc string) (*orderedSpec, error) {
+	cacheKey := cacheScope + "|" + svc
+	if v, ok := orderedSpecCache.Load(cacheKey); ok {
 		return v.(*orderedSpec), nil
 	}
 	sid, err := serviceIDForDedicated(client, svc)
+	if err != nil {
+		return nil, err
+	}
+	mainPath, err := buildOVHPath("services", strconv.FormatInt(sid, 10))
+	if err != nil {
+		return nil, err
+	}
+	optPath, err := buildOVHPath("services", strconv.FormatInt(sid, 10), "options")
 	if err != nil {
 		return nil, err
 	}
@@ -153,8 +167,8 @@ func fetchOrderedSpec(client *ovhsdk.Client, svc string) (*orderedSpec, error) {
 		return nil, err
 	}
 	wg.Add(2)
-	go func() { defer wg.Done(); mErr = client.Get(fmt.Sprintf("/services/%d", sid), &main) }()
-	go func() { defer wg.Done(); oErr = optionsClient.Get(fmt.Sprintf("/services/%d/options", sid), &opts) }()
+	go func() { defer wg.Done(); mErr = client.Get(mainPath, &main) }()
+	go func() { defer wg.Done(); oErr = optionsClient.Get(optPath, &opts) }()
 	wg.Wait()
 	if mErr != nil {
 		return nil, mErr
@@ -163,7 +177,7 @@ func fetchOrderedSpec(client *ovhsdk.Client, svc string) (*orderedSpec, error) {
 		return nil, oErr
 	}
 	spec := parseOrderedSpec(main, opts)
-	orderedSpecCache.Store(svc, spec)
+	orderedSpecCache.Store(cacheKey, spec)
 	return spec, nil
 }
 

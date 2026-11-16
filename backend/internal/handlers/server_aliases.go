@@ -14,7 +14,7 @@ func ListServerAliases(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		acc, ok := ovhAccountFor(state, c)
 		if !ok {
-			httperr.PreconditionFailed(c, "未配置 OVH 账户", "NO_OVH_ACCOUNT")
+			noOVHResp(c)
 			return
 		}
 		svc := state.ServerService
@@ -34,14 +34,13 @@ func ListServerAliases(state *app.State) gin.HandlerFunc {
 // SetServerAlias PUT /api/server-control/:service_name/alias[?account=<id>]
 func SetServerAlias(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		acc, ok := ovhAccountFor(state, c)
+		svcName, ok := requireServiceName(c)
 		if !ok {
-			httperr.PreconditionFailed(c, "未配置 OVH 账户", "NO_OVH_ACCOUNT")
 			return
 		}
-		svcName := strings.TrimSpace(c.Param("service_name"))
-		if svcName == "" {
-			httperr.BadRequest(c, "缺少 service_name", "E6803C9EF")
+		acc, ok := ovhAccountFor(state, c)
+		if !ok {
+			noOVHResp(c)
 			return
 		}
 		var body struct {
@@ -63,14 +62,13 @@ func SetServerAlias(state *app.State) gin.HandlerFunc {
 // DeleteServerAlias DELETE /api/server-control/:service_name/alias[?account=<id>]
 func DeleteServerAlias(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		acc, ok := ovhAccountFor(state, c)
+		svcName, ok := requireServiceName(c)
 		if !ok {
-			httperr.PreconditionFailed(c, "未配置 OVH 账户", "NO_OVH_ACCOUNT")
 			return
 		}
-		svcName := strings.TrimSpace(c.Param("service_name"))
-		if svcName == "" {
-			httperr.BadRequest(c, "缺少 service_name", "E6803C9EF")
+		acc, ok := ovhAccountFor(state, c)
+		if !ok {
+			noOVHResp(c)
 			return
 		}
 		svc := state.ServerService

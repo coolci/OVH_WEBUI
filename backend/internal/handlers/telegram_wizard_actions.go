@@ -17,7 +17,7 @@ func enqueueWizardDCs(state *app.State, chatID interface{}, messageID int64, mod
 		return 0
 	}
 	if accountID == "" {
-		accountID = telegram.ActiveAccountID(state)
+		accountID = tgEffectiveAccountID(state)
 	}
 	quick := mode == "b"
 	chatStr := telegram.ChatIDString(chatID)
@@ -281,7 +281,7 @@ func showTasks(state *app.State, chatID interface{}, messageID int64, edit bool)
 			b.WriteString(fmt.Sprintf("%d️⃣ 📦 %s\n   📍 %s ｜ ⚙️ %s\n   ⚡ 状态: %s (已轮询 %d 轮 · 周期 %ds)\n\n",
 				i+1, it.PlanCode, dcFull, cfgDisplay, statusBadge, it.RetryCount, it.RetryInterval))
 			shortID := rememberShort(state, it.ID, "task")
-			btns = append(btns, telegram.CallbackButton(fmt.Sprintf("⏹ 停止 %s@%s", it.PlanCode, telegram.DisplayDC(it.Datacenter)), "i:Tk:"+shortID))
+			btns = append(btns, telegram.CallbackButton(tgBtnLabel(fmt.Sprintf("⏹ 停止 %s@%s", it.PlanCode, telegram.DisplayDC(it.Datacenter))), "i:Tk:"+shortID))
 		}
 	}
 	if len(active) > limit {
@@ -367,20 +367,21 @@ func showStockCardWithButtons(state *app.State, mon *monitor.Monitor, chatID int
 		telegram.SendReply(state, chatID, "用法: /stock <planCode>\n例: /stock 24ska01", replyTo)
 		return
 	}
-	accountID := telegram.DefaultAccountID(state)
+	accountID := tgEffectiveAccountID(state)
 	stock := inStockDisplayDCs(state, planCode, accountID)
-	rawText := cmdStock(state, []string{planCode})
+	rawText := cmdStock(state, []string{planCode}, mon)
+	planRef := wizardPlanCallbackRef(state, planCode)
 
 	btns := []map[string]string{}
 	for i, d := range stock {
 		if i >= 4 {
 			break
 		}
-		btns = append(btns, telegram.CallbackButton("⚡ "+telegram.DisplayDC(d)+" 极速开抢", "i:D:b:"+planCode+":"+d))
+		btns = append(btns, telegram.CallbackButton("⚡ "+telegram.DisplayDC(d)+" 极速开抢", "i:D:b:"+planRef+":"+d))
 	}
 	actionRow := []map[string]string{
-		telegram.CallbackButton("👀 监控该型号", "i:M:"+planCode),
-		telegram.CallbackButton("📥 选机房排队", "i:P:q:"+planCode),
+		telegram.CallbackButton("👀 监控该型号", "i:M:"+planRef),
+		telegram.CallbackButton("📥 选机房排队", "i:P:q:"+planRef),
 	}
 	rows := telegram.ChunkButtons(btns, 2)
 	rows = append(rows, actionRow)
@@ -451,7 +452,8 @@ func showMonitorManager(state *app.State, mon *monitor.Monitor, chatID interface
 			}
 			b.WriteString(fmt.Sprintf("%d️⃣ 📦 %s\n   📍 机房: %s\n   ⚙️ 规格: %s\n\n",
 				i+1, namePart, dcStr, cfgStr))
-			btns = append(btns, telegram.CallbackButton("🗑 取消 "+s.PlanCode, "i:mon:del:"+s.PlanCode))
+			planRef := wizardPlanCallbackRef(state, s.PlanCode)
+			btns = append(btns, telegram.CallbackButton(tgBtnLabel("🗑 取消 "+s.PlanCode), "i:mon:del:"+planRef))
 		}
 	}
 	if len(subs) > limit {

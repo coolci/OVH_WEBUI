@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/mail"
+	"net/url"
+	"strconv"
 	"strings"
 
 	ovhsdk "github.com/ovh/go-ovh/ovh"
@@ -29,14 +31,19 @@ import (
 
 // rescueBoots 取某种 bootType 的启动项详情。
 func rescueBoots(client *ovhsdk.Client, svc, bootType string) ([]map[string]interface{}, error) {
+	listPath, err := buildOVHPathQuery(url.Values{"bootType": {bootType}}, "dedicated", "server", svc, "boot")
+	if err != nil {
+		return nil, err
+	}
 	var ids []int64
-	if err := client.Get("/dedicated/server/"+svc+"/boot?bootType="+bootType, &ids); err != nil {
+	if err := client.Get(listPath, &ids); err != nil {
 		return nil, err
 	}
 	out := []map[string]interface{}{}
 	for _, id := range ids {
 		var d map[string]interface{}
-		if err := client.Get(fmt.Sprintf("/dedicated/server/%s/boot/%d", svc, id), &d); err != nil {
+		detailPath, pErr := buildOVHPath("dedicated", "server", svc, "boot", strconv.FormatInt(id, 10))
+		if pErr != nil || client.Get(detailPath, &d) != nil {
 			// 单条详情拉不到不该让整个功能失败:id 本身已经够用来切换了
 			d = map[string]interface{}{"bootId": id, "bootType": bootType}
 		}
@@ -74,14 +81,21 @@ func pickRescueBoot(boots []map[string]interface{}) (int64, string, bool) {
 // 回答三件事:这台机现在是不是救援启动、有哪些救援项可选、上次填的收信邮箱是什么。
 func GetRescueStatus(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		srvPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc)
+		if !ok {
+			return
+		}
 		var info map[string]interface{}
-		if err := client.Get("/dedicated/server/"+svc, &info); err != nil {
+		if err := client.Get(srvPath, &info); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
@@ -118,7 +132,10 @@ func GetRescueStatus(state *app.State) gin.HandlerFunc {
 // body: { email?: string, useDefaultEmail?: bool, expectedBoot?: number, sshKey?: string, bootId?: number, confirm: true }
 func EnterRescue(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		var body struct {
 			Email           string `json:"email"`
 			SSHKey          string `json:"sshKey"`
@@ -205,6 +222,14 @@ func EnterRescue(state *app.State) gin.HandlerFunc {
 			}
 		}
 
+		srvPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc)
+		if !ok {
+			return
+		}
+		rebootPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "reboot")
+		if !ok {
+			return
+		}
 		// 只发要改的字段。PUT /dedicated/server/{sn} 的语义见 SetBootConfig 里的长注释。
 		payload := map[string]interface{}{"bootId": bootID}
 		if body.Email != "" {
@@ -213,7 +238,7 @@ func EnterRescue(state *app.State) gin.HandlerFunc {
 		if k := strings.TrimSpace(body.SSHKey); k != "" {
 			payload["rescueSshKey"] = k
 		}
-		if err := client.Put("/dedicated/server/"+svc, payload, nil); err != nil {
+		if err := client.Put(srvPath, payload, nil); err != nil {
 			state.Logger.Error("服务器 "+svc+" 切救援启动失败: "+err.Error(), "server_control")
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
@@ -222,7 +247,7 @@ func EnterRescue(state *app.State) gin.HandlerFunc {
 		// 必须重启才生效。手动操作时漏掉这步是最常见的错误 ——
 		// 改完 netboot 以为就进救援了,其实机器还在正常系统里。
 		var task map[string]interface{}
-		if err := client.Post("/dedicated/server/"+svc+"/reboot", nil, &task); err != nil {
+		if err := client.Post(rebootPath, nil, &task); err != nil {
 			// 重启防抖(已有重启在进行):启动项已切好,机器这次重启就会进救援 —— 流程等价于成功
 			if ovh.IsRebootAlreadyRequested(err) {
 				state.Logger.Warn("服务器 "+svc+" 救援启动已设置,且已有重启在进行中(无需再发)", "server_control")
@@ -276,7 +301,10 @@ func rescueMailHint(email string) string {
 // 改回硬盘启动并重启。
 func ExitRescue(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		var body struct {
 			Confirm      bool   `json:"confirm"`
 			ExpectedBoot *int64 `json:"expectedBoot"`
@@ -317,12 +345,20 @@ func ExitRescue(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "硬盘启动项的 bootId 解析失败", "code": "EC659066B"})
 			return
 		}
-		if err := client.Put("/dedicated/server/"+svc, map[string]interface{}{"bootId": bootID}, nil); err != nil {
+		srvPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc)
+		if !ok {
+			return
+		}
+		rebootPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "reboot")
+		if !ok {
+			return
+		}
+		if err := client.Put(srvPath, map[string]interface{}{"bootId": bootID}, nil); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		var task map[string]interface{}
-		if err := client.Post("/dedicated/server/"+svc+"/reboot", nil, &task); err != nil {
+		if err := client.Post(rebootPath, nil, &task); err != nil {
 			if ovh.IsRebootAlreadyRequested(err) {
 				// 已有重启在进行 + 启动项已切回硬盘 → 那次重启就会回到正常系统
 				state.Logger.Warn("服务器 "+svc+" 已切回硬盘启动,且已有重启在进行中(无需再发)", "server_control")
@@ -353,8 +389,12 @@ func checkRescueBoot(c *gin.Context, client *ovhsdk.Client, svc string, expected
 	if expected == nil { // 兼容已有 API 客户端;新界面始终携带已确认的 bootId。
 		return true
 	}
+	srvPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc)
+	if !ok {
+		return false
+	}
 	var info map[string]interface{}
-	if err := client.Get("/dedicated/server/"+svc, &info); err != nil {
+	if err := client.Get(srvPath, &info); err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"success": false, "error": "无法重新核对启动配置,未执行操作", "code": "RESCUE_BOOT_CHANGED"})
 		return false
 	}

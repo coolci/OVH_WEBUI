@@ -3,7 +3,6 @@ package handlers
 import (
 	"errors"
 	"net/http"
-	"net/url"
 	"strings"
 	"sync"
 
@@ -15,9 +14,6 @@ import (
 )
 
 // featureOVHErr 拆出 OVH 错误里的 HTTP 状态码和原始 message。
-// go-ovh 把状态码放进 *ovh.APIError.Code（ovh.go UnmarshalResponse），err.Error() 只是把
-// message 拼成一句人话；只靠子串匹配判业务语义会误伤（"服务不存在" 和 "功能未开通" 用同一句式），
-// 所以这里统一取结构化字段。非 OVH 错误（网络/超时）返回 code=0。
 func featureOVHErr(err error) (int, string) {
 	var apiErr *ovhsdk.APIError
 	if errors.As(err, &apiErr) {
@@ -27,15 +23,14 @@ func featureOVHErr(err error) (int, string) {
 }
 
 // featureIsFeatureMissing 判断一个 404/"does not exist" 到底是"该功能未开通"还是"服务器压根不在这个账户下"。
-// 为什么要为此多打一次 /dedicated/server/{svc}：OVH 对这两种情况返回的文案高度相似，schema 也没有规定
-// 二者的差异（属于运行时行为），光看字符串会把"用户切错 ?account="误报成"备份FTP未激活"，
-// 还会给出一个点了必然失败的"立即激活"按钮。宁可在错误路径上多一次请求换取判断的确定性。
-// 校验本身失败（限流/网络）时返回 true，保持原有的降级行为，不把已经能用的功能改坏。
 func featureIsFeatureMissing(client *ovhsdk.Client, svc string) bool {
+	srvPath, err := buildOVHPath("dedicated", "server", svc)
+	if err != nil {
+		return false
+	}
 	var d map[string]interface{}
-	if err := client.Get("/dedicated/server/"+svc, &d); err != nil {
+	if err := client.Get(srvPath, &d); err != nil {
 		code, _ := featureOVHErr(err)
-		// 404=服务不存在，403=存在但当前凭据无权访问，两者都不该被说成"功能未开通"
 		if code == http.StatusNotFound || code == http.StatusForbidden {
 			return false
 		}
@@ -80,16 +75,15 @@ func featureBackupFTPUnavailable(state *app.State, c *gin.Context) bool {
 	return true
 }
 
-// featureBackupFTPACLPath 拼 ACL 详情路径。ipBlock 的 schema 类型就是 ipBlock（带掩码的 CIDR，如 37.59.1.0/28），
-// 里面的 "/" 必须转义，否则 go-ovh 原样拼接会让 OVH 收到多一段的路径直接 404；
-// go-ovh 的签名算的也是这个已转义的 target 字符串，所以编码后签名与实际 URL 一致。
-func featureBackupFTPACLPath(svc, ipBlock string) string {
-	return "/dedicated/server/" + svc + "/features/backupFTP/access/" + url.PathEscape(ipBlock)
+// featureBackupFTPACLPath 安全构造 ACL 详情路径：逐段校验拒绝 "." / ".." 并编码 "/" -> "%2F"。
+func featureBackupFTPACLPath(svc, ipBlock string) (string, error) {
+	if _, ok := validateIPOrCIDR(ipBlock); !ok {
+		return "", errUnsafeOVHSegment
+	}
+	return buildOVHPath("dedicated", "server", svc, "features", "backupFTP", "access", ipBlock)
 }
 
 // featureParallelACLDetails 并发拉每个 ipBlock 的 ACL 详情，失败位把真实错误留下来。
-// 没有复用 util.go 的 parallelGetStringKeys：那个 helper 直接把 err 丢掉，
-// 凭据失效(401)、限流(429)、OVH 5xx 和"这个 block 确实没了"会被压成同一个空值。
 func featureParallelACLDetails(client *ovhsdk.Client, svc string, blocks []string, concurrency int) ([]map[string]interface{}, []error) {
 	if concurrency <= 0 {
 		concurrency = 10
@@ -104,13 +98,18 @@ func featureParallelACLDetails(client *ovhsdk.Client, svc string, blocks []strin
 		go func(idx int, block string) {
 			defer wg.Done()
 			defer func() { <-sem }()
+			aclPath, pErr := featureBackupFTPACLPath(svc, block)
+			if pErr != nil {
+				errs[idx] = pErr
+				return
+			}
 			var d map[string]interface{}
 			client, err := ovh.IsolateClient(client)
 			if err != nil {
 				errs[idx] = err
 				return
 			}
-			if err := client.Get(featureBackupFTPACLPath(svc, block), &d); err != nil {
+			if err := client.Get(aclPath, &d); err != nil {
 				errs[idx] = err
 				return
 			}
@@ -124,14 +123,21 @@ func featureParallelACLDetails(client *ovhsdk.Client, svc string, blocks []strin
 // Burst GET
 func GetBurst(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		p, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "burst")
+		if !ok {
+			return
+		}
 		var burst map[string]interface{}
-		if err := client.Get("/dedicated/server/"+svc+"/burst", &burst); err != nil {
+		if err := client.Get(p, &burst); err != nil {
 			lower := strings.ToLower(err.Error())
 			if strings.Contains(lower, "does not exist") || strings.Contains(lower, "not exist") {
 				state.Logger.Info("服务器 "+svc+" 不支持突发带宽功能", "server_control")
@@ -148,7 +154,10 @@ func GetBurst(state *app.State) gin.HandlerFunc {
 // Burst PUT
 func UpdateBurst(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -162,20 +171,20 @@ func UpdateBurst(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少status参数", "code": "E8C3A474D"})
 			return
 		}
-		// 合法取值由 schema 写死：body 模型 dedicated.server.ServerBurst 的 status 是
-		// dedicated.server.BurstStatusEnum = [active, inactive, inactiveLocked]。
-		// 不做白名单的话，"enabled"/"ACTIVE" 这类值会被 OVH 400 打回却包成 500，前端可能反复重试。
 		switch body.Status {
 		case "active", "inactive", "inactiveLocked":
 		default:
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "status 参数无效，只能是 active / inactive / inactiveLocked", "code": "E5244ABC0"})
 			return
 		}
+		p, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "burst")
+		if !ok {
+			return
+		}
 		var result map[string]interface{}
-		if err := client.Put("/dedicated/server/"+svc+"/burst", map[string]interface{}{
+		if err := client.Put(p, map[string]interface{}{
 			"status": body.Status,
 		}, &result); err != nil {
-			// OVH 判定的参数错误照样是参数错误，不该报成服务器内部错误让前端重试
 			status := http.StatusInternalServerError
 			if code, _ := featureOVHErr(err); code == http.StatusBadRequest {
 				status = http.StatusBadRequest
@@ -192,14 +201,21 @@ func UpdateBurst(state *app.State) gin.HandlerFunc {
 // Firewall GET
 func GetFirewall(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		p, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "features", "firewall")
+		if !ok {
+			return
+		}
 		var fw map[string]interface{}
-		if err := client.Get("/dedicated/server/"+svc+"/features/firewall", &fw); err != nil {
+		if err := client.Get(p, &fw); err != nil {
 			lower := strings.ToLower(err.Error())
 			if strings.Contains(lower, "does not exist") || strings.Contains(lower, "not exist") {
 				c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "该服务器不支持防火墙功能", "code": "E38DF225C", "notAvailable": true})
@@ -215,7 +231,10 @@ func GetFirewall(state *app.State) gin.HandlerFunc {
 // Firewall PUT
 func UpdateFirewall(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -229,8 +248,12 @@ func UpdateFirewall(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少enabled参数", "code": "E3D2DC322"})
 			return
 		}
+		p, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "features", "firewall")
+		if !ok {
+			return
+		}
 		var result map[string]interface{}
-		if err := client.Put("/dedicated/server/"+svc+"/features/firewall", map[string]interface{}{
+		if err := client.Put(p, map[string]interface{}{
 			"enabled": *body.Enabled,
 		}, &result); err != nil {
 			respondOVHError(c, err)
@@ -248,7 +271,10 @@ func UpdateFirewall(state *app.State) gin.HandlerFunc {
 // Backup FTP GET
 func GetBackupFTP(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		if featureBackupFTPUnavailable(state, c) {
 			return
 		}
@@ -257,8 +283,12 @@ func GetBackupFTP(state *app.State) gin.HandlerFunc {
 			noOVHResp(c)
 			return
 		}
+		p, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "features", "backupFTP")
+		if !ok {
+			return
+		}
 		var d map[string]interface{}
-		if err := client.Get("/dedicated/server/"+svc+"/features/backupFTP", &d); err != nil {
+		if err := client.Get(p, &d); err != nil {
 			code, msg := featureOVHErr(err)
 			if code == http.StatusNotFound || strings.Contains(strings.ToLower(msg), "does not exist") {
 				if featureIsFeatureMissing(client, svc) {
@@ -266,9 +296,6 @@ func GetBackupFTP(state *app.State) gin.HandlerFunc {
 					return
 				}
 				state.Logger.Warn("查询服务器 "+svc+" 备份FTP：服务器不存在或不属于当前账户 - "+msg, "server_control")
-				// 这里必须是 200 + success:false：前端 useServerBackupFtp 对 404 只看状态码、
-				// 直接当成"未激活"并丢掉 body，unknownService/reason 根本到不了 UI，
-				// 用户会看到一个点下去必然失败的"激活"按钮。200 才会走 notAvailable 分支把原因显示出来。
 				c.JSON(http.StatusOK, gin.H{
 					"success": false,
 					"error":   "服务器不存在或不属于当前账户", "code": "E834268F5",
@@ -288,7 +315,10 @@ func GetBackupFTP(state *app.State) gin.HandlerFunc {
 // Backup FTP POST (activate)
 func ActivateBackupFTP(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		if featureBackupFTPUnavailable(state, c) {
 			return
 		}
@@ -297,8 +327,12 @@ func ActivateBackupFTP(state *app.State) gin.HandlerFunc {
 			noOVHResp(c)
 			return
 		}
+		p, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "features", "backupFTP")
+		if !ok {
+			return
+		}
 		var result map[string]interface{}
-		if err := client.Post("/dedicated/server/"+svc+"/features/backupFTP", map[string]interface{}{}, &result); err != nil {
+		if err := client.Post(p, map[string]interface{}{}, &result); err != nil {
 			lower := strings.ToLower(err.Error())
 			if strings.Contains(lower, "cannot benefit") || strings.Contains(lower, "not available") {
 				c.JSON(http.StatusBadRequest, gin.H{
@@ -321,7 +355,10 @@ func ActivateBackupFTP(state *app.State) gin.HandlerFunc {
 // Backup FTP DELETE
 func DeleteBackupFTP(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		if featureBackupFTPUnavailable(state, c) {
 			return
 		}
@@ -330,8 +367,12 @@ func DeleteBackupFTP(state *app.State) gin.HandlerFunc {
 			noOVHResp(c)
 			return
 		}
+		p, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "features", "backupFTP")
+		if !ok {
+			return
+		}
 		var result map[string]interface{}
-		if err := client.Delete("/dedicated/server/"+svc+"/features/backupFTP", &result); err != nil {
+		if err := client.Delete(p, &result); err != nil {
 			state.Logger.Error("删除服务器 "+svc+" 备份FTP失败: "+err.Error(), "server_control")
 			respondOVHError(c, err)
 			return
@@ -344,7 +385,10 @@ func DeleteBackupFTP(state *app.State) gin.HandlerFunc {
 // Backup FTP access list
 func GetBackupFTPAccess(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		if featureBackupFTPUnavailable(state, c) {
 			return
 		}
@@ -353,8 +397,12 @@ func GetBackupFTPAccess(state *app.State) gin.HandlerFunc {
 			noOVHResp(c)
 			return
 		}
+		p, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "features", "backupFTP", "access")
+		if !ok {
+			return
+		}
 		var blocks []string
-		if err := client.Get("/dedicated/server/"+svc+"/features/backupFTP/access", &blocks); err != nil {
+		if err := client.Get(p, &blocks); err != nil {
 			code, msg := featureOVHErr(err)
 			if code == http.StatusNotFound || strings.Contains(strings.ToLower(msg), "backupftp does not exist") || (code == http.StatusNotFound && strings.Contains(strings.ToLower(msg), "does not exist")) {
 				if featureIsFeatureMissing(client, svc) {
@@ -401,7 +449,10 @@ func GetBackupFTPAccess(state *app.State) gin.HandlerFunc {
 // Backup FTP access add
 func AddBackupFTPAccess(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		if featureBackupFTPUnavailable(state, c) {
 			return
 		}
@@ -417,16 +468,25 @@ func AddBackupFTPAccess(state *app.State) gin.HandlerFunc {
 			CIFS    bool   `json:"cifs"`
 		}
 		_ = c.ShouldBindJSON(&body)
+		body.IPBlock = strings.TrimSpace(body.IPBlock)
 		if body.IPBlock == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少ipBlock参数", "code": "E1230A21F"})
+			return
+		}
+		if _, ok := validateIPOrCIDR(body.IPBlock); !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "ipBlock 必须是合法的 IP 或 CIDR 网段", "code": "INVALID_IP_BLOCK"})
 			return
 		}
 		ftp := true
 		if body.FTP != nil {
 			ftp = *body.FTP
 		}
+		p, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "features", "backupFTP", "access")
+		if !ok {
+			return
+		}
 		var result map[string]interface{}
-		if err := client.Post("/dedicated/server/"+svc+"/features/backupFTP/access", map[string]interface{}{
+		if err := client.Post(p, map[string]interface{}{
 			"cifs":    body.CIFS,
 			"ftp":     ftp,
 			"ipBlock": body.IPBlock,
@@ -444,18 +504,13 @@ func AddBackupFTPAccess(state *app.State) gin.HandlerFunc {
 // Backup FTP access delete
 func DeleteBackupFTPAccess(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		if featureBackupFTPUnavailable(state, c) {
 			return
 		}
-		client, err := ovhClientFor(state, c)
-		if err != nil {
-			noOVHResp(c)
-			return
-		}
-		// ipBlock 是带掩码的 CIDR，而 gin 默认 UseRawPath=false：路径参数里的 %2F 会先被还原成 "/"，
-		// 于是 URL 多出一段，路由根本匹配不上（实测编码与否都是 404）。所以优先从 query / body 取完整值，
-		// 路径参数只作兜底，并兼容主控把路由改成通配段 *ip_block（那样值会带前导 "/"）。
 		ipBlock := strings.TrimSpace(c.Query("ipBlock"))
 		if ipBlock == "" {
 			var body struct {
@@ -471,7 +526,21 @@ func DeleteBackupFTPAccess(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少ipBlock参数", "code": "E1230A21F"})
 			return
 		}
-		if err := client.Delete(featureBackupFTPACLPath(svc, ipBlock), nil); err != nil {
+		if _, ok := validateIPOrCIDR(ipBlock); !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "ipBlock 参数格式不合法", "code": "INVALID_IP_BLOCK"})
+			return
+		}
+		aclPath, pErr := featureBackupFTPACLPath(svc, ipBlock)
+		if pErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "ipBlock 参数格式不合法", "code": "INVALID_IP_BLOCK"})
+			return
+		}
+		client, err := ovhClientFor(state, c)
+		if err != nil {
+			noOVHResp(c)
+			return
+		}
+		if err := client.Delete(aclPath, nil); err != nil {
 			state.Logger.Error("删除备份FTP访问IP "+ipBlock+" 失败: "+err.Error(), "server_control")
 			respondOVHError(c, err)
 			return
@@ -484,7 +553,10 @@ func DeleteBackupFTPAccess(state *app.State) gin.HandlerFunc {
 // Backup FTP password
 func ChangeBackupFTPPassword(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		if featureBackupFTPUnavailable(state, c) {
 			return
 		}
@@ -493,8 +565,12 @@ func ChangeBackupFTPPassword(state *app.State) gin.HandlerFunc {
 			noOVHResp(c)
 			return
 		}
+		p, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "features", "backupFTP", "password")
+		if !ok {
+			return
+		}
 		var result map[string]interface{}
-		if err := client.Post("/dedicated/server/"+svc+"/features/backupFTP/password", map[string]interface{}{}, &result); err != nil {
+		if err := client.Post(p, map[string]interface{}{}, &result); err != nil {
 			state.Logger.Error("修改服务器 "+svc+" 备份FTP密码失败: "+err.Error(), "server_control")
 			respondOVHError(c, err)
 			return
@@ -507,7 +583,10 @@ func ChangeBackupFTPPassword(state *app.State) gin.HandlerFunc {
 // Backup FTP authorizable blocks
 func GetBackupFTPAuthorizableBlocks(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		if featureBackupFTPUnavailable(state, c) {
 			return
 		}
@@ -516,8 +595,12 @@ func GetBackupFTPAuthorizableBlocks(state *app.State) gin.HandlerFunc {
 			noOVHResp(c)
 			return
 		}
+		p, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "features", "backupFTP", "authorizableBlocks")
+		if !ok {
+			return
+		}
 		var blocks []string
-		if err := client.Get("/dedicated/server/"+svc+"/features/backupFTP/authorizableBlocks", &blocks); err != nil {
+		if err := client.Get(p, &blocks); err != nil {
 			code, msg := featureOVHErr(err)
 			if code == http.StatusNotFound || strings.Contains(strings.ToLower(msg), "backupftp does not exist") || (code == http.StatusNotFound && strings.Contains(strings.ToLower(msg), "does not exist")) {
 				if featureIsFeatureMissing(client, svc) {
@@ -536,14 +619,21 @@ func GetBackupFTPAuthorizableBlocks(state *app.State) gin.HandlerFunc {
 // Backup Cloud GET
 func GetBackupCloud(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		p, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "features", "backupCloud")
+		if !ok {
+			return
+		}
 		var d map[string]interface{}
-		if err := client.Get("/dedicated/server/"+svc+"/features/backupCloud", &d); err != nil {
+		if err := client.Get(p, &d); err != nil {
 			code, msg := featureOVHErr(err)
 			if code == http.StatusNotFound || strings.Contains(strings.ToLower(msg), "does not exist") {
 				if featureIsFeatureMissing(client, svc) {
@@ -568,13 +658,12 @@ func GetBackupCloud(state *app.State) gin.HandlerFunc {
 }
 
 // Backup Cloud POST (activate)
-// schema: POST /dedicated/server/{serviceName}/features/backupCloud ⚠️ BETA
-// cloudProjectId / projectDescription 两个 body 字段都是可选的：前者复用已有 public cloud 项目，
-// 后者只在新建项目时生效。空值不发送——schema 没有写明空串合法，BETA 端点对空/未知字段的宽容度也无从确认，
-// 少发一个字段比赌 OVH 的宽容度安全。
 func ActivateBackupCloud(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -592,8 +681,12 @@ func ActivateBackupCloud(state *app.State) gin.HandlerFunc {
 		if v := strings.TrimSpace(body.ProjectDescription); v != "" {
 			payload["projectDescription"] = v
 		}
+		p, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "features", "backupCloud")
+		if !ok {
+			return
+		}
 		var result map[string]interface{}
-		if err := client.Post("/dedicated/server/"+svc+"/features/backupCloud", payload, &result); err != nil {
+		if err := client.Post(p, payload, &result); err != nil {
 			status := http.StatusInternalServerError
 			if code, _ := featureOVHErr(err); code == http.StatusBadRequest || code == http.StatusConflict {
 				status = code
@@ -608,17 +701,22 @@ func ActivateBackupCloud(state *app.State) gin.HandlerFunc {
 }
 
 // Backup Cloud DELETE
-// schema: DELETE /dedicated/server/{serviceName}/features/backupCloud ⚠️ BETA → void
-// OVH 原文注明只是停用云备份，不会删除容器里的数据，所以提示语按"停用"写。
 func DeleteBackupCloud(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
-		if err := client.Delete("/dedicated/server/"+svc+"/features/backupCloud", nil); err != nil {
+		p, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "features", "backupCloud")
+		if !ok {
+			return
+		}
+		if err := client.Delete(p, nil); err != nil {
 			code, msg := featureOVHErr(err)
 			if code == http.StatusNotFound || strings.Contains(strings.ToLower(msg), "does not exist") {
 				if featureIsFeatureMissing(client, svc) {
@@ -644,18 +742,23 @@ func DeleteBackupCloud(state *app.State) gin.HandlerFunc {
 }
 
 // Backup Cloud password
-// schema: POST /dedicated/server/{serviceName}/features/backupCloud/password ⚠️ BETA
-// → dedicated.server.backup.BackupPassword，新密码在响应里，原样透传给前端。
 func ChangeBackupCloudPassword(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		p, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "features", "backupCloud", "password")
+		if !ok {
+			return
+		}
 		var result map[string]interface{}
-		if err := client.Post("/dedicated/server/"+svc+"/features/backupCloud/password", map[string]interface{}{}, &result); err != nil {
+		if err := client.Post(p, map[string]interface{}{}, &result); err != nil {
 			code, msg := featureOVHErr(err)
 			if code == http.StatusNotFound || strings.Contains(strings.ToLower(msg), "does not exist") {
 				if featureIsFeatureMissing(client, svc) {
@@ -683,14 +786,21 @@ func ChangeBackupCloudPassword(state *app.State) gin.HandlerFunc {
 // Backup Cloud offer details
 func GetBackupCloudOfferDetails(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		p, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "backupCloudOfferDetails")
+		if !ok {
+			return
+		}
 		var d map[string]interface{}
-		if err := client.Get("/dedicated/server/"+svc+"/backupCloudOfferDetails", &d); err != nil {
+		if err := client.Get(p, &d); err != nil {
 			// schema 的 desc 写的是 "if available for the current server"，即没有报价时本来就会报错，
 			// 这属于正常业务状态而不是故障，降级成 notAvailable，别让前端弹"服务器内部错误"。
 			code, msg := featureOVHErr(err)

@@ -69,7 +69,10 @@ func accountOrderStatuses(ctx context.Context, state *app.State, accountID strin
 			// SDK 的首次 /auth/time 不继承请求 ctx,另设相同超时上限。
 			client.Timeout = 10 * time.Second
 			var status string
-			if err := client.GetWithContext(ctx, "/me/order/"+idToString(item["orderId"])+"/status", &status); err != nil {
+			statusPath, pErr := buildOVHPath("me", "order", idToString(item["orderId"]), "status")
+			if pErr != nil {
+				item["paymentStatusError"] = pErr.Error()
+			} else if err := client.GetWithContext(ctx, statusPath, &status); err != nil {
 				item["paymentStatusError"] = ovh.Explain(err)
 			} else {
 				item["orderStatus"] = status
@@ -91,7 +94,11 @@ func loadOrderPayment(ctx context.Context, state *app.State, accountID string, o
 	if err != nil {
 		return info, err
 	}
-	path := fmt.Sprintf("/me/order/%d", orderID)
+	orderIDStr := strconv.FormatInt(orderID, 10)
+	path, err := buildOVHPath("me", "order", orderIDStr)
+	if err != nil {
+		return info, err
+	}
 	var order struct {
 		OrderID        int64  `json:"orderId"`
 		ExpirationDate string `json:"expirationDate"`
@@ -107,7 +114,11 @@ func loadOrderPayment(ctx context.Context, state *app.State, accountID string, o
 	if order.OrderID != orderID {
 		return info, fmt.Errorf("订单响应与所选订单不符")
 	}
-	if err = client.GetWithContext(ctx, path+"/status", &info.Status); err != nil {
+	statusPath, err := buildOVHPath("me", "order", orderIDStr, "status")
+	if err != nil {
+		return info, err
+	}
+	if err = client.GetWithContext(ctx, statusPath, &info.Status); err != nil {
 		return info, err
 	}
 	info.Amount, info.Currency, info.PriceText, info.ExpirationDate = order.Price.Value, order.Price.Currency, order.Price.Text, order.ExpirationDate
@@ -137,7 +148,11 @@ func loadOrderPayment(ctx context.Context, state *app.State, accountID string, o
 			ID   int64  `json:"id"`
 			Type string `json:"type"`
 		}
-		if err = client.GetWithContext(ctx, path+"/availablePaymentMethod", &choices); err != nil {
+		availPath, pErr := buildOVHPath("me", "order", orderIDStr, "availablePaymentMethod")
+		if pErr != nil {
+			return info, pErr
+		}
+		if err = client.GetWithContext(ctx, availPath, &choices); err != nil {
 			return info, err
 		}
 		for _, method := range choices {
@@ -151,7 +166,11 @@ func loadOrderPayment(ctx context.Context, state *app.State, accountID string, o
 		Registered []int64                   `json:"registered"`
 		Methods    []registeredPaymentMethod `json:"paymentMethods"`
 	}
-	if err = client.GetWithContext(ctx, path+"/paymentMethods", &methods); err != nil {
+	methodsPath, err := buildOVHPath("me", "order", orderIDStr, "paymentMethods")
+	if err != nil {
+		return info, err
+	}
+	if err = client.GetWithContext(ctx, methodsPath, &methods); err != nil {
 		return info, err
 	}
 	available := map[int64]bool{}
@@ -161,7 +180,11 @@ func loadOrderPayment(ctx context.Context, state *app.State, accountID string, o
 	if len(methods.Methods) == 0 {
 		for _, id := range methods.Registered {
 			var method registeredPaymentMethod
-			if err = client.GetWithContext(ctx, fmt.Sprintf("/me/payment/method/%d", id), &method); err != nil {
+			mPath, mErr := buildOVHPath("me", "payment", "method", strconv.FormatInt(id, 10))
+			if mErr != nil {
+				return info, mErr
+			}
+			if err = client.GetWithContext(ctx, mPath, &method); err != nil {
 				return info, err
 			}
 			methods.Methods = append(methods.Methods, method)
@@ -264,7 +287,13 @@ func PayAccountOrder(state *app.State) gin.HandlerFunc {
 		// 客户端断开后仍等 OVH 返回;结果不明确时保留登记,重启后也不重发。
 		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 		defer cancel()
-		err = client.PostWithContext(ctx, fmt.Sprintf("/me/order/%d/pay", id), map[string]interface{}{"paymentMethod": method}, nil)
+		payPath, pErr := buildOVHPath("me", "order", strconv.FormatInt(id, 10), "pay")
+		if pErr != nil {
+			_ = state.DeleteKV(db.OrderPaymentKey(info.AccountID, id))
+			c.JSON(http.StatusBadRequest, gin.H{"error": pErr.Error()})
+			return
+		}
+		err = client.PostWithContext(ctx, payPath, map[string]interface{}{"paymentMethod": method}, nil)
 		if err != nil {
 			var apiErr *ovhsdk.APIError
 			if errors.As(err, &apiErr) && apiErr.Code >= 400 && apiErr.Code < 500 && apiErr.Code != 408 && apiErr.Code != 409 && apiErr.Code != 429 {

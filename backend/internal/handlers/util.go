@@ -18,19 +18,80 @@ import (
 	"github.com/ovh-webui/server/internal/types"
 )
 
+const (
+	ctxOVHErrStatusKey = "_ovh_err_status"
+	ctxOVHErrCodeKey   = "_ovh_err_code"
+	ctxOVHErrMsgKey    = "_ovh_err_msg"
+)
+
+func recordOVHAccountError(state *app.State, c *gin.Context, accParam string, clientErr error) {
+	if c == nil {
+		return
+	}
+	if accParam != "" {
+		acc, ok := state.FindAccount(accParam)
+		if !ok {
+			c.Set(ctxOVHErrStatusKey, http.StatusNotFound)
+			c.Set(ctxOVHErrCodeKey, "ACCOUNT_NOT_FOUND")
+			c.Set(ctxOVHErrMsgKey, "指定的 OVH 账户不存在: "+accParam)
+			return
+		}
+		if acc.AppKey == "" || acc.AppSecret == "" || acc.ConsumerKey == "" {
+			c.Set(ctxOVHErrStatusKey, http.StatusPreconditionFailed)
+			c.Set(ctxOVHErrCodeKey, "NO_OVH_ACCOUNT")
+			c.Set(ctxOVHErrMsgKey, "指定的 OVH 账户凭据不完整，请到「设置 → OVH 账户」补全")
+			return
+		}
+	} else {
+		acc, ok := state.FindAccount("")
+		if !ok || acc.AppKey == "" || acc.AppSecret == "" || acc.ConsumerKey == "" {
+			c.Set(ctxOVHErrStatusKey, http.StatusPreconditionFailed)
+			c.Set(ctxOVHErrCodeKey, "NO_OVH_ACCOUNT")
+			c.Set(ctxOVHErrMsgKey, "未配置 OVH 账户或凭据不全，请到「设置 → OVH 账户」添加")
+			return
+		}
+	}
+	if clientErr != nil {
+		errMsg := clientErr.Error()
+		lower := strings.ToLower(errMsg)
+		if strings.Contains(errMsg, "代理") || strings.Contains(lower, "proxy") {
+			c.Set(ctxOVHErrStatusKey, http.StatusBadRequest)
+			c.Set(ctxOVHErrCodeKey, "ACCOUNT_PROXY_INVALID")
+			c.Set(ctxOVHErrMsgKey, errMsg)
+			return
+		}
+		c.Set(ctxOVHErrStatusKey, http.StatusBadRequest)
+		c.Set(ctxOVHErrCodeKey, "OVH_CLIENT_INVALID")
+		c.Set(ctxOVHErrMsgKey, errMsg)
+		return
+	}
+	c.Set(ctxOVHErrStatusKey, http.StatusPreconditionFailed)
+	c.Set(ctxOVHErrCodeKey, "NO_OVH_ACCOUNT")
+	c.Set(ctxOVHErrMsgKey, "未配置 OVH 账户或凭据不全，请到「设置 → OVH 账户」添加")
+}
+
 // ovhClientFor 从请求 ?account=xxx 取账户 ID 拿对应 OVH client。
 // 空时(没传 ?account)走默认账户。传了但库里没有时必须失败:
 // 静默改打默认账户会让重启、重装、撤单落到另一套 OVH 凭据上。
-// 过期的 localStorage 账户 ID 由前端在账户列表加载后改回默认账户。
+// 同时将失败原因分类记录在 gin.Context 上，供 noOVHResp 区分 404 账户不存在 / 400 代理配置错误 / 412 未配置账户。
 func ovhClientFor(state *app.State, c *gin.Context) (*ovhsdk.Client, error) {
-	return state.OVH.IsolatedClientFor(strings.TrimSpace(c.Query("account")))
+	accParam := strings.TrimSpace(c.Query("account"))
+	cl, err := state.OVH.IsolatedClientFor(accParam)
+	if err != nil {
+		recordOVHAccountError(state, c, accParam, err)
+	}
+	return cl, err
 }
 
 // ovhAccountFor 从请求 ?account=xxx 取账户实体(给需要原始凭据/endpoint 的 raw HTTP 调用用)。
 // 空 → 默认账户; 传了但不存在 → ok=false; 系统完全没账户 → ok=false。
 func ovhAccountFor(state *app.State, c *gin.Context) (types.OVHAccount, bool) {
 	accParam := strings.TrimSpace(c.Query("account"))
-	return state.FindAccount(accParam)
+	acc, ok := state.FindAccount(accParam)
+	if !ok {
+		recordOVHAccountError(state, c, accParam, nil)
+	}
+	return acc, ok
 }
 
 // knownEndpoints go-ovh 支持的 endpoint 名 → REST API base URL。
@@ -90,7 +151,11 @@ func parallelGetDetails(client *ovhsdk.Client, keys []interface{}, pathFn func(i
 			if err != nil {
 				return
 			}
-			if err := client.Get(pathFn(key), &d); err == nil {
+			p := pathFn(key)
+			if p == "" {
+				return
+			}
+			if err := client.Get(p, &d); err == nil {
 				results[idx] = d
 			}
 		}(i, k)
@@ -118,7 +183,11 @@ func parallelGetStringKeys(client *ovhsdk.Client, keys []string, pathFn func(str
 			if err != nil {
 				return
 			}
-			if err := client.Get(pathFn(key), &d); err == nil {
+			p := pathFn(key)
+			if p == "" {
+				return
+			}
+			if err := client.Get(p, &d); err == nil {
 				results[idx] = d
 			}
 		}(i, k)
@@ -153,7 +222,12 @@ func parallelGetDetailsWithErrs(client *ovhsdk.Client, keys []interface{}, pathF
 				errs[idx] = err
 				return
 			}
-			if err := client.Get(pathFn(key), &d); err != nil {
+			p := pathFn(key)
+			if p == "" {
+				errs[idx] = errUnsafeOVHSegment
+				return
+			}
+			if err := client.Get(p, &d); err != nil {
 				errs[idx] = err
 				return
 			}
@@ -333,11 +407,13 @@ func putServiceRenew(client *ovhsdk.Client, legacyPath string, serviceId *int64,
 	}{
 		{"serviceInfos", legacyPath},
 	}
-	if serviceId != nil {
-		routes = append(routes, struct {
-			name string
-			path string
-		}{"services", fmt.Sprintf("/services/%d", *serviceId)})
+	if serviceId != nil && *serviceId > 0 {
+		if svcPath, pErr := buildOVHPath("services", strconv.FormatInt(*serviceId, 10)); pErr == nil {
+			routes = append(routes, struct {
+				name string
+				path string
+			}{"services", svcPath})
+		}
 	}
 	dual := &RenewDualError{}
 	for _, r := range routes {
