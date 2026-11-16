@@ -1,0 +1,142 @@
+package purchase
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/ovh-webui/server/internal/ovh"
+	"github.com/ovh-webui/server/internal/types"
+)
+
+func TestBugVerify_OVHORD02_OrderDetailContradictsDCAliasCausesDoublePurchase(t *testing.T) {
+	// 1. Direct unit proof on orderDetailContradictsDC across all alias / AZ pairs
+	cases := []struct {
+		targetDC string
+		desc     string
+	}{
+		{"mum", "Eco Server 24ska01 - Datacenter: ynm"},
+		{"yyz", "Dedicated Server 24ska01 - Datacenter: tor"},
+		{"ca-east-tor-a", "Dedicated Server 24ska01 - Datacenter: tor"},
+		{"eu-west-par-a", "Dedicated Server 24ska01 - Datacenter: par"},
+		{"us-east-vin-a", "Dedicated Server 24ska01-us - Datacenter: vin"},
+	}
+	for _, tc := range cases {
+		detail := map[string]interface{}{"description": tc.desc}
+		if !orderDetailContradictsDC(detail, tc.targetDC) {
+			t.Fatalf("expected orderDetailContradictsDC(%q, %q) to return true due to missing alias normalization", tc.desc, tc.targetDC)
+		}
+	}
+
+	// 2. End-to-end PurchaseServer proof: first checkout times out after OVH created Order #998877 in 'ynm' for task targeting 'mum';
+	// resuming the paused task fails to reconcile Order #998877, clears UncertainCheckout, and submits a SECOND checkout (#998878)!
+	var checkoutCalls atomic.Int32
+	nowOrderDate := time.Now().UTC().Format(time.RFC3339)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/auth/time":
+			fmt.Fprint(w, time.Now().Unix())
+		case r.URL.Path == "/me/order" && r.Method == http.MethodGet:
+			fmt.Fprint(w, `[998877]`)
+		case r.URL.Path == "/me/order/998877" && r.Method == http.MethodGet:
+			fmt.Fprintf(w, `{"orderId":998877,"date":%q,"url":"https://www.ovh.com/order/998877"}`, nowOrderDate)
+		case r.URL.Path == "/me/order/998877/details" && r.Method == http.MethodGet:
+			fmt.Fprint(w, `[1]`)
+		case r.URL.Path == "/me/order/998877/details/1" && r.Method == http.MethodGet:
+			fmt.Fprint(w, `{"orderDetailId":1,"description":"KS-A (24ska01) - Datacenter: ynm","domain":"ns1.ynm"}`)
+		case strings.Contains(r.URL.Path, "/dedicated/server/datacenter/availabilities"):
+			fmt.Fprint(w, `[{"fqn":"24ska01","datacenters":[{"datacenter":"ynm","availability":"1H-low"},{"datacenter":"mum","availability":"1H-low"}]}]`)
+		case r.URL.Path == "/order/cart" && r.Method == http.MethodPost:
+			fmt.Fprintf(w, `{"cartId":"dup-cart-%d"}`, checkoutCalls.Load()+1)
+		case strings.HasSuffix(r.URL.Path, "/assign"):
+			fmt.Fprint(w, `null`)
+		case strings.HasSuffix(r.URL.Path, "/eco") && r.Method == http.MethodPost:
+			fmt.Fprint(w, `{"itemId":1}`)
+		case strings.HasSuffix(r.URL.Path, "/requiredConfiguration"):
+			fmt.Fprint(w, `[]`)
+		case strings.HasSuffix(r.URL.Path, "/configuration"):
+			fmt.Fprint(w, `{"id":1}`)
+		case strings.HasSuffix(r.URL.Path, "/checkout") && r.Method == http.MethodPost:
+			n := checkoutCalls.Add(1)
+			fmt.Fprintf(w, `{"orderId":%d,"url":"https://www.ovh.com/order/%d"}`, 998877+n, 998877+n)
+		default:
+			fmt.Fprint(w, `{}`)
+		}
+	}))
+	defer srv.Close()
+	swapEndpoint(t, "ovh-eu", srv.URL)
+
+	st := quickOrderTestState(t)
+	st.Accounts = []types.OVHAccount{{ID: "acc-mum", Name: "EU", Endpoint: "ovh-eu", Zone: "IE", AppKey: "k", AppSecret: "s", ConsumerKey: "c", IsDefault: true}}
+
+	item := &types.QueueItem{
+		ID:                "task-mum-1",
+		AccountID:         "acc-mum",
+		PlanCode:          "24ska01",
+		Datacenter:        "mum",
+		Status:            "running",
+		UncertainCheckout: true,
+		UncertainTime:     types.NowISO(),
+	}
+	out := PurchaseServer(context.Background(), st, item)
+	if !out.Success || checkoutCalls.Load() != 1 {
+		t.Fatalf("expected duplicate checkout to occur: out=%+v checkoutCalls=%d", out, checkoutCalls.Load())
+	}
+	hist := st.HistorySnapshot()
+	if len(hist) != 1 || hist[0].OrderID != "998878" {
+		t.Fatalf("expected second order 998878 to be created instead of reconciling 998877, got %+v", hist)
+	}
+	t.Logf("[VERIFIED OVH-ORD-02] Existing Order #998877 (Datacenter: ynm) was falsely rejected as contradicting targetDC='mum'; PurchaseServer cleared UncertainCheckout and placed DUPLICATE Order #%s!",
+		hist[0].OrderID)
+}
+
+func TestBugVerify_OVHORD12_TrackCartNeverReleasedOnSuccess(t *testing.T) {
+	const leakedCartID = "success-leaked-cart-777"
+	defer ovh.ReleaseCart(leakedCartID)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/auth/time":
+			fmt.Fprint(w, time.Now().Unix())
+		case strings.Contains(r.URL.Path, "/dedicated/server/datacenter/availabilities"):
+			fmt.Fprint(w, `[{"fqn":"24ska01","datacenters":[{"datacenter":"gra","availability":"1H-low"}]}]`)
+		case r.URL.Path == "/order/cart" && r.Method == http.MethodPost:
+			fmt.Fprintf(w, `{"cartId":%q}`, leakedCartID)
+		case strings.HasSuffix(r.URL.Path, "/assign"):
+			fmt.Fprint(w, `null`)
+		case strings.HasSuffix(r.URL.Path, "/eco") && r.Method == http.MethodPost:
+			fmt.Fprint(w, `{"itemId":1}`)
+		case strings.HasSuffix(r.URL.Path, "/requiredConfiguration"):
+			fmt.Fprint(w, `[]`)
+		case strings.HasSuffix(r.URL.Path, "/configuration"):
+			fmt.Fprint(w, `{"id":1}`)
+		case strings.HasSuffix(r.URL.Path, "/checkout") && r.Method == http.MethodPost:
+			fmt.Fprint(w, `{"orderId":555001,"url":"https://www.ovh.com/order/555001"}`)
+		default:
+			fmt.Fprint(w, `{}`)
+		}
+	}))
+	defer srv.Close()
+	swapEndpoint(t, "ovh-eu", srv.URL)
+
+	st := quickOrderTestState(t)
+	st.Accounts = []types.OVHAccount{{ID: "acc-leak", Name: "EU", Endpoint: "ovh-eu", Zone: "IE", AppKey: "k", AppSecret: "s", ConsumerKey: "c", IsDefault: true}}
+	item := &types.QueueItem{ID: "task-leak", AccountID: "acc-leak", PlanCode: "24ska01", Datacenter: "gra", Status: "running"}
+
+	out := PurchaseServer(context.Background(), st, item)
+	if !out.Success {
+		t.Fatalf("purchase failed: %+v", out)
+	}
+	if !ovh.CartInUse(leakedCartID) {
+		t.Fatalf("expected CartInUse(%q) to remain true permanently after checkout success", leakedCartID)
+	}
+	t.Logf("[VERIFIED OVH-ORD-12] After PurchaseServer succeeded (Order #555001), ovh.CartInUse(%q)=%v (never released from global inUseCarts sync.Map!)",
+		leakedCartID, ovh.CartInUse(leakedCartID))
+}

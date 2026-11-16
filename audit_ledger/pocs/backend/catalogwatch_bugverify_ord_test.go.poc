@@ -1,0 +1,191 @@
+package catalogwatch
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/ovh-webui/server/internal/app"
+	"github.com/ovh-webui/server/internal/netfp"
+	"github.com/ovh-webui/server/internal/ovh"
+	"github.com/ovh-webui/server/internal/purchase"
+	"github.com/ovh-webui/server/internal/types"
+)
+
+func TestBugVerify_OVHORD01_CheckCheckoutSimulateNeverResolvesAndLoopsForever(t *testing.T) {
+	w, s := fixture(t)
+	s.Accounts[0].AppKey = "fixture"
+	s.Accounts[0].AppSecret = "fixture"
+	s.Accounts[0].ConsumerKey = "fixture"
+
+	// Simulate real OVH API: validated readOnly:true cart returns orderId:null (or 400) on GET /order/cart/{id}/checkout simulate endpoint
+	transport := notificationTransport(func(r *http.Request) (*http.Response, error) {
+		p := r.URL.Path
+		body := `{}`
+		status := 200
+		switch {
+		case strings.HasSuffix(p, "/auth/time"):
+			body = fmt.Sprint(time.Now().Unix())
+		case strings.HasSuffix(p, "/order/cart/cart-validated"):
+			body = `{"cartId":"cart-validated","readOnly":true}`
+		case strings.HasSuffix(p, "/order/cart/cart-validated/checkout") && r.Method == http.MethodGet:
+			body = `{"orderId":null,"prices":{},"contracts":[]}`
+		case strings.HasSuffix(p, "/order/cart/cart-expired"):
+			status = 404
+			body = `{"message":"Cart not found"}`
+		}
+		return &http.Response{
+			StatusCode: status,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Request:    r,
+		}, nil
+	})
+	restore := netfp.SwapSharedTransportForTesting(transport)
+	defer restore()
+
+	w.data.Jobs["job-val"] = &Job{
+		ID:        "job-val",
+		Round:     1,
+		AccountID: s.Accounts[0].ID,
+		Endpoint:  s.Accounts[0].Endpoint,
+		Candidate: Candidate{PlanCode: "24sk40-v1", Datacenters: []string{"gra"}},
+		TaskID:    "catalog-watch-job-val-gra",
+		Status:    "uncertain",
+		Checkout:  &purchase.CheckoutJournal{CartID: "cart-validated", Submitted: true, StartedAt: time.Now().Add(-5 * time.Minute).UTC().Format(time.RFC3339Nano)},
+		CheckDue:  0,
+	}
+	w.check = purchase.CheckCheckout
+
+	for i := 0; i < 5; i++ {
+		w.data.Jobs["job-val"].CheckDue = 0
+		w.Reconcile(context.Background())
+	}
+	j := w.data.Jobs["job-val"]
+	if j.Status != "uncertain" || j.CheckAttempts != 5 {
+		t.Fatalf("expected job to stay stuck in uncertain forever, got status=%q attempts=%d reason=%q", j.Status, j.CheckAttempts, j.Reason)
+	}
+
+	// Also verify expired 404 cart never terminates either
+	w.data.Jobs["job-exp"] = &Job{
+		ID:        "job-exp",
+		Round:     1,
+		AccountID: s.Accounts[0].ID,
+		Endpoint:  s.Accounts[0].Endpoint,
+		Candidate: Candidate{PlanCode: "24sk40-v1", Datacenters: []string{"rbx"}},
+		TaskID:    "catalog-watch-job-exp-rbx",
+		Status:    "uncertain",
+		Checkout:  &purchase.CheckoutJournal{CartID: "cart-expired", Submitted: true, StartedAt: time.Now().Add(-3 * time.Hour).UTC().Format(time.RFC3339Nano)},
+		CheckDue:  0,
+	}
+	delete(w.data.Jobs, "job-val")
+	for i := 0; i < 3; i++ {
+		w.data.Jobs["job-exp"].CheckDue = 0
+		w.Reconcile(context.Background())
+	}
+	jExp := w.data.Jobs["job-exp"]
+	if jExp.Status != "uncertain" || jExp.CheckAttempts != 3 {
+		t.Fatalf("expected 404 cart job to stay stuck in uncertain, got status=%q attempts=%d", jExp.Status, jExp.CheckAttempts)
+	}
+
+	t.Logf("[VERIFIED OVH-ORD-01] Validated cart stuck in Status=%q after %d checks (Reason=%q); expired 404 cart stuck in Status=%q after %d checks (Reason=%q)",
+		j.Status, j.CheckAttempts, j.Reason, jExp.Status, jExp.CheckAttempts, jExp.Reason)
+}
+
+func TestBugVerify_OVHORD14_ReenableSkipsJobsExpandAbortsAndEmptyDCQueueCovers(t *testing.T) {
+	w, s := fixture(t)
+
+	// 1. SetEnabled(true) -> Poll baseline (gra) -> Poll new DC (rbx) creates pending job ->
+	//    SetEnabled(false) cancels pending job -> SetEnabled(true) clears Baseline & increments Round ->
+	//    Poll baseline (gra) -> Poll new DC (rbx) again -> NO pending job created because old cancelled job occupies locationKey!
+	candBase := Candidate{PlanCode: "24ska01", Options: []string{"ram-32g"}, Datacenters: []string{"gra"}}
+	candNew := Candidate{PlanCode: "24ska01", Options: []string{"ram-32g"}, Datacenters: []string{"gra", "rbx"}}
+
+	var cur map[string]Candidate
+	w.fetch = func(context.Context, *app.State, string) (map[string]Candidate, error) {
+		out := map[string]Candidate{}
+		for k, v := range cur {
+			out[k] = v
+		}
+		return out, nil
+	}
+
+	if err := w.SetEnabled(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+	cur = map[string]Candidate{key("", candBase): candBase}
+	if err := w.Poll(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	cur = map[string]Candidate{key("", candNew): candNew}
+	if err := w.Poll(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	jobID := locationKey(s.Accounts[0].ID, candNew, "rbx")
+	if w.data.Jobs[jobID] == nil || w.data.Jobs[jobID].Status != "pending" {
+		t.Fatalf("expected initial pending job %s, got %+v", jobID, w.data.Jobs[jobID])
+	}
+
+	// User disables and re-enables catalogwatch
+	if err := w.SetEnabled(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.SetEnabled(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+	// Round 2: baseline with gra, then rbx launches again
+	cur = map[string]Candidate{key("", candBase): candBase}
+	if err := w.Poll(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	cur = map[string]Candidate{key("", candNew): candNew}
+	if err := w.Poll(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	jAfter := w.data.Jobs[jobID]
+	if jAfter.Status != "cancelled" || jAfter.Round == w.data.Round {
+		t.Fatalf("expected stale cancelled job from old round to block new job creation, got %+v (current round=%d)", jAfter, w.data.Round)
+	}
+
+	// 2. Expand aborts entire catalog when 1 unrelated plan has Mandatory distribution-license
+	var rawCat Catalog
+	if err := json.Unmarshal([]byte(`{
+		"plans": [
+			{"planCode": "24ska01", "configurations": [{"name": "dedicated_datacenter", "values": ["gra"]}]},
+			{"planCode": "24win-special", "configurations": [{"name": "dedicated_datacenter", "values": ["gra"]}],
+			 "addonFamilies": [{"name": "distribution-license", "mandatory": true, "addons": ["win-2022"]}]}
+		]
+	}`), &rawCat); err != nil {
+		t.Fatal(err)
+	}
+	_, expandErr := Expand(rawCat)
+	if expandErr == nil {
+		t.Fatalf("expected Expand to fail entire catalog when 1 plan requires license")
+	}
+
+	// 3. queueCovers maps empty Datacenter "" to "gra" even when paused
+	s.Queue = []types.QueueItem{
+		{ID: "q-empty-paused", AccountID: s.Accounts[0].ID, PlanCode: "24ska01", Datacenter: "", Status: "paused"},
+	}
+	_, covGRA := queueCovers(s, s.Accounts[0].ID, "24ska01", "gra")
+	_, covRBX := queueCovers(s, s.Accounts[0].ID, "24ska01", "rbx")
+	if !covGRA || covRBX {
+		t.Fatalf("expected queueCovers to map '' -> 'gra' only: covGRA=%v covRBX=%v", covGRA, covRBX)
+	}
+
+	// 4. TrackCart leak in catalogwatch (OVH-ORD-12)
+	const cwCart = "cw-cancelled-cart-99"
+	defer ovh.ReleaseCart(cwCart)
+	ovh.TrackCart(cwCart)
+	if !ovh.CartInUse(cwCart) {
+		t.Fatal("expected tracked cart")
+	}
+
+	t.Logf("[VERIFIED OVH-ORD-14] (1) Re-enabled round %d permanently skipped 'rbx' because job %q stayed Status=%q (Round=%d); (2) Expand aborted entire catalog on 1 licensed plan (%v); (3) queueCovers mapped paused Datacenter='' to gra=%v, rbx=%v",
+		w.data.Round, jobID, jAfter.Status, jAfter.Round, expandErr, covGRA, covRBX)
+}

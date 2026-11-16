@@ -1,0 +1,119 @@
+package app
+
+import (
+	"sync"
+	"testing"
+
+	"github.com/ovh-webui/server/internal/types"
+)
+
+func TestBugVerify_BECTRL01_ReloadHistoryAndQueueUnsynchronizedWithSave(t *testing.T) {
+	s := newTestState(t)
+
+	if err := s.DB.UpsertAccount(types.OVHAccount{ID: "acc-del", Name: "Del", Endpoint: "ovh-eu", Zone: "IE", IsDefault: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DB.UpsertAccount(types.OVHAccount{ID: "acc-keep", Name: "Keep", Endpoint: "ovh-us", Zone: "US"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Stress-reproduce deleted-account resurrection or newly-saved history loss when
+	// SaveHistory (holding saveHistoryMu) races against DeleteAccount + ReloadHistoryFromDB (NOT holding saveHistoryMu).
+	resurrected := false
+	for attempt := 0; attempt < 80 && !resurrected; attempt++ {
+		_ = s.DB.UpsertAccount(types.OVHAccount{ID: "acc-del", Name: "Del", Endpoint: "ovh-eu", Zone: "IE"})
+		s.HistoryMu.Lock()
+		s.History = []types.PurchaseHistoryEntry{
+			{ID: "h-del", TaskID: "t-del", AccountID: "acc-del", PlanCode: "24ska01", Status: "success", PurchaseTime: types.NowISO()},
+			{ID: "h-keep", TaskID: "t-keep", AccountID: "acc-keep", PlanCode: "24ska01", Status: "success", PurchaseTime: types.NowISO()},
+		}
+		s.HistoryMu.Unlock()
+		if err := s.SaveHistory(); err != nil {
+			t.Fatal(err)
+		}
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			_ = s.SaveHistory()
+		}()
+		go func() {
+			defer wg.Done()
+			_ = s.DB.DeleteAccount("acc-del")
+			_ = s.ReloadHistoryFromDB()
+		}()
+		wg.Wait()
+
+		dbHist, err := s.DB.ListHistory()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, h := range dbHist {
+			if h.AccountID == "acc-del" {
+				resurrected = true
+				t.Logf("[VERIFIED BE-CTRL-01] Attempt %d: Deleted account 'acc-del' history row %q was RESURRECTED into SQLite because SaveHistory and DeleteAccount+ReloadHistoryFromDB do not share saveHistoryMu!", attempt+1, h.ID)
+				break
+			}
+		}
+		if !resurrected {
+			for _, h := range s.HistorySnapshot() {
+				if h.AccountID == "acc-del" {
+					resurrected = true
+					t.Logf("[VERIFIED BE-CTRL-01] Attempt %d: Deleted account 'acc-del' history row %q remained in memory after ReloadHistoryFromDB raced with SaveHistory!", attempt+1, h.ID)
+					break
+				}
+			}
+		}
+	}
+	if !resurrected {
+		t.Fatalf("expected race between SaveHistory and DeleteAccount+ReloadHistoryFromDB to resurrect deleted account history")
+	}
+}
+
+func TestBugVerify_BECTRL05_SyncDefaultAccountCredentialMismatch(t *testing.T) {
+	s := newTestState(t)
+
+	accEU := types.OVHAccount{
+		ID: "acc-eu", Name: "EU", Endpoint: "ovh-eu", Zone: "IE",
+		AppKey: "AK_EU_111", AppSecret: "AS_EU_111", ConsumerKey: "CK_EU_111", IsDefault: true,
+	}
+	accUS := types.OVHAccount{
+		ID: "acc-us", Name: "US", Endpoint: "ovh-us", Zone: "US",
+		AppKey: "AK_US_222", AppSecret: "AS_US_222", ConsumerKey: "CK_US_222", IsDefault: false,
+	}
+	if err := s.DB.UpsertAccount(accEU); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DB.UpsertAccount(accUS); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ReloadAccounts(); err != nil {
+		t.Fatal(err)
+	}
+	s.SyncDefaultAccountConfig()
+
+	cfg1 := s.Config.Get()
+	if cfg1.Endpoint != "ovh-eu" || cfg1.AppKey != "AK_EU_111" {
+		t.Fatalf("unexpected initial config: endpoint=%q appKey=%q", cfg1.Endpoint, cfg1.AppKey)
+	}
+
+	// Switch default account from EU to US
+	if err := s.DB.SetDefaultAccount("acc-us"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ReloadAccounts(); err != nil {
+		t.Fatal(err)
+	}
+	s.SyncDefaultAccountConfig()
+
+	cfg2 := s.Config.Get()
+	if cfg2.Endpoint != "ovh-us" || cfg2.Zone != "US" {
+		t.Fatalf("expected endpoint=ovh-us zone=US, got endpoint=%q zone=%q", cfg2.Endpoint, cfg2.Zone)
+	}
+	if cfg2.AppKey != "AK_EU_111" || cfg2.AppSecret != "AS_EU_111" || cfg2.ConsumerKey != "CK_EU_111" {
+		t.Fatalf("expected stale EU credentials due to cfg.AppKey==\"\" guard, got appKey=%q", cfg2.AppKey)
+	}
+	t.Logf("[VERIFIED BE-CTRL-05] After switching default account from EU to US, Config holds mismatched cross-region credentials: Endpoint=%q Zone=%q paired with AppKey=%q (from EU account!)",
+		cfg2.Endpoint, cfg2.Zone, cfg2.AppKey)
+}

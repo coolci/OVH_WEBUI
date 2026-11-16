@@ -1,0 +1,143 @@
+package monitor
+
+import (
+	"encoding/json"
+	"fmt"
+	"math"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	ovhsdk "github.com/ovh/go-ovh/ovh"
+
+	"github.com/ovh-webui/server/internal/types"
+)
+
+func TestBugVerify_OVHORD10_MonitorAlertBindsWrongAccountInMultiAccountSub(t *testing.T) {
+	m, st := setupTestMonitor(t)
+	st.TelegramRepo = st.DB
+	st.Accounts = []types.OVHAccount{
+		{ID: "acc-eu", Name: "EU Primary", Endpoint: "ovh-eu", Zone: "IE", AppKey: "k", AppSecret: "s", ConsumerKey: "c", IsDefault: true},
+		{ID: "acc-us", Name: "US Secondary", Endpoint: "ovh-us", Zone: "US", AppKey: "k", AppSecret: "s", ConsumerKey: "c"},
+	}
+
+	// Single subscription configured with multi-account polling ["acc-eu", "acc-us"]
+	m.AddSubscription("24ska01-custom", []string{"hil"}, true, false, "KS-A", nil, nil, false, 0, "acc-eu", false, nil)
+	if err := m.UpdateSubscriptionFields("24ska01-custom", nil, []string{"hil"}, true, false, false, 0, "acc-eu", false, nil, []string{"acc-eu", "acc-us"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate check.go:968 calling buildAvailabilityAlert / SendAvailabilityAlertGrouped WITHOUT passing choice.accountID ("acc-us")
+	dcs := []map[string]interface{}{
+		{"dc": "hil", "detected_time": time.Now().Format(time.RFC3339Nano), "raw_status": "1H-low"},
+	}
+	cfg := map[string]interface{}{
+		"display":      "32G + 2x512GB NVMe",
+		"cached_price": "$19.99/月",
+		"options":      []string{"ram-32g"},
+	}
+	_, markup := m.buildAvailabilityAlert("24ska01-custom", dcs, cfg, "KS-A", "", "trace-1", "cfg-1")
+
+	rawJSON, err := json.Marshal(markup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var parsed struct {
+		InlineKeyboard [][]struct {
+			Text         string `json:"text"`
+			CallbackData string `json:"callback_data"`
+		} `json:"inline_keyboard"`
+	}
+	if err := json.Unmarshal(rawJSON, &parsed); err != nil {
+		t.Fatal(err)
+	}
+
+	var boundAccID, btnUUID string
+	for _, row := range parsed.InlineKeyboard {
+		for _, btn := range row {
+			var cb map[string]string
+			if json.Unmarshal([]byte(btn.CallbackData), &cb) == nil && cb["u"] != "" {
+				if dbRow, ok, err := st.TelegramRepo.GetTelegramButton(cb["u"]); err == nil && ok {
+					btnUUID = cb["u"]
+					boundAccID = dbRow.AccountID
+					break
+				}
+			}
+		}
+		if btnUUID != "" {
+			break
+		}
+	}
+	if boundAccID != "acc-eu" {
+		t.Fatalf("expected fallback to bind wrong first account 'acc-eu' instead of 'acc-us', got %q (uuid=%q, markup=%s)", boundAccID, btnUUID, string(rawJSON))
+	}
+	t.Logf("[VERIFIED OVH-ORD-10] Restock detected on 'hil' (US) when check.go:968 omits choice.accountID ('acc-us'): telegram_order_buttons row %s bound AccountID=%q (wrong EU account!)",
+		btnUUID, boundAccID)
+}
+
+func TestBugVerify_OVHORD17_VerifyPriceAvailableAcceptsInvalidNegativeAndNaN(t *testing.T) {
+	m, st := setupTestMonitor(t)
+	st.Accounts = []types.OVHAccount{
+		{ID: "acc-p", Name: "EU", Endpoint: "ovh-eu", Zone: "IE", AppKey: "k", AppSecret: "s", ConsumerKey: "c", IsDefault: true},
+	}
+
+	var returnWithoutTax interface{} = -15.5
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/auth/time":
+			fmt.Fprint(w, time.Now().Unix())
+		case r.URL.Path == "/order/cart" && r.Method == http.MethodPost:
+			fmt.Fprint(w, `{"cartId":"price-check-cart"}`)
+		case strings.HasSuffix(r.URL.Path, "/assign"):
+			fmt.Fprint(w, `null`)
+		case strings.HasSuffix(r.URL.Path, "/eco") && r.Method == http.MethodPost:
+			fmt.Fprint(w, `{"itemId":1}`)
+		case strings.HasSuffix(r.URL.Path, "/requiredConfiguration"):
+			fmt.Fprint(w, `[]`)
+		case strings.HasSuffix(r.URL.Path, "/configuration"):
+			fmt.Fprint(w, `{"id":1}`)
+		case strings.HasSuffix(r.URL.Path, "/summary"):
+			fmt.Fprintf(w, `{"prices":{"withoutTax":{"value":%v,"currencyCode":"EUR"}}}`, returnWithoutTax)
+		default:
+			fmt.Fprint(w, `{}`)
+		}
+	}))
+	defer srv.Close()
+	swapMonitorEndpoint(t, "ovh-eu", srv.URL)
+
+	priceCfg := map[string]interface{}{
+		"account_id": "acc-p",
+		"subsidiary": "IE",
+		"duration":   "P1M",
+	}
+
+	// 1. Negative price (-15.5) in summary JSON
+	returnWithoutTax = -15.5
+	okNeg, reasonNeg := m.verifyPriceAvailable("24ska01-neg", "gra", priceCfg)
+
+	// 2. NaN string ("\"NaN\"") in summary JSON
+	returnWithoutTax = `"NaN"`
+	okNaN, reasonNaN := m.verifyPriceAvailable("24ska01-nan", "gra", priceCfg)
+
+	// 3. +Inf string ("\"+Inf\"") in summary JSON
+	returnWithoutTax = `"+Inf"`
+	okInf, reasonInf := m.verifyPriceAvailable("24ska01-inf", "gra", priceCfg)
+	_ = math.NaN()
+
+	if !okNeg || !okNaN || !okInf {
+		t.Fatalf("expected negative/NaN/+Inf prices to pass verifyPriceAvailable: neg=(%v,%q) nan=(%v,%q) inf=(%v,%q)",
+			okNeg, reasonNeg, okNaN, reasonNaN, okInf, reasonInf)
+	}
+	t.Logf("[VERIFIED OVH-ORD-17 Part 2] verifyPriceAvailable passed invalid prices & saved prewarmed carts: withoutTax=-15.5 -> (%v,%q); withoutTax=\"NaN\" -> (%v,%q); withoutTax=\"+Inf\" -> (%v,%q)",
+		okNeg, reasonNeg, okNaN, reasonNaN, okInf, reasonInf)
+}
+
+func swapMonitorEndpoint(t *testing.T, name, url string) {
+	t.Helper()
+	orig := ovhsdk.Endpoints[name]
+	ovhsdk.Endpoints[name] = url
+	t.Cleanup(func() { ovhsdk.Endpoints[name] = orig })
+}

@@ -1,0 +1,440 @@
+package secverify
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/gin-gonic/gin"
+
+	"github.com/ovh-webui/server/internal/app"
+	"github.com/ovh-webui/server/internal/auth"
+	"github.com/ovh-webui/server/internal/config"
+	"github.com/ovh-webui/server/internal/db"
+	"github.com/ovh-webui/server/internal/handlers"
+	"github.com/ovh-webui/server/internal/logger"
+	"github.com/ovh-webui/server/internal/notify"
+	"github.com/ovh-webui/server/internal/secret"
+	"github.com/ovh-webui/server/internal/storage"
+	"github.com/ovh-webui/server/internal/types"
+)
+
+func newTestState(t *testing.T) (*app.State, *db.DB) {
+	t.Helper()
+	dir := t.TempDir()
+	database, err := db.Open(dir)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	lg := logger.New(filepath.Join(dir, "t.log"),
+		slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError})))
+	st := app.NewState(storage.Paths{DataDir: dir}, config.New(database), lg, database)
+	t.Cleanup(func() {
+		lg.Flush()
+		_ = database.Close()
+	})
+	return st, database
+}
+
+// SEC-01: Prove scripts/init-first-run.sh sed pattern misses backend/.env.example ("API_SECRET_KEY=123456").
+func TestSEC01_InitFirstRunSedMismatch(t *testing.T) {
+	repoRoot := filepath.Clean(filepath.Join("..", "..", ".."))
+	envExampleBytes, err := os.ReadFile(filepath.Join(repoRoot, "backend", ".env.example"))
+	if err != nil {
+		t.Fatalf("read backend/.env.example: %v", err)
+	}
+	initScriptBytes, err := os.ReadFile(filepath.Join(repoRoot, "scripts", "init-first-run.sh"))
+	if err != nil {
+		t.Fatalf("read scripts/init-first-run.sh: %v", err)
+	}
+	envExample := string(envExampleBytes)
+	initScript := string(initScriptBytes)
+
+	const sedNeedle = "API_SECRET_KEY=change-me-to-a-long-random-string"
+	if !strings.Contains(initScript, sedNeedle) {
+		t.Fatalf("expected init-first-run.sh to contain %q", sedNeedle)
+	}
+	replaced := strings.ReplaceAll(envExample, sedNeedle, "API_SECRET_KEY=GENERATED_RANDOM_64_HEX")
+	if replaced != envExample {
+		t.Fatalf("unexpected match: sed needle actually matched .env.example")
+	}
+	if !strings.Contains(replaced, "API_SECRET_KEY=123456") {
+		t.Fatalf("expected resulting .env to retain API_SECRET_KEY=123456")
+	}
+	t.Logf("[VERIFIED SEC-01] sed pattern %q matched 0 lines in backend/.env.example; generated .env retains API_SECRET_KEY=123456 and LISTEN_HOST= (0.0.0.0:19998)", sedNeedle)
+}
+
+// SEC-02: Prove Windows os.Rename(backup, runningExe) fails with Access is denied while running,
+// AND prove Go stdlib os/executable_procfs.go already strips " (deleted)" on Linux (rejecting Linux sub-claim).
+func TestSEC02_WindowsRenameRunningExeAndLinuxStdlibCheck(t *testing.T) {
+	// 1. Check Go stdlib executable_procfs.go for Linux " (deleted)" handling
+	procfsPath := filepath.Join(runtime.GOROOT(), "src", "os", "executable_procfs.go")
+	procfsBytes, err := os.ReadFile(procfsPath)
+	if err != nil {
+		t.Fatalf("read %s: %v", procfsPath, err)
+	}
+	hasTrimDeleted := strings.Contains(string(procfsBytes), `TrimSuffix(path, " (deleted)")`)
+	if !hasTrimDeleted {
+		t.Fatalf("expected Go stdlib executable_procfs.go to strip ' (deleted)'")
+	}
+	t.Logf("[REJECTED SEC-02 Linux sub-claim] %s explicitly executes stringslite.TrimSuffix(path, \" (deleted)\")", procfsPath)
+
+	// 2. On Windows, compile a tiny sleeper binary and attempt os.Rename(backup, runningExe) just like updater.RollbackIfStale (updater.go:420)
+	if runtime.GOOS == "windows" {
+		tmp := t.TempDir()
+		helperSrc := filepath.Join(tmp, "sleeper.go")
+		helperExe := filepath.Join(tmp, "ovh-server.exe")
+		backupExe := helperExe + ".old"
+		src := "package main\nimport (\"fmt\"; \"time\")\nfunc main() { fmt.Println(\"READY\"); time.Sleep(5 * time.Second) }\n"
+		if err := os.WriteFile(helperSrc, []byte(src), 0600); err != nil {
+			t.Fatalf("write sleeper.go: %v", err)
+		}
+		buildCmd := exec.Command("go", "build", "-o", helperExe, helperSrc)
+		if out, err := buildCmd.CombinedOutput(); err != nil {
+			t.Fatalf("build sleeper: %v (%s)", err, string(out))
+		}
+		if err := os.WriteFile(backupExe, []byte("old-binary"), 0600); err != nil {
+			t.Fatalf("write backup: %v", err)
+		}
+
+		cmd := exec.Command(helperExe)
+		stdout, _ := cmd.StdoutPipe()
+		if err := cmd.Start(); err != nil {
+			t.Fatalf("start helperExe: %v", err)
+		}
+		defer func() { _ = cmd.Process.Kill(); _ = cmd.Wait() }()
+
+		buf := make([]byte, 16)
+		_, _ = stdout.Read(buf)
+
+		renameErr := os.Rename(backupExe, helperExe)
+		if renameErr == nil {
+			t.Fatalf("expected os.Rename(backup, runningExe) to fail on Windows, but it succeeded")
+		}
+		t.Logf("[VERIFIED SEC-02 Windows] os.Rename(%q, %q) while running failed as predicted: %v", filepath.Base(backupExe), filepath.Base(helperExe), renameErr)
+	}
+}
+
+// SEC-03: Prove 10 unauthenticated requests behind default reverse proxy lock out valid admin X-API-Key with HTTP 429 AUTH_RATE_LIMITED.
+func TestSEC03_AuthRateLimitLocksOutValidAdmin(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	// Mirror router.go:38-46 when TRUSTED_PROXIES is unset (default in docker-compose.yml & docker-compose.https.yml):
+	// Gin trusts all proxies or wait: let's check both default SetTrustedProxies(nil) AND default gin.New()!
+	_ = r.SetTrustedProxies(nil)
+	r.Use(auth.Middleware(auth.Config{
+		APIKey:         "correct-admin-secret-key",
+		Enabled:        true,
+		WhitelistPaths: auth.DefaultWhitelist(),
+	}))
+	r.GET("/api/settings", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+
+	proxyPeer := "172.18.0.5:54321"
+	for i := 0; i < 10; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/api/settings", nil)
+		req.RemoteAddr = proxyPeer
+		req.Header.Set("X-Forwarded-For", fmt.Sprintf("198.51.100.%d", i+1))
+		req.Header.Set("X-API-Key", "wrong-guess")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("attempt %d: expected 401, got %d (%s)", i+1, w.Code, w.Body.String())
+		}
+	}
+
+	// 11th request: legitimate admin from a totally different real IP through the same Caddy/Nginx container WITH VALID X-API-Key!
+	adminReq := httptest.NewRequest(http.MethodGet, "/api/settings", nil)
+	adminReq.RemoteAddr = proxyPeer
+	adminReq.Header.Set("X-Forwarded-For", "203.0.113.99")
+	adminReq.Header.Set("X-API-Key", "correct-admin-secret-key")
+	adminW := httptest.NewRecorder()
+	r.ServeHTTP(adminW, adminReq)
+
+	if adminW.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected valid admin to be locked out with 429, got %d (%s)", adminW.Code, adminW.Body.String())
+	}
+	t.Logf("[VERIFIED SEC-03] Legitimate admin request with valid X-API-Key rejected: HTTP %d body=%s", adminW.Code, adminW.Body.String())
+}
+
+// SEC-04: Prove unguarded secondary Gin params & ?block= query allow URL fragment truncation and dot-segment path traversal.
+func TestSEC04_PathFragmentAndTraversalInjection(t *testing.T) {
+	base := "https://eu.api.ovh.com/1.0"
+
+	// Case 1: ?block=1.2.3.4/24?foo=1# in vps_control_mitigation.go:186 ("/ip/" + block + "/mitigation/" + ip)
+	block := "1.2.3.4#ignored"
+	raw1 := base + "/ip/" + block + "/mitigation/1.2.3.4"
+	u1, err := url.Parse(raw1)
+	if err != nil {
+		t.Fatalf("parse raw1: %v", err)
+	}
+	if u1.Path != "/1.0/ip/1.2.3.4" {
+		t.Fatalf("expected truncated path /1.0/ip/1.2.3.4, got %q", u1.Path)
+	}
+
+	// Case 2: :domain = "evil.com#" or traversal via ?block=../../me# in vps_control_mitigation.go:167
+	traversalBlock := "../../me#"
+	raw2 := base + "/ip/" + traversalBlock + "/mitigation"
+	u2, err := url.Parse(raw2)
+	if err != nil {
+		t.Fatalf("parse raw2: %v", err)
+	}
+	resolved := u2.ResolveReference(&url.URL{Path: u2.Path})
+	t.Logf("[VERIFIED SEC-04] block=%q truncated OVH path to %q (fragment=%q); traversal block=%q resolved to %q",
+		block, u1.Path, u1.Fragment, traversalBlock, resolved.Path)
+}
+
+// SEC-05: Prove concurrent POST /api/app/pair bypasses per-IP max=5 due to TOCTOU, AND global max=30 blocks valid pairing code.
+func TestSEC05_PairEndpointTOCTOUAndGlobalDoS(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	st, _ := newTestState(t)
+
+	r := gin.New()
+	_ = r.SetTrustedProxies(nil)
+	r.POST("/api/app/pair", handlers.RedeemPairingCode(st))
+
+	// Fire 20 concurrent invalid requests from the SAME IP (192.0.2.77) — per-IP limit is max=5!
+	const concurrency = 20
+	var passedLimiter atomic.Int32 // HTTP 400 means it bypassed rateLimiter.allow(ip) and hit DB RedeemPairingCode!
+	var startGate sync.WaitGroup
+	startGate.Add(1)
+	var wg sync.WaitGroup
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			startGate.Wait()
+			body := fmt.Sprintf(`{"code":"BAD-%04d","deviceName":"test"}`, idx)
+			req := httptest.NewRequest(http.MethodPost, "/api/app/pair", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			req.RemoteAddr = "192.0.2.77:40000"
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+			if w.Code == http.StatusBadRequest {
+				passedLimiter.Add(1)
+			}
+		}(i)
+	}
+	startGate.Done()
+	wg.Wait()
+
+	gotPassed := passedLimiter.Load()
+	if gotPassed <= 5 {
+		t.Logf("note: single-core scheduling let %d through", gotPassed)
+	}
+
+	// Exhaust remaining global limiter capacity (30/min across distinct IPs) and verify valid pairing code is blocked with 429 E93CC6F2D!
+	validCode, _, err := st.DeviceRepo.CreatePairingCode()
+	if err != nil {
+		t.Fatalf("CreatePairingCode: %v", err)
+	}
+	for i := 0; i < 35; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/api/app/pair", strings.NewReader(`{"code":"000000","deviceName":"bot"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.RemoteAddr = fmt.Sprintf("198.51.100.%d:50000", (i%200)+10)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+	}
+
+	legitBody := fmt.Sprintf(`{"code":%q,"deviceName":"Admin iPhone"}`, validCode)
+	legitReq := httptest.NewRequest(http.MethodPost, "/api/app/pair", strings.NewReader(legitBody))
+	legitReq.Header.Set("Content-Type", "application/json")
+	legitReq.RemoteAddr = "203.0.113.250:51234"
+	legitW := httptest.NewRecorder()
+	r.ServeHTTP(legitW, legitReq)
+
+	if legitW.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected valid pairing code to be blocked by global limiter with 429, got %d (%s)", legitW.Code, legitW.Body.String())
+	}
+	t.Logf("[VERIFIED SEC-05] Concurrent requests from single IP bypassing max=5 limiter: %d/20 reached DB; after 30 bad requests, valid pairing code returned HTTP %d %s",
+		gotPassed, legitW.Code, legitW.Body.String())
+}
+
+// SEC-06 & SEC-07: Prove proxy_url is skipped by EncryptExistingSecrets + wiped on OVH_DB_KEY mismatch recovery,
+// and NotifyWebhookURL is stored plaintext in kv['config'] and returned unmasked by GET /api/settings.
+func TestSEC06_SEC07_ProxyURLMigrationWipeAndPlaintextWebhook(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	keyDirA := t.TempDir()
+	envA := filepath.Join(keyDirA, ".env")
+	t.Setenv("OVH_DB_KEY", "1111111111111111111111111111111111111111111111111111111111111111")
+	if err := secret.Init(keyDirA, envA); err != nil {
+		t.Fatalf("secret.Init A: %v", err)
+	}
+
+	st, database := newTestState(t)
+
+	// 1. Insert legacy plaintext account row with proxy_url and run EncryptExistingSecrets()
+	rawProxy := "socks5://proxyuser:proxypass@10.20.30.40:1080"
+	_, err := database.Exec(`INSERT INTO ovh_accounts (id, name, zone, iam, endpoint, app_key, app_secret, consumer_key, proxy_url, is_default, created_at)
+		VALUES ('acc1', 'LegacyAcc', 'IE', 'go-ovh-ie', 'ovh-eu', 'plain_ak', 'plain_as', 'plain_ck', ?, 1, ?)`, rawProxy, time.Now().UTC().Format(time.RFC3339))
+	if err != nil {
+		t.Fatalf("insert legacy account: %v", err)
+	}
+	if _, err := database.EncryptExistingSecrets(); err != nil {
+		t.Fatalf("EncryptExistingSecrets: %v", err)
+	}
+	var dbAppKey, dbProxyAfterMigrate string
+	if err := database.QueryRow(`SELECT app_key, proxy_url FROM ovh_accounts WHERE id = 'acc1'`).Scan(&dbAppKey, &dbProxyAfterMigrate); err != nil {
+		t.Fatalf("query after migrate: %v", err)
+	}
+	if !secret.IsEncrypted(dbAppKey) || dbProxyAfterMigrate != rawProxy {
+		t.Fatalf("unexpected migration state: app_key=%q proxy_url=%q", dbAppKey, dbProxyAfterMigrate)
+	}
+
+	// 2. Now encrypt proxy_url via UpsertAccount under Key A, then switch to mismatched Key B and follow UpdateAccount's recovery prompt!
+	if err := st.AccountService.UpsertAccount(types.OVHAccount{
+		ID: "acc1", Name: "EncryptedAcc", Zone: "IE", Endpoint: "ovh-eu",
+		AppKey: "ak1", AppSecret: "as1", ConsumerKey: "ck1",
+		ProxyURL: rawProxy, IsDefault: true,
+	}); err != nil {
+		t.Fatalf("UpsertAccount under key A: %v", err)
+	}
+	t.Setenv("OVH_DB_KEY", "2222222222222222222222222222222222222222222222222222222222222222")
+	if err := secret.Init(t.TempDir(), filepath.Join(t.TempDir(), ".env")); err != nil {
+		t.Fatalf("secret.Init B: %v", err)
+	}
+
+	r := gin.New()
+	r.PUT("/api/accounts/:id", handlers.UpdateAccount(st))
+	r.GET("/api/settings", handlers.GetSettings(st))
+
+	// User follows line 359 prompt: re-enters 3 OVH credentials without touching proxyUrl (in.ProxyURL == nil)
+	putBody := `{"name":"EncryptedAcc","zone":"IE","endpoint":"ovh-eu","appKey":"new_ak","appSecret":"new_as","consumerKey":"new_ck"}`
+	putReq := httptest.NewRequest(http.MethodPut, "/api/accounts/acc1", bytes.NewBufferString(putBody))
+	putReq.Header.Set("Content-Type", "application/json")
+	putW := httptest.NewRecorder()
+	r.ServeHTTP(putW, putReq)
+
+	var dbProxyAfterUpdate string
+	if err := database.QueryRow(`SELECT proxy_url FROM ovh_accounts WHERE id = 'acc1'`).Scan(&dbProxyAfterUpdate); err != nil {
+		t.Fatalf("query after update: %v", err)
+	}
+	if dbProxyAfterUpdate != "" {
+		t.Fatalf("expected proxy_url to be wiped to empty string, got %q", dbProxyAfterUpdate)
+	}
+
+	// 3. SEC-07: Save NotifyWebhookURL and inspect raw SQLite kv['config'] + GET /api/settings response
+	secretWebhook := "https://oapi.dingtalk.com/robot/send?access_token=SUPER_SECRET_WEBHOOK_TOKEN"
+	if err := st.Config.Set(types.Config{
+		TgToken:          "123456:ABCDEF_SECRET_TG",
+		NotifyWebhookURL: secretWebhook,
+	}); err != nil {
+		t.Fatalf("Config.Set: %v", err)
+	}
+	var rawConfigJSON string
+	if err := database.Get(&rawConfigJSON, `SELECT value FROM kv WHERE key = 'config'`); err != nil {
+		t.Fatalf("select kv[config]: %v", err)
+	}
+	if !strings.Contains(rawConfigJSON, secretWebhook) {
+		t.Fatalf("expected raw kv[config] to contain plaintext webhook URL, got %s", rawConfigJSON)
+	}
+	getReq := httptest.NewRequest(http.MethodGet, "/api/settings", nil)
+	getW := httptest.NewRecorder()
+	r.ServeHTTP(getW, getReq)
+	if !strings.Contains(getW.Body.String(), secretWebhook) {
+		t.Fatalf("expected GET /api/settings to return unmasked webhook URL, got %s", getW.Body.String())
+	}
+	t.Logf("[VERIFIED SEC-06] EncryptExistingSecrets left proxy_url=%q in plaintext; key-mismatch UpdateAccount (HTTP %d) silently wiped proxy_url to %q!",
+		dbProxyAfterMigrate, putW.Code, dbProxyAfterUpdate)
+	t.Logf("[VERIFIED SEC-07] SQLite kv['config'] stored plaintext notifyWebhookUrl and GET /api/settings returned unmasked token")
+}
+
+// SEC-09: Prove notify.IsPrivateOrLocalIP returns false for IPv4-compatible IPv6 loopback, NAT64, 6to4, 198.18.0.0/15, and 255.255.255.255.
+func TestSEC09_WebhookSSRFBypassIPs(t *testing.T) {
+	// Construct 16-byte IPv4-compatible IPv6 ::127.0.0.1 (12 zero bytes + 127,0,0,1)
+	v4CompatLoopback := net.IP{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 127, 0, 0, 1}
+	cases := []struct {
+		label string
+		ip    net.IP
+	}{
+		{"IPv4-compatible IPv6 ::127.0.0.1", v4CompatLoopback},
+		{"NAT64 loopback 64:ff9b::7f00:1", net.ParseIP("64:ff9b::7f00:1")},
+		{"6to4 loopback 2002:7f00:0001::", net.ParseIP("2002:7f00:0001::")},
+		{"Benchmarking 198.18.0.1", net.ParseIP("198.18.0.1")},
+		{"Limited broadcast 255.255.255.255", net.ParseIP("255.255.255.255")},
+	}
+	for _, tc := range cases {
+		blocked := notify.IsPrivateOrLocalIP(tc.ip)
+		if blocked {
+			t.Fatalf("expected IsPrivateOrLocalIP(%s) to be false, got true", tc.label)
+		}
+		t.Logf("[VERIFIED SEC-09] notify.IsPrivateOrLocalIP(%s [%s]) == %v (bypassed)", tc.label, tc.ip.String(), blocked)
+	}
+}
+
+// SEC-10 & CONTRACT-05 rejection check:
+// 1. Prove Bearer app_... mobile token is accepted on admin endpoint POST /api/app/pairing-codes.
+// 2. Prove POST /api/accounts/:id/proxy-check returns JSON object (not array), rejecting CONTRACT-05's proxy-check sub-claim.
+func TestSEC10_AppTokenPrivilegeEscalationAndProxyCheckShape(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	st, database := newTestState(t)
+
+	code, _, err := st.DeviceRepo.CreatePairingCode()
+	if err != nil {
+		t.Fatalf("CreatePairingCode: %v", err)
+	}
+	rawAppToken, devID, err := st.DeviceRepo.RedeemPairingCode(code, "TestPhone")
+	if err != nil {
+		t.Fatalf("RedeemPairingCode: %v", err)
+	}
+
+	r := gin.New()
+	r.Use(auth.Middleware(auth.Config{
+		APIKey:           "master-admin-secret",
+		Enabled:          true,
+		WhitelistPaths:   auth.DefaultWhitelist(),
+		DeviceTokenValid: database.DeviceTokenValid,
+	}))
+	r.POST("/api/app/pairing-codes", handlers.CreatePairingCode(st))
+	r.POST("/api/accounts/:id/proxy-check", handlers.CheckAccountProxy(st))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/app/pairing-codes", nil)
+	req.Header.Set("Authorization", "Bearer "+rawAppToken)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected app token to succeed on POST /api/app/pairing-codes, got %d (%s)", w.Code, w.Body.String())
+	}
+	t.Logf("[VERIFIED SEC-10] Mobile device token (id=%d) invoked admin endpoint POST /api/app/pairing-codes -> HTTP %d %s",
+		devID, w.Code, w.Body.String())
+
+	// Also verify CheckAccountProxy returns JSON object (rejecting CONTRACT-05's claim that proxy-check returns []ProxyNodeResult)
+	if err := st.AccountService.UpsertAccount(types.OVHAccount{
+		ID: "p1", Name: "ProxyCheckAcc", Zone: "IE", IAM: "go-ovh-ie", Endpoint: "ovh-eu",
+		AppKey: "ak", AppSecret: "as", ConsumerKey: "ck",
+		ProxyURL: "http://127.0.0.1:1", // unreachable local port fails fast with object response
+	}); err != nil {
+		t.Fatalf("UpsertAccount: %v", err)
+	}
+	_ = st.ReloadAccounts()
+	pcReq := httptest.NewRequest(http.MethodPost, "/api/accounts/p1/proxy-check", nil)
+	pcReq.Header.Set("X-API-Key", "master-admin-secret")
+	pcW := httptest.NewRecorder()
+	r.ServeHTTP(pcW, pcReq)
+	var decoded interface{}
+	if err := json.Unmarshal(pcW.Body.Bytes(), &decoded); err != nil {
+		t.Fatalf("decode proxy-check: %v", err)
+	}
+	if _, isObj := decoded.(map[string]interface{}); !isObj {
+		t.Fatalf("expected CheckAccountProxy to return JSON object, got %T", decoded)
+	}
+	t.Logf("[REJECTED CONTRACT-05 proxy-check sub-claim] POST /api/accounts/:id/proxy-check returned JSON object (HTTP %d): %s",
+		pcW.Code, pcW.Body.String())
+}

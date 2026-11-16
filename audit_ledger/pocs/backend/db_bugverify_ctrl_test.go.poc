@@ -1,0 +1,228 @@
+package db
+
+import (
+	"path/filepath"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/ovh-webui/server/internal/secret"
+	"github.com/ovh-webui/server/internal/types"
+)
+
+func TestBugVerify_BECTRL02_DeferredTxSQLiteBusy(t *testing.T) {
+	dir := t.TempDir()
+	database, err := Open(dir)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer database.Close()
+
+	// Seed 2 accounts so SetDefaultAccount / DeleteAccount exercises Beginx() read-then-write
+	if err := database.UpsertAccount(types.OVHAccount{ID: "acc-1", Name: "A1", Endpoint: "ovh-eu", Zone: "IE", IsDefault: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.UpsertAccount(types.OVHAccount{ID: "acc-2", Name: "A2", Endpoint: "ovh-us", Zone: "US"}); err != nil {
+		t.Fatal(err)
+	}
+
+	var busyCount atomic.Int32
+	var firstErr string
+	var mu sync.Mutex
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+
+	// Writer goroutine simulating concurrent KV / history writes on pooled connections (MaxOpenConns=8)
+	for w := 0; w < 3; w++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for i := 0; ; i++ {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				_ = database.SetKV("probe_key", map[string]int{"w": id, "i": i})
+			}
+		}(w)
+	}
+
+	// Read-then-write DEFERRED transactions via DeleteAccount (starts with SELECT is_default, then DELETE FROM history)
+	for i := 0; i < 80; i++ {
+		id := "acc-del-loop"
+		_ = database.UpsertAccount(types.OVHAccount{ID: id, Name: "Loop", Endpoint: "ovh-us", Zone: "US"})
+		start := time.Now()
+		err := database.DeleteAccount(id)
+		elapsed := time.Since(start)
+		if err != nil && (strings.Contains(strings.ToLower(err.Error()), "locked") || strings.Contains(strings.ToLower(err.Error()), "busy")) {
+			busyCount.Add(1)
+			mu.Lock()
+			if firstErr == "" {
+				firstErr = err.Error() + " (elapsed=" + elapsed.String() + ", bypassed 5000ms busy_timeout)"
+			}
+			mu.Unlock()
+		}
+	}
+	close(stop)
+	wg.Wait()
+
+	if busyCount.Load() == 0 {
+		t.Fatalf("expected DEFERRED read-then-write tx to fail with SQLITE_BUSY under concurrent pooled writers")
+	}
+	t.Logf("[VERIFIED BE-CTRL-02] SetDefaultAccount/Beginx failed %d/60 times with immediate SQLITE_BUSY: %s", busyCount.Load(), firstErr)
+}
+
+func TestBugVerify_BECTRL09_UpsertSubscriptionCannotClearLastStatus(t *testing.T) {
+	dir := t.TempDir()
+	database, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+
+	// 1. VPS Subscription: insert with FR status, then upsert with US + empty LastStatus
+	vpsSub := types.VPSSubscription{
+		ID:            "vps-sub-1",
+		PlanCode:      "vps-2025-model1",
+		OvhSubsidiary: "FR",
+		LastStatus:    map[string]string{"eu-west-gra": "available"},
+		History:       []map[string]interface{}{{"dc": "eu-west-gra", "status": "available"}},
+	}
+	if err := database.UpsertVPSSubscription(vpsSub); err != nil {
+		t.Fatal(err)
+	}
+	vpsSub.OvhSubsidiary = "US"
+	vpsSub.LastStatus = map[string]string{}
+	vpsSub.History = []map[string]interface{}{}
+	if err := database.UpsertVPSSubscription(vpsSub); err != nil {
+		t.Fatal(err)
+	}
+	gotVPS, err := database.ListVPSSubscriptions()
+	if err != nil || len(gotVPS) != 1 {
+		t.Fatalf("list vps: %v len=%d", err, len(gotVPS))
+	}
+	if len(gotVPS[0].LastStatus) == 0 {
+		t.Fatalf("expected stale LastStatus to persist due to SQL CASE bug")
+	}
+
+	// 2. Monitor Subscription: insert with LastStatus, then upsert with empty LastStatus
+	monSub := types.Subscription{
+		PlanCode:   "24ska01",
+		LastStatus: map[string]string{"gra": "1H-low"},
+	}
+	if err := database.UpsertMonitorSubscription(monSub); err != nil {
+		t.Fatal(err)
+	}
+	monSub.LastStatus = map[string]string{}
+	if err := database.UpsertMonitorSubscription(monSub); err != nil {
+		t.Fatal(err)
+	}
+	gotMon, err := database.ListMonitorSubscriptions()
+	if err != nil || len(gotMon) != 1 {
+		t.Fatalf("list monitor: %v len=%d", err, len(gotMon))
+	}
+	if len(gotMon[0].LastStatus) == 0 {
+		t.Fatalf("expected stale monitor LastStatus to persist due to SQL CASE bug")
+	}
+	t.Logf("[VERIFIED BE-CTRL-09] After resetting LastStatus={} on subsidiary edit, SQLite retained VPS LastStatus=%v and Monitor LastStatus=%v",
+		gotVPS[0].LastStatus, gotMon[0].LastStatus)
+}
+
+func TestBugVerify_BECTRL10_DeleteAccountLeavesZombieVPSAutoOrder(t *testing.T) {
+	dir := t.TempDir()
+	database, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+
+	if err := database.UpsertAccount(types.OVHAccount{ID: "acc-del", Name: "Del", Endpoint: "ovh-eu", Zone: "IE", IsDefault: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.UpsertVPSSubscription(types.VPSSubscription{
+		ID:                 "vps-zombie",
+		PlanCode:           "vps-2025-model1",
+		OvhSubsidiary:      "IE",
+		AutoOrder:          true,
+		AutoPay:            true,
+		Quantity:           1,
+		AutoOrderAccountID: "acc-del",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := database.DeleteAccount("acc-del"); err != nil {
+		t.Fatal(err)
+	}
+	subs, err := database.ListVPSSubscriptions()
+	if err != nil || len(subs) != 1 {
+		t.Fatalf("list vps: %v len=%d", err, len(subs))
+	}
+	got := subs[0]
+	if !got.AutoOrder || !got.AutoPay || got.AutoOrderAccountID != "" {
+		t.Fatalf("unexpected state: AutoOrder=%v AutoPay=%v AutoOrderAccountID=%q", got.AutoOrder, got.AutoPay, got.AutoOrderAccountID)
+	}
+	t.Logf("[VERIFIED BE-CTRL-10] After DeleteAccount, VPSSubscription left in inconsistent zombie state: AutoOrder=%v, AutoPay=%v, AutoOrderAccountID=%q",
+		got.AutoOrder, got.AutoPay, got.AutoOrderAccountID)
+}
+
+func TestBugVerify_BECTRL11_ProxyURLPlaintextMigrationAndEncryptedCheck(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv(secret.KeyEnv, "bugverify-secret-key-2026")
+	if err := secret.Init(dir, filepath.Join(dir, ".env")); err != nil {
+		t.Fatal(err)
+	}
+
+	database, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+
+	// Insert legacy row with encrypted API keys (or plaintext) + plaintext proxy_url containing credentials
+	plainProxy := "http://proxyuser:SuperSecretPass@10.0.0.1:8080"
+	_, err = database.Exec(`INSERT INTO ovh_accounts (id, name, endpoint, zone, app_key, app_secret, consumer_key, iam, is_default, created_at, proxy_url) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1, '2026-01-01T00:00:00Z', ?)`,
+		"legacy-acc", "Legacy", "ovh-eu", "IE", secret.Encrypt("ak"), secret.Encrypt("as"), secret.Encrypt("ck"), plainProxy)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	migrated, err := database.EncryptExistingSecrets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var storedProxy string
+	if err := database.Get(&storedProxy, `SELECT proxy_url FROM ovh_accounts WHERE id = 'legacy-acc'`); err != nil {
+		t.Fatal(err)
+	}
+	if secret.IsEncrypted(storedProxy) {
+		t.Fatalf("expected proxy_url to remain unencrypted due to bug, got %q", storedProxy)
+	}
+
+	// Now test HasEncryptedSecrets when only proxy_url is encrypted (e.g. account created before filling API keys)
+	_, err = database.Exec(`DELETE FROM ovh_accounts`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.UpsertAccount(types.OVHAccount{
+		ID:       "proxy-only",
+		Name:     "ProxyOnly",
+		Endpoint: "ovh-eu",
+		Zone:     "IE",
+		ProxyURL: plainProxy,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	hasEnc, err := database.HasEncryptedSecrets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hasEnc {
+		t.Fatalf("expected HasEncryptedSecrets() == false when only proxy_url is encrypted")
+	}
+	t.Logf("[VERIFIED BE-CTRL-11] EncryptExistingSecrets migrated=%d and left proxy_url in plaintext (%q); HasEncryptedSecrets()=%v when only proxy_url is encrypted",
+		migrated, storedProxy, hasEnc)
+}

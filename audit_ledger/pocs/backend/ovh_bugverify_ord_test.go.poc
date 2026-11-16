@@ -1,0 +1,64 @@
+package ovh
+
+import (
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	ovhsdk "github.com/ovh/go-ovh/ovh"
+
+	"github.com/ovh-webui/server/internal/types"
+)
+
+func TestBugVerify_OVHORD04_SDKOverwrites60sTimeoutWith180s(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/auth/time" {
+			fmt.Fprint(w, time.Now().Unix())
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"nichandle":"ab12345-ovh"}`)
+	}))
+	defer srv.Close()
+
+	orig := ovhsdk.Endpoints["ovh-eu"]
+	ovhsdk.Endpoints["ovh-eu"] = srv.URL
+	defer func() { ovhsdk.Endpoints["ovh-eu"] = orig }()
+
+	acc := types.OVHAccount{
+		ID: "acc-1", Name: "Test", Endpoint: "ovh-eu", Zone: "IE",
+		AppKey: "ak", AppSecret: "as", ConsumerKey: "ck", IsDefault: true,
+	}
+	f := NewFactory(nil, func(id string) (types.OVHAccount, bool) {
+		return acc, true
+	})
+
+	baseCli, err := f.ClientFor("acc-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeReqHTTPTimeout := baseCli.Client.Timeout
+	beforeReqSDKTimeout := baseCli.Timeout
+
+	var me map[string]interface{}
+	if err := baseCli.Get("/me", &me); err != nil {
+		t.Fatal(err)
+	}
+	afterReqHTTPTimeout := baseCli.Client.Timeout
+
+	isoCli, err := f.IsolatedClientFor("acc-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := isoCli.Get("/me", &me); err != nil {
+		t.Fatal(err)
+	}
+
+	if afterReqHTTPTimeout != 180*time.Second || isoCli.Client.Timeout != 180*time.Second {
+		t.Fatalf("expected go-ovh NewRequest to overwrite 60s with 180s, got base=%v iso=%v", afterReqHTTPTimeout, isoCli.Client.Timeout)
+	}
+	t.Logf("[VERIFIED OVH-ORD-04] ClientFor initial http.Client.Timeout=%v, sdk.Timeout=%v; after 1 request, baseCli.Client.Timeout=%v and isoCli.Client.Timeout=%v (60s overwritten by 180s!)",
+		beforeReqHTTPTimeout, beforeReqSDKTimeout, afterReqHTTPTimeout, isoCli.Client.Timeout)
+}

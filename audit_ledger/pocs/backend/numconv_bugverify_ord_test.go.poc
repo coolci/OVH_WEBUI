@@ -1,0 +1,19 @@
+package numconv
+
+import (
+	"math"
+	"testing"
+)
+
+func TestBugVerify_OVHORD17_ToFloat64AcceptsNaNAndInf(t *testing.T) {
+	vNaNStr, ok1 := ToFloat64("NaN")
+	vInfStr, ok2 := ToFloat64("+Inf")
+	vNaNF64, ok3 := ToFloat64(math.NaN())
+	vNegInf, ok4 := ToFloat64(math.Inf(-1))
+
+	if !ok1 || !math.IsNaN(vNaNStr) || !ok2 || !math.IsInf(vInfStr, 1) || !ok3 || !math.IsNaN(vNaNF64) || !ok4 || !math.IsInf(vNegInf, -1) {
+		t.Fatalf("expected ToFloat64 to accept NaN/Inf: ok1=%v ok2=%v ok3=%v ok4=%v", ok1, ok2, ok3, ok4)
+	}
+	t.Logf("[VERIFIED OVH-ORD-17 Part 1] ToFloat64(\"NaN\")=(%v,%v), ToFloat64(\"+Inf\")=(%v,%v), ToFloat64(math.NaN())=(%v,%v), ToFloat64(-Inf)=(%v,%v)",
+		vNaNStr, ok1, vInfStr, ok2, vNaNF64, ok3, vNegInf, ok4)
+}

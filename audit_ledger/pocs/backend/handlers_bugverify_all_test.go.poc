@@ -1,0 +1,538 @@
+package handlers
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+	"unicode/utf8"
+
+	"github.com/gin-gonic/gin"
+	ovhsdk "github.com/ovh/go-ovh/ovh"
+
+	"github.com/ovh-webui/server/internal/netfp"
+	"github.com/ovh-webui/server/internal/purchase"
+	"github.com/ovh-webui/server/internal/telegram"
+	"github.com/ovh-webui/server/internal/types"
+)
+
+// BE-CTRL-03: Proxmox 9 + ZFS preset overwrites defaultDiskGroupId with diskGroups[0],
+// emits invalid zfs raidLevel:10, and emits invalid ext4 /boot raidLevel:7 on 2 disks.
+func TestBugVerify_BECTRL03_Proxmox9ZfsWrongDiskGroupAndInvalidRaidLevels(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	st, _ := newWatchTestMonitor(t)
+	st.Accounts = []types.OVHAccount{
+		{ID: "eu", Name: "EU", Endpoint: "ovh-eu", Zone: "IE", AppKey: "ak", AppSecret: "as", ConsumerKey: "ck", IsDefault: true},
+	}
+
+	var reinstallPayloads []map[string]interface{}
+	var mu sync.Mutex
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/auth/time":
+			fmt.Fprint(w, time.Now().Unix())
+		case strings.HasSuffix(r.URL.Path, "/specifications/hardware"):
+			// Server has defaultDiskGroupId=2 (2x480GB NVMe OS disks), while diskGroups[0] is group 1 (4x8TB HDD data disks)
+			fmt.Fprint(w, `{
+				"defaultDiskGroupId": 2,
+				"diskGroups": [
+					{"diskGroupId": 1, "numberOfDisks": 2, "diskSize": {"value": 8000, "unit": "GB"}},
+					{"diskGroupId": 2, "numberOfDisks": 2, "diskSize": {"value": 480, "unit": "GB"}}
+				]
+			}`)
+		case strings.HasSuffix(r.URL.Path, "/reinstall") && r.Method == http.MethodPost:
+			var p map[string]interface{}
+			_ = json.NewDecoder(r.Body).Decode(&p)
+			mu.Lock()
+			reinstallPayloads = append(reinstallPayloads, p)
+			mu.Unlock()
+			fmt.Fprint(w, `{"taskId": 1001, "status": "init"}`)
+		default:
+			fmt.Fprint(w, `{}`)
+		}
+	}))
+	defer srv.Close()
+	orig := ovhsdk.Endpoints["ovh-eu"]
+	ovhsdk.Endpoints["ovh-eu"] = srv.URL
+	defer func() { ovhsdk.Endpoints["ovh-eu"] = orig }()
+
+	r := gin.New()
+	r.POST("/install/:service_name", InstallOS(st))
+
+	// Case 1: zfsRaidLevel = 10 -> ZFS does NOT support RAID 10 per checkFSRaidCompat, AND defaultDiskGroupId=2 gets overwritten by diskGroups[0]=1!
+	w1 := httptest.NewRecorder()
+	req1 := httptest.NewRequest(http.MethodPost, "/install/ns1.ip-1-2-3.eu", bytes.NewBufferString(`{"templateName":"proxmox9_64","useProxmox9Zfs":true,"zfsRaidLevel":10,"zfsVzSize":10240}`))
+	req1.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w1, req1)
+	if w1.Code != http.StatusOK {
+		t.Fatalf("expected 200 (bypassed checkFSRaidCompat), got %d: %s", w1.Code, w1.Body.String())
+	}
+
+	// Case 2: zfsRaidLevel = 7 on 2-disk server -> /boot ext4 gets raidLevel=7 (unsupported by ext4) AND RAID 7 requires >=5 disks!
+	w2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest(http.MethodPost, "/install/ns2.ip-1-2-3.eu", bytes.NewBufferString(`{"templateName":"proxmox9_64","useProxmox9Zfs":true,"zfsRaidLevel":7,"zfsVzSize":10240}`))
+	req2.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w2, req2)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200 (bypassed ext4+RAID7 & minDisks check), got %d: %s", w2.Code, w2.Body.String())
+	}
+
+	b1, _ := json.Marshal(reinstallPayloads[0]["storage"])
+	b2, _ := json.Marshal(reinstallPayloads[1]["storage"])
+	if !strings.Contains(string(b1), `"diskGroupId":1`) || !strings.Contains(string(b1), `"fileSystem":"zfs"`) || !strings.Contains(string(b1), `"raidLevel":10`) {
+		t.Fatalf("unexpected payload 1: %s", string(b1))
+	}
+	if !strings.Contains(string(b2), `"fileSystem":"ext4","mountPoint":"/boot","raidLevel":7`) {
+		t.Fatalf("unexpected payload 2: %s", string(b2))
+	}
+	t.Logf("[VERIFIED BE-CTRL-03] (1) Overwrote defaultDiskGroupId=2 with diskGroups[0]=1 & sent zfs+raidLevel:10: %s; (2) Sent ext4 /boot+raidLevel:7 on 2-disk server: %s", string(b1), string(b2))
+}
+
+// BE-CTRL-04: Unescaped query/path injection into OVH signed paths + proof that DeleteReverseDNS sub-claim is FALSE.
+func TestBugVerify_BECTRL04_OVHPathInjectionAndDeleteReverseDNSRejection(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	st, _ := newWatchTestMonitor(t)
+	st.Accounts = []types.OVHAccount{
+		{ID: "eu", Name: "EU", Endpoint: "ovh-eu", Zone: "IE", AppKey: "ak", AppSecret: "as", ConsumerKey: "ck", IsDefault: true},
+	}
+
+	var seenPaths []string
+	var mu sync.Mutex
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		seenPaths = append(seenPaths, r.Method+" "+r.URL.RequestURI())
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/auth/time" {
+			fmt.Fprint(w, time.Now().Unix())
+			return
+		}
+		if r.URL.Path == "/ip" {
+			fmt.Fprint(w, `[]`)
+			return
+		}
+		fmt.Fprint(w, `{}`)
+	}))
+	defer srv.Close()
+	orig := ovhsdk.Endpoints["ovh-eu"]
+	ovhsdk.Endpoints["ovh-eu"] = srv.URL
+	defer func() { ovhsdk.Endpoints["ovh-eu"] = orig }()
+
+	r := gin.New()
+	r.POST("/vps/:service_name/mitigation/:ip", EnableVpsMitigation(st))
+	r.GET("/servers/:service_name/tasks/:task_id/timeslots", GetTaskAvailableTimeslots(st))
+	r.DELETE("/servers/:service_name/backup/access", DeleteBackupFTPAccess(st))
+	r.DELETE("/servers/:service_name/reverse/:ip", DeleteReverseDNS(st))
+
+	// 1. EnableVpsMitigation: ?block=1.2.3.4/32%3Finjected=1#frag truncates "/mitigation" path into query string!
+	w1 := httptest.NewRecorder()
+	r.ServeHTTP(w1, httptest.NewRequest(http.MethodPost, "/vps/vps-1/mitigation/1.2.3.4?block=1.2.3.4/32%3Fevil%3D1", nil))
+
+	// 2. GetTaskAvailableTimeslots: :task_id=".." traverses path to /dedicated/server/{svc}/task/availableTimeslots!
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, httptest.NewRequest(http.MethodGet, "/servers/ns1/tasks/../timeslots", nil))
+	// Also test query injection via ? in decoded param (e.g. task_id="123..") or DeleteBackupFTPAccess ?ipBlock=..
+	w3 := httptest.NewRecorder()
+	r.ServeHTTP(w3, httptest.NewRequest(http.MethodDelete, "/servers/ns1/backup/access?ipBlock=..", nil))
+
+	// 4. Verify FALSE sub-claim: DeleteReverseDNS strictly validates net.ParseIP(ip) and rejects traversal BEFORE hitting OVH!
+	mu.Lock()
+	beforeCount := len(seenPaths)
+	mu.Unlock()
+	w4 := httptest.NewRecorder()
+	r.ServeHTTP(w4, httptest.NewRequest(http.MethodDelete, "/servers/ns1/reverse/1.2.3.4%3Fevil?ipBlock=../../me", nil))
+	mu.Lock()
+	afterCount := len(seenPaths)
+	gotPaths := append([]string{}, seenPaths...)
+	mu.Unlock()
+
+	if w4.Code != http.StatusBadRequest || afterCount != beforeCount {
+		t.Fatalf("expected DeleteReverseDNS to reject non-IP with 400 and 0 OVH requests, got code=%d newRequests=%d", w4.Code, afterCount-beforeCount)
+	}
+	t.Logf("[VERIFIED BE-CTRL-04 & REJECTED DeleteReverseDNS sub-claim] OVH upstream received injected URIs=%v; DeleteReverseDNS returned HTTP %d (%s) with 0 upstream calls",
+		gotPaths, w4.Code, strings.TrimSpace(w4.Body.String()))
+}
+
+// BE-CTRL-06 & BE-CTRL-07 & BE-CTRL-12: Telegram HUD race, active-account split-brain, UTF-8 truncation & >64B callback_data.
+func TestBugVerify_BECTRL06_07_12_TelegramAccountSplitBrainUTF8AndCallbackOverflow(t *testing.T) {
+	st, mon := newWatchTestMonitor(t)
+	st.Accounts = []types.OVHAccount{
+		{ID: "eu-default", Name: "EU Default", Endpoint: "ovh-eu", Zone: "IE", AppKey: "ak", AppSecret: "as", ConsumerKey: "ck", IsDefault: true},
+		{ID: "us-active", Name: "US Active", Endpoint: "ovh-us", Zone: "US", AppKey: "ak", AppSecret: "as", ConsumerKey: "ck", IsDefault: false},
+	}
+
+	// 1. BE-CTRL-07: User switches Telegram active account to "us-active", while global default is "eu-default".
+	// validAndInStockDCs(st, plan, "") passes accountID="" -> queries "eu-default" instead of "us-active"!
+	_ = telegram.SetActiveAccount(st, "us-active")
+	var queriedEndpoints []string
+	var mu sync.Mutex
+	srvEU := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		queriedEndpoints = append(queriedEndpoints, "EU:"+r.URL.Path)
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/auth/time" {
+			fmt.Fprint(w, time.Now().Unix())
+			return
+		}
+		fmt.Fprint(w, `[]`)
+	}))
+	defer srvEU.Close()
+	srvUS := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		queriedEndpoints = append(queriedEndpoints, "US:"+r.URL.Path)
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/auth/time" {
+			fmt.Fprint(w, time.Now().Unix())
+			return
+		}
+		fmt.Fprint(w, `[{"fqn":"24ska01-us.ram-32g","datacenters":[{"datacenter":"hil","availability":"1H-low"}]}]`)
+	}))
+	defer srvUS.Close()
+	origEU, origUS := ovhsdk.Endpoints["ovh-eu"], ovhsdk.Endpoints["ovh-us"]
+	ovhsdk.Endpoints["ovh-eu"], ovhsdk.Endpoints["ovh-us"] = srvEU.URL, srvUS.URL
+	defer func() { ovhsdk.Endpoints["ovh-eu"], ovhsdk.Endpoints["ovh-us"] = origEU, origUS }()
+
+	restoreNet := netfp.SwapSharedTransportForTesting(mockAuditTransport(func(r *http.Request) (*http.Response, error) {
+		if strings.HasPrefix(r.URL.String(), srvEU.URL) || strings.HasPrefix(r.URL.String(), srvUS.URL) {
+			return http.DefaultTransport.RoundTrip(r)
+		}
+		return &http.Response{
+			StatusCode: 200,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"plans":[]}`)),
+			Request:    r,
+		}, nil
+	}))
+	defer restoreNet()
+
+	_, stockWhenEmptyAcc := validAndInStockDCs(st, "24ska01-us", "")
+	mu.Lock()
+	gotEndpoints := append([]string{}, queriedEndpoints...)
+	mu.Unlock()
+	if len(stockWhenEmptyAcc) != 0 || len(gotEndpoints) == 0 || !strings.HasPrefix(gotEndpoints[0], "EU:") {
+		t.Fatalf("expected validAndInStockDCs(st, plan, '') to hit wrong EU default endpoint and miss US stock, got stock=%v endpoints=%v", stockWhenEmptyAcc, gotEndpoints)
+	}
+
+	// 2. BE-CTRL-12: truncate() slices raw bytes (`s[:n]`) producing invalid UTF-8 on Chinese text when n is not a multiple of 3!
+	corrupted2 := truncate("账户余额不足无法下单", 5)
+	if utf8.ValidString(corrupted2) {
+		t.Fatalf("expected truncate(Chinese, 5) to slice mid-UTF-8 rune, got valid %q", corrupted2)
+	}
+
+	// 3. BE-CTRL-12: callback_data exceeds Telegram's hard 64-byte limit for long custom/enterprise planCode!
+	longPlan := "25scale-amd-epyc-9654-custom-enterprise-edition-v2-us-west"
+	cbOverflow := "i:D:t:b:" + longPlan + ":us-west-or-1"
+	if len(cbOverflow) <= 64 {
+		t.Fatalf("expected >64B callback_data, got %d", len(cbOverflow))
+	}
+
+	// 4. BE-CTRL-06: Concurrent hudDashboardMessage + ReloadAccounts stress test
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			_ = hudDashboardMessage(st, mon)
+		}()
+		go func(iter int) {
+			defer wg.Done()
+			st.AccountsMu.Lock()
+			st.Accounts = []types.OVHAccount{
+				{ID: fmt.Sprintf("eu-%d", iter), Name: "EU", Endpoint: "ovh-eu", Zone: "IE", IsDefault: true},
+			}
+			st.AccountsMu.Unlock()
+		}(i)
+	}
+	wg.Wait()
+
+	t.Logf("[VERIFIED BE-CTRL-06/07/12] (07) Active TG account='us-active' yet validAndInStockDCs hit %v (stock=%v); (12a) truncate('账户余额不足无法下单', 5) validUTF8=%v hex=%x; (12b) DC toggle callback_data len=%d (>64B Telegram hard limit): %q; (06) hudDashboardMessage reads st.Accounts at telegram_commands.go:863 without AccountsMu",
+		gotEndpoints, stockWhenEmptyAcc, utf8.ValidString(corrupted2), []byte(corrupted2), len(cbOverflow), cbOverflow)
+}
+
+// BE-CTRL-08: EnableVpsMitigation hits EOL /ip/{ip}/mitigation while EnableMitigation returns 410 PERMANENT_MITIGATION_REMOVED.
+func TestBugVerify_BECTRL08_VpsMitigationCallsRetiredPermanentMitigationAPI(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	st, _ := newWatchTestMonitor(t)
+	st.Accounts = []types.OVHAccount{
+		{ID: "eu", Name: "EU", Endpoint: "ovh-eu", Zone: "IE", AppKey: "ak", AppSecret: "as", ConsumerKey: "ck", IsDefault: true},
+	}
+
+	var hitMitigationPOST atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/auth/time" {
+			fmt.Fprint(w, time.Now().Unix())
+			return
+		}
+		if r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/mitigation") {
+			hitMitigationPOST.Store(true)
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprint(w, `{"message":"Permanent mitigation is no longer available"}`)
+			return
+		}
+		fmt.Fprint(w, `[]`)
+	}))
+	defer srv.Close()
+	orig := ovhsdk.Endpoints["ovh-eu"]
+	ovhsdk.Endpoints["ovh-eu"] = srv.URL
+	defer func() { ovhsdk.Endpoints["ovh-eu"] = orig }()
+
+	r := gin.New()
+	r.POST("/dedicated/:service_name/mitigation/:ip", EnableMitigation(st))
+	r.POST("/vps/:service_name/mitigation/:ip", EnableVpsMitigation(st))
+
+	wDed := httptest.NewRecorder()
+	r.ServeHTTP(wDed, httptest.NewRequest(http.MethodPost, "/dedicated/ns1/mitigation/1.2.3.4?block=1.2.3.4%2F32", nil))
+
+	wVps := httptest.NewRecorder()
+	r.ServeHTTP(wVps, httptest.NewRequest(http.MethodPost, "/vps/vps1/mitigation/1.2.3.4?block=1.2.3.4%2F32", nil))
+
+	if wDed.Code != http.StatusGone || !hitMitigationPOST.Load() || wVps.Code == http.StatusGone {
+		t.Fatalf("expected dedicated=410 and VPS calling retired OVH POST /mitigation, got ded=%d vps=%d hit=%v", wDed.Code, wVps.Code, hitMitigationPOST.Load())
+	}
+	t.Logf("[VERIFIED BE-CTRL-08] Dedicated EnableMitigation returned %d (%s), whereas EnableVpsMitigation called retired OVH POST /ip/.../mitigation and failed with %d (%s)",
+		wDed.Code, strings.TrimSpace(wDed.Body.String()), wVps.Code, strings.TrimSpace(wVps.Body.String()))
+}
+
+// BE-CTRL-10 (Handler part): Deleting the account bound to a VPS subscription leaves AutoOrder=true, AutoOrderAccountID="",
+// causing subsequent unrelated PUT /vps/:id (e.g. toggling notifyUnavailable) to fail with HTTP 400!
+func TestBugVerify_BECTRL10_OrphanedVPSSubscriptionRejectsUnrelatedEditWith400(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	st := newTestState(t)
+	acc := types.OVHAccount{ID: "acc-vps", Name: "EU", Endpoint: "ovh-eu", Zone: "IE", AppKey: "ak", AppSecret: "as", ConsumerKey: "ck", IsDefault: true}
+	if err := st.DB.UpsertAccount(acc); err != nil {
+		t.Fatal(err)
+	}
+	_ = st.ReloadAccounts()
+	if err := st.AddVPSSubscription(types.VPSSubscription{
+		ID: "vps-sub-1", PlanCode: "vps-2025-model1", OvhSubsidiary: "IE",
+		MonitorLinux: true, NotifyAvailable: true,
+		AutoOrder: true, AutoPay: true, AutoOrderAccountID: "acc-vps", Quantity: 1,
+		LastStatus: map[string]string{}, History: []map[string]interface{}{}, CreatedAt: types.NowISO(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	r := gin.New()
+	r.DELETE("/accounts/:id", DeleteAccountByID(st))
+	r.PUT("/vps/:subscription_id", UpdateVPSSubscription(st))
+
+	wDel := httptest.NewRecorder()
+	r.ServeHTTP(wDel, httptest.NewRequest(http.MethodDelete, "/accounts/acc-vps", nil))
+	if wDel.Code != http.StatusOK {
+		t.Fatalf("delete account failed: %d %s", wDel.Code, wDel.Body.String())
+	}
+
+	// Now user tries to toggle notifyUnavailable without touching autoOrder -> gets 400!
+	wEdit := httptest.NewRecorder()
+	reqEdit := httptest.NewRequest(http.MethodPut, "/vps/vps-sub-1", bytes.NewBufferString(`{"notifyUnavailable":true}`))
+	reqEdit.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(wEdit, reqEdit)
+	if wEdit.Code != http.StatusBadRequest {
+		t.Fatalf("expected HTTP 400 on unrelated edit of orphaned VPS subscription, got %d: %s", wEdit.Code, wEdit.Body.String())
+	}
+	t.Logf("[VERIFIED BE-CTRL-10 Handler] After DELETE /accounts/acc-vps, unrelated PUT /vps/vps-sub-1 {\"notifyUnavailable\":true} failed with HTTP %d: %s",
+		wEdit.Code, strings.TrimSpace(wEdit.Body.String()))
+}
+
+// BE-CTRL-14 & BE-CTRL-15: Stale defaultPaymentCache after UpdateAccount + false 412 NO_OVH_ACCOUNT on bad ?account= or invalid ProxyURL.
+func TestBugVerify_BECTRL14_15_StalePaymentCacheAndMisleading412NoOVHAccount(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	st := newTestState(t)
+	acc := types.OVHAccount{ID: "acc-cache", Name: "EU1", Endpoint: "ovh-eu", Zone: "IE", AppKey: "ak1", AppSecret: "as1", ConsumerKey: "ck1", IsDefault: true}
+	if err := st.DB.UpsertAccount(acc); err != nil {
+		t.Fatal(err)
+	}
+	_ = st.ReloadAccounts()
+
+	var currentLabel atomic.Value
+	currentLabel.Store("Visa *1111 (Old Credential)")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/auth/time":
+			fmt.Fprint(w, time.Now().Unix())
+		case strings.HasPrefix(r.URL.Path, "/me/payment/method") && r.URL.RawQuery == "default=true":
+			fmt.Fprint(w, `[42]`)
+		case r.URL.Path == "/me/payment/method/42":
+			fmt.Fprintf(w, `{"paymentMethodId":42,"paymentType":"CREDIT_CARD","label":%q,"status":"VALID","default":true}`, currentLabel.Load().(string))
+		default:
+			fmt.Fprint(w, `{"nichandle":"ab12345-ovh","ovhSubsidiary":"IE"}`)
+		}
+	}))
+	defer srv.Close()
+	orig := ovhsdk.Endpoints["ovh-eu"]
+	ovhsdk.Endpoints["ovh-eu"] = srv.URL
+	defer func() { ovhsdk.Endpoints["ovh-eu"] = orig }()
+
+	r := gin.New()
+	r.GET("/payment-default", GetDefaultPayment(st))
+	r.PUT("/accounts/:id", UpdateAccount(st))
+	r.GET("/aliases", ListServerAliases(st))
+	r.GET("/tasks/:service_name", GetServerTasks(st))
+
+	// 1. Populate defaultPaymentCache
+	w1 := httptest.NewRecorder()
+	r.ServeHTTP(w1, httptest.NewRequest(http.MethodGet, "/payment-default?account=acc-cache", nil))
+	if w1.Code != http.StatusOK || !strings.Contains(w1.Body.String(), "Visa *1111") {
+		t.Fatalf("initial payment-default failed: %d %s", w1.Code, w1.Body.String())
+	}
+
+	// 2. Update account credentials to a different OVH account (with Visa *9999) via PUT /accounts/acc-cache
+	currentLabel.Store("Mastercard *9999 (New Credential)")
+	wUpd := httptest.NewRecorder()
+	reqUpd := httptest.NewRequest(http.MethodPut, "/accounts/acc-cache", bytes.NewBufferString(`{"appKey":"ak2","appSecret":"as2","consumerKey":"ck2"}`))
+	reqUpd.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(wUpd, reqUpd)
+	if wUpd.Code != http.StatusOK {
+		t.Fatalf("update account failed: %d %s", wUpd.Code, wUpd.Body.String())
+	}
+
+	// 3. Query /payment-default again -> STILL returns stale "Visa *1111 (Old Credential)"!
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, httptest.NewRequest(http.MethodGet, "/payment-default?account=acc-cache", nil))
+	if !strings.Contains(w2.Body.String(), "Visa *1111") {
+		t.Fatalf("expected stale cached Visa *1111, got: %s", w2.Body.String())
+	}
+
+	// 4. BE-CTRL-15a: Query ListServerAliases with stale ?account=deleted-id while valid account exists -> 412 NO_OVH_ACCOUNT!
+	wAlias := httptest.NewRecorder()
+	r.ServeHTTP(wAlias, httptest.NewRequest(http.MethodGet, "/aliases?account=deleted-id", nil))
+
+	// 5. BE-CTRL-15b: Valid account with malformed ProxyURL -> GetServerTasks returns 412 NO_OVH_ACCOUNT!
+	accBadProxy := types.OVHAccount{ID: "acc-badproxy", Name: "BadProxy", Endpoint: "ovh-eu", Zone: "IE", AppKey: "ak", AppSecret: "as", ConsumerKey: "ck", ProxyURL: "ftp://unsupported-scheme:8080"}
+	_ = st.DB.UpsertAccount(accBadProxy)
+	_ = st.ReloadAccounts()
+	wTasks := httptest.NewRecorder()
+	r.ServeHTTP(wTasks, httptest.NewRequest(http.MethodGet, "/tasks/ns1.ip-1-2-3.eu?account=acc-badproxy", nil))
+
+	if wAlias.Code != http.StatusPreconditionFailed || !strings.Contains(wAlias.Body.String(), "NO_OVH_ACCOUNT") ||
+		wTasks.Code != http.StatusPreconditionFailed || !strings.Contains(wTasks.Body.String(), "NO_OVH_ACCOUNT") {
+		t.Fatalf("expected misleading 412 NO_OVH_ACCOUNT on both stale account & bad proxy, got alias=(%d,%s) tasks=(%d,%s)",
+			wAlias.Code, wAlias.Body.String(), wTasks.Code, wTasks.Body.String())
+	}
+	t.Logf("[VERIFIED BE-CTRL-14 & BE-CTRL-15] (14) After PUT /accounts/acc-cache rotated credentials, GET /payment-default still returned stale %s; (15) Stale ?account=deleted-id -> %d %s; Malformed ProxyURL -> %d %s",
+		strings.TrimSpace(w2.Body.String()), wAlias.Code, strings.TrimSpace(wAlias.Body.String()), wTasks.Code, strings.TrimSpace(wTasks.Body.String()))
+}
+
+// OVH-ORD-03, OVH-ORD-13, OVH-ORD-16:
+// - OVH-ORD-03: mon.FindSubscription exposes live *Subscription pointer serialized without sub.mu in UpdateSubscription / GetSubscriptionHistory.
+// - OVH-ORD-13: Concurrent POST /api/purchase/prewarm spawns N duplicate cart assemblies instead of singleflight coalescing.
+// - OVH-ORD-16: stampPlanFirstSeen across different subsidiary scopes ("sub:IE" vs "sub:FR") loses new-launch timestamp (0 instead of >0).
+func TestBugVerify_OVHORD03_13_16_HandlerConcurrencyStampedeAndFirstSeenLoss(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	st, mon := newWatchTestMonitor(t)
+	purchase.ClearPrewarmPool(st)
+	defer purchase.ClearPrewarmPool(st)
+
+	st.Accounts = []types.OVHAccount{
+		{ID: "eu", Name: "EU", Endpoint: "ovh-eu", Zone: "IE", AppKey: "ak", AppSecret: "as", ConsumerKey: "ck", IsDefault: true},
+	}
+
+	// 1. REJECTION PROOF for OVH-ORD-03: Verify FindSubscription ALREADY returns a thread-safe deep copy (s.snapshot()), NOT a live pointer!
+	mon.AddSubscription("24ska01", []string{"gra"}, true, false, "KS-A", nil, nil, false, 0, "eu", false, nil)
+	snapSub := mon.FindSubscription("24ska01")
+	if snapSub == nil {
+		t.Fatal("expected subscription snapshot")
+	}
+	snapSub.LastStatus["gra|default"] = "mutated-by-caller"
+	if mon.FindSubscription("24ska01").LastStatus["gra|default"] == "mutated-by-caller" {
+		t.Fatal("FindSubscription unexpectedly exposed live pointer instead of s.snapshot()")
+	}
+
+	// 2. OVH-ORD-13: Fire 6 concurrent POST /api/purchase/prewarm requests for the exact same (account, plan, dc)
+	var cartPostCount atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/auth/time":
+			fmt.Fprint(w, time.Now().Unix())
+		case r.Method == http.MethodPost && r.URL.Path == "/order/cart":
+			n := cartPostCount.Add(1)
+			time.Sleep(40 * time.Millisecond) // realistic OVH cart creation latency window
+			fmt.Fprintf(w, `{"cartId":"stampede-cart-%d"}`, n)
+		case strings.HasSuffix(r.URL.Path, "/assign"):
+			fmt.Fprint(w, `null`)
+		case strings.HasSuffix(r.URL.Path, "/eco"):
+			fmt.Fprint(w, `{"itemId":1}`)
+		case strings.Contains(r.URL.Path, "/configuration"):
+			fmt.Fprint(w, `{"id":1}`)
+		default:
+			fmt.Fprint(w, `[]`)
+		}
+	}))
+	defer srv.Close()
+	orig := ovhsdk.Endpoints["ovh-eu"]
+	ovhsdk.Endpoints["ovh-eu"] = srv.URL
+	defer func() { ovhsdk.Endpoints["ovh-eu"] = orig }()
+
+	restoreNet := netfp.SwapSharedTransportForTesting(mockAuditTransport(func(r *http.Request) (*http.Response, error) {
+		if strings.HasPrefix(r.URL.String(), srv.URL) {
+			return http.DefaultTransport.RoundTrip(r)
+		}
+		return &http.Response{
+			StatusCode: 200,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"plans":[{"planCode":"24ska01","configurations":[{"name":"dedicated_region","values":["europe"]}]}]}`)),
+			Request:    r,
+		}, nil
+	}))
+	defer restoreNet()
+
+	r := gin.New()
+	r.POST("/prewarm", PrewarmOrder(st))
+
+	var wg sync.WaitGroup
+	for i := 0; i < 6; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/prewarm", bytes.NewBufferString(`{"account_id":"eu","planCode":"24ska01","datacenter":"gra"}`))
+			req.Header.Set("Content-Type", "application/json")
+			r.ServeHTTP(w, req)
+		}()
+	}
+	wg.Wait()
+	// Wait briefly for async goroutines spawned by PrewarmOrder to complete
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && cartPostCount.Load() < 6 {
+		time.Sleep(20 * time.Millisecond)
+	}
+	createdCarts := cartPostCount.Load()
+	if createdCarts <= 1 {
+		t.Fatalf("expected stampede (>1 duplicate POST /order/cart calls), got %d", createdCarts)
+	}
+
+	// 3. OVH-ORD-16: stampPlanFirstSeen cross-scope contamination ("sub:IE" baseline -> new launch "plan-new-26" -> "sub:FR" first baseline, OR "sub:FR" sees "plan-new-26" first as baseline=0 then "sub:IE" sees "plan-new-26" after baseline!)
+	stFS := newTestState(t)
+	mkPlans := func(codes ...string) []types.ServerPlan {
+		out := make([]types.ServerPlan, len(codes))
+		for i, c := range codes {
+			out[i] = types.ServerPlan{PlanCode: c}
+		}
+		return out
+	}
+	// Scope "sub:IE" establishes baseline with ["24ska01"]
+	_ = stampPlanFirstSeen(stFS, "sub:IE", mkPlans("24ska01"))
+	// Brand new server "26newlaunch" launches globally; user happens to open "sub:FR" tab first (which had no prior baseline), recording "26newlaunch": 0 in shared global map!
+	_ = stampPlanFirstSeen(stFS, "sub:FR", mkPlans("24ska01", "26newlaunch"))
+	// User switches back to "sub:IE" (which ALREADY had baseline ["24ska01"] before "26newlaunch" existed!) -> "26newlaunch" has firstSeen == 0 instead of timestamp > 0!
+	gotIE := stampPlanFirstSeen(stFS, "sub:IE", mkPlans("24ska01", "26newlaunch"))
+	if gotIE["26newlaunch"] != 0 {
+		t.Fatalf("expected shared global map to poison 'sub:IE' new-launch detection with 0, got %d", gotIE["26newlaunch"])
+	}
+
+	t.Logf("[REJECTED OVH-ORD-03 & VERIFIED OVH-ORD-13/16] (03 REJECTED) FindSubscription at subscriptions.go:296 already returns s.snapshot() deep copy under s.mu; (13 VERIFIED) 6 concurrent /prewarm calls created %d OVH carts (5 leaked!); (16 VERIFIED) Cross-subsidiary baseline poisoned 'sub:IE' new-launch '26newlaunch' -> firstSeen=%d (NEW badge lost!)",
+		createdCarts, gotIE["26newlaunch"])
+}

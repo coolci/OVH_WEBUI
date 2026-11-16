@@ -1,0 +1,95 @@
+package telegram
+
+import (
+	"fmt"
+	"io"
+	"log/slog"
+	"path/filepath"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/ovh-webui/server/internal/app"
+	"github.com/ovh-webui/server/internal/config"
+	"github.com/ovh-webui/server/internal/db"
+	"github.com/ovh-webui/server/internal/logger"
+	"github.com/ovh-webui/server/internal/storage"
+	"github.com/ovh-webui/server/internal/types"
+)
+
+func newBugVerifyState(t *testing.T) *app.State {
+	t.Helper()
+	dir := t.TempDir()
+	database, err := db.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { database.Close() })
+	lg := logger.New(filepath.Join(dir, "t.log"), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return app.NewState(storage.Paths{DataDir: dir}, config.New(database), lg, database)
+}
+
+func TestBugVerify_BECTRL13_ControlCharTokenNilDerefPanicAndPollerRestart(t *testing.T) {
+	st := newBugVerifyState(t)
+	// Token containing trailing newline (common copy-paste error) makes http.NewRequest return (nil, err)
+	st.Config.Set(types.Config{
+		TgToken:  "123456:ABCDEF\n",
+		TgChatID: "99999",
+	})
+
+	var sendReplyPanic, answerCbPanic interface{}
+	func() {
+		defer func() { sendReplyPanic = recover() }()
+		SendReply(st, "99999", "hello", 1)
+	}()
+	func() {
+		defer func() { answerCbPanic = recover() }()
+		AnswerCallback(st, "cb-1", "ok", false)
+	}()
+
+	if sendReplyPanic == nil || answerCbPanic == nil {
+		t.Fatalf("expected nil-pointer panic in SendReply (%v) and AnswerCallback (%v)", sendReplyPanic, answerCbPanic)
+	}
+	t.Logf("[VERIFIED BE-CTRL-13 Part 1] SendReply panicked with %q; AnswerCallback panicked with %q",
+		fmt.Sprint(sendReplyPanic), fmt.Sprint(answerCbPanic))
+
+	// Part 2: StopPoller never resets pollerStarted = false, permanently blocking subsequent StartPoller
+	st2 := newBugVerifyState(t)
+	st2.Config.Set(types.Config{TgToken: ""}) // empty token enters idle select in runPoller without network I/O
+
+	pollerMu.Lock()
+	origStarted := pollerStarted
+	pollerStarted = false
+	pollerMu.Unlock()
+	defer func() {
+		StopPoller(100 * time.Millisecond)
+		pollerMu.Lock()
+		pollerStarted = origStarted
+		pollerMu.Unlock()
+	}()
+
+	StartPoller(st2, func(map[string]interface{}) {})
+	StopPoller(500 * time.Millisecond)
+
+	pollerMu.Lock()
+	stillStartedAfterStop := pollerStarted
+	pollerMu.Unlock()
+
+	var secondStartRan atomic.Bool
+	StartPoller(st2, func(map[string]interface{}) { secondStartRan.Store(true) })
+	// Verify pollerStop channel from old run is still closed (proving StartPoller was a no-op)
+	pollerMu.Lock()
+	stopCh := pollerStop
+	pollerMu.Unlock()
+	select {
+	case <-stopCh:
+		// closed! StartPoller did NOT create a fresh stop channel
+	default:
+		t.Fatalf("expected StartPoller after StopPoller to be a permanent no-op because pollerStarted remained true")
+	}
+
+	if !stillStartedAfterStop {
+		t.Fatalf("expected pollerStarted to remain true after StopPoller")
+	}
+	t.Logf("[VERIFIED BE-CTRL-13 Part 2] After StopPoller, pollerStarted=%v and subsequent StartPoller was a permanent no-op (pollerStop remained closed)", stillStartedAfterStop)
+}

@@ -1,0 +1,181 @@
+package catalog
+
+import (
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	ovhsdk "github.com/ovh/go-ovh/ovh"
+
+	"github.com/ovh-webui/server/internal/app"
+	"github.com/ovh-webui/server/internal/netfp"
+	"github.com/ovh-webui/server/internal/ovh"
+	"github.com/ovh-webui/server/internal/types"
+)
+
+func TestBugVerify_OVHORD06_MatchEcoOptionDowngradeAndMediaCollision(t *testing.T) {
+	// 1. Reverse-prefix silent hardware downgrade: multi-disk hybrid wanted, only single-disk base in catalog
+	opts1 := []map[string]interface{}{{"planCode": "softraid-2x960nvme-24rise01"}}
+	_, got1, tier1 := MatchEcoOption(opts1, "softraid-2x960nvme-2x6000sa-24rise01")
+	if got1 != "softraid-2x960nvme-24rise01" {
+		t.Fatalf("expected reverse-prefix downgrade match, got %q", got1)
+	}
+
+	// 2. Unanchored standardized prefix collision: 480GB wanted -> matches 4800GB (10x capacity mismatch)
+	opts2 := []map[string]interface{}{{"planCode": "softraid-2x4800nvme-24rise01"}}
+	_, got2, tier2 := MatchEcoOption(opts2, "softraid-2x480-24rise01")
+	if got2 != "softraid-2x4800nvme-24rise01" {
+		t.Fatalf("expected unanchored prefix collision, got %q", got2)
+	}
+
+	// 3. Storage media suffix erasure: wanted NVMe -> matches SATA SSD via StandardizeConfig
+	opts3 := []map[string]interface{}{{"planCode": "softraid-2x960-ssd"}}
+	_, got3, tier3 := MatchEcoOption(opts3, "softraid-2x960-nvme")
+	if got3 != "softraid-2x960-ssd" {
+		t.Fatalf("expected media erasure collision, got %q", got3)
+	}
+
+	t.Logf("[VERIFIED OVH-ORD-06] (1) Hybrid downgrade: wanted='softraid-2x960nvme-2x6000sa-24rise01' matched %q (%s); (2) Prefix collision: wanted='softraid-2x480-24rise01' matched %q (%s); (3) Media erasure: wanted='softraid-2x960-nvme' matched %q (%s)",
+		got1, tier1, got2, tier2, got3, tier3)
+}
+
+func TestBugVerify_OVHORD07_CheckServerAvailabilityDropsSystemStorageAndGPU(t *testing.T) {
+	resetCatalogCaches()
+	origFetch := fetchSubsidiaryCatalog
+	defer func() { fetchSubsidiaryCatalog = origFetch; resetCatalogCaches() }()
+
+	fetchSubsidiaryCatalog = func(_ *app.State, _ string) (*subsidiaryCatalog, error) {
+		return &subsidiaryCatalog{
+			plans: map[string]planConfig{
+				"24advstor01-v3": {
+					addonFamilies: map[string][]string{
+						"memory":         {"ram-64g-ecc-2933-24advstor01-v3"},
+						"storage":        {"softraid-4x16000sa-24advstor01-v3"},
+						"system-storage": {"softraid-2x480ssd-24advstor01-v3"},
+						"gpu":            {"gpu-rtx4000-ada-24advstor01-v3"},
+					},
+				},
+			},
+			fetchedAt: time.Now(),
+		}, nil
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/auth/time" {
+			fmt.Fprint(w, time.Now().Unix())
+			return
+		}
+		if strings.Contains(r.URL.Path, "/dedicated/server/datacenter/availabilities") {
+			fmt.Fprint(w, `[{
+				"fqn": "24advstor01-v3.ram-64g-ecc-2933.softraid-4x16000sa.softraid-2x480ssd.gpu-rtx4000-ada",
+				"memory": "ram-64g-ecc-2933",
+				"storage": "softraid-4x16000sa",
+				"systemStorage": "softraid-2x480ssd",
+				"gpu": "gpu-rtx4000-ada",
+				"datacenters": [{"datacenter": "gra", "availability": "1H-low"}]
+			}]`)
+			return
+		}
+		fmt.Fprint(w, `{}`)
+	}))
+	defer srv.Close()
+	origEP := ovhsdk.Endpoints["ovh-eu"]
+	ovhsdk.Endpoints["ovh-eu"] = srv.URL
+	defer func() { ovhsdk.Endpoints["ovh-eu"] = origEP }()
+
+	// Block external public catalog fetch so LoadServerList uses the mocked OVH client fallback deterministically
+	restoreTransport := netfp.SwapSharedTransportForTesting(roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if strings.HasPrefix(r.URL.String(), srv.URL) {
+			return http.DefaultTransport.RoundTrip(r)
+		}
+		return nil, fmt.Errorf("blocked external request in test: %s", r.URL.String())
+	}))
+	defer restoreTransport()
+
+	st := testState(t)
+	acc := types.OVHAccount{ID: "eu", Name: "EU", Endpoint: "ovh-eu", Zone: "IE", AppKey: "k", AppSecret: "s", ConsumerKey: "c", IsDefault: true}
+	st.Accounts = []types.OVHAccount{acc}
+	st.OVH = ovh.NewFactory(nil, st.FindAccount)
+
+	cfgs := CheckServerAvailabilityWithConfigs(st, "24advstor01-v3", "eu")
+	if len(cfgs) != 1 {
+		t.Fatalf("expected 1 config, got %d", len(cfgs))
+	}
+	var gotOpts []string
+	for _, c := range cfgs {
+		gotOpts = c.Options
+	}
+	for _, o := range gotOpts {
+		if strings.Contains(o, "480ssd") || strings.Contains(o, "gpu") {
+			t.Fatalf("unexpectedly extracted systemStorage/gpu: %v", gotOpts)
+		}
+	}
+	t.Logf("[VERIFIED OVH-ORD-07] Availability had systemStorage='softraid-2x480ssd' and gpu='gpu-rtx4000-ada', but CheckServerAvailabilityWithConfigs only extracted Options=%v", gotOpts)
+}
+
+func TestBugVerify_OVHORD15_IsEcoPlanCodeStandardizeAndDuplicateDCs(t *testing.T) {
+	isAdv := IsEcoPlanCode("24adv01-v1")
+	isKS := IsEcoPlanCode("ks-le-b")
+	stdAdv := StandardizeConfig("softraid-2x960nvme-24adv01")
+	if isAdv || isKS || stdAdv != "softraid-2x960nvme-24adv01" {
+		t.Fatalf("unexpected: isAdv=%v isKS=%v stdAdv=%q", isAdv, isKS, stdAdv)
+	}
+
+	// Verify LoadServerList duplicates datacenters across multiple FQN rows for the same planCode
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/auth/time":
+			fmt.Fprint(w, time.Now().Unix())
+		case strings.Contains(r.URL.Path, "/order/catalog/public/eco"):
+			fmt.Fprint(w, `{
+				"plans": [{"planCode": "24ska01", "invoiceName": "KS-A", "pricings": [{"price": 999, "interval": 1, "capacities": ["renew"]}]}],
+				"products": []
+			}`)
+		case strings.Contains(r.URL.Path, "/dedicated/server/datacenter/availabilities"):
+			fmt.Fprint(w, `[
+				{"fqn":"24ska01.ram-32g.ssd-1","datacenters":[{"datacenter":"gra","availability":"1H-low"},{"datacenter":"rbx","availability":"unavailable"}]},
+				{"fqn":"24ska01.ram-64g.ssd-2","datacenters":[{"datacenter":"gra","availability":"unavailable"},{"datacenter":"rbx","availability":"1H-low"}]}
+			]`)
+		default:
+			fmt.Fprint(w, `{}`)
+		}
+	}))
+	defer srv.Close()
+	origEP := ovhsdk.Endpoints["ovh-eu"]
+	ovhsdk.Endpoints["ovh-eu"] = srv.URL
+	defer func() { ovhsdk.Endpoints["ovh-eu"] = origEP }()
+
+	// Block external public catalog fetch so LoadServerList uses the mocked OVH client fallback deterministically
+	restoreTransport := netfp.SwapSharedTransportForTesting(roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if strings.HasPrefix(r.URL.String(), srv.URL) {
+			return http.DefaultTransport.RoundTrip(r)
+		}
+		return nil, fmt.Errorf("blocked external request in test: %s", r.URL.String())
+	}))
+	defer restoreTransport()
+
+	st := testState(t)
+	acc := types.OVHAccount{ID: "eu", Name: "EU", Endpoint: "ovh-eu", Zone: "IE", AppKey: "k", AppSecret: "s", ConsumerKey: "c", IsDefault: true}
+	st.Accounts = []types.OVHAccount{acc}
+	st.OVH = ovh.NewFactory(nil, st.FindAccount)
+
+	plans, _ := LoadServerList(st, "eu")
+	if len(plans) != 1 || len(plans[0].Datacenters) != 4 {
+		t.Fatalf("expected 4 duplicate DC entries across 2 FQNs, got plans=%d dcs=%v", len(plans), plans)
+	}
+	var dcCodes []string
+	for _, d := range plans[0].Datacenters {
+		dcCodes = append(dcCodes, d.Datacenter)
+	}
+	t.Logf("[VERIFIED OVH-ORD-15] IsEcoPlanCode('24adv01-v1')=%v, IsEcoPlanCode('ks-le-b')=%v, StandardizeConfig('softraid-2x960nvme-24adv01')=%q, LoadServerList DCs=%v (duplicated across FQNs!)",
+		isAdv, isKS, stdAdv, dcCodes)
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

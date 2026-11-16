@@ -1,0 +1,164 @@
+package vps
+
+import (
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/ovh-webui/server/internal/app"
+	"github.com/ovh-webui/server/internal/netfp"
+	"github.com/ovh-webui/server/internal/notify"
+	"github.com/ovh-webui/server/internal/types"
+)
+
+func TestBugVerify_OVHORD08_VPSMonitorDropsMismatchedDatacenterCodes(t *testing.T) {
+	state, _ := newVPSOrderState(t)
+	state.VPSCheckInterval = 1
+
+	// Subscription created with catalog vps_datacenter values ("DE", "UK", "YNM") as done by BatchAddAllVPS / GetVPSModels
+	sub := types.VPSSubscription{
+		ID:              "sub-de-uk",
+		PlanCode:        "vps-2025-model1",
+		OvhSubsidiary:   "IE",
+		Datacenters:     []string{"DE", "UK", "YNM"},
+		MonitorLinux:    true,
+		NotifyAvailable: true,
+		LastStatus:      map[string]string{},
+	}
+	state.VPSSubscriptions = []types.VPSSubscription{sub}
+
+	var checks atomic.Int32
+	transport := roundTrip(func(r *http.Request) (*http.Response, error) {
+		if strings.HasSuffix(r.URL.Path, "/vps/order/rule/datacenter/aggregated") {
+			checks.Add(1)
+			body := `{"models":[{"planCode":"vps-2025-model1","datacenters":[
+				{"datacenter":"DE","code":"eu-west-lim","status":"available","linuxStatus":"available"},
+				{"datacenter":"UK","code":"eu-west-eri","status":"available","linuxStatus":"available"},
+				{"datacenter":"YNM","code":"ap-south-mum","status":"available","linuxStatus":"available"}
+			]}]}`
+			return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+		}
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{}`)), Request: r}, nil
+	})
+	restore := netfp.SwapSharedTransportForTesting(transport)
+	defer restore()
+	origClient := availabilityHTTPClient
+	availabilityHTTPClient = func(_ *app.State, _ string, timeout time.Duration) (*http.Client, error) {
+		return &http.Client{Transport: transport, Timeout: timeout}, nil
+	}
+	defer func() { availabilityHTTPClient = origClient }()
+
+	notify.AllowLocalWebhookForTesting = true
+	defer func() { notify.AllowLocalWebhookForTesting = false }()
+	hook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { io.WriteString(w, `{"code":0}`) }))
+	defer hook.Close()
+	state.Config.Set(types.Config{NotifyWebhookURL: hook.URL})
+
+	if !Start(state) {
+		t.Fatal("start failed")
+	}
+	defer func() { Stop(state); waitLoopExit() }()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for checks.Load() < 1 && time.Now().Before(deadline) {
+		time.Sleep(30 * time.Millisecond)
+	}
+	time.Sleep(150 * time.Millisecond)
+	Stop(state)
+	waitLoopExit()
+
+	state.VPSSubsMu.Lock()
+	gotStatus := state.VPSSubscriptions[0].LastStatus
+	state.VPSSubsMu.Unlock()
+	if len(gotStatus) != 0 {
+		t.Fatalf("expected DE/UK/YNM subscription to match 0 datacenters against eu-west-lim/eu-west-eri/ap-south-mum, got %v", gotStatus)
+	}
+	t.Logf("[VERIFIED OVH-ORD-08] Subscription monitoring Datacenters=[DE UK YNM] checked %d time(s) against live rule codes [eu-west-lim eu-west-eri ap-south-mum]: LastStatus=%v (100%% of datacenters dropped!)",
+		checks.Load(), gotStatus)
+}
+
+func TestBugVerify_OVHORD09_VPSMonitorInFlightOverwritesUpdatedSubsidiary(t *testing.T) {
+	state, _ := newVPSOrderState(t)
+	state.VPSCheckInterval = 10
+
+	state.VPSSubscriptions = []types.VPSSubscription{{
+		ID:            "sub-race-sub",
+		PlanCode:      "vps-2025-model1",
+		OvhSubsidiary: "FR",
+		MonitorLinux:  true,
+		LastStatus:    map[string]string{},
+	}}
+	_ = SaveSubscriptions(state)
+
+	enteredHTTP := make(chan struct{})
+	releaseHTTP := make(chan struct{})
+	var once atomic.Bool
+
+	transport := roundTrip(func(r *http.Request) (*http.Response, error) {
+		if strings.HasSuffix(r.URL.Path, "/vps/order/rule/datacenter/aggregated") {
+			if once.CompareAndSwap(false, true) {
+				close(enteredHTTP)
+				<-releaseHTTP
+			}
+			body := `{"models":[{"planCode":"vps-2025-model1","datacenters":[{"datacenter":"GRA","code":"eu-west-gra","status":"available","linuxStatus":"available"}]}]}`
+			return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+		}
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{}`)), Request: r}, nil
+	})
+	restore := netfp.SwapSharedTransportForTesting(transport)
+	defer restore()
+	origClient := availabilityHTTPClient
+	availabilityHTTPClient = func(_ *app.State, _ string, timeout time.Duration) (*http.Client, error) {
+		return &http.Client{Transport: transport, Timeout: timeout}, nil
+	}
+	defer func() { availabilityHTTPClient = origClient }()
+
+	notify.AllowLocalWebhookForTesting = true
+	defer func() { notify.AllowLocalWebhookForTesting = false }()
+	hook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, `{"code":0}`) }))
+	defer hook.Close()
+	state.Config.Set(types.Config{NotifyWebhookURL: hook.URL})
+
+	if !Start(state) {
+		t.Fatal("start failed")
+	}
+	defer func() { Stop(state); waitLoopExit() }()
+
+	<-enteredHTTP
+	// User edits subsidiary from FR -> US while FR check is in-flight, resetting LastStatus={}
+	_, _, err := state.MutateVPSSubscription("sub-race-sub", func(s *types.VPSSubscription) bool {
+		s.OvhSubsidiary = "US"
+		s.LastStatus = map[string]string{}
+		return true
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	close(releaseHTTP)
+	// Wait for round writeback
+	deadline := time.Now().Add(5 * time.Second)
+	var polluted map[string]string
+	for time.Now().Before(deadline) {
+		state.VPSSubsMu.Lock()
+		if len(state.VPSSubscriptions[0].LastStatus) > 0 {
+			polluted = state.VPSSubscriptions[0].LastStatus
+			state.VPSSubsMu.Unlock()
+			break
+		}
+		state.VPSSubsMu.Unlock()
+		time.Sleep(20 * time.Millisecond)
+	}
+	Stop(state)
+	waitLoopExit()
+
+	if len(polluted) == 0 {
+		t.Fatalf("expected stale FR round to overwrite cleared US LastStatus")
+	}
+	t.Logf("[VERIFIED OVH-ORD-09] User switched OvhSubsidiary FR->US and cleared LastStatus={}, but in-flight FR worker overwrote US subscription LastStatus with %v!", polluted)
+}

@@ -1,0 +1,44 @@
+package schemacheck
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestBugVerify_OVHORD18_SchemacheckBaselineDropsUSOrderDetailAndDuplicatesSupport(t *testing.T) {
+	// 1. Check duplicate "support" in namespaces slice
+	supportCount := 0
+	for _, ns := range namespaces {
+		if ns == "support" {
+			supportCount++
+		}
+	}
+	if supportCount != 2 {
+		t.Fatalf("expected 'support' duplicated twice in namespaces, got %d", supportCount)
+	}
+
+	// 2. Check testdata/ovh-endpoints.json missing "US" under "GET /me/order/{orderId}/details/{orderDetailId}"
+	raw, err := os.ReadFile(filepath.Join("testdata", "ovh-endpoints.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var base baseline
+	if err := json.Unmarshal(raw, &base); err != nil {
+		t.Fatal(err)
+	}
+	listEp := base["GET /me/order/{orderId}/details"]
+	detailEp := base["GET /me/order/{orderId}/details/{orderDetailId}"]
+	_, listHasUS := listEp["US"]
+	_, detailHasCA := detailEp["CA"]
+	_, detailHasEU := detailEp["EU"]
+	_, detailHasUS := detailEp["US"]
+
+	if !listHasUS || !detailHasCA || !detailHasEU || detailHasUS {
+		t.Fatalf("unexpected region presence: listHasUS=%v detailHasCA=%v detailHasEU=%v detailHasUS=%v",
+			listHasUS, detailHasCA, detailHasEU, detailHasUS)
+	}
+	t.Logf("[VERIFIED OVH-ORD-18] 'support' appears %d times in namespaces; 'GET /me/order/{orderId}/details' has US=%v, whereas 'GET /me/order/{orderId}/details/{orderDetailId}' has CA=%v, EU=%v, US=%v (US silently dropped because US OpenAPI uses {detailId}!)",
+		supportCount, listHasUS, detailHasCA, detailHasEU, detailHasUS)
+}

@@ -1,0 +1,1098 @@
+{
+  "schemaVersion": "1.0.0",
+  "project": "OVH_WEBUI",
+  "auditPolicy": "zero-prior-independent-full-repo-audit",
+  "sourceCodeModified": false,
+  "totalVerifiedBugs": 79,
+  "bySeverity": {
+    "Critical": 9,
+    "High": 35,
+    "Medium": 28,
+    "Low": 7
+  },
+  "byDomain": {
+    "security_and_infra": 12,
+    "ovh_api_and_order_engine": 17,
+    "backend_core_and_control": 13,
+    "fullstack_contract_and_openapi": 5,
+    "frontend_core_and_snipe": 20,
+    "frontend_control_plane": 12
+  },
+  "rejectedFalsePositivesCount": 6,
+  "masterLedger": "00_MASTER_HANDOFF_LEDGER.md",
+  "standardsAndRejectedAppendix": "07_NEXTGEN_STANDARDS_AND_REJECTED_CLAIMS.md",
+  "bugs": [
+    {
+      "id": "BUG-SEC-01",
+      "domain": "security_and_infra",
+      "severity": "Critical",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 0",
+      "subLedger": "01_SECURITY_AND_INFRA_BUGS.md",
+      "title": "`init-first-run.sh` 的 `sed` 占位符与 `backend/.env.example` 失配，首次初始化静默保留弱口令 `API_SECRET_KEY=123456` 并监听全网卡",
+      "locations": [
+        "backend/.env.example:9",
+        "scripts/init-first-run.sh:24-25, 53-56, 78-79",
+        "backend/main.go:91-101, 156-158"
+      ]
+    },
+    {
+      "id": "BUG-SEC-02",
+      "domain": "security_and_infra",
+      "severity": "High",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 1",
+      "subLedger": "01_SECURITY_AND_INFRA_BUGS.md",
+      "title": "Windows 自更新异常回滚 `RollbackIfStale` 直接对运行中 `.exe` 执行 `os.Rename(backup, exe)` 必败，触发无限回滚报错循环",
+      "locations": [
+        "backend/internal/updater/updater.go:318, 405-425",
+        "backend/main.go:88-90"
+      ]
+    },
+    {
+      "id": "BUG-SEC-03",
+      "domain": "security_and_infra",
+      "severity": "High",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 0",
+      "subLedger": "01_SECURITY_AND_INFRA_BUGS.md",
+      "title": "容器编排缺失 `TRUSTED_PROXIES` 且鉴权中间件在核验密钥前按共享来源 IP 短路封禁，10 次未授权探测即可将合法管理员锁死 5 分钟",
+      "locations": [
+        "backend/internal/router/router.go:38-46",
+        "backend/internal/auth/middleware.go:63-80, 145-166",
+        "backend/internal/auth/ratelimit.go:25-33, 53-81",
+        "docker-compose.yml:24-33"
+      ]
+    },
+    {
+      "id": "BUG-SEC-04",
+      "domain": "security_and_infra",
+      "severity": "High",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 0",
+      "subLedger": "01_SECURITY_AND_INFRA_BUGS.md",
+      "title": "多处控制面次级路由参数与 `?block=`/`?ipBlock=` 未转义直拼 OVH 签名 API 路径（`?`/`#`/`..` 注入），且 VPS 缓解接口缺失 `:service_name` 归属校验",
+      "locations": [
+        "backend/internal/handlers/servicename_guard.go:15-52",
+        "backend/internal/handlers/vps_control_mitigation.go:43-57, 164-234",
+        "backend/internal/handlers/server_control_basic.go:1405-1427, 1463-1506",
+        "backend/internal/handlers/server_control_hardware.go:724-731, 786-793",
+        "backend/internal/handlers/server_control_misc.go:176-182, 317-323, 539-550",
+        "backend/internal/handlers/server_control_network.go:118-130, 308-323",
+        "backend/internal/handlers/server_control_features.go:86-88, 459-474",
+        "backend/internal/handlers/vps_control_basic.go:431, 445",
+        "backend/internal/handlers/vps_control_install.go:240-265, 422-435",
+        "backend/internal/handlers/vps_control_misc.go:200, 206"
+      ]
+    },
+    {
+      "id": "BUG-SEC-05",
+      "domain": "security_and_infra",
+      "severity": "High",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 0",
+      "subLedger": "01_SECURITY_AND_INFRA_BUGS.md",
+      "title": "免鉴权配对接口 `POST /api/app/pair` 存在限流器 TOCTOU 并发绕过（20/20 穿透单 IP 5 次上限）、全局 30 次/分低阈值配对锁死 DoS 与未脱敏日志注入",
+      "locations": [
+        "backend/internal/auth/middleware.go:31",
+        "backend/internal/handlers/appair.go:46-71, 118-163, 213-264"
+      ]
+    },
+    {
+      "id": "BUG-SEC-06",
+      "domain": "security_and_infra",
+      "severity": "High",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 0",
+      "subLedger": "01_SECURITY_AND_INFRA_BUGS.md",
+      "title": "`ovh_accounts.proxy_url` 被加密迁移与密文检测遗漏致代理账密明文滞留，且 `OVH_DB_KEY` 失配恢复时静默清空账户代理暴露源站 IP",
+      "locations": [
+        "backend/internal/db/encrypt_migrate.go:25-55",
+        "backend/internal/db/has_encrypted.go:19-27",
+        "backend/internal/db/accounts.go:92, 262, 307, 336-363",
+        "backend/internal/handlers/accounts.go:306-381"
+      ]
+    },
+    {
+      "id": "BUG-SEC-07",
+      "domain": "security_and_infra",
+      "severity": "Medium",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 1",
+      "subLedger": "01_SECURITY_AND_INFRA_BUGS.md",
+      "title": "`NotifyWebhookURL` 未纳入落盘加密与 `GET /api/settings` 脱敏，群机器人 Webhook 鉴权 Token 全明文存储与回显",
+      "locations": [
+        "backend/internal/config/config.go:28-51",
+        "backend/internal/db/encrypt_migrate.go:83",
+        "backend/internal/handlers/settings.go:36-41, 69-92",
+        "src/components/settings/NotifySection.tsx:73-77"
+      ]
+    },
+    {
+      "id": "BUG-SEC-08",
+      "domain": "security_and_infra",
+      "severity": "Medium",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 1",
+      "subLedger": "01_SECURITY_AND_INFRA_BUGS.md",
+      "title": "免鉴权接口 `GET /api/version/check-update` 零缓存直连 GitHub API、无上限读取响应体并反射上游状态，可被打满匿名配额瘫痪自更新",
+      "locations": [
+        "backend/internal/auth/middleware.go:30",
+        "backend/internal/handlers/version.go:87-145"
+      ]
+    },
+    {
+      "id": "BUG-SEC-09",
+      "domain": "security_and_infra",
+      "severity": "Medium",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 1",
+      "subLedger": "01_SECURITY_AND_INFRA_BUGS.md",
+      "title": "Webhook 通知每次调用泄漏全新 `http.Transport`，继承环境变量代理且 `IsPrivateOrLocalIP` 漏拦 IPv4 兼容 IPv6 / NAT64 / 6to4 等内网映射地址",
+      "locations": [
+        "backend/internal/notify/notify.go:31-67, 172-223, 259-264"
+      ]
+    },
+    {
+      "id": "BUG-SEC-10",
+      "domain": "security_and_infra",
+      "severity": "Medium",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 1",
+      "subLedger": "01_SECURITY_AND_INFRA_BUGS.md",
+      "title": "移动端设备令牌（`Bearer app_...`）与主密钥 `X-API-Key` 完全同权且零权限隔离，泄露任一设备令牌可自签新配对码驻留并触发服务端自更新",
+      "locations": [
+        "backend/internal/auth/middleware.go:84-97",
+        "backend/internal/router/routes_api.go:29-30, 105-121"
+      ]
+    },
+    {
+      "id": "BUG-SEC-11",
+      "domain": "security_and_infra",
+      "severity": "Medium",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 0",
+      "subLedger": "01_SECURITY_AND_INFRA_BUGS.md",
+      "title": "一键部署与初始化脚本创建宿主机 `.env`（含 `API_SECRET_KEY` / `OVH_DB_KEY`）未设 `0600` 权限，且 `upsert_env` 使用未转义 `sed` 处理交互输入",
+      "locations": [
+        "scripts/linux-oneclick-deploy.sh:99-137, 160-175",
+        "scripts/docker-deploy.sh:30-45",
+        "scripts/init-first-run.sh:53-63"
+      ]
+    },
+    {
+      "id": "BUG-SEC-12",
+      "domain": "security_and_infra",
+      "severity": "Medium",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 1",
+      "subLedger": "01_SECURITY_AND_INFRA_BUGS.md",
+      "title": "`nginx/default.conf` 的 `location /assets/` 子块覆盖丢失全部安全响应头且漏拦 `/api/internal*`，开发环境 Vite 默认监听 `0.0.0.0` 暴露局域网代理",
+      "locations": [
+        "nginx/default.conf:17-50",
+        "vite.config.ts:8-27"
+      ]
+    },
+    {
+      "id": "BUG-OVH-01",
+      "domain": "ovh_api_and_order_engine",
+      "severity": "Critical",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 0",
+      "subLedger": "02_OVH_API_AND_ORDER_ENGINE_BUGS.md",
+      "title": "`CheckCheckout` 误调结账前模拟预览端点 `GET /order/cart/{cartId}/checkout` 反查已成交订单号，导致 `uncertain` 任务每 15s 永久死循环",
+      "locations": [
+        "backend/internal/purchase/checkout_journal.go:45-104",
+        "backend/internal/catalogwatch/reconcile.go:14-82"
+      ]
+    },
+    {
+      "id": "BUG-OVH-02",
+      "domain": "ovh_api_and_order_engine",
+      "severity": "Critical",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 0",
+      "subLedger": "02_OVH_API_AND_ORDER_ENGINE_BUGS.md",
+      "title": "`orderDetailContradictsDC` 未归一机房别名与多可用区长码（`mum`↔`ynm`、`yyz`/`ca-east-tor-a`↔`tor`、`eu-west-par-a`↔`par`），误判已有订单冲突引发二次扣款重买",
+      "locations": [
+        "backend/internal/purchase/reconcile.go:166-172, 193-214",
+        "backend/internal/purchase/purchase.go:126-145, 822-835",
+        "backend/internal/ovh/helpers.go:128-140"
+      ]
+    },
+    {
+      "id": "BUG-OVH-03",
+      "domain": "ovh_api_and_order_engine",
+      "severity": "High",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 2",
+      "subLedger": "02_OVH_API_AND_ORDER_ENGINE_BUGS.md",
+      "title": "`Factory.ClientFor` 与 `IsolateClient` 漏设 `sdk.Timeout`，每次请求被 `go-ovh` 强制将 `60s` 超时覆写回 `180s`",
+      "locations": [
+        "backend/internal/ovh/client.go:95, 117-120, 138",
+        "backend/internal/ovh/isolated_client.go:22-29",
+        "backend/internal/purchase/purchase.go:92-96"
+      ]
+    },
+    {
+      "id": "BUG-OVH-04",
+      "domain": "ovh_api_and_order_engine",
+      "severity": "High",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 2",
+      "subLedger": "02_OVH_API_AND_ORDER_ENGINE_BUGS.md",
+      "title": "`price.getInternal` 吞掉 `POST /order/cart/{cartId}/assign` 错误并将未绑定裸车注入预热池，导致补货快速结账必报 400 丢单",
+      "locations": [
+        "backend/internal/price/price.go:184-191, 490-493",
+        "backend/internal/monitor/price.go:184, 194-196, 281-290",
+        "backend/internal/purchase/purchase.go:308-315, 780-806, 932-943"
+      ]
+    },
+    {
+      "id": "BUG-OVH-05",
+      "domain": "ovh_api_and_order_engine",
+      "severity": "High",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 2",
+      "subLedger": "02_OVH_API_AND_ORDER_ENGINE_BUGS.md",
+      "title": "`MatchEcoOption` 与 `StandardizeConfig` 存在反向前缀降配、无分隔符数字碰撞（`480`→`4800`）与存储介质擦除（NVMe→SSD），可静默买错硬件",
+      "locations": [
+        "backend/internal/catalog/ecooption.go:73-87",
+        "backend/internal/catalog/catalog.go:364-386",
+        "backend/internal/catalog/standardize.go:19-20, 28, 33, 46",
+        "backend/internal/purchase/purchase.go:536-540"
+      ]
+    },
+    {
+      "id": "BUG-OVH-06",
+      "domain": "ovh_api_and_order_engine",
+      "severity": "High",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 2",
+      "subLedger": "02_OVH_API_AND_ORDER_ENGINE_BUGS.md",
+      "title": "`CheckServerAvailabilityWithConfigs` 仅提取 `memory` 与 `storage`，遗漏必选硬件家族 `systemStorage` 与 `gpu`",
+      "locations": [
+        "backend/internal/catalog/catalog.go:128-207",
+        "backend/internal/monitor/check.go:793-815"
+      ]
+    },
+    {
+      "id": "BUG-OVH-07",
+      "domain": "ovh_api_and_order_engine",
+      "severity": "High",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 2",
+      "subLedger": "02_OVH_API_AND_ORDER_ENGINE_BUGS.md",
+      "title": "VPS 监控仅比对可用性接口 `code`（`eu-west-lim`）而忽略 `datacenter` 简写名（`DE`/`UK`/`YNM`），导致批量订阅与目录机房订阅永久漏检漏买",
+      "locations": [
+        "backend/internal/vps/vps.go:533-562",
+        "backend/internal/vps/catalog.go:177",
+        "backend/internal/vps/purchase.go:606-625"
+      ]
+    },
+    {
+      "id": "BUG-OVH-08",
+      "domain": "ovh_api_and_order_engine",
+      "severity": "High",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 2",
+      "subLedger": "02_OVH_API_AND_ORDER_ENGINE_BUGS.md",
+      "title": "VPS 监控轮询缺乏代次版本（`Revision`）保护，后台在途巡检协程无条件用旧子公司状态覆写新子公司干净基线",
+      "locations": [
+        "backend/internal/vps/vps.go:482-485, 681-693",
+        "backend/internal/vps/purchase.go:498-518",
+        "backend/internal/handlers/subscription_edit.go:284-301"
+      ]
+    },
+    {
+      "id": "BUG-OVH-09",
+      "domain": "ovh_api_and_order_engine",
+      "severity": "High",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 2",
+      "subLedger": "02_OVH_API_AND_ORDER_ENGINE_BUGS.md",
+      "title": "独服多账户监控在 `check.go:968` 发送补货通知时漏传 `choice.accountID`，导致 Telegram 一键下单按钮绑错首账户",
+      "locations": [
+        "backend/internal/monitor/check.go:968-969",
+        "backend/internal/monitor/notify.go:254-292, 506-515"
+      ]
+    },
+    {
+      "id": "BUG-OVH-10",
+      "domain": "ovh_api_and_order_engine",
+      "severity": "Medium",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 2",
+      "subLedger": "02_OVH_API_AND_ORDER_ENGINE_BUGS.md",
+      "title": "`price.getInternalCached` 将瞬态 429/5xx 失败负缓存 20s 毒化补货窗口，且 `fork()` 失败回退引发共享 `ovhsdk.Client` 并发竞态",
+      "locations": [
+        "backend/internal/price/price.go:90-108, 177-182"
+      ]
+    },
+    {
+      "id": "BUG-OVH-11",
+      "domain": "ovh_api_and_order_engine",
+      "severity": "Medium",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 2",
+      "subLedger": "02_OVH_API_AND_ORDER_ENGINE_BUGS.md",
+      "title": "`ovh.TrackCart` 在结账成功、未决及 `catalogwatch` 全生命周期漏调 `ReleaseCart`，造成内存泄漏并阻塞 `cart_janitor`",
+      "locations": [
+        "backend/internal/ovh/carts.go:15-36",
+        "backend/internal/purchase/purchase.go:291-303, 330, 819, 838, 862",
+        "backend/internal/vps/purchase.go:108, 116-124, 250",
+        "backend/internal/catalogwatch/watcher.go:95, 443"
+      ]
+    },
+    {
+      "id": "BUG-OVH-12",
+      "domain": "ovh_api_and_order_engine",
+      "severity": "Medium",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 2",
+      "subLedger": "02_OVH_API_AND_ORDER_ENGINE_BUGS.md",
+      "title": "`POST /api/purchase/prewarm` 缺少 `singleflight` 去重与并发上限，连续触发在 OVH 远端制造孤儿购物车风暴",
+      "locations": [
+        "backend/internal/handlers/quick_order.go:98-113",
+        "backend/internal/purchase/prewarm_pool.go:154-195"
+      ]
+    },
+    {
+      "id": "BUG-OVH-13",
+      "domain": "ovh_api_and_order_engine",
+      "severity": "Medium",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 2",
+      "subLedger": "02_OVH_API_AND_ORDER_ENGINE_BUGS.md",
+      "title": "`catalogwatch` 关闭重开后永久跳过历史机房槽位、单款必选许可证机型中断整份目录解析、空机房暂停任务被硬编码当作覆盖 `gra`",
+      "locations": [
+        "backend/internal/catalogwatch/watcher.go:217-238, 355-360, 591-608",
+        "backend/internal/catalogwatch/catalog.go:82-131",
+        "backend/internal/ovh/helpers.go:138-139"
+      ]
+    },
+    {
+      "id": "BUG-OVH-14",
+      "domain": "ovh_api_and_order_engine",
+      "severity": "Medium",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 2",
+      "subLedger": "02_OVH_API_AND_ORDER_ENGINE_BUGS.md",
+      "title": "`IsEcoPlanCode` / `StandardizeConfig` 漏覆盖 `24adv*` 与 `ks-*` 真实 Eco 系列，且 `LoadServerList` 跨 FQN 重复追加相同机房",
+      "locations": [
+        "backend/internal/catalog/planverdict.go:38-43, 128-136",
+        "backend/internal/catalog/standardize.go:8-29",
+        "backend/internal/catalog/catalog.go:845-865"
+      ]
+    },
+    {
+      "id": "BUG-OVH-15",
+      "domain": "ovh_api_and_order_engine",
+      "severity": "Medium",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 2",
+      "subLedger": "02_OVH_API_AND_ORDER_ENGINE_BUGS.md",
+      "title": "`numconv.ToFloat64` 放行 `NaN`/`±Inf`，且 `monitor.verifyPriceAvailable` 对非数值、负数与 `NaN` 报价一律放行入预热池",
+      "locations": [
+        "backend/internal/numconv/numconv.go:81-124",
+        "backend/internal/monitor/price.go:241-248"
+      ]
+    },
+    {
+      "id": "BUG-OVH-16",
+      "domain": "ovh_api_and_order_engine",
+      "severity": "Low",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 2",
+      "subLedger": "02_OVH_API_AND_ORDER_ENGINE_BUGS.md",
+      "title": "`stampPlanFirstSeen` 按子公司分 `Buckets` 建基线却共用扁平全局 `Plans` 字典，跨子公司首次打开抹掉新品标记",
+      "locations": [
+        "backend/internal/handlers/plan_firstseen.go:20-71"
+      ]
+    },
+    {
+      "id": "BUG-OVH-17",
+      "domain": "ovh_api_and_order_engine",
+      "severity": "Low",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 2",
+      "subLedger": "02_OVH_API_AND_ORDER_ENGINE_BUGS.md",
+      "title": "`schemacheck` 基线收集器未对路径参数名归一化，丢失美区 `/me/order/{orderId}/details/{detailId}` 漂移监控且重复拉取 `support`",
+      "locations": [
+        "backend/internal/schemacheck/baseline_test.go:50-54, 353-375",
+        "backend/internal/schemacheck/testdata/ovh-endpoints.json:2009-2026"
+      ]
+    },
+    {
+      "id": "BUG-BE-01",
+      "domain": "backend_core_and_control",
+      "severity": "Critical",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 1",
+      "subLedger": "03_BACKEND_CORE_AND_CONTROL_BUGS.md",
+      "title": "`ReloadQueueFromDB` 与 `ReloadHistoryFromDB` 绕过 `saveQueueMu`/`saveHistoryMu`，并发删号与成交写库时导致已删账户数据复活或新订单丢失",
+      "locations": [
+        "backend/internal/app/queue_store.go:250-293",
+        "backend/internal/app/app.go:590-604",
+        "backend/internal/handlers/accounts.go:420-434, 571-577",
+        "backend/internal/db/history.go:53-84"
+      ]
+    },
+    {
+      "id": "BUG-BE-02",
+      "domain": "backend_core_and_control",
+      "severity": "Critical",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 1",
+      "subLedger": "03_BACKEND_CORE_AND_CONTROL_BUGS.md",
+      "title": "`db.Open` 开启 `MaxOpenConns(8)` 却未设 `_txlock=immediate`，先读后写 `DEFERRED` 事务绕过 `5000ms busy_timeout` 在 `<1ms` 内瞬败报 `SQLITE_BUSY (517)`",
+      "locations": [
+        "backend/internal/db/db.go:36-46",
+        "backend/internal/db/driver_cgo.go:16-19",
+        "backend/internal/db/accounts.go:214-332"
+      ]
+    },
+    {
+      "id": "BUG-BE-03",
+      "domain": "backend_core_and_control",
+      "severity": "Critical",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 0",
+      "subLedger": "03_BACKEND_CORE_AND_CONTROL_BUGS.md",
+      "title": "独服 `InstallOS` Proxmox 9 + ZFS 预设用 `diskGroups[0]` 无条件覆盖 `defaultDiskGroupId`（可误格数据盘组），且透传非法的 `zfs+RAID10`、`/boot ext4+RAID7` 与盘数不足配置",
+      "locations": [
+        "backend/internal/handlers/server_control_basic.go:833-1006"
+      ]
+    },
+    {
+      "id": "BUG-BE-04",
+      "domain": "backend_core_and_control",
+      "severity": "High",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 1",
+      "subLedger": "03_BACKEND_CORE_AND_CONTROL_BUGS.md",
+      "title": "`SyncDefaultAccountConfig` 与 `GetSettings` 仅在 `cfg.AppKey == \"\"` 时同步凭据，切换/删除默认账户后残留旧密钥并与新默认账户 Zone/Endpoint 跨区串配",
+      "locations": [
+        "backend/internal/app/app.go:393-434",
+        "backend/internal/handlers/settings.go:17-41, 53-120",
+        "backend/internal/ovh/client.go:162-183"
+      ]
+    },
+    {
+      "id": "BUG-BE-05",
+      "domain": "backend_core_and_control",
+      "severity": "High",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 1",
+      "subLedger": "03_BACKEND_CORE_AND_CONTROL_BUGS.md",
+      "title": "Telegram 控制台 `hudDashboardMessage` 无 `AccountsMu` 锁裸读 `state.Accounts` 切片，与 `ReloadAccounts` 并发构成 Go Data Race",
+      "locations": [
+        "backend/internal/handlers/telegram_commands.go:863"
+      ]
+    },
+    {
+      "id": "BUG-BE-06",
+      "domain": "backend_core_and_control",
+      "severity": "High",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 3",
+      "subLedger": "03_BACKEND_CORE_AND_CONTROL_BUGS.md",
+      "title": "Telegram 选型向导与命令体系发生 `ActiveAccountID` vs `DefaultAccountID` 脑裂，切换活跃账户后查库存/查价/选机房仍打向系统默认账户",
+      "locations": [
+        "backend/internal/handlers/telegram_wizard_picker.go:621, 672, 754",
+        "backend/internal/handlers/telegram_wizard_actions.go:20, 370",
+        "backend/internal/handlers/telegram_wizard.go:202, 228, 256, 338, 341, 373, 428, 441",
+        "backend/internal/handlers/telegram_commands.go:66, 307, 715, 719"
+      ]
+    },
+    {
+      "id": "BUG-BE-07",
+      "domain": "backend_core_and_control",
+      "severity": "High",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 1",
+      "subLedger": "03_BACKEND_CORE_AND_CONTROL_BUGS.md",
+      "title": "`UpsertVPSSubscription` 与 `UpsertMonitorSubscription` 的 SQL `CASE WHEN` 拒绝写入空 `'{}'`/`'[]'`，切换子公司重置 `LastStatus` 后重启复活旧状态",
+      "locations": [
+        "backend/internal/db/vps.go:153-154",
+        "backend/internal/db/monitor.go:175-176",
+        "backend/internal/handlers/subscription_edit.go:284-301"
+      ]
+    },
+    {
+      "id": "BUG-BE-08",
+      "domain": "backend_core_and_control",
+      "severity": "High",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 1",
+      "subLedger": "03_BACKEND_CORE_AND_CONTROL_BUGS.md",
+      "title": "`DeleteAccount` 清理 `vps_subscriptions` 时漏将 `auto_order`/`auto_pay` 置 0，残留假开启状态且导致后续编辑任意无关字段恒报 HTTP 400",
+      "locations": [
+        "backend/internal/db/accounts.go:269-279",
+        "backend/internal/handlers/subscription_edit.go:229-233"
+      ]
+    },
+    {
+      "id": "BUG-BE-09",
+      "domain": "backend_core_and_control",
+      "severity": "Medium",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 3",
+      "subLedger": "03_BACKEND_CORE_AND_CONTROL_BUGS.md",
+      "title": "VPS 控制面 `EnableVpsMitigation` / `DisableVpsMitigation` 仍在调用 OVH 已退役的永久缓解 API，与独服侧 `410 Gone` 自相矛盾",
+      "locations": [
+        "backend/internal/handlers/vps_control_mitigation.go:163-234"
+      ]
+    },
+    {
+      "id": "BUG-BE-10",
+      "domain": "backend_core_and_control",
+      "severity": "Medium",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 3",
+      "subLedger": "03_BACKEND_CORE_AND_CONTROL_BUGS.md",
+      "title": "Telegram 多处按钮与摘要按字节切片（`s[:8]`/`s[:10]`/`s[:n]`）腰斩多字节 UTF-8 字符，且向导 `callback_data` 裸拼长 `planCode` 超出 64 字节上限",
+      "locations": [
+        "backend/internal/handlers/telegram.go:407-412",
+        "backend/internal/handlers/telegram_wizard_picker.go:238-240, 500-505, 596-601, 773, 816, 835"
+      ]
+    },
+    {
+      "id": "BUG-BE-11",
+      "domain": "backend_core_and_control",
+      "severity": "Medium",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 3",
+      "subLedger": "03_BACKEND_CORE_AND_CONTROL_BUGS.md",
+      "title": "`TgToken` 含控制字符时 `AnswerCallback` / `SendReply` 忽略 `http.NewRequest` 错误触发空指针 `panic`，且 `StopPoller` 未复位 `pollerStarted` 致停机后无法重启",
+      "locations": [
+        "backend/internal/telegram/telegram.go:238-241, 261-264",
+        "backend/internal/telegram/poller.go:133-175"
+      ]
+    },
+    {
+      "id": "BUG-BE-12",
+      "domain": "backend_core_and_control",
+      "severity": "Low",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 1",
+      "subLedger": "03_BACKEND_CORE_AND_CONTROL_BUGS.md",
+      "title": "`UpdateAccount` 轮换凭据与 `DeleteAccountByID` 未失效 `defaultPaymentCache`、`templatesCache`、`retractionLookupCache`，且多处控制面缓存/重装锁缺少 `accountID` 隔离",
+      "locations": [
+        "backend/internal/handlers/accounts.go:382-386, 426-431",
+        "backend/internal/handlers/ovh_extra.go:60-92",
+        "backend/internal/handlers/server_control_retraction.go:66-68"
+      ]
+    },
+    {
+      "id": "BUG-BE-13",
+      "domain": "backend_core_and_control",
+      "severity": "Low",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 3",
+      "subLedger": "03_BACKEND_CORE_AND_CONTROL_BUGS.md",
+      "title": "显式传入不存在的 `?account=<id>` 或代理 URL 非法时，`noOVHResp` 一律误返 `412 NO_OVH_ACCOUNT`（“未配置 OVH 账户”）",
+      "locations": [
+        "backend/internal/handlers/server_control_basic.go:29-35"
+      ]
+    },
+    {
+      "id": "BUG-CONTRACT-01",
+      "domain": "fullstack_contract_and_openapi",
+      "severity": "Critical",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 4",
+      "subLedger": "04_FULLSTACK_CONTRACT_AND_OPENAPI_BUGS.md",
+      "title": "`api/openapi.yaml` 中 140 个独服与 VPS 控制面操作路径前缀错写为 `/servers/*` 与 `/vps/*`，与后端真实路由 `/api/server-control/*`、`/api/vps-control/*` 失配率达 52.63%",
+      "locations": [
+        "api/openapi.yaml:1401-3100, 4050-5050",
+        "api/openapi.yaml:3102-4045",
+        "api/openapi.yaml:6236-6435",
+        "backend/internal/router/router.go:66-72"
+      ]
+    },
+    {
+      "id": "BUG-CONTRACT-02",
+      "domain": "fullstack_contract_and_openapi",
+      "severity": "High",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 4",
+      "subLedger": "04_FULLSTACK_CONTRACT_AND_OPENAPI_BUGS.md",
+      "title": "`src/lib/api.ts` 导出的客户端方法与后端真实契约严重错位：`api.moveIp` 源/目标服务器颠倒致 Failover IP 迁错实例，`api.toggleBurst` 与 `api.getIpmiAccess` 必返 HTTP 400",
+      "locations": [
+        "src/lib/api.ts:420-432, 472-476",
+        "backend/internal/handlers/server_control_misc.go:471-499",
+        "backend/internal/handlers/server_control_features.go:157-173",
+        "backend/internal/handlers/server_control_network.go:403-408, 507-515"
+      ]
+    },
+    {
+      "id": "BUG-CONTRACT-03",
+      "domain": "fullstack_contract_and_openapi",
+      "severity": "High",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 4",
+      "subLedger": "04_FULLSTACK_CONTRACT_AND_OPENAPI_BUGS.md",
+      "title": "`api/openapi.yaml` 含 3 条后端从未实现的幽灵路由、2 条固定返回 `410 Gone` 的已下线路由仍标 `200 OK`，且漏登多条实装路由",
+      "locations": [
+        "api/openapi.yaml:4981-5033",
+        "410",
+        "backend/internal/router/routes_api.go:26, 79"
+      ]
+    },
+    {
+      "id": "BUG-CONTRACT-04",
+      "domain": "fullstack_contract_and_openapi",
+      "severity": "High",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 4",
+      "subLedger": "04_FULLSTACK_CONTRACT_AND_OPENAPI_BUGS.md",
+      "title": "`api/openapi.yaml` 至少 9 处核心写操作 `requestBody` 字段名与后端 `ShouldBindJSON` 结构体冲突，按文档传参 100% 返 HTTP 400",
+      "locations": [
+        "api/openapi.yaml:3812-3842",
+        "api/openapi.yaml:1818-1842",
+        "api/openapi.yaml:1698-1728",
+        "api/openapi.yaml:1984-2011",
+        "api/openapi.yaml:4869-4893",
+        "api/openapi.yaml:353-381",
+        "api/openapi.yaml:1576-1606",
+        "api/openapi.yaml:3323-3347, 4246-4267",
+        "api/openapi.yaml:3950-3965"
+      ]
+    },
+    {
+      "id": "BUG-CONTRACT-05",
+      "domain": "fullstack_contract_and_openapi",
+      "severity": "Medium",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 4",
+      "subLedger": "04_FULLSTACK_CONTRACT_AND_OPENAPI_BUGS.md",
+      "title": "`api/openapi.yaml` 多处 `200` 响应 Schema 将后端包装对象错声明为顶层 `array`，并将 `/verify-auth` 的 `{valid}` 错写为 `{authenticated}`",
+      "locations": [
+        "GET /accounts",
+        "GET /notify/channels",
+        "GET /servers/list",
+        "GET /ovh/account/bills|email-history|orders|refunds|sub-accounts",
+        "POST /verify-auth"
+      ]
+    },
+    {
+      "id": "BUG-FE-CORE-01",
+      "domain": "frontend_core_and_snipe",
+      "severity": "Critical",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 2",
+      "subLedger": "05_FRONTEND_CORE_AND_SNIPE_BUGS.md",
+      "title": "`MonitorSubscribeDialog` 提交机房显示短码（`mum`/`tor`/`par-a..c`）漏调 `apiDatacenterCode`，且编辑弹窗将后端已存 API 码反向覆盖回显示码，导致 5 个可用区监控 100% 静默失效",
+      "locations": [
+        "src/components/monitor/MonitorSubscribeDialog.tsx:39, 42-49, 131, 164-165, 178",
+        "src/lib/datacenters.ts:23-29, 40-43",
+        "backend/internal/monitor/check.go:525-528, 1101-1108"
+      ]
+    },
+    {
+      "id": "BUG-FE-CORE-02",
+      "domain": "frontend_core_and_snipe",
+      "severity": "High",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 3",
+      "subLedger": "05_FRONTEND_CORE_AND_SNIPE_BUGS.md",
+      "title": "`ActiveAccountSync` 的 `lastFixedServer`/`lastFixedVps` 引用守卫锁死，手动切至非默认账户后删除该账户令 `localStorage` 永久残留已删 ID 触发全站 HTTP 400",
+      "locations": [
+        "src/components/common/ActiveAccountSync.tsx:18-20, 44-69",
+        "src/lib/http.ts:44-87"
+      ]
+    },
+    {
+      "id": "BUG-FE-CORE-03",
+      "domain": "frontend_core_and_snipe",
+      "severity": "High",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 4",
+      "subLedger": "05_FRONTEND_CORE_AND_SNIPE_BUGS.md",
+      "title": "`src/lib/api-error.ts` 错误码优先短路吞没后端 `OVH_UPSTREAM_ERROR` / `OVH_AUTH_INVALID` / `E7480C06F` 中的 `ovh.Explain` 动态排障详情",
+      "locations": [
+        "src/lib/api-error.ts:12-13, 39-61",
+        "backend/internal/handlers/util.go:405-424"
+      ]
+    },
+    {
+      "id": "BUG-FE-CORE-04",
+      "domain": "frontend_core_and_snipe",
+      "severity": "High",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 2",
+      "subLedger": "05_FRONTEND_CORE_AND_SNIPE_BUGS.md",
+      "title": "前端多处缺少显示码↔API 码双向映射：`hasStockWithOption` 将别名机房全判无货、`EditQueueDialog` 机房框回显空白、`StockRadarSection` 灯态失灵且 `.slice(0, 6)` 截断隐藏有货机房",
+      "locations": [
+        "src/hooks/ovh/use-availability.ts:122-142",
+        "src/components/queue/EditQueueDialog.tsx:77-78, 151, 196-208",
+        "src/components/dashboard/StockRadarSection.tsx:121-137, 176-209"
+      ]
+    },
+    {
+      "id": "BUG-FE-CORE-05",
+      "domain": "frontend_core_and_snipe",
+      "severity": "High",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 2",
+      "subLedger": "05_FRONTEND_CORE_AND_SNIPE_BUGS.md",
+      "title": "`mergeDcAvailability` 对多硬件变体平铺重复的 `datacenters` 执行后写覆盖先写，导致有货变体（`72H`）被后续缺货变体覆盖显示“暂时缺货”",
+      "locations": [
+        "src/lib/datacenters.ts:94-109"
+      ]
+    },
+    {
+      "id": "BUG-FE-CORE-06",
+      "domain": "frontend_core_and_snipe",
+      "severity": "High",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 2",
+      "subLedger": "05_FRONTEND_CORE_AND_SNIPE_BUGS.md",
+      "title": "`TelegramOrderPage` 在下单接口返回 200 成功后裸调 `localStorage.setItem`，存储异常跳入网络 `catch` 将已成交任务谎报为“请求失败”诱导双倍重复下单",
+      "locations": [
+        "src/pages/TelegramOrderPage.tsx:84-93, 112-115, 186-205, 225-250, 449, 464, 529, 547"
+      ]
+    },
+    {
+      "id": "BUG-FE-CORE-07",
+      "domain": "frontend_core_and_snipe",
+      "severity": "High",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 4",
+      "subLedger": "05_FRONTEND_CORE_AND_SNIPE_BUGS.md",
+      "title": "`src/i18n/locales/en.ts` 使用 `as unknown as typeof apiZh` 绕过类型检查并加载陈旧词表，导致精确 40 个后端 API 错误码缺失英文翻译回退显示中文",
+      "locations": [
+        "src/i18n/locales/en.ts:8-9, 20, 80"
+      ]
+    },
+    {
+      "id": "BUG-FE-CORE-08",
+      "domain": "frontend_core_and_snipe",
+      "severity": "High",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 2",
+      "subLedger": "05_FRONTEND_CORE_AND_SNIPE_BUGS.md",
+      "title": "`usePrewarmOrder` 忽略后端异步装车返回的 `ready: false`，300ms 后即虚报“预热就绪 (0ms秒杀)”，多机房仅预热首项、漏转 `apiDatacenterCode` 且 `readyKeyRef` 永不过期",
+      "locations": [
+        "src/hooks/use-prewarm.ts:24, 30, 38-41, 51-62",
+        "src/components/orders/QuickOrderDialog.tsx:151-160",
+        "backend/internal/handlers/quick_order.go:98-119"
+      ]
+    },
+    {
+      "id": "BUG-FE-CORE-09",
+      "domain": "frontend_core_and_snipe",
+      "severity": "High",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 2",
+      "subLedger": "05_FRONTEND_CORE_AND_SNIPE_BUGS.md",
+      "title": "`useServers` 将组件局部 `force = useRef(false)` 闭包进共享 TanStack Query `queryKey`，多组件共挂载时点击“刷新”静默丢失 `forceRefresh=true`",
+      "locations": [
+        "src/hooks/ovh/use-servers.ts:53-60, 82-92"
+      ]
+    },
+    {
+      "id": "BUG-FE-CORE-10",
+      "domain": "frontend_core_and_snipe",
+      "severity": "Medium",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 2",
+      "subLedger": "05_FRONTEND_CORE_AND_SNIPE_BUGS.md",
+      "title": "`preorderVariantCoversAll` 正则强依赖 `-v\\d+` 版本号，导致 `24sk50`、`24risegame01-ca` 等无版本号预售 Eco 机型被误判不匹配并锁死提交按钮",
+      "locations": [
+        "src/lib/preorder-options.ts:11-18"
+      ]
+    },
+    {
+      "id": "BUG-FE-CORE-11",
+      "domain": "frontend_core_and_snipe",
+      "severity": "Medium",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 2",
+      "subLedger": "05_FRONTEND_CORE_AND_SNIPE_BUGS.md",
+      "title": "`EditQueueDialog` 在型号命中目录时隐藏 `extraInput` 输入框却仍将其拼入提交载荷，存量自定义 addon 无法查看或删除，且漏接 `mergeStockPlans` 与 `preorder` CPU 过滤",
+      "locations": [
+        "src/components/queue/EditQueueDialog.tsx:61-64, 85-101, 112-120, 241-268"
+      ]
+    },
+    {
+      "id": "BUG-FE-CORE-12",
+      "domain": "frontend_core_and_snipe",
+      "severity": "Medium",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 2",
+      "subLedger": "05_FRONTEND_CORE_AND_SNIPE_BUGS.md",
+      "title": "`QuickOrderDialog`、`ServerDetailDialog` 与 `MonitorSubscribeDialog` 的选配胶囊点击已选项无法反选清空",
+      "locations": [
+        "src/components/orders/QuickOrderDialog.tsx:412-421",
+        "src/components/servers/ServerDetailDialog.tsx:248-256",
+        "src/components/monitor/MonitorSubscribeDialog.tsx:287-298"
+      ]
+    },
+    {
+      "id": "BUG-FE-CORE-13",
+      "domain": "frontend_core_and_snipe",
+      "severity": "Medium",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 2",
+      "subLedger": "05_FRONTEND_CORE_AND_SNIPE_BUGS.md",
+      "title": "`OrderDurationField` 已检出型号不支持所选购买周期（`!supportsDuration`）但 5 个下单/监控弹窗均未拦截提交，且 `ServerDetailDialog` 内切账户不重算子公司报价",
+      "locations": [
+        "src/components/orders/OrderDurationField.tsx:40-46",
+        "QuickOrderDialog.tsx",
+        "ServerDetailDialog.tsx",
+        "CreateQueueDialog.tsx",
+        "EditQueueDialog.tsx",
+        "MonitorSubscribeDialog.tsx"
+      ]
+    },
+    {
+      "id": "BUG-FE-CORE-14",
+      "domain": "frontend_core_and_snipe",
+      "severity": "Medium",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 2",
+      "subLedger": "05_FRONTEND_CORE_AND_SNIPE_BUGS.md",
+      "title": "`QuickOrderDialog` 与 `CreateQueueDialog` 向 `DatacenterPicker` 传入整机 `dcMap` 而非当前选配级 `selectionDcStatus`，所选硬件缺货机房误亮绿灯",
+      "locations": [
+        "src/components/orders/QuickOrderDialog.tsx:396-401",
+        "src/components/queue/CreateQueueDialog.tsx:317-321"
+      ]
+    },
+    {
+      "id": "BUG-FE-CORE-15",
+      "domain": "frontend_core_and_snipe",
+      "severity": "Medium",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 2",
+      "subLedger": "05_FRONTEND_CORE_AND_SNIPE_BUGS.md",
+      "title": "`ServersPage` 仅按 `planCode` 查找监控订阅（忽略 `optionsKey`）误覆盖同机型其他配置订阅，且从 `ServerDetailDialog` 点击“加入监控”丢失已选硬件配置",
+      "locations": [
+        "src/pages/ServersPage.tsx:118-126, 255-283",
+        "src/components/servers/ServerDetailDialog.tsx:48, 374"
+      ]
+    },
+    {
+      "id": "BUG-FE-CORE-16",
+      "domain": "frontend_core_and_snipe",
+      "severity": "Medium",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 3",
+      "subLedger": "05_FRONTEND_CORE_AND_SNIPE_BUGS.md",
+      "title": "设置页与账户弹窗三重缺陷：脏表单旧快照冲掉默认账户 `zone`/`endpoint`、编辑 `kimsufi-*`/`soyoustart-*` 账户被强改回 `ovh-*` 致鉴权失效、保存后冗余二次调 `/verify`",
+      "locations": [
+        "src/pages/SettingsPage.tsx:65-71, 94-106",
+        "src/components/settings/AccountDialog.tsx:179-187, 204-244"
+      ]
+    },
+    {
+      "id": "BUG-FE-CORE-17",
+      "domain": "frontend_core_and_snipe",
+      "severity": "Medium",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 3",
+      "subLedger": "05_FRONTEND_CORE_AND_SNIPE_BUGS.md",
+      "title": "`AccountPage` 切换账户残留上一账户邮件正文、`OrdersTab` 展示未税价而快捷付款按含税价扣款、`RefundsTab` 缺可选链可白屏、旧历史单空 `accountId` 隐藏进度按钮",
+      "locations": [
+        "src/pages/AccountPage.tsx:143-215, 260-265, 293-297, 375",
+        "src/components/history/OrderProgressButton.tsx:24-28"
+      ]
+    },
+    {
+      "id": "BUG-FE-CORE-18",
+      "domain": "frontend_core_and_snipe",
+      "severity": "Low",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 3",
+      "subLedger": "05_FRONTEND_CORE_AND_SNIPE_BUGS.md",
+      "title": "`useTelegramPoller` 将仅收到消息才更新的 `lastUpdateAt` 映射为 `lastPollAt`，空闲轮询正常时误报“最近一次拉取：还没拉到过”",
+      "locations": [
+        "src/hooks/ovh/use-settings.ts:134, 144, 156",
+        "backend/internal/telegram/poller.go:26, 272-294"
+      ]
+    },
+    {
+      "id": "BUG-FE-CORE-19",
+      "domain": "frontend_core_and_snipe",
+      "severity": "Low",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 3",
+      "subLedger": "05_FRONTEND_CORE_AND_SNIPE_BUGS.md",
+      "title": "仪表盘 `CoreServiceCard` 未经 `safeHttpsUrl` 校验直接将远端更新接口返回的 `update.url` 注入 `<a href>`",
+      "locations": [
+        "src/components/dashboard/CoreServiceCard.tsx:88-99"
+      ]
+    },
+    {
+      "id": "BUG-FE-CORE-20",
+      "domain": "frontend_core_and_snipe",
+      "severity": "Low",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 3",
+      "subLedger": "05_FRONTEND_CORE_AND_SNIPE_BUGS.md",
+      "title": "`useBackendConnection` 回退探测 `/health` 仅判 `res.ok`，在 SPA Fallback 返回 `index.html (200)` 时假阳性在线；且 `index.html` 硬编码 `class=\"dark\"` 致浅色模式首屏黑闪",
+      "locations": [
+        "src/hooks/use-backend-connection.ts:19-25",
+        "index.html:2, 12"
+      ]
+    },
+    {
+      "id": "BUG-FE-CTRL-01",
+      "domain": "frontend_control_plane",
+      "severity": "High",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 3",
+      "subLedger": "06_FRONTEND_CONTROL_PLANE_BUGS.md",
+      "title": "`useInstallServer` 中 `parsedKey === DEFAULT_GID` 恒为 `false` 死分支，导致单磁盘组独服同时配置自定义分区与硬件 RAID 时分裂为两条重复 `diskGroupId` 被后端 `STORAGE_DUPLICATE_GROUP` 100% 拒绝",
+      "locations": [
+        "src/hooks/ovh/server-control/use-server-install.ts:120-128, 149-163",
+        "src/components/server-control/reinstall/PartitionRow.tsx:68",
+        "backend/internal/handlers/server_control_basic.go:1084-1102"
+      ]
+    },
+    {
+      "id": "BUG-FE-CTRL-02",
+      "domain": "frontend_control_plane",
+      "severity": "High",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 3",
+      "subLedger": "06_FRONTEND_CONTROL_PLANE_BUGS.md",
+      "title": "硬件 RAID 热备盘未从总盘数扣除（`disks + spares > 物理盘数` 必致 OVH 400）、多磁盘组共用全局 `hwRaidSpares`/`hwRaidArrays` 且漏掉 `raid50`/`raid60` 的 `arrays` 参数",
+      "locations": [
+        "src/hooks/ovh/server-control/use-server-install.ts:165-173",
+        "src/components/server-control/ReinstallDialog.tsx:66-67, 250-251",
+        "src/components/server-control/reinstall/StoragePartitionSection.tsx:371-398"
+      ]
+    },
+    {
+      "id": "BUG-FE-CTRL-03",
+      "domain": "frontend_control_plane",
+      "severity": "High",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 3",
+      "subLedger": "06_FRONTEND_CONTROL_PLANE_BUGS.md",
+      "title": "`ReinstallDialog` 切换 OS 模板未清空 `customizationAnswers` 跨模板污染、`number` 问答以 `string` 提交、漏拦 `mandatory` 空值，且修改保留数据盘/RAID 不重置高危二次确认态",
+      "locations": [
+        "src/components/server-control/ReinstallDialog.tsx:69, 89-101, 178-180, 207-236",
+        "src/components/server-control/reinstall/PostInstallSection.tsx:54-125"
+      ]
+    },
+    {
+      "id": "BUG-FE-CTRL-04",
+      "domain": "frontend_control_plane",
+      "severity": "High",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 3",
+      "subLedger": "06_FRONTEND_CONTROL_PLANE_BUGS.md",
+      "title": "`ReinstallDialog` 智能分区容量计算将 `MB`/`Mo` 单位直接当作 `GB` 放大 1024 倍，且前端按 `Object.values(groups)[0]` 选默认盘组",
+      "locations": [
+        "src/components/server-control/ReinstallDialog.tsx:182-196"
+      ]
+    },
+    {
+      "id": "BUG-FE-CTRL-05",
+      "domain": "frontend_control_plane",
+      "severity": "Critical",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 0",
+      "subLedger": "06_FRONTEND_CONTROL_PLANE_BUGS.md",
+      "title": "`VpsReinstallDialog` 允许无 SSH 密钥时勾选 `doNotSendPassword`（而远程改密 API 已 410 永久退役），且关闭/提交后漏重置 `doNotSendPassword` 导致跨实例重装静默锁死新机器",
+      "locations": [
+        "src/components/vps-control/VpsReinstallDialog.tsx:39-44, 60-97, 231-256",
+        "src/components/vps-control/VpsDetail.tsx:520-525",
+        "backend/internal/handlers/vps_control_install.go:283-340"
+      ]
+    },
+    {
+      "id": "BUG-FE-CTRL-06",
+      "domain": "frontend_control_plane",
+      "severity": "High",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 3",
+      "subLedger": "06_FRONTEND_CONTROL_PLANE_BUGS.md",
+      "title": "VPS 补货监控弹窗切换机型/子公司未清空旧 `os` 致后端 `buildVPSConfig` 静默漏填必填 `vps_os` 结账报 400；且吞没 `retiredWarning`、硬编码子公司缺失 15 个站点",
+      "locations": [
+        "src/components/vps-monitor/AddVPSDialog.tsx:66-77, 131-153",
+        "src/components/vps-monitor/types.ts:1-11",
+        "src/hooks/ovh/use-vps-monitor.ts:93-107"
+      ]
+    },
+    {
+      "id": "BUG-FE-CTRL-07",
+      "domain": "frontend_control_plane",
+      "severity": "High",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 3",
+      "subLedger": "06_FRONTEND_CONTROL_PLANE_BUGS.md",
+      "title": "独服 `IpmiDialog` 选择 `serialOverLanSshKey` 时缺失 SSH 公钥输入框，且返回 `ssh://` 连接串后被 `safeHttpsUrl` 拦截误渲染为“JNLP 已下载”假提示",
+      "locations": [
+        "src/components/server-control/IpmiDialog.tsx:133, 144-159, 215-219, 250-265",
+        "backend/internal/handlers/server_control_network.go:407, 559-563"
+      ]
+    },
+    {
+      "id": "BUG-FE-CTRL-08",
+      "domain": "frontend_control_plane",
+      "severity": "Medium",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 3",
+      "subLedger": "06_FRONTEND_CONTROL_PLANE_BUGS.md",
+      "title": "`useBiosSettings` 未解包后端 `{ success: true, bios: d }` 包装对象，导致 `BiosDialog` 将整个 `bios` 渲染为单行原始 JSON 字符串且空状态失效",
+      "locations": [
+        "src/hooks/ovh/server-control/use-server-hardware.ts:129-141",
+        "src/components/server-control/BiosDialog.tsx:22-24, 53-58",
+        "backend/internal/handlers/server_control_misc.go:760"
+      ]
+    },
+    {
+      "id": "BUG-FE-CTRL-09",
+      "domain": "frontend_control_plane",
+      "severity": "Medium",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 3",
+      "subLedger": "06_FRONTEND_CONTROL_PLANE_BUGS.md",
+      "title": "`SplaDialog` 添加/注销许可证后未失效 1 小时 `osTemplates` 查询与 `localStorage` 缓存，重装弹窗长期看不到刚解锁的 Windows/SQL 镜像",
+      "locations": [
+        "src/components/server-control/SplaDialog.tsx:77-108",
+        "src/hooks/ovh/server-control/use-server-install.ts:12-55"
+      ]
+    },
+    {
+      "id": "BUG-FE-CTRL-10",
+      "domain": "frontend_control_plane",
+      "severity": "Medium",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 3",
+      "subLedger": "06_FRONTEND_CONTROL_PLANE_BUGS.md",
+      "title": "`MrtgTrafficChart` 按数组下标 `upload.data[i]` 硬配对上下行曲线（缺帧时时间轴错位），且单向采样为空时整张网卡图静默消失",
+      "locations": [
+        "src/components/server-control/MrtgTrafficChart.tsx:58-67, 131-142"
+      ]
+    },
+    {
+      "id": "BUG-FE-CTRL-11",
+      "domain": "frontend_control_plane",
+      "severity": "High",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 3",
+      "subLedger": "06_FRONTEND_CONTROL_PLANE_BUGS.md",
+      "title": "`ServerControlPage` 仅向 `PowerTab` 与 `ReinstallDialog` 透传 `server.accountId`，其余 3 个高危计费/退订弹窗与 3 个功能标签页仍读全局 `localStorage` 账户致跨账户串号；且 URL 深链过早清空 `wantedService`",
+      "locations": [
+        "src/pages/ServerControlPage.tsx:60-66, 89-93, 379-429"
+      ]
+    },
+    {
+      "id": "BUG-FE-CTRL-12",
+      "domain": "frontend_control_plane",
+      "severity": "Medium",
+      "status": "OPEN_VERIFIED",
+      "remediationWave": "Wave 3",
+      "subLedger": "06_FRONTEND_CONTROL_PLANE_BUGS.md",
+      "title": "`use-vps-control.ts` 中重启、重装、快照回滚与终止服务 5 个写操作 `onSuccess` 漏失效关联缓存，操作完成后界面长期停留旧状态诱导重复提交",
+      "locations": [
+        "src/hooks/ovh/use-vps-control.ts:225-230, 298-314, 390-401, 459-481"
+      ]
+    }
+  ]
+}
