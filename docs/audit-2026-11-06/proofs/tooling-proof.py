@@ -35,7 +35,10 @@ for status, expected in [('healthy', 0), ('unhealthy', 1), ('missing', 1)]:
     assert r.returncode == expected, (status, r.stdout, r.stderr)
 print('REGRESSION TL-02: healthy succeeds; unhealthy/missing containers fail (mock only)')
 linux = (root/'scripts/linux-oneclick-deploy.sh').read_text(encoding='utf-8')
-fragment = linux[linux.index('backend_healthy=0'):linux.index('API_KEY="$(grep')]
+frag_start = linux.index('backend_healthy=0')
+# End marker must be searched after the start: `EXISTING_API_KEY="$(grep` earlier in the script also contains it.
+fragment = linux[frag_start:linux.index('API_KEY="$(grep', frag_start)]
+assert 'backend_healthy=1' in fragment and 'exit 1' in fragment, 'health fragment extraction failed'
 for success in [True,False]:
     mock = 'sleep(){ :; }; grn(){ :; }; docker(){ return '+('0' if success else '1')+'; };\n'
     result = subprocess.run([str(bash),'--noprofile','--norc'],input=mock+fragment,text=True,capture_output=True)
