@@ -89,6 +89,8 @@ export const settingsPagesZh = {
       running: "运行中",
       stopped: "已停止",
       lastPoll: "最近一次拉取",
+      lastMessage: "最近收到消息",
+      pollingIdle: "长轮询监听中（暂无新消息）",
       neverPolled: "还没拉到过",
       confirmedOffset: "已确认 update_id",
       lastErrorTitle: "上次拉取报错",

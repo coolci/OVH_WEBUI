@@ -2,12 +2,17 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { useOrderDurations } from "@/hooks/use-order-durations";
 import { OrderDurationField } from "@/components/orders/OrderDurationField";
-import { DEFAULT_ORDER_DURATION, normalizeDuration } from "@/lib/order-duration";
+import { DEFAULT_ORDER_DURATION, normalizeDuration, supportsDuration } from "@/lib/order-duration";
 import { Link } from "react-router-dom";
 import { AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 
-import { OVH_DATACENTERS, mergeDcAvailability } from "@/lib/datacenters";
+import {
+  OVH_DATACENTERS,
+  apiDatacenterCode,
+  displayDatacenterCode,
+  mergeDcAvailability,
+} from "@/lib/datacenters";
 import { DatacenterPicker } from "@/components/common/DatacenterPicker";
 import { PlanCodeCombobox } from "@/components/common/PlanCodeCombobox";
 import { Button } from "@/components/ui/button";
@@ -41,11 +46,10 @@ const HW_GROUPS: OptionGroupKey[] = ["memory", "systemStorage", "storage", "band
 
 function parseDatacenters(raw: string[] | undefined): string[] {
   if (!raw || raw.length === 0) return [...ALL_DC_CODES];
-  const set = new Set(raw.map((d) => d.trim().toLowerCase()).filter(Boolean));
-  return ALL_DC_CODES.filter((code) => {
-    const dc = OVH_DATACENTERS.find((d) => d.code === code);
-    return set.has(code) || (!!dc?.apiCode && set.has(dc.apiCode));
-  });
+  const normalizedSet = new Set(raw.map((d) => displayDatacenterCode(d)).filter(Boolean));
+  const known = ALL_DC_CODES.filter((code) => normalizedSet.has(code));
+  const extras = [...normalizedSet].filter((code) => !ALL_DC_CODES.includes(code));
+  return [...known, ...extras];
 }
 
 function optionsFromSub(sub?: Partial<MonitorSubscription> | null): MonitorNotifyOptions {
@@ -148,6 +152,7 @@ export function MonitorSubscribeDialog({
   }, [open, accountsQ.data]);
 
   const close = () => onOpenChange(false);
+  const durationValid = !opts.autoOrder || supportsDuration(durations.data, duration);
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -160,9 +165,15 @@ export function MonitorSubscribeDialog({
       toast.error("没有下单账户，请添加 OVH 账户或勾选要一起下单的账户");
       return;
     }
+    if (!durationValid) {
+      toast.error(t("orderDuration.unsupported"));
+      return;
+    }
 
-    const datacenters =
-      selectedDCs.length === 0 || selectedDCs.length === ALL_DC_CODES.length ? [] : selectedDCs;
+    const isAllSelected =
+      selectedDCs.length === 0 ||
+      (selectedDCs.length === ALL_DC_CODES.length && ALL_DC_CODES.every((c) => selectedDCs.includes(c)));
+    const datacenters = isAllSelected ? [] : [...new Set(selectedDCs.map(apiDatacenterCode).filter(Boolean))];
 
     const hwOptions = restrictHw ? selectedOptions : [];
     if (restrictHw && hwOptions.length === 0) {
@@ -291,8 +302,9 @@ export function MonitorSubscribeDialog({
                     picked={grouped[g].find((o) => selectedOptions.includes(o.value))?.value || ""}
                     defaultValueSet={new Set()}
                     onPick={(value) => {
+                      const currentPicked = grouped[g].find((o) => selectedOptions.includes(o.value))?.value || "";
                       const next = selectedOptions.filter((code) => !grouped[g].some((o) => o.value === code));
-                      if (value) next.push(value);
+                      if (value && value !== currentPicked) next.push(value);
                       setOptionsInput(next.join(", "));
                     }}
                   />
@@ -331,7 +343,7 @@ export function MonitorSubscribeDialog({
             </Button>
             <Button
               type="submit"
-              disabled={pending || blockCreate || (opts.autoOrder && accountsQ.isPending)}
+              disabled={pending || blockCreate || (opts.autoOrder && accountsQ.isPending) || !durationValid}
               title={mode === "create" && notifyBlocked ? "通知通道无效,无法添加订阅" : undefined}
             >
               {pending

@@ -158,6 +158,21 @@ async function wrapList(
   }
 }
 
+const IPMI_ACCESS_TYPE_ALIASES: Record<string, string> = {
+  html5: "kvmipHtml5URL",
+  jnlp: "kvmipJnlp",
+  sol: "serialOverLanURL",
+};
+
+export type IpmiAccessType =
+  | "kvmipHtml5URL"
+  | "kvmipJnlp"
+  | "serialOverLanURL"
+  | "serialOverLanSshKey"
+  | "html5"
+  | "jnlp"
+  | "sol";
+
 export const api = {
   health: () => apiRequest<{ status: string; time?: string }>("/health", {}, { silent401: true }),
 
@@ -417,8 +432,12 @@ export const api = {
     apiRequest<ApiJson>(`/api/server-control/${encodeURIComponent(serviceName)}/interventions`),
   getPlannedInterventions: (serviceName: string) =>
     apiRequest<ApiJson>(`/api/server-control/${encodeURIComponent(serviceName)}/planned-interventions`),
-  getIpmiAccess: (serviceName: string, type?: "html5" | "jnlp" | "sol") => {
-    const q = type ? `?type=${encodeURIComponent(type)}` : "";
+  getIpmiAccess: (serviceName: string, type?: IpmiAccessType, sshKey?: string) => {
+    const resolvedType = type ? IPMI_ACCESS_TYPE_ALIASES[type] || type : "";
+    const qs = new URLSearchParams();
+    if (resolvedType) qs.set("type", resolvedType);
+    if (sshKey) qs.set("sshKey", sshKey);
+    const q = qs.toString() ? `?${qs.toString()}` : "";
     return apiRequest<ApiJson>(
       `/api/server-control/${encodeURIComponent(serviceName)}/console${q}`
     );
@@ -428,7 +447,7 @@ export const api = {
   toggleBurst: (serviceName: string, enable: boolean) =>
     apiRequest<ApiJson>(`/api/server-control/${encodeURIComponent(serviceName)}/burst`, {
       method: "PUT",
-      body: JSON.stringify({ enabled: enable }),
+      body: JSON.stringify({ status: enable ? "active" : "inactive" }),
     }),
   getFirewallStatus: (serviceName: string) =>
     apiRequest<ApiJson>(`/api/server-control/${encodeURIComponent(serviceName)}/firewall`),
@@ -469,10 +488,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ token }),
     }),
-  moveIp: (serviceName: string, ip: string, targetService: string) =>
-    apiRequest<ApiJson>(`/api/server-control/${encodeURIComponent(serviceName)}/ip/move`, {
+  moveIp: (_serviceName: string, ip: string, targetService: string) =>
+    apiRequest<ApiJson>(`/api/server-control/${encodeURIComponent(targetService)}/ip/move`, {
       method: "POST",
-      body: JSON.stringify({ ip, to: targetService }),
+      body: JSON.stringify({ ip }),
     }),
 
   getCacheInfo: () => apiRequest<ApiJson>("/api/cache/info"),

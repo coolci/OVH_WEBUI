@@ -5,6 +5,7 @@ import { ListChecks } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Chip } from "@/components/common/Chip";
+import { useDefaultAccount } from "@/hooks/use-accounts";
 import { useOrderFollowUp } from "@/hooks/use-ovh-extra";
 import { apiMessage } from "@/lib/api-error";
 
@@ -20,12 +21,14 @@ function tr(t: (k: string, o?: Record<string, unknown>) => string, key: string, 
   return v.startsWith("ovhExtra.") ? code : v;
 }
 
-/** 购买历史里的"进度"按钮:OVH 订单跟踪 + 交付后跳到服务器 / VPS 控制 */
+/** 购买历史里的"进度"按钮:OVH 订单跟踪 + 交付后跳到服务器 / VPS 控制（兼容旧版空 accountId 回退默认账户） */
 export function OrderProgressButton({ accountId, orderId }: { accountId?: string; orderId?: string | null }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
-  const q = useOrderFollowUp(accountId, orderId || undefined, open);
-  if (!accountId || !orderId) return null;
+  const defaultAcc = useDefaultAccount();
+  const resolvedAccountId = accountId || defaultAcc?.id || "";
+  const q = useOrderFollowUp(resolvedAccountId, orderId || undefined, open);
+  if (!resolvedAccountId || !orderId) return null;
   return (
     <>
       <Button variant="ghost" size="sm" className="h-7 px-2 text-[12px] gap-1" onClick={() => setOpen(true)}>
@@ -76,7 +79,7 @@ export function OrderProgressButton({ accountId, orderId }: { accountId?: string
                   <p className="text-[13px] font-medium">{t("ovhExtra.followUp.delivered")}</p>
                   {q.data.services.map((svc) => {
                     const isVps = /^vps-|\.vps\.ovh\./i.test(svc);
-                    const to = `${isVps ? "/vps-control" : "/server-control"}?account=${encodeURIComponent(accountId)}&service=${encodeURIComponent(svc)}`;
+                    const to = `${isVps ? "/vps-control" : "/server-control"}?account=${encodeURIComponent(resolvedAccountId)}&service=${encodeURIComponent(svc)}`;
                     return (
                       <div key={svc} className="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2">
                         <code className="text-[12px] break-all">{svc}</code>

@@ -29,3 +29,9 @@ export function customPlanCode(query: string, plans: { planCode: string }[]): st
 export function parseOptionCodes(value: string): string[] {
   return [...new Set(value.split(/[\s,，、]+/u).map((code) => code.trim()).filter(Boolean))];
 }
+
+/** Canonical sorted key for monitor subscription hardware options (matches backend optionsKey). */
+export function normalizeMonitorOptionsKey(options?: string[] | null): string {
+  if (!options || options.length === 0) return "";
+  return [...new Set(options.map((code) => code.trim()).filter(Boolean))].sort().join(",");
+}

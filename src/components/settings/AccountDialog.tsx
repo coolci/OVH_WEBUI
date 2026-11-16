@@ -21,7 +21,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Field } from "./Field";
-import { OVH_SUBSIDIARIES, subsidiaryLabel, endpointForZone } from "@/lib/ovh-subsidiaries";
+import { OVH_SUBSIDIARIES, subsidiaryLabel, resolveAccountEndpoint } from "@/lib/ovh-subsidiaries";
 import { apiBaseUrlForEndpoint } from "@/lib/ovh-regions";
 import { OvhTokenGuide } from "@/components/common/OvhTokenGuide";
 import {
@@ -33,7 +33,6 @@ import {
   useProxyTest,
   useProxyStatus,
   useLastProxyTest,
-  useVerifyAccount,
 } from "@/hooks/use-accounts";
 
 function proxyInputError(raw: string, t: (key: string, vars?: Record<string, string | number>) => string): string {
@@ -139,8 +138,15 @@ export function AccountDialog({ acc, onClose }: { acc?: OVHAccount; onClose: () 
   const proxyStatus = useProxyStatus();
   const isEdit = !!acc;
 
-  const [saved, setSaved] = useState<{ id: string; proxyUrl: string; fingerprint: string } | null>(
-    acc ? { id: acc.id, proxyUrl: acc.proxyUrl || "", fingerprint: acc.fingerprint || "default" } : null
+  const [saved, setSaved] = useState<{ id: string; proxyUrl: string; fingerprint: string; endpoint: string } | null>(
+    acc
+      ? {
+          id: acc.id,
+          proxyUrl: acc.proxyUrl || "",
+          fingerprint: acc.fingerprint || "default",
+          endpoint: acc.endpoint || "",
+        }
+      : null
   );
 
   const [form, setForm] = useState({
@@ -171,10 +177,17 @@ export function AccountDialog({ acc, onClose }: { acc?: OVHAccount; onClose: () 
   const fpLocked = profiles.length === 0;
 
   const applySaved = (a: OVHAccount) => {
-    setSaved({ id: a.id, proxyUrl: a.proxyUrl || "", fingerprint: a.fingerprint || "default" });
+    setSaved({
+      id: a.id,
+      proxyUrl: a.proxyUrl || "",
+      fingerprint: a.fingerprint || "default",
+      endpoint: a.endpoint || "",
+    });
     setForm((p) => ({ ...p, proxyUrl: "", fingerprint: a.fingerprint || "default" }));
     setClearProxy(false);
   };
+
+  const resolvedEndpoint = resolveAccountEndpoint(form.zone, saved?.endpoint || acc?.endpoint);
 
   const buildPayload = (): Partial<AccountInput> => {
     const payload: Partial<AccountInput> = {
@@ -183,7 +196,7 @@ export function AccountDialog({ acc, onClose }: { acc?: OVHAccount; onClose: () 
       appSecret: form.appSecret.trim(),
       consumerKey: form.consumerKey.trim(),
       zone: form.zone,
-      endpoint: endpointForZone(form.zone),
+      endpoint: resolvedEndpoint,
     };
     if (!saved) {
       payload.proxyUrl = clearProxy ? "" : form.proxyUrl.trim();
@@ -201,45 +214,37 @@ export function AccountDialog({ acc, onClose }: { acc?: OVHAccount; onClose: () 
     return payload;
   };
 
-  const save = async (): Promise<string | null> => {
+  const save = async (): Promise<{ id: string; valid: boolean } | null> => {
     if (!canSubmit) return null;
     const payload = buildPayload();
     try {
       if (saved) {
         const res = await update.mutateAsync({ id: saved.id, input: payload });
         applySaved(res.account);
-        return res.account.id;
+        return { id: res.account.id, valid: Boolean(res.valid) };
       }
       const res = await create.mutateAsync(payload as AccountInput);
       applySaved(res.account);
-      return res.account.id;
+      return { id: res.account.id, valid: Boolean(res.valid) };
     } catch {
       // useCreateAccount / useUpdateAccount 的 onError 已负责弹出错误提示
       return null;
     }
   };
 
-  const verify = useVerifyAccount();
-  const busy = create.isPending || update.isPending || test.isPending || verify.isPending;
+  const busy = create.isPending || update.isPending || test.isPending;
 
   const saveAndTest = async () => {
-    const id = await save();
-    if (id) {
-      test.mutate(id);
+    const res = await save();
+    if (res?.id) {
+      test.mutate(res.id);
     }
   };
 
+  // POST /accounts 与 PUT /accounts/:id 后端已内置调 OVH /me 校验并返回 valid，无需二次冗余请求 /verify
   const submit = async () => {
-    const id = await save();
-    if (!id) return;
-    try {
-      const vRes = await verify.mutateAsync(id);
-      if (!vRes.valid) {
-        return;
-      }
-    } catch {
-      return;
-    }
+    const res = await save();
+    if (!res || !res.valid) return;
     onClose();
   };
 
@@ -274,9 +279,9 @@ export function AccountDialog({ acc, onClose }: { acc?: OVHAccount; onClose: () 
           </Field>
           {!isEdit && (
             <div className="flex items-center justify-between p-2 rounded-lg bg-muted/60 text-xs text-muted-foreground">
-              <span>Endpoint: <code className="font-mono text-foreground">{endpointForZone(form.zone)}</code></span>
+              <span>Endpoint: <code className="font-mono text-foreground">{resolvedEndpoint}</code></span>
               <a
-                href={`${apiBaseUrlForEndpoint(endpointForZone(form.zone))}/createToken/`}
+                href={`${apiBaseUrlForEndpoint(resolvedEndpoint)}/createToken/`}
                 target="_blank"
                 rel="noreferrer"
                 className="text-primary hover:underline font-medium"
@@ -286,7 +291,7 @@ export function AccountDialog({ acc, onClose }: { acc?: OVHAccount; onClose: () 
             </div>
           )}
 
-          {!isEdit && <OvhTokenGuide endpoint={endpointForZone(form.zone)} />}
+          {!isEdit && <OvhTokenGuide endpoint={resolvedEndpoint} />}
 
           <Field
             label={t("settings.accounts.appKeyLabel")}
@@ -448,12 +453,12 @@ export function AccountDialog({ acc, onClose }: { acc?: OVHAccount; onClose: () 
             <p className="text-[11px] text-muted-foreground leading-relaxed">
               {t("settings.accounts.keyGuideGo")}
               <a
-                href={`${apiBaseUrlForEndpoint(endpointForZone(form.zone))}/createToken/`}
+                href={`${apiBaseUrlForEndpoint(resolvedEndpoint)}/createToken/`}
                 target="_blank"
                 rel="noreferrer"
                 className="underline mx-1 text-primary"
               >
-                {apiBaseUrlForEndpoint(endpointForZone(form.zone)).replace("https://", "")}/createToken
+                {apiBaseUrlForEndpoint(resolvedEndpoint).replace("https://", "")}/createToken
               </a>
               {t("settings.accounts.keyGuideApply")}<b>{form.zone}</b>{t("settings.accounts.keyGuideBelongs")}
               <span className="text-warning">{t("settings.accounts.keyGuideOtherSite")}</span>{t("settings.accounts.keyGuideNotShared")}

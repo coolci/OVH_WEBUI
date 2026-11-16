@@ -140,11 +140,23 @@ export function TelegramSection({ form, set }: TelegramSectionProps) {
                   <span className="font-mono text-[12px]">
                     {fmtDateTime(poller.lastPollAt)}
                   </span>
+                ) : poller.running && !poller.lastError ? (
+                  <span className="text-muted-foreground">{t("settings.telegram.pollingIdle")}</span>
                 ) : (
                   <span className="text-muted-foreground">{t("settings.telegram.neverPolled")}</span>
                 )
               }
             />
+            {poller.lastUpdateAt && (
+              <InfoRow
+                label={t("settings.telegram.lastMessage")}
+                value={
+                  <span className="font-mono text-[12px]">
+                    {fmtDateTime(poller.lastUpdateAt)}
+                  </span>
+                }
+              />
+            )}
             <InfoRow
               label={t("settings.telegram.confirmedOffset")}
               value={<span className="font-mono text-[12px]">{poller.offset}</span>}

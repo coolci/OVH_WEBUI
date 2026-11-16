@@ -14,7 +14,12 @@ import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/common/Chip";
 import { Skeleton } from "@/components/common/Skeleton";
 import { StatusDot } from "@/components/common/StatusDot";
-import { isDcInStock, monitorDcAvailability } from "@/lib/datacenters";
+import {
+  apiDatacenterCode,
+  displayDatacenterCode,
+  isDcInStock,
+  monitorDcAvailability,
+} from "@/lib/datacenters";
 import { monitorAccountIds } from "@/lib/order-inputs";
 import { cn } from "@/lib/utils";
 import type { MonitorSubscription } from "@/hooks/use-monitor";
@@ -119,18 +124,32 @@ export function StockRadarSection({
             {subscriptions.map((sub) => {
               const orderAccounts = monitorAccountIds(sub);
               const dcStatus = monitorDcAvailability(sub.lastStatus, orderAccounts);
-              // 订阅没限定机房 = 盯全部机房。以前这里写死 gra/rbx/sbg/bhs,
-              // 美区 / 亚太机型(hil、vin、sgp…)有货时卡片高亮了,机房小标签却一个都不亮。
-              // 改成按实际探测到的机房展示,有货的排前面。
+              const resolveDcStatus = (dc: string): string | undefined => {
+                const disp = displayDatacenterCode(dc);
+                const apiCode = apiDatacenterCode(dc);
+                const raw = dc.trim().toLowerCase();
+                return dcStatus[disp] ?? dcStatus[apiCode] ?? dcStatus[raw];
+              };
               const probedDcs = Object.keys(dcStatus).sort(
                 (a, b) => Number(isDcInStock(dcStatus[b])) - Number(isDcInStock(dcStatus[a])) || a.localeCompare(b)
               );
-              const targetDcs =
+              const normalizedSubDcs =
                 sub.datacenters && sub.datacenters.length > 0
-                  ? sub.datacenters
+                  ? [...new Set(sub.datacenters.map(displayDatacenterCode).filter(Boolean))]
+                  : [];
+              const baseTargetDcs =
+                normalizedSubDcs.length > 0
+                  ? normalizedSubDcs
                   : probedDcs.length > 0
                     ? probedDcs
                     : ["gra", "rbx", "sbg", "bhs"];
+              // 有货机房严格置顶，且可见上限动态扩展为 Math.max(6, 有货机房数)，绝不截断隐藏第 7+ 个有货机房
+              const targetDcs = [...baseTargetDcs].sort(
+                (a, b) => Number(isDcInStock(resolveDcStatus(b))) - Number(isDcInStock(resolveDcStatus(a)))
+              );
+              const inStockTargetCount = targetDcs.filter((dc) => isDcInStock(resolveDcStatus(dc))).length;
+              const visibleDcs = targetDcs.slice(0, Math.max(6, inStockTargetCount));
+              const hiddenDcCount = targetDcs.length - visibleDcs.length;
               const inStockDcList = Object.entries(dcStatus).filter(
                 ([_, status]) => isDcInStock(status)
               );
@@ -173,8 +192,8 @@ export function StockRadarSection({
 
                     {/* 目标机房探针状态 */}
                     <div className="flex items-center gap-1.5 flex-wrap mt-2">
-                      {targetDcs.slice(0, 6).map((dc) => {
-                        const status = dcStatus[dc.toLowerCase()];
+                      {visibleDcs.map((dc) => {
+                        const status = resolveDcStatus(dc);
                         const inStock = isDcInStock(status);
                         return (
                           <Chip
@@ -202,9 +221,9 @@ export function StockRadarSection({
                           </Chip>
                         );
                       })}
-                      {targetDcs.length > 6 && (
+                      {hiddenDcCount > 0 && (
                         <span className="text-[10px] text-muted-foreground font-mono">
-                          +{targetDcs.length - 6}
+                          +{hiddenDcCount}
                         </span>
                       )}
                     </div>

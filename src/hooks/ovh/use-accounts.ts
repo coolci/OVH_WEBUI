@@ -190,7 +190,7 @@ export function useUpdateAccount() {
   });
 }
 
-/** 删除账户(级联删除关联的 queue/history/sniper 记录) */
+/** 删除账户(级联删除关联的 queue/history/sniper/monitor 记录并刷新统计与配置) */
 export function useDeleteAccount() {
   const qc = useQueryClient();
   return useMutation({
@@ -200,9 +200,22 @@ export function useDeleteAccount() {
       qc.invalidateQueries({ queryKey: qk.accounts.proxyStatus() });
       qc.removeQueries({ queryKey: qk.accounts.proxyTest(id) });
       qc.removeQueries({ queryKey: qk.accounts.proxyCheck(id) });
-      // 关联数据也变了,顺手 invalidate
+      // 关联数据也变了,完整失效队列/历史/监控/上新盯盘/统计与依赖账户的数据域
       qc.invalidateQueries({ queryKey: ["queue"] });
       qc.invalidateQueries({ queryKey: ["history"] });
+      qc.invalidateQueries({ queryKey: ["monitor"] });
+      qc.invalidateQueries({ queryKey: ["vps-monitor"] });
+      qc.invalidateQueries({ queryKey: ["catalog-watch"] });
+      qc.invalidateQueries({ queryKey: qk.stats() });
+      qc.invalidateQueries({ queryKey: qk.settings.config() });
+      qc.invalidateQueries({ queryKey: ["servers"] });
+      qc.invalidateQueries({ queryKey: ["server-control"] });
+      qc.invalidateQueries({ queryKey: ["vps-control"] });
+      qc.invalidateQueries({ queryKey: ["account"] });
+      qc.invalidateQueries({ queryKey: ["ovh"] });
+      qc.invalidateQueries({ queryKey: ["support-tickets"] });
+      qc.invalidateQueries({ queryKey: ["all-owned-servers"] });
+      qc.invalidateQueries({ queryKey: ["all-owned-vps"] });
       toast.success(i18n.t("hooksMsg.account.deleted"));
     },
     onError: (e: unknown) => {
@@ -249,6 +262,55 @@ export function useVerifyAccount() {
 export function findAccountByID(accounts: OVHAccount[] | undefined, id: string): OVHAccount | undefined {
   if (!accounts || !id) return undefined;
   return accounts.find((a) => a.id === id);
+}
+
+/**
+ * 幂等校正活跃账户存储：
+ * 当活跃账户不存在于当前 accounts 列表时，无条件回退到默认账户或首个存活账户；
+ * 当账户全部清空时，清空残留的活跃账户 ID，避免 ?account=旧ID 触发全站 HTTP 400。
+ */
+export function syncActiveAccountsWithList(
+  accounts: ReadonlyArray<{ id: string; isDefault?: boolean }>,
+  io: {
+    getServer: () => string;
+    setServer: (id: string) => void;
+    getVps: () => string;
+    setVps: (id: string) => void;
+  }
+): boolean {
+  const activeServer = io.getServer();
+  const activeVps = io.getVps();
+
+  if (accounts.length === 0) {
+    let cleared = false;
+    if (activeServer) {
+      io.setServer("");
+      cleared = true;
+    }
+    if (activeVps) {
+      io.setVps("");
+      cleared = true;
+    }
+    return cleared;
+  }
+
+  const fallback = accounts.find((a) => a.isDefault) || accounts[0];
+  if (!fallback) return false;
+
+  let changed = false;
+  const serverExists = Boolean(activeServer && accounts.some((a) => a.id === activeServer));
+  if (!serverExists && activeServer !== fallback.id) {
+    io.setServer(fallback.id);
+    changed = true;
+  }
+
+  const vpsExists = Boolean(activeVps && accounts.some((a) => a.id === activeVps));
+  if (!vpsExists && activeVps !== fallback.id) {
+    io.setVps(fallback.id);
+    changed = true;
+  }
+
+  return changed;
 }
 
 /** zone 颜色映射,用于账户 chip 区分。

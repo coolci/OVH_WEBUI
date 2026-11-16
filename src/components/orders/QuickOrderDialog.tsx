@@ -19,8 +19,9 @@ import { useCreateQueueItem } from "@/hooks/use-queue";
 import { usePrewarmOrder } from "@/hooks/use-prewarm";
 import { useOrderDurations } from "@/hooks/use-order-durations";
 import { OrderDurationField } from "@/components/orders/OrderDurationField";
-import { DEFAULT_ORDER_DURATION } from "@/lib/order-duration";
+import { DEFAULT_ORDER_DURATION, supportsDuration } from "@/lib/order-duration";
 import { mergeStockPlans } from "@/lib/stock-plans";
+import { selectionDcStatus } from "@/lib/variant-stock";
 import { preorderOptions, preorderVariantCoversAll } from "@/lib/preorder-options";
 import { useSettings, RETRY_INTERVAL } from "@/hooks/use-settings";
 import { useDefaultAccount, useAccounts, findAccountByID } from "@/hooks/use-accounts";
@@ -55,6 +56,7 @@ type QuickOrderDialogProps = {
 };
 
 const FALLBACK_RETRY_INTERVAL = RETRY_INTERVAL.defaultTask;
+const NON_FQN_GROUPS = new Set<OptionGroupKey>(["bandwidth", "vrack", "cpu", "other"]);
 const OPTION_GROUP_ORDER: OptionGroupKey[] = [
   "cpu",
   "memory",
@@ -127,12 +129,34 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
     [server, availMap]
   );
 
-  const okCount = useMemo(
+  const preorder = !!server?.prerelease;
+  const stockPicks = useMemo(() => {
+    const chipPicks = (Object.entries(picked) as [OptionGroupKey, string | undefined][])
+      .filter(([g, v]) => !!v && !NON_FQN_GROUPS.has(g))
+      .map(([, v]) => v as string);
+    const customPicks = parseOptionCodes(extraInput).filter(
+      (code) => !/^(?:bandwidth|vrack|traffic|cpu|processor)(?:-|$)/i.test(code)
+    );
+    return [...new Set([...chipPicks, ...customPicks])];
+  }, [picked, extraInput]);
+
+  const selectionMap = useMemo(
+    () =>
+      variants && variants.length > 0 && !preorder
+        ? selectionDcStatus(dcMap, variants, stockPicks)
+        : dcMap,
+    [variants, preorder, dcMap, stockPicks]
+  );
+
+  const planOkCount = useMemo(
     () => OVH_DATACENTERS.filter((dc) => isDcInStock(lookupDcStatus(dcMap, dc))).length,
     [dcMap]
   );
+  const okCount = useMemo(
+    () => OVH_DATACENTERS.filter((dc) => isDcInStock(lookupDcStatus(selectionMap, dc))).length,
+    [selectionMap]
+  );
 
-  const preorder = !!server?.prerelease;
   const selectedValues = useMemo(() => {
     const options = [...new Set([...(Object.values(picked).filter(Boolean) as string[]), ...parseOptionCodes(extraInput)])];
     // 预订:CPU 不参与匹配(预售时常未公布),不随任务提交
@@ -148,10 +172,11 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
 
   const targetAccountId = accountId || defaultAcc?.id || "";
   const durations = useOrderDurations(targetAccountId, planCode, open);
+  const durationValid = supportsDuration(durations.data, duration);
   const prewarm = usePrewarmOrder({
     account_id: targetAccountId,
     planCode: planCode,
-    datacenter: selectedDCs[0],
+    datacenters: selectedDCs,
     options: selectedValues,
     coupon: coupon.trim() || undefined,
     duration,
@@ -203,7 +228,11 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
   const qty = Math.max(1, Number(quantity) || 1);
   const totalTasks = selectedDCs.length * qty;
   const busy = create.isPending;
-  const canSubmit = Boolean(accountId && planCode.trim() && selectedDCs.length > 0) && !busy && !preorderMismatch;
+  const canSubmit =
+    Boolean(accountId && planCode.trim() && selectedDCs.length > 0) &&
+    !busy &&
+    !preorderMismatch &&
+    durationValid;
   const selectedOptionsKey = useMemo(
     () => [...selectedValues].map((v) => v.trim()).filter(Boolean).sort().join(","),
     [selectedValues]
@@ -234,6 +263,10 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
       toast.error("请至少选择一个数据中心");
       return;
     }
+    if (!durationValid) {
+      toast.error("当前型号不支持所选购买时长，请重新选择");
+      return;
+    }
     const isCustomPlan = Boolean(
       planCode.trim() && !servers.some((s) => s.planCode.toLowerCase() === planCode.trim().toLowerCase())
     );
@@ -250,6 +283,7 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
       duration,
       preorder,
     });
+    prewarm.reset();
     if (result.success > 0) {
       toast.success(`已创建 ${result.success}/${result.total} 个抢购任务`);
       onOpenChange(false);
@@ -384,6 +418,11 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
                     <StatusDot tone="success" pulse size="xs" />
                     {okCount}/{OVH_DATACENTERS.length} 可用
                   </Chip>
+                ) : planOkCount > 0 ? (
+                  <Chip tone="warning">
+                    <StatusDot tone="warning" size="xs" />
+                    所选配置缺货 · 仍可抢购
+                  </Chip>
                 ) : (
                   <Chip tone="danger">
                     <StatusDot tone="danger" size="xs" />
@@ -396,7 +435,7 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
             <DatacenterPicker
               value={selectedDCs}
               onChange={setSelectedDCs}
-              availability={dcMap}
+              availability={selectionMap}
               disabled={!planCode.trim()}
             />
 
@@ -417,7 +456,7 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
                   picked={picked[g] || ""}
                   defaultValueSet={defaultValueSet}
                   hasStock={variants && variants.length > 0 ? (value) => optionHasStock(g, value) : undefined}
-                  onPick={(value) => setPicked((p) => ({ ...p, [g]: value }))}
+                  onPick={(value) => setPicked((p) => ({ ...p, [g]: p[g] === value ? "" : value }))}
                 />
               ))}
 

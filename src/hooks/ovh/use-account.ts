@@ -21,7 +21,7 @@ export interface RefundRecord {
   refundId: string;
   orderId: string;
   date: string;
-  priceWithTax: { value: number; text: string; currencyCode: string };
+  priceWithTax?: { value?: number; text?: string; currencyCode?: string };
   pdfUrl?: string;
 }
 

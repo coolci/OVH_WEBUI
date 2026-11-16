@@ -100,6 +100,8 @@ const pack: SettingsPagesPack = {
       running: "Running",
       stopped: "Stopped",
       lastPoll: "Last poll",
+      lastMessage: "Last message received",
+      pollingIdle: "Listening via long polling (no messages yet)",
       neverPolled: "Never polled",
       confirmedOffset: "Confirmed update_id",
       lastErrorTitle: "Last poll error",

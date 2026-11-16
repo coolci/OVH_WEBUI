@@ -3,7 +3,7 @@
 // OVH 库存接口的粒度是 FQN = 一整套硬件组合(型号.内存.硬盘…),不是型号。
 // "这个型号在 BHS 有货"不等于"你选的 32G + 2×1.2T NVMe 在 BHS 有货"。
 
-import { isOrderable } from "@/lib/availability";
+import { isOrderable, expandDcAliases, pickBetterAvailability } from "@/lib/availability";
 
 export interface VariantLike {
   fqn: string;
@@ -51,13 +51,23 @@ export function selectionDcStatus(
     if (!req.every((val) => parts.some((p) => partMatchesValue(p, val)))) continue;
     for (const dc of v.datacenters || []) {
       const code = dc.datacenter?.toLowerCase();
-      if (!code || isOrderable(best[code])) continue;
-      best[code] = dc.availability || "unknown";
+      if (!code) continue;
+      const incoming = dc.availability || "unknown";
+      best[code] = pickBetterAvailability(best[code], incoming) || incoming;
     }
   }
   const out: Record<string, string> = {};
-  for (const k of Object.keys(dcMap)) out[k] = best[k.toLowerCase()] ?? "unavailable";
-  for (const [k, v] of Object.entries(best)) if (!(k in out)) out[k] = v;
+  for (const k of Object.keys(dcMap)) {
+    let matchedStatus: string | undefined;
+    for (const alias of expandDcAliases(k)) {
+      matchedStatus = pickBetterAvailability(matchedStatus, best[alias]);
+    }
+    out[k] = matchedStatus ?? "unavailable";
+  }
+  for (const [k, v] of Object.entries(best)) {
+    const alreadyCovered = expandDcAliases(k).some((alias) => alias in out);
+    if (!alreadyCovered) out[k] = v;
+  }
   return out;
 }
 

@@ -30,6 +30,7 @@ import { OVH_DATACENTERS } from "@/lib/datacenters";
 import { isOrderable } from "@/lib/availability";
 import { comparePrices } from "@/lib/money";
 import { mergeStockPlans, matchesServerSearch } from "@/lib/stock-plans";
+import { normalizeMonitorOptionsKey } from "@/lib/order-inputs";
 import { sortServersForSniping } from "@/lib/server-sort";
 import { cn } from "@/lib/utils";
 import { useActiveAccountEndpoint } from "@/components/common/active-endpoint";
@@ -119,11 +120,25 @@ function ServersPage() {
     planCode: string;
     serverName?: string;
     datacenters: string[];
+    options: string[];
   } | null>(null);
 
-  const existingMonitor = monitorTarget
-    ? monitorList.data?.find((s) => s.planCode === monitorTarget.planCode)
-    : undefined;
+  const targetOptionsKey = useMemo(
+    () => normalizeMonitorOptionsKey(monitorTarget?.options),
+    [monitorTarget?.options]
+  );
+
+  const existingMonitor = useMemo(
+    () =>
+      monitorTarget
+        ? monitorList.data?.find(
+            (s) =>
+              s.planCode === monitorTarget.planCode &&
+              normalizeMonitorOptionsKey(s.options) === targetOptionsKey
+          )
+        : undefined,
+    [monitorList.data, monitorTarget, targetOptionsKey]
+  );
 
   const list = useMemo(() => mergeStockPlans(q.data || [], availQ.data), [q.data, availQ.data]);
   const filtered = useMemo(() => {
@@ -233,6 +248,7 @@ function ServersPage() {
                   planCode: srv.planCode,
                   serverName: srv.name,
                   datacenters: OVH_DATACENTERS.map((dc) => dc.code),
+                  options: [],
                 })
               }
             />
@@ -251,14 +267,16 @@ function ServersPage() {
               catalogIdx={catalogIdx}
               subsidiary={subsidiary}
               isMonitored={monitoredCodes.has(detailServer.planCode)}
+              subscriptions={monitorList.data}
               onClose={() => setDetailPlanCode(null)}
-              onMonitor={(datacenters) => {
+              onMonitor={(datacenters, options) => {
                 setDetailPlanCode(null);
                 setMonitorTarget({
                   planCode: detailServer.planCode,
                   serverName: detailServer.name,
                   datacenters:
                     datacenters.length > 0 ? datacenters : OVH_DATACENTERS.map((dc) => dc.code),
+                  options: options || [],
                 });
               }}
             />
@@ -267,7 +285,7 @@ function ServersPage() {
       </Dialog>
 
       <MonitorSubscribeDialog
-        key={`${existingMonitor ? "edit" : "create"}:${monitorTarget?.planCode || ""}`}
+        key={`${existingMonitor ? "edit" : "create"}:${monitorTarget?.planCode || ""}:${targetOptionsKey}`}
         open={!!monitorTarget}
         onOpenChange={(v) => !v && setMonitorTarget(null)}
         mode={existingMonitor ? "edit" : "create"}
@@ -277,7 +295,11 @@ function ServersPage() {
         initial={
           existingMonitor ??
           (monitorTarget
-            ? { planCode: monitorTarget.planCode, datacenters: monitorTarget.datacenters }
+            ? {
+                planCode: monitorTarget.planCode,
+                datacenters: monitorTarget.datacenters,
+                options: monitorTarget.options,
+              }
             : null)
         }
       />
