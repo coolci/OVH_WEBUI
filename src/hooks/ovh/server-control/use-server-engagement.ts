@@ -18,8 +18,8 @@ import type {
 } from "./types";
 import { useControlAccount, useServerAccount, withAccount } from "./account";
 
-export function useEngagement(serviceName: string | null) {
-  const accountId = useServerAccount();
+export function useEngagement(serviceName: string | null, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   return useQuery({
     queryKey: qk.serverControl.engagement(serviceName || "", accountId),
     queryFn: async () => {
@@ -30,8 +30,8 @@ export function useEngagement(serviceName: string | null) {
   });
 }
 
-export function useEngagementAvailable(serviceName: string | null, enabled = true) {
-  const accountId = useServerAccount();
+export function useEngagementAvailable(serviceName: string | null, enabled = true, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   return useQuery({
     queryKey: qk.serverControl.engagementAvailable(serviceName || "", accountId),
     queryFn: async () => {
@@ -42,8 +42,8 @@ export function useEngagementAvailable(serviceName: string | null, enabled = tru
   });
 }
 
-export function useEngagementRequest(serviceName: string | null) {
-  const accountId = useServerAccount();
+export function useEngagementRequest(serviceName: string | null, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   return useQuery({
     queryKey: qk.serverControl.engagementRequest(serviceName || "", accountId),
     queryFn: async () => {
@@ -54,8 +54,8 @@ export function useEngagementRequest(serviceName: string | null) {
   });
 }
 
-export function useCreateEngagementRequest(serviceName: string) {
-  const accountId = useServerAccount();
+export function useCreateEngagementRequest(serviceName: string, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (vars: { pricingMode: string }) => {
@@ -69,8 +69,8 @@ export function useCreateEngagementRequest(serviceName: string) {
   });
 }
 
-export function useDeleteEngagementRequest(serviceName: string) {
-  const accountId = useServerAccount();
+export function useDeleteEngagementRequest(serviceName: string, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async () => {
@@ -83,8 +83,8 @@ export function useDeleteEngagementRequest(serviceName: string) {
   });
 }
 
-export function useUpdateEngagementEndRule(serviceName: string) {
-  const accountId = useServerAccount();
+export function useUpdateEngagementEndRule(serviceName: string, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (vars: { strategy: EngagementEndStrategy | string; confirm?: boolean }) => {
@@ -97,8 +97,8 @@ export function useUpdateEngagementEndRule(serviceName: string) {
   });
 }
 
-export function useServerOrderable(serviceName: string | null) {
-  const accountId = useServerAccount();
+export function useServerOrderable(serviceName: string | null, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   return useQuery({
     queryKey: qk.serverControl.orderable(serviceName || "", accountId),
     queryFn: async () => {
@@ -118,8 +118,8 @@ export function useServerOrderable(serviceName: string | null) {
   });
 }
 
-export function useServerOptions(serviceName: string | null) {
-  const accountId = useServerAccount();
+export function useServerOptions(serviceName: string | null, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   return useQuery({
     queryKey: qk.serverControl.options(serviceName || "", accountId),
     queryFn: async (): Promise<PartialList<ServerOptionEntry>> => {
@@ -130,8 +130,8 @@ export function useServerOptions(serviceName: string | null) {
   });
 }
 
-export function useChangeContact() {
-  const accountId = useServerAccount();
+export function useChangeContact(overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   return useMutation({
     mutationFn: async (args: { serviceName: string; admin?: string; tech?: string; billing?: string }) => {
       const res = await api.post(`/server-control/${encodeURIComponent(args.serviceName)}/change-contact`, {
@@ -144,8 +144,8 @@ export function useChangeContact() {
   });
 }
 
-export function useContactChangeRequests(enabled = true) {
-  const accountId = useServerAccount();
+export function useContactChangeRequests(enabled = true, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   return useQuery({
     queryKey: qk.serverControl.contactRequests(accountId),
     queryFn: async (): Promise<ContactChangeRequestList> => {
@@ -172,8 +172,8 @@ export function useContactChangeRequests(enabled = true) {
   });
 }
 
-export function useContactRequestAction() {
-  const accountId = useServerAccount();
+export function useContactRequestAction(overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (args: { id: number | string; action: "accept" | "refuse" | "resend"; token?: string }) => {
@@ -193,8 +193,8 @@ export function useContactRequestAction() {
   });
 }
 
-export function useRetraction(serviceName: string | null, isVps = false) {
-  const accountId = useControlAccount(isVps);
+export function useRetraction(serviceName: string | null, isVps = false, overrideAccountId?: string) {
+  const accountId = useControlAccount(isVps, overrideAccountId);
   const prefix = isVps ? "/vps-control" : "/server-control";
   const domain = isVps ? "vps-control" : "server-control";
   return useQuery<RetractionInfo>({
@@ -208,13 +208,12 @@ export function useRetraction(serviceName: string | null, isVps = false) {
   });
 }
 
-export function useRequestRetraction(serviceName: string, isVps = false) {
-  const accountId = useControlAccount(isVps);
+export function useRequestRetraction(serviceName: string, isVps = false, overrideAccountId?: string) {
+  const accountId = useControlAccount(isVps, overrideAccountId);
   const prefix = isVps ? "/vps-control" : "/server-control";
   const domain = isVps ? "vps-control" : "server-control";
   const qc = useQueryClient();
   return useMutation({
-    // orderId 必传:后端只撤销用户在窗口里确认过的那张订单,不在提交时重新猜订单
     mutationFn: async (p: { orderId: number; reason: string; comment: string }) =>
       (
         await api.post(`${prefix}/${encodeURIComponent(serviceName)}/retraction`, {

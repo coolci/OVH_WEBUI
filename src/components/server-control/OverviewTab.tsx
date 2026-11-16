@@ -10,14 +10,16 @@ import { PartialNotice, DetailErrorTag } from "@/components/common/PartialNotice
 import { MrtgTrafficChart } from "./MrtgTrafficChart";
 import { LotteryConfetti } from "./LotteryConfetti";
 import { useTranslation } from "react-i18next";
+import { useScopedServerAccountId } from "./server-scope";
 
 /** 概览 Tab：硬件 + 网络（IP / 接口 / MRTG 流量）。服务信息胶囊条已上提到 ServerTabs 同行 */
-export function OverviewTab({ server }: { server: OwnedServer }) {
+export function OverviewTab({ server, accountId: propAccountId }: { server: OwnedServer; accountId?: string }) {
   const { t } = useTranslation();
-  const hw = useServerHardware(server.serviceName);
-  const ips = useServerIps(server.serviceName);
-  const interfaces = useServerNetworkInterfaces(server.serviceName);
-  const reverseQ = useServerReverseDns(server.serviceName);
+  const accountId = useScopedServerAccountId(propAccountId || server.accountId);
+  const hw = useServerHardware(server.serviceName, accountId);
+  const ips = useServerIps(server.serviceName, accountId);
+  const interfaces = useServerNetworkInterfaces(server.serviceName, accountId);
+  const reverseQ = useServerReverseDns(server.serviceName, accountId);
   const { hidden } = useHideIp();
   const [reverseOpen, setReverseOpen] = useState(false);
   const [selectedIp, setSelectedIp] = useState<string>("");
@@ -236,6 +238,7 @@ export function OverviewTab({ server }: { server: OwnedServer }) {
         onOpenChange={setReverseOpen}
         serviceName={server.serviceName}
         defaultIp={selectedIp}
+        accountId={accountId}
       />
     </div>
   );

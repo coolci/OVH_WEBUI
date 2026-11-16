@@ -10,6 +10,7 @@ import { useServerNetworkSpecs } from "@/hooks/use-server-control";
 import { useTranslation } from "react-i18next";
 import { fmtDate } from "@/i18n/format";
 import type { OvhQuantity } from "@/hooks/ovh/server-control/types";
+import { useScopedServerAccountId } from "./server-scope";
 
 /**
  * Network specs：完全按 OVH 实际字段渲染
@@ -26,12 +27,15 @@ export function NetworkSpecsDialog({
   serviceName,
   open,
   onOpenChange,
+  accountId: propAccountId,
 }: {
   serviceName: string;
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  accountId?: string;
 }) {
   const { t } = useTranslation();
+  const accountId = useScopedServerAccountId(propAccountId);
   const { hidden } = useHideIp();
   // 路由信息里有 CIDR 和 IPv6,maskSensitive 的精确正则接不住,统一宽松打码:
   // 保留首段,其余遮掉。开关关着时原样返回。
@@ -44,7 +48,7 @@ export function NetworkSpecsDialog({
     if (i > 0) return v.slice(0, i) + ":****";
     return maskSensitive(v, hidden);
   };
-  const q = useServerNetworkSpecs(serviceName, open);
+  const q = useServerNetworkSpecs(serviceName, open, accountId);
   const data = q.data;
 
   return (

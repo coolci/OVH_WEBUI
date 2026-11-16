@@ -18,13 +18,15 @@ export const OS_GROUPS: { kind: ReturnType<typeof detectOsKind>; label: string }
   { kind: "linux",    label: "ctrl.reinstall.os.linux" },
 ];
 
-export const HARDWARE_RAID_LEVELS = [
+export const HARDWARE_RAID_LEVELS: { value: string; label: string; fallbackLabel?: string }[] = [
   { value: "", label: "ctrl.reinstall.hwRaid.none" },
-  { value: "raid0", label: "ctrl.reinstall.hwRaid.raid0" },
-  { value: "raid1", label: "ctrl.reinstall.hwRaid.raid1" },
-  { value: "raid5", label: "ctrl.reinstall.hwRaid.raid5" },
-  { value: "raid6", label: "ctrl.reinstall.hwRaid.raid6" },
-  { value: "raid10", label: "ctrl.reinstall.hwRaid.raid10" },
+  { value: "raid0", label: "ctrl.reinstall.hwRaid.raid0", fallbackLabel: "RAID 0" },
+  { value: "raid1", label: "ctrl.reinstall.hwRaid.raid1", fallbackLabel: "RAID 1" },
+  { value: "raid5", label: "ctrl.reinstall.hwRaid.raid5", fallbackLabel: "RAID 5" },
+  { value: "raid6", label: "ctrl.reinstall.hwRaid.raid6", fallbackLabel: "RAID 6" },
+  { value: "raid10", label: "ctrl.reinstall.hwRaid.raid10", fallbackLabel: "RAID 10" },
+  { value: "raid50", label: "ctrl.reinstall.hwRaid.raid50", fallbackLabel: "RAID 50" },
+  { value: "raid60", label: "ctrl.reinstall.hwRaid.raid60", fallbackLabel: "RAID 60" },
 ];
 
 export const SOFTWARE_RAID_LEVELS = [

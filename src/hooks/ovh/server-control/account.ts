@@ -1,27 +1,41 @@
 import type { AxiosRequestConfig } from "axios";
 import { useActiveServerControlAccount, useActiveVpsControlAccount } from "@/hooks/use-active-account";
 
+let useRegisteredScopeAccount: () => string | undefined = () => undefined;
+
+/**
+ * 由实例级 ServerScopeContext 在模块加载期注册，使页面内所有未显式传 overrideAccountId 的子组件/钩子
+ * （如 MRTG 流量图等）优先读取当前实例绑定的 accountId，彻底阻断回退读取全局 localStorage 串号。
+ */
+export function registerServerScopeHook(reader: () => string | undefined): void {
+  useRegisteredScopeAccount = reader;
+}
+
 /**
  * 服务器控制 hooks 用的活跃账户 ID(随本页状态更新,跨标签页切换时也会同步)。
  *
- * 支持传入 overrideAccountId 锁定特定服务器归属的账户 ID，避免跨标签页切换账户时发生竞态操作串号。
+ * 支持传入 overrideAccountId 或通过实例级 ServerScopeContext 锁定特定服务器归属的账户 ID，
+ * 避免跨标签页切换账户时发生竞态操作串号。
  * 所有 /server-control/* 请求都用它显式带 ?account=,query key 也带上它。
  * 显式传参让请求始终发往渲染当前界面的那个账户。
  */
 export function useServerAccount(overrideAccountId?: string): string {
+  const scopedId = useRegisteredScopeAccount();
   const [accountId] = useActiveServerControlAccount();
-  return overrideAccountId || accountId;
+  return overrideAccountId || scopedId || accountId;
 }
 
 /**
  * 独服 / VPS 共用的 hooks(撤单等)用:VPS 模式与拦截器规则一致,
  * 优先 VPS 活跃账户,没选时退回独服账户。
- * 支持传入 overrideAccountId 显式指定账户。
+ * 支持传入 overrideAccountId 或实例级作用域显式指定账户。
  */
 export function useControlAccount(isVps: boolean, overrideAccountId?: string): string {
+  const scopedId = useRegisteredScopeAccount();
   const [serverAccount] = useActiveServerControlAccount();
   const [vpsAccount] = useActiveVpsControlAccount();
   if (overrideAccountId) return overrideAccountId;
+  if (!isVps && scopedId) return scopedId;
   return isVps ? vpsAccount || serverAccount : serverAccount;
 }
 

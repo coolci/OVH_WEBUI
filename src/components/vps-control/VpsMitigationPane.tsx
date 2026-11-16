@@ -14,11 +14,11 @@ import { errorField, errorText } from "@/lib/api-error";
 
 /** VPS DDoS Mitigation 管理。逻辑跟 server-control 的 MitigationPane 相同 —— OVH
  *  自动缓解默认开,我们只暴露「永久缓解」手动开关。VPS 一般只 1 个 IP,UI 比 dedicated 简单。 */
-export function VpsMitigationPane({ serviceName }: { serviceName: string }) {
+export function VpsMitigationPane({ serviceName, accountId }: { serviceName: string; accountId?: string }) {
   const { t } = useTranslation();
-  const list = useVpsMitigation(serviceName);
-  const enable = useEnableVpsMitigation(serviceName);
-  const disable = useDisableVpsMitigation(serviceName);
+  const list = useVpsMitigation(serviceName, accountId);
+  const enable = useEnableVpsMitigation(serviceName, accountId);
+  const disable = useDisableVpsMitigation(serviceName, accountId);
 
   if (list.isPending) return <Skeleton className="h-40 rounded-2xl" />;
   // 读失败 ≠ 这台 VPS 没有 IP。后端拿不到 /vps/{svc}/ips 时直接返 500,这里 data 就是空数组,

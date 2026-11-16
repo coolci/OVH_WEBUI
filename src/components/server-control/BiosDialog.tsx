@@ -6,18 +6,22 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { LoadFailed } from "@/components/common/LoadFailed";
 import { useServerBiosSettings } from "@/hooks/use-server-control";
 import { useTranslation } from "react-i18next";
+import { useScopedServerAccountId } from "./server-scope";
 
 /** BIOS 设置查看（含 SGX 子项；只读，旧前端也是只读展示） */
 export function BiosDialog({
   serviceName,
   open,
   onOpenChange,
+  accountId: propAccountId,
 }: {
   serviceName: string;
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  accountId?: string;
 }) {
-  const q = useServerBiosSettings(serviceName, open);
+  const accountId = useScopedServerAccountId(propAccountId);
+  const q = useServerBiosSettings(serviceName, open, accountId);
   const { t } = useTranslation();
   const settings = q.data?.settings || {};
   const sgx = q.data?.sgx;

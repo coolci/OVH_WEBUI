@@ -20,6 +20,7 @@ interface VpsReverseDnsDialogProps {
   serviceName: string;
   ip: string;
   currentReverse?: string;
+  accountId?: string;
 }
 
 export function VpsReverseDnsDialog({
@@ -28,8 +29,9 @@ export function VpsReverseDnsDialog({
   serviceName,
   ip,
   currentReverse,
+  accountId,
 }: VpsReverseDnsDialogProps) {
-  const setReverse = useSetVpsIpReverse(serviceName);
+  const setReverse = useSetVpsIpReverse(serviceName, accountId);
   const [reverse, setReverseDomain] = useState<string>(currentReverse || "");
 
   useEffect(() => {

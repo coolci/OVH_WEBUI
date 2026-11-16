@@ -115,16 +115,17 @@ export function PowerTab({ server, accountId: propAccountId }: { server: OwnedSe
       </div>
 
       <SplaDialog serviceName={server.serviceName} open={splaOpen} onOpenChange={setSplaOpen} accountId={accountId} />
-      <BootModeDialog serviceName={server.serviceName} open={bootOpen} onOpenChange={setBootOpen} />
+      <BootModeDialog serviceName={server.serviceName} open={bootOpen} onOpenChange={setBootOpen} accountId={accountId} />
       <RescueDialog
         serviceName={server.serviceName}
         displayName={server.name}
         open={rescueOpen}
         onOpenChange={setRescueOpen}
+        accountId={accountId}
       />
-      <TasksDialog serviceName={server.serviceName} open={tasksOpen} onOpenChange={setTasksOpen} />
+      <TasksDialog serviceName={server.serviceName} open={tasksOpen} onOpenChange={setTasksOpen} accountId={accountId} />
       <ReinstallDialog serviceName={server.serviceName} open={reinstallOpen} onOpenChange={setReinstallOpen} accountId={accountId} />
-      <BiosDialog serviceName={server.serviceName} open={biosOpen} onOpenChange={setBiosOpen} />
+      <BiosDialog serviceName={server.serviceName} open={biosOpen} onOpenChange={setBiosOpen} accountId={accountId} />
       <InstallProgressDialog serviceName={server.serviceName} open={progressOpen} onOpenChange={setProgressOpen} accountId={accountId} />
       <IpmiDialog serviceName={server.serviceName} open={ipmiOpen} onOpenChange={setIpmiOpen} accountId={accountId} />
 

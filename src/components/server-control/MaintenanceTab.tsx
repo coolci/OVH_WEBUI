@@ -5,7 +5,6 @@ import { useServerInterventions, useRetraction } from "@/hooks/use-server-contro
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/common/Skeleton";
 import { Chip } from "@/components/common/Chip";
-import { useActiveAccountEndpoint } from "@/components/common/active-endpoint";
 import { NetworkSpecsDialog } from "@/components/server-control/NetworkSpecsDialog";
 import { EngagementDialog } from "@/components/server-control/EngagementDialog";
 import { RetractionDialog } from "@/components/server-control/RetractionDialog";
@@ -15,19 +14,21 @@ import { useTranslation } from "react-i18next";
 import { errorMessage } from "@/lib/api-error";
 import { fmtDateTime } from "@/i18n/format";
 import type { ServerIntervention } from "@/hooks/ovh/server-control/types";
+import { useScopedServerAccountId, useScopedServerEndpoint } from "./server-scope";
 
 /** 维护 Tab：维护记录列表 + 硬件更换工单 + 变更联系人 + 14 天撤单 */
-export function MaintenanceTab({ server }: { server: OwnedServer }) {
+export function MaintenanceTab({ server, accountId: propAccountId }: { server: OwnedServer; accountId?: string }) {
   const { t } = useTranslation();
+  const accountId = useScopedServerAccountId(propAccountId || server.accountId);
   const [netSpecsOpen, setNetSpecsOpen] = useState(false);
   const [engagementOpen, setEngagementOpen] = useState(false);
   const [retractOpen, setRetractOpen] = useState(false);
-  const interventions = useServerInterventions(server.serviceName);
-  const retraction = useRetraction(server.serviceName);
+  const interventions = useServerInterventions(server.serviceName, accountId);
+  const retraction = useRetraction(server.serviceName, false, accountId);
   const [hwOpen, setHwOpen] = useState(false);
   const [contactOpen, setContactOpen] = useState(false);
   // 美区没有 NIC 联系人系统，后端会 400；入口直接禁用并写明原因，别让用户白跑一趟
-  const { isUS, ready } = useActiveAccountEndpoint();
+  const { isUS, ready } = useScopedServerEndpoint(accountId);
   const contactUnsupported = ready && isUS;
 
   let retractDesc = "从下单起 14 天内可向 OVH 申请无理由撤单与全额退款，服务器随之注销。";
@@ -132,19 +133,22 @@ export function MaintenanceTab({ server }: { server: OwnedServer }) {
         info={retraction.data}
         open={retractOpen}
         onOpenChange={setRetractOpen}
+        accountId={accountId}
       />
       <NetworkSpecsDialog
         serviceName={server.serviceName}
         open={netSpecsOpen}
         onOpenChange={setNetSpecsOpen}
+        accountId={accountId}
       />
       <EngagementDialog
         serviceName={server.serviceName}
         open={engagementOpen}
         onOpenChange={setEngagementOpen}
+        accountId={accountId}
       />
-      <HardwareReplaceDialog serviceName={server.serviceName} open={hwOpen} onOpenChange={setHwOpen} />
-      <ChangeContactDialog serviceName={server.serviceName} open={contactOpen} onOpenChange={setContactOpen} />
+      <HardwareReplaceDialog serviceName={server.serviceName} open={hwOpen} onOpenChange={setHwOpen} accountId={accountId} />
+      <ChangeContactDialog serviceName={server.serviceName} open={contactOpen} onOpenChange={setContactOpen} accountId={accountId} />
     </>
   );
 }

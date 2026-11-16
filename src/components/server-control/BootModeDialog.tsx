@@ -9,20 +9,24 @@ import { useServerBootModes, useSetServerBootMode, useRebootServer, type BootMod
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { errorMessage } from "@/lib/api-error";
+import { useScopedServerAccountId } from "./server-scope";
 
 /** 启动模式对话框：列出所有可选启动模式，点击非当前项即切换 + 自动重启（对齐旧前端） */
 export function BootModeDialog({
   serviceName,
   open,
   onOpenChange,
+  accountId: propAccountId,
 }: {
   serviceName: string;
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  accountId?: string;
 }) {
-  const q = useServerBootModes(serviceName, open);
-  const setBoot = useSetServerBootMode();
-  const reboot = useRebootServer();
+  const accountId = useScopedServerAccountId(propAccountId);
+  const q = useServerBootModes(serviceName, open, accountId);
+  const setBoot = useSetServerBootMode(accountId);
+  const reboot = useRebootServer(accountId);
   const { t } = useTranslation();
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
 

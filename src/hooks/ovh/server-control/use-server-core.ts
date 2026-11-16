@@ -9,8 +9,9 @@ import { useServerAccount, withAccount } from "./account";
 /**
  * 已购服务器列表（后端返回 { success, servers, total }）
  */
-export function useOwnedServers() {
-  const [accountId] = useActiveAccount();
+export function useOwnedServers(overrideAccountId?: string) {
+  const [activeId] = useActiveAccount();
+  const accountId = overrideAccountId || activeId;
   return useQuery({
     queryKey: qk.serverControl.list(accountId),
     queryFn: async () => {
@@ -27,8 +28,8 @@ export function useOwnedServers() {
 }
 
 /** 服务信息（后端返回 { success, serviceInfo: {...} }） */
-export function useServerServiceInfo(serviceName: string | null) {
-  const accountId = useServerAccount();
+export function useServerServiceInfo(serviceName: string | null, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   return useQuery({
     queryKey: qk.serverControl.serviceInfo(serviceName || "", accountId),
     queryFn: async () => {
@@ -42,8 +43,8 @@ export function useServerServiceInfo(serviceName: string | null) {
 /**
  * 修改续费策略。
  */
-export function useUpdateRenewal(serviceName: string) {
-  const accountId = useServerAccount();
+export function useUpdateRenewal(serviceName: string, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (vars: { mode: "auto" | "manual" | "delete"; period?: number }) => {
@@ -105,8 +106,8 @@ export function terminationLabel(info: {
 /**
  * 设置终止策略。
  */
-export function useUpdateTerminationPolicy(serviceName: string) {
-  const accountId = useServerAccount();
+export function useUpdateTerminationPolicy(serviceName: string, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (vars: { policy: string }) =>

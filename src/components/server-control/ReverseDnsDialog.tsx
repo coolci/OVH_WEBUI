@@ -25,6 +25,7 @@ interface ReverseDnsDialogProps {
   onOpenChange: (open: boolean) => void;
   serviceName: string;
   defaultIp?: string;
+  accountId?: string;
 }
 
 export function ReverseDnsDialog({
@@ -32,11 +33,12 @@ export function ReverseDnsDialog({
   onOpenChange,
   serviceName,
   defaultIp,
+  accountId,
 }: ReverseDnsDialogProps) {
-  const reverseQ = useServerReverseDns(open ? serviceName : null);
-  const ipsQ = useServerIps(open ? serviceName : null);
-  const setReverse = useSetServerReverseDns(serviceName);
-  const delReverse = useDeleteServerReverseDns(serviceName);
+  const reverseQ = useServerReverseDns(open ? serviceName : null, accountId);
+  const ipsQ = useServerIps(open ? serviceName : null, accountId);
+  const setReverse = useSetServerReverseDns(serviceName, accountId);
+  const delReverse = useDeleteServerReverseDns(serviceName, accountId);
 
   const [editingIp, setEditingIp] = useState<string>(defaultIp || "");
   const [domain, setDomain] = useState<string>("");

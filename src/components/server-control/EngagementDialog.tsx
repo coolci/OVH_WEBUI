@@ -20,19 +20,20 @@ import { errorMessage } from "@/lib/api-error";
 import { fmtDate, fmtDateTime } from "@/i18n/format";
 import { openSafeHttpsUrl, safeHttpsUrl } from "@/lib/utils";
 import type { EngagementInfo, EngagementRequest } from "@/hooks/ovh/server-control/types";
+import { useScopedServerAccountId } from "./server-scope";
 
 /** EngagementDialog 钩子绑定 —— dedicated / vps 各自传入。
- *  类型上接受 (svc, enabled?) → query / mutation 形状即可。 */
+ *  类型上接受 (svc, enabled?, overrideAccountId?) → query / mutation 形状即可。 */
 export type EngagementHooks = {
   // isError 必须进契约：后端不再把 401/403/5xx/超时吞成 engagement:null 了，
   // 前端如果只看 data==null，就会把"读取失败"渲染成"该服务未签合同期"——照样是误导。
-  useEngagement: (svc: string | null) => { data: EngagementInfo | null | undefined; isPending: boolean; isError: boolean; error: unknown };
-  useEngagementAvailable: (svc: string | null, enabled?: boolean) => { data: EngagementPricing[] | undefined; isPending: boolean; isError: boolean };
-  useEngagementRequest: (svc: string | null) => { data: EngagementRequest | null | undefined; isPending: boolean; isError: boolean };
-  useCreateEngagementRequest: (svc: string) => { mutateAsync: (vars: { pricingMode: string }) => Promise<{ request?: EngagementRequest } | null | undefined>; isPending: boolean };
-  useDeleteEngagementRequest: (svc: string) => { mutateAsync: () => Promise<unknown>; isPending: boolean };
+  useEngagement: (svc: string | null, overrideAccountId?: string) => { data: EngagementInfo | null | undefined; isPending: boolean; isError: boolean; error: unknown };
+  useEngagementAvailable: (svc: string | null, enabled?: boolean, overrideAccountId?: string) => { data: EngagementPricing[] | undefined; isPending: boolean; isError: boolean };
+  useEngagementRequest: (svc: string | null, overrideAccountId?: string) => { data: EngagementRequest | null | undefined; isPending: boolean; isError: boolean };
+  useCreateEngagementRequest: (svc: string, overrideAccountId?: string) => { mutateAsync: (vars: { pricingMode: string }) => Promise<{ request?: EngagementRequest } | null | undefined>; isPending: boolean };
+  useDeleteEngagementRequest: (svc: string, overrideAccountId?: string) => { mutateAsync: () => Promise<unknown>; isPending: boolean };
   /** CANCEL_SERVICE 不可撤销，后端要求带 confirm:true，组件必须先弹二次确认 */
-  useUpdateEngagementEndRule: (svc: string) => { mutateAsync: (vars: { strategy: string; confirm?: boolean }) => Promise<unknown>; isPending: boolean };
+  useUpdateEngagementEndRule: (svc: string, overrideAccountId?: string) => { mutateAsync: (vars: { strategy: string; confirm?: boolean }) => Promise<unknown>; isPending: boolean };
 };
 
 const DEFAULT_HOOKS: EngagementHooks = {
@@ -72,19 +73,22 @@ export function EngagementDialog({
   open,
   onOpenChange,
   hooks = DEFAULT_HOOKS,
+  accountId: propAccountId,
 }: {
   serviceName: string;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   hooks?: EngagementHooks;
+  accountId?: string;
 }) {
   const { t } = useTranslation();
-  const current = hooks.useEngagement(open ? serviceName : null);
-  const available = hooks.useEngagementAvailable(open ? serviceName : null, open);
-  const ongoing = hooks.useEngagementRequest(open ? serviceName : null);
-  const createReq = hooks.useCreateEngagementRequest(serviceName);
-  const deleteReq = hooks.useDeleteEngagementRequest(serviceName);
-  const updateRule = hooks.useUpdateEngagementEndRule(serviceName);
+  const accountId = useScopedServerAccountId(propAccountId);
+  const current = hooks.useEngagement(open ? serviceName : null, accountId);
+  const available = hooks.useEngagementAvailable(open ? serviceName : null, open, accountId);
+  const ongoing = hooks.useEngagementRequest(open ? serviceName : null, accountId);
+  const createReq = hooks.useCreateEngagementRequest(serviceName, accountId);
+  const deleteReq = hooks.useDeleteEngagementRequest(serviceName, accountId);
+  const updateRule = hooks.useUpdateEngagementEndRule(serviceName, accountId);
   const [confirmMode, setConfirmMode] = useState<string | null>(null);
   /** 待二次确认的到期策略（目前只有 CANCEL_SERVICE 会走这里） */
   const [confirmStrategy, setConfirmStrategy] = useState<string | null>(null);

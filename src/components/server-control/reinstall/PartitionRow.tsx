@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { X as XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +29,23 @@ export function PartitionRow({
   softRaidOnlyMirroring?: boolean;
 }) {
   const { t } = useTranslation();
+  const singleGroupId = diskGroupIds.length === 1 ? diskGroupIds[0] : undefined;
+
+  // 单磁盘组机器若未绑定真实 diskGroupId，自动归一化绑定唯一真实磁盘组编号，消除虚拟 default 键分裂
+  useEffect(() => {
+    if (singleGroupId && partition.diskGroupId !== singleGroupId) {
+      onChange({ ...partition, diskGroupId: singleGroupId });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [singleGroupId, partition.diskGroupId]);
+
+  const emitChange = (next: CustomPartition) => {
+    onChange({
+      ...next,
+      diskGroupId: next.diskGroupId ?? singleGroupId,
+    });
+  };
+
   // 官方口径:文件系统下拉按所选模板的 filesystems 过滤(模板没给元数据时退回全集)
   const fsOptions = (filesystems && filesystems.length > 0 ? filesystems : FILESYSTEMS).filter(
     (fs) => FILESYSTEMS.includes(fs)
@@ -35,15 +53,16 @@ export function PartitionRow({
   const raidOptions = softRaidOnlyMirroring
     ? SOFTWARE_RAID_LEVELS.filter((l) => l.value === "raid0" || l.value === "raid1")
     : SOFTWARE_RAID_LEVELS;
+
   return (
     <div className="border border-border rounded-xl p-2.5 flex items-center gap-2 text-[12px] bg-background flex-wrap">
       <Input
         value={partition.mountpoint}
-        onChange={(e) => onChange({ ...partition, mountpoint: e.target.value })}
+        onChange={(e) => emitChange({ ...partition, mountpoint: e.target.value })}
         placeholder={t("ctrl.reinstall.part.mountpoint")}
         className="h-8 w-32"
       />
-      <Select value={partition.filesystem} onValueChange={(v) => onChange({ ...partition, filesystem: v })}>
+      <Select value={partition.filesystem} onValueChange={(v) => emitChange({ ...partition, filesystem: v })}>
         <SelectTrigger className="h-8 w-24">
           <SelectValue />
         </SelectTrigger>
@@ -59,18 +78,19 @@ export function PartitionRow({
         type="number"
         min={0}
         value={partition.size}
-        onChange={(e) => onChange({ ...partition, size: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+        onChange={(e) => emitChange({ ...partition, size: Math.max(0, parseInt(e.target.value, 10) || 0) })}
         placeholder="MB"
         className="h-8 w-24"
         title={t("ctrl.reinstall.part.sizeHint")}
       />
       <span className="text-[11px] text-muted-foreground">MB</span>
-      {diskGroupIds.length > 1 && (
+      {diskGroupIds.length >= 1 && (
         <Select
-          value={String(partition.diskGroupId ?? "")}
-          onValueChange={(v) => onChange({ ...partition, diskGroupId: parseInt(v, 10) })}
+          value={String(partition.diskGroupId ?? singleGroupId ?? "")}
+          disabled={diskGroupIds.length === 1}
+          onValueChange={(v) => emitChange({ ...partition, diskGroupId: parseInt(v, 10) })}
         >
-          <SelectTrigger className="h-8 w-24">
+          <SelectTrigger className="h-8 w-28">
             <SelectValue placeholder={t("ctrl.reinstall.part.diskGroup")} />
           </SelectTrigger>
           <SelectContent>
@@ -84,7 +104,7 @@ export function PartitionRow({
       )}
       <Select
         value={partition.raid || ""}
-        onValueChange={(v) => onChange({ ...partition, raid: v === " " ? undefined : v })}
+        onValueChange={(v) => emitChange({ ...partition, raid: v === " " ? undefined : v })}
       >
         <SelectTrigger className="h-8 w-28">
           <SelectValue placeholder={t("ctrl.reinstall.part.noRaid")} />
@@ -106,7 +126,7 @@ export function PartitionRow({
       {partition.filesystem === "zfs" && (
         <Input
           value={partition.zpoolName ?? ""}
-          onChange={(e) => onChange({ ...partition, zpoolName: e.target.value })}
+          onChange={(e) => emitChange({ ...partition, zpoolName: e.target.value })}
           placeholder={t("ctrl.reinstall.part.zpool")}
           className="h-8 w-36 font-mono text-[11px]"
           title={t("ctrl.reinstall.part.zpoolHint")}
@@ -115,7 +135,7 @@ export function PartitionRow({
       {partition.filesystem !== "zfs" && lvmReady && (
         <Input
           value={partition.lvName ?? ""}
-          onChange={(e) => onChange({ ...partition, lvName: e.target.value })}
+          onChange={(e) => emitChange({ ...partition, lvName: e.target.value })}
           placeholder={t("ctrl.reinstall.part.lv")}
           className="h-8 w-36 font-mono text-[11px]"
           title={t("ctrl.reinstall.part.lvHint")}

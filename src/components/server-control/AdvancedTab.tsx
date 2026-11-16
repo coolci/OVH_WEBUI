@@ -35,14 +35,15 @@ import { Chip } from "@/components/common/Chip";
 import { Skeleton } from "@/components/common/Skeleton";
 import { EmptyState } from "@/components/common/EmptyState";
 import { PartialNotice, DetailErrorTag } from "@/components/common/PartialNotice";
-import { useActiveAccountEndpoint } from "@/components/common/active-endpoint";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { errorMessage } from "@/lib/api-error";
+import { useScopedServerAccountId, useScopedServerEndpoint } from "./server-scope";
 
 /** 高级 Tab：独服运维管理（Burst, 防火墙, FTP备份, 云备份, DNS, vMAC, vRack, 可选配等） */
-export function AdvancedTab({ server }: { server: OwnedServer }) {
+export function AdvancedTab({ server, accountId: propAccountId }: { server: OwnedServer; accountId?: string }) {
   const { t } = useTranslation();
+  const accountId = useScopedServerAccountId(propAccountId || server.accountId);
   return (
     <Tabs defaultValue="burst" className="space-y-4">
       <TabsList className="grid grid-cols-3 sm:grid-cols-5 lg:flex lg:flex-wrap h-auto gap-1 p-1">
@@ -58,26 +59,26 @@ export function AdvancedTab({ server }: { server: OwnedServer }) {
         <TabsTrigger value="ip" className="text-[11px] sm:text-[12px] px-2"><MapPin className="w-3.5 h-3.5 mr-1" />{t("maint.advanced.tabs.ip")}</TabsTrigger>
       </TabsList>
 
-      <TabsContent value="burst"><BurstPane serviceName={server.serviceName} /></TabsContent>
-      <TabsContent value="firewall"><FirewallPane serviceName={server.serviceName} /></TabsContent>
-      <TabsContent value="ftp"><BackupFtpPane serviceName={server.serviceName} /></TabsContent>
-      <TabsContent value="cloud"><BackupCloudPane serviceName={server.serviceName} /></TabsContent>
-      <TabsContent value="dns"><SecondaryDnsPane serviceName={server.serviceName} /></TabsContent>
-      <TabsContent value="vmac"><VirtualMacPane serviceName={server.serviceName} /></TabsContent>
-      <TabsContent value="vrack"><VrackPane serviceName={server.serviceName} /></TabsContent>
-      <TabsContent value="orderable"><OrderablePane serviceName={server.serviceName} /></TabsContent>
-      <TabsContent value="options"><OptionsPane serviceName={server.serviceName} /></TabsContent>
-      <TabsContent value="ip"><IpSpecsPane serviceName={server.serviceName} /></TabsContent>
+      <TabsContent value="burst"><BurstPane serviceName={server.serviceName} accountId={accountId} /></TabsContent>
+      <TabsContent value="firewall"><FirewallPane serviceName={server.serviceName} accountId={accountId} /></TabsContent>
+      <TabsContent value="ftp"><BackupFtpPane serviceName={server.serviceName} accountId={accountId} /></TabsContent>
+      <TabsContent value="cloud"><BackupCloudPane serviceName={server.serviceName} accountId={accountId} /></TabsContent>
+      <TabsContent value="dns"><SecondaryDnsPane serviceName={server.serviceName} accountId={accountId} /></TabsContent>
+      <TabsContent value="vmac"><VirtualMacPane serviceName={server.serviceName} accountId={accountId} /></TabsContent>
+      <TabsContent value="vrack"><VrackPane serviceName={server.serviceName} accountId={accountId} /></TabsContent>
+      <TabsContent value="orderable"><OrderablePane serviceName={server.serviceName} accountId={accountId} /></TabsContent>
+      <TabsContent value="options"><OptionsPane serviceName={server.serviceName} accountId={accountId} /></TabsContent>
+      <TabsContent value="ip"><IpSpecsPane serviceName={server.serviceName} accountId={accountId} /></TabsContent>
     </Tabs>
   );
 }
 
 // ─────────────────────────────── Burst ───────────────────────────────
 
-function BurstPane({ serviceName }: { serviceName: string }) {
+function BurstPane({ serviceName, accountId }: { serviceName: string; accountId?: string }) {
   const { t } = useTranslation();
-  const q = useServerBurst(serviceName);
-  const mut = useSetBurst();
+  const q = useServerBurst(serviceName, accountId);
+  const mut = useSetBurst(accountId);
   if (q.isPending) return <PaneSkeleton />;
   if (q.isError) return <LoadFailed icon={Zap} title={t("maint.advanced.burst.unavailable")} error={q.error} onRetry={() => q.refetch()} />;
   const data = q.data;
@@ -119,10 +120,10 @@ function BurstPane({ serviceName }: { serviceName: string }) {
 
 // ─────────────────────────────── Firewall ───────────────────────────────
 
-function FirewallPane({ serviceName }: { serviceName: string }) {
+function FirewallPane({ serviceName, accountId }: { serviceName: string; accountId?: string }) {
   const { t } = useTranslation();
-  const q = useServerFirewall(serviceName);
-  const mut = useSetFirewall();
+  const q = useServerFirewall(serviceName, accountId);
+  const mut = useSetFirewall(accountId);
   if (q.isPending) return <PaneSkeleton />;
   if (q.isError) return <LoadFailed icon={Shield} title={t("maint.advanced.firewall.unavailable")} error={q.error} onRetry={() => q.refetch()} />;
   const data = q.data;
@@ -160,21 +161,21 @@ function FirewallPane({ serviceName }: { serviceName: string }) {
 
 // ─────────────────────────────── Backup FTP ───────────────────────────────
 
-function BackupFtpPane({ serviceName }: { serviceName: string }) {
+function BackupFtpPane({ serviceName, accountId }: { serviceName: string; accountId?: string }) {
   const { t } = useTranslation();
   const { hidden } = useHideIp();
-  const { isUS, ready } = useActiveAccountEndpoint();
+  const { isUS, ready } = useScopedServerEndpoint(accountId);
   // US 区官方 schema 里 backupFTP 五条路径全都不存在，请求发出去只会拿到 notAvailable。
   // 账户信息一加载完就本地拦下，省掉一次注定失败的往返（enabled=false 让 hook 根本不发请求）。
   const usBlocked = ready && isUS;
-  const q = useServerBackupFtp(usBlocked ? null : serviceName);
-  const act = useActivateBackupFtp();
-  const del = useDeleteBackupFtp();
-  const resetPwd = useResetBackupFtpPassword();
-  const addAccess = useAddBackupFtpAccess();
-  const delAccess = useDeleteBackupFtpAccess();
+  const q = useServerBackupFtp(usBlocked ? null : serviceName, accountId);
+  const act = useActivateBackupFtp(accountId);
+  const del = useDeleteBackupFtp(accountId);
+  const resetPwd = useResetBackupFtpPassword(accountId);
+  const addAccess = useAddBackupFtpAccess(accountId);
+  const delAccess = useDeleteBackupFtpAccess(accountId);
   // 只有服务已激活时才去问"可授权的 IP 段"，否则未激活的机器每次打开都会白发一次必失败的请求
-  const blocks = useBackupFtpAuthorizableBlocks(usBlocked ? null : serviceName, !!q.data?.backupFtp);
+  const blocks = useBackupFtpAuthorizableBlocks(usBlocked ? null : serviceName, !!q.data?.backupFtp, accountId);
   const [newBlock, setNewBlock] = useState("");
   const [nfs, setNfs] = useState(false);
   const [cifs, setCifs] = useState(false);
@@ -384,12 +385,12 @@ function BackupFtpPane({ serviceName }: { serviceName: string }) {
 
 // ─────────────────────────────── Backup Cloud ───────────────────────────────
 
-function BackupCloudPane({ serviceName }: { serviceName: string }) {
+function BackupCloudPane({ serviceName, accountId }: { serviceName: string; accountId?: string }) {
   const { t } = useTranslation();
-  const q = useServerBackupCloud(serviceName);
-  const act = useActivateBackupCloud();
-  const del = useDeleteBackupCloud();
-  const resetPwd = useChangeBackupCloudPassword();
+  const q = useServerBackupCloud(serviceName, accountId);
+  const act = useActivateBackupCloud(accountId);
+  const del = useDeleteBackupCloud(accountId);
+  const resetPwd = useChangeBackupCloudPassword(accountId);
   const [cloudProjectId, setCloudProjectId] = useState("");
   const [newPassword, setNewPassword] = useState<string | null>(null);
 
@@ -515,11 +516,11 @@ function BackupCloudPane({ serviceName }: { serviceName: string }) {
 
 // ─────────────────────────────── Secondary DNS ───────────────────────────────
 
-function SecondaryDnsPane({ serviceName }: { serviceName: string }) {
+function SecondaryDnsPane({ serviceName, accountId }: { serviceName: string; accountId?: string }) {
   const { t } = useTranslation();
-  const q = useServerSecondaryDns(serviceName);
-  const addDns = useAddServerSecondaryDns(serviceName);
-  const delDns = useDeleteServerSecondaryDns(serviceName);
+  const q = useServerSecondaryDns(serviceName, accountId);
+  const addDns = useAddServerSecondaryDns(serviceName, accountId);
+  const delDns = useDeleteServerSecondaryDns(serviceName, accountId);
 
   const [addOpen, setAddOpen] = useState(false);
   const [domain, setDomain] = useState("");
@@ -636,10 +637,10 @@ function SecondaryDnsPane({ serviceName }: { serviceName: string }) {
 
 // ─────────────────────────────── Virtual MAC ───────────────────────────────
 
-function VirtualMacPane({ serviceName }: { serviceName: string }) {
+function VirtualMacPane({ serviceName, accountId }: { serviceName: string; accountId?: string }) {
   const { t } = useTranslation();
   const { hidden } = useHideIp();
-  const q = useServerVirtualMac(serviceName);
+  const q = useServerVirtualMac(serviceName, accountId);
   if (q.isPending) return <PaneSkeleton />;
   if (q.isError) return <LoadFailed icon={Wifi} title={t("maint.advanced.vmac.loadFailed")} error={q.error} onRetry={() => q.refetch()} />;
   const { items, failedCount } = q.data || { items: [], partial: false, failedCount: 0 };
@@ -665,9 +666,9 @@ function VirtualMacPane({ serviceName }: { serviceName: string }) {
 
 // ─────────────────────────────── vRack ───────────────────────────────
 
-function VrackPane({ serviceName }: { serviceName: string }) {
+function VrackPane({ serviceName, accountId }: { serviceName: string; accountId?: string }) {
   const { t } = useTranslation();
-  const q = useServerVrack(serviceName);
+  const q = useServerVrack(serviceName, accountId);
   if (q.isPending) return <PaneSkeleton />;
   if (q.isError) return <LoadFailed icon={Network} title={t("maint.advanced.vrack.loadFailed")} error={q.error} onRetry={() => q.refetch()} />;
   const { items, failedCount } = q.data || { items: [], partial: false, failedCount: 0 };
@@ -690,9 +691,9 @@ function VrackPane({ serviceName }: { serviceName: string }) {
 // ─────────────────────────────── Orderable ───────────────────────────────
 
 /** 可订购：带宽（platinum/premium/ultimate 套餐数）+ 流量（数量）+ IPv4/IPv6 块 */
-function OrderablePane({ serviceName }: { serviceName: string }) {
+function OrderablePane({ serviceName, accountId }: { serviceName: string; accountId?: string }) {
   const { t } = useTranslation();
-  const q = useServerOrderable(serviceName);
+  const q = useServerOrderable(serviceName, accountId);
   if (q.isPending) return <PaneSkeleton />;
   if (q.isError) return <LoadFailed icon={ShoppingBag} title={t("maint.advanced.orderable.empty")} error={q.error} onRetry={() => q.refetch()} />;
   const data = q.data;
@@ -844,9 +845,9 @@ const OPTION_NAME_KEYS: Record<string, string> = {
   PRIVATE_BANDWIDTH: "maint.advanced.options.names.privateBandwidth",
 };
 
-function OptionsPane({ serviceName }: { serviceName: string }) {
+function OptionsPane({ serviceName, accountId }: { serviceName: string; accountId?: string }) {
   const { t } = useTranslation();
-  const q = useServerOptions(serviceName);
+  const q = useServerOptions(serviceName, accountId);
   if (q.isPending) return <PaneSkeleton />;
   if (q.isError) return <LoadFailed icon={Settings} title={t("maint.advanced.options.loadFailed")} error={q.error} onRetry={() => q.refetch()} />;
   const { items, failedCount } = q.data || { items: [], partial: false, failedCount: 0 };
@@ -890,9 +891,9 @@ function OptionsPane({ serviceName }: { serviceName: string }) {
 
 // ─────────────────────────────── IP Specs ───────────────────────────────
 
-function IpSpecsPane({ serviceName }: { serviceName: string }) {
+function IpSpecsPane({ serviceName, accountId }: { serviceName: string; accountId?: string }) {
   const { t } = useTranslation();
-  const q = useServerIpSpecs(serviceName);
+  const q = useServerIpSpecs(serviceName, accountId);
   if (q.isPending) return <PaneSkeleton />;
   if (q.isError) return <LoadFailed icon={MapPin} title={t("maint.advanced.ip.title")} error={q.error} onRetry={() => q.refetch()} />;
   const data = q.data;

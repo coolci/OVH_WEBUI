@@ -9,29 +9,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { api } from "@/lib/http";
 import { useServerAccount, withAccount } from "@/hooks/ovh/server-control/account";
 import { useQueryClient } from "@tanstack/react-query";
-import { qk } from "@/lib/query";
 import { useSplaList, hasActiveSpla } from "@/hooks/use-server-control";
 import { toast } from "sonner";
 import { Trans, useTranslation } from "react-i18next";
 import { errorMessage } from "@/lib/api-error";
-
-/**
- * 登记 SPLA 许可证 + 一键解锁 Windows 安装。
- *
- * OVH 把 Windows 模板锁在「这台机器名下要有一条 type=os 的 SPLA 记录」后面。
- * 没有这条记录时，重装的模板列表里根本不会出现 Windows。
- * `POST /dedicated/server/{sn}/spla` 就是登记那条记录，
- * `serialNumber` 是必填的「License serial number」。
- *
- * 上面那个一键按钮提交的是 WINDOWS_GVLK —— 微软**公开发布**的 Windows 10 Pro
- * KMS 客户端安装密钥(GVLK)，见 learn.microsoft.com 的 KMS client activation keys。
- * 它是公开值，不是谁的授权号：作用只是让 OVH 那道检查通过，
- * 并不代表你真的持有 Windows Server 授权(真激活还需要能连上 KMS 服务器)。
- * 按钮上的说明把这一点写明了，选择权交给用户。
- *
- * 下面的手填表单保留给「我有自己的 SPLA 授权号」的人，
- * `type` 的三个取值来自 schema 的 SplaTypeEnum —— SQL Server 那两种也在里面。
- */
+import { useScopedServerAccountId } from "./server-scope";
+import { syncAfterSplaChange } from "./spla-helpers";
 
 /**
  * 微软公开的 Windows 10 Pro KMS 客户端安装密钥(GVLK)。
@@ -59,18 +42,15 @@ export function SplaDialog({
   accountId?: string;
 }) {
   const { t } = useTranslation();
-  const accountId = useServerAccount(propAccountId);
+  const scopedAccount = useScopedServerAccountId(propAccountId);
+  const accountId = useServerAccount(scopedAccount);
   const [type, setType] = useState("os");
   const [serial, setSerial] = useState("");
   const [busy, setBusy] = useState(false);
   const [unlocking, setUnlocking] = useState(false);
   const qc = useQueryClient();
   const spla = useSplaList(serviceName, open, accountId);
-  // 只看 os:SQL Server 那两类是另一回事(要真买了 SQL 授权才谈得上登记),
-  // 一键按钮不碰它们,交给下面的手填表单。
   const unlocked = hasActiveSpla(spla.data, "os");
-  // 详情部分拉失败时不能断言"还没解锁" —— 宁可让按钮可点(重复提交 OVH 会自己拒),
-  // 也不要因为一次限流就把已解锁的机器显示成未解锁
   const unknown = spla.isPending || spla.isError || spla.data?.partial === true;
 
   /** 只登记操作系统(os)这一类 —— 它是 Windows 模板出现与否的那道闸 */
@@ -82,7 +62,7 @@ export function SplaDialog({
         serialNumber: WINDOWS_GVLK,
       }, withAccount(accountId));
       toast.success(t("maint.spla.toast.unlocked"), { duration: 7000 });
-      qc.invalidateQueries({ queryKey: qk.serverControl.spla(serviceName, accountId) });
+      syncAfterSplaChange(qc, serviceName, accountId);
     } catch (e: unknown) {
       toast.error(errorMessage(e), { duration: 8000 });
     } finally {
@@ -102,7 +82,7 @@ export function SplaDialog({
       await api.post(`/server-control/${encodeURIComponent(serviceName)}/spla`, { type, serialNumber: sn }, withAccount(accountId));
       toast.success(t("maint.spla.toast.submitted"));
       setSerial("");
-      qc.invalidateQueries({ queryKey: qk.serverControl.spla(serviceName, accountId) });
+      syncAfterSplaChange(qc, serviceName, accountId);
       onOpenChange(false);
     } catch (e: unknown) {
       toast.error(errorMessage(e), { duration: 8000 });
@@ -123,8 +103,6 @@ export function SplaDialog({
         </DialogHeader>
 
         <div className="space-y-3 py-1">
-          {/* 一键解锁。已经有 type=os 的有效记录就置灰 —— 再点一次没有任何意义,
-              只会多一条重复记录或换来 OVH 的报错。 */}
           <div className="rounded-xl border border-border bg-muted/40 px-3.5 py-3 space-y-2">
             <div className="flex items-center justify-between gap-2">
               <p className="text-[12px] font-semibold">{t("maint.spla.unlockTitle")}</p>

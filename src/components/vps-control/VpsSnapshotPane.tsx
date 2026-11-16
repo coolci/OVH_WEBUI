@@ -17,13 +17,13 @@ import { Trans, useTranslation } from "react-i18next";
 import { fmtDateTime } from "@/i18n/format";
 
 /** VPS 快照管理:OVH 免费档同时只允许 1 个,所以本 pane 只展示单快照 + 操作 */
-export function VpsSnapshotPane({ serviceName }: { serviceName: string }) {
+export function VpsSnapshotPane({ serviceName, accountId }: { serviceName: string; accountId?: string }) {
   const { t } = useTranslation();
-  const snap = useVpsSnapshot(serviceName);
-  const create = useCreateVpsSnapshot(serviceName);
-  const update = useUpdateVpsSnapshot(serviceName);
-  const revert = useRevertVpsSnapshot(serviceName);
-  const remove = useDeleteVpsSnapshot(serviceName);
+  const snap = useVpsSnapshot(serviceName, accountId);
+  const create = useCreateVpsSnapshot(serviceName, accountId);
+  const update = useUpdateVpsSnapshot(serviceName, accountId);
+  const revert = useRevertVpsSnapshot(serviceName, accountId);
+  const remove = useDeleteVpsSnapshot(serviceName, accountId);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createDesc, setCreateDesc] = useState("");

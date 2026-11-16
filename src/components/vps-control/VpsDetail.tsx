@@ -58,17 +58,18 @@ export function VpsDetail({
   region,
   activeAccount,
 }: VpsDetailProps) {
-  const info = useVpsServiceInfo(server.serviceName);
-  const ips = useVpsIps(server.serviceName);
-  const currentOS = useVpsCurrentOS(server.serviceName);
+  const instanceAccount = server.accountId || activeAccount;
+  const info = useVpsServiceInfo(server.serviceName, instanceAccount);
+  const ips = useVpsIps(server.serviceName, instanceAccount);
+  const currentOS = useVpsCurrentOS(server.serviceName, true, instanceAccount);
   const { hidden } = useHideIp();
-  const start = useVpsStart(server.serviceName);
-  const stop = useVpsStop(server.serviceName);
-  const reboot = useVpsReboot(server.serviceName);
-  const console_ = useVpsConsoleUrl(server.serviceName);
-  const terminate = useTerminateVps();
-  const confirmTerm = useConfirmTerminateVps();
-  const vpsTermPolicy = useUpdateVpsTerminationPolicy(server.serviceName);
+  const start = useVpsStart(server.serviceName, instanceAccount);
+  const stop = useVpsStop(server.serviceName, instanceAccount);
+  const reboot = useVpsReboot(server.serviceName, instanceAccount);
+  const console_ = useVpsConsoleUrl(server.serviceName, instanceAccount);
+  const terminate = useTerminateVps(instanceAccount);
+  const confirmTerm = useConfirmTerminateVps(instanceAccount);
+  const vpsTermPolicy = useUpdateVpsTerminationPolicy(server.serviceName, instanceAccount);
 
   const [reinstallOpen, setReinstallOpen] = useState(false);
   const [stopOpen, setStopOpen] = useState(false);
@@ -83,9 +84,9 @@ export function VpsDetail({
   const [engagementOpen, setEngagementOpen] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false);
   const [retractOpen, setRetractOpen] = useState(false);
-  const retraction = useRetraction(server.serviceName, true);
-  const renewalMutation = useUpdateVpsRenewal(server.serviceName);
-  const contactMutation = useChangeVpsContact();
+  const retraction = useRetraction(server.serviceName, true, instanceAccount);
+  const renewalMutation = useUpdateVpsRenewal(server.serviceName, instanceAccount);
+  const contactMutation = useChangeVpsContact(instanceAccount);
 
   useEffect(() => {
     setReinstallOpen(false);
@@ -100,7 +101,7 @@ export function VpsDetail({
     setEngagementOpen(false);
     setTasksOpen(false);
     setRetractOpen(false);
-  }, [server.serviceName]);
+  }, [server.serviceName, instanceAccount]);
 
   const vpsEngagementHooks: EngagementHooks = {
     useEngagement: useVpsEngagement,
@@ -410,25 +411,25 @@ export function VpsDetail({
             {server.slaMonitoring && <> · 已开 SLA 监控</>}
           </p>
 
-          <VpsOptionsPanel serviceName={server.serviceName} region={region} />
+          <VpsOptionsPanel serviceName={server.serviceName} region={region} accountId={instanceAccount} />
         </TabsContent>
 
         <TabsContent value="snapshot" className="mt-4">
-          <VpsSnapshotPane serviceName={server.serviceName} />
+          <VpsSnapshotPane serviceName={server.serviceName} accountId={instanceAccount} />
         </TabsContent>
 
         <TabsContent value="ddos" className="mt-4">
-          <VpsMitigationPane serviceName={server.serviceName} />
+          <VpsMitigationPane serviceName={server.serviceName} accountId={instanceAccount} />
         </TabsContent>
 
         <TabsContent value="maintenance" className="mt-4 space-y-4">
           <div className="border border-border rounded-2xl p-4 space-y-3">
             <h3 className="text-sm font-semibold">服务器别名</h3>
             <p className="text-[12px] text-muted-foreground">本地别名,不影响 OVH 真实名(`{maskSensitive(server.serviceName, hidden)}`)</p>
-            <AliasEditor serviceName={server.serviceName} aliases={aliases} onSetAlias={onSetAlias} accountId={activeAccount} />
+            <AliasEditor serviceName={server.serviceName} aliases={aliases} onSetAlias={onSetAlias} accountId={instanceAccount} />
           </div>
 
-          <VpsSecondaryDnsPane serviceName={server.serviceName} />
+          <VpsSecondaryDnsPane serviceName={server.serviceName} accountId={instanceAccount} />
 
           {!isUS ? (
             <div className="border border-border rounded-2xl p-4 space-y-3">
@@ -518,10 +519,11 @@ export function VpsDetail({
 
       {/* 弹窗集合 */}
       <VpsReinstallDialog
+        key={`${instanceAccount || ""}:${server.serviceName}`}
         serviceName={server.serviceName}
         open={reinstallOpen}
         onOpenChange={setReinstallOpen}
-        accountId={activeAccount}
+        accountId={instanceAccount}
       />
 
       {info.data && (
@@ -532,6 +534,7 @@ export function VpsDetail({
           onOpenChange={setRenewalOpen}
           mutation={renewalMutation}
           termination={{ policy: vpsTermPolicy }}
+          accountId={instanceAccount}
         />
       )}
 
@@ -542,6 +545,7 @@ export function VpsDetail({
         open={retractOpen}
         onOpenChange={setRetractOpen}
         isVps={true}
+        accountId={instanceAccount}
       />
 
       <Dialog open={contactOpen} onOpenChange={setContactOpen}>
@@ -557,12 +561,14 @@ export function VpsDetail({
         open={engagementOpen}
         onOpenChange={setEngagementOpen}
         hooks={vpsEngagementHooks}
+        accountId={instanceAccount}
       />
 
       <VpsTasksDialog
         serviceName={server.serviceName}
         open={tasksOpen}
         onOpenChange={setTasksOpen}
+        accountId={instanceAccount}
       />
 
       
@@ -572,6 +578,7 @@ export function VpsDetail({
         currentReverse={editingReverseIp.reverse}
         open={reverseDialogOpen}
         onOpenChange={setReverseDialogOpen}
+        accountId={instanceAccount}
       />
 
       <VpsPowerDialogs

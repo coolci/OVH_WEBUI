@@ -15,6 +15,7 @@ import { useTranslation } from "react-i18next";
 import { Trans } from "react-i18next";
 import { fmtDate, fmtDateTime } from "@/i18n/format";
 import { safeHttpsUrl } from "@/lib/utils";
+import { useScopedServerAccountId } from "./server-scope";
 
 /**
  * 14 天无理由撤单。
@@ -30,6 +31,7 @@ export function RetractionDialog({
   open,
   onOpenChange,
   isVps = false,
+  accountId: propAccountId,
 }: {
   serviceName: string;
   displayName: string;
@@ -37,9 +39,11 @@ export function RetractionDialog({
   open: boolean;
   onOpenChange: (v: boolean) => void;
   isVps?: boolean;
+  accountId?: string;
 }) {
   const { t } = useTranslation();
-  const request = useRequestRetraction(serviceName, isVps);
+  const scopedAccount = useScopedServerAccountId(propAccountId);
+  const request = useRequestRetraction(serviceName, isVps, propAccountId || (!isVps ? scopedAccount : undefined));
   const [reason, setReason] = useState("");
   const [comment, setComment] = useState("");
   const [confirming, setConfirming] = useState(false);

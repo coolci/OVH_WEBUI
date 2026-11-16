@@ -17,12 +17,14 @@ export function VpsTasksDialog({
   serviceName,
   open,
   onOpenChange,
+  accountId,
 }: {
   serviceName: string;
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  accountId?: string;
 }) {
-  const q = useVpsTasks(open ? serviceName : null, { refetchInterval: open ? 5000 : false });
+  const q = useVpsTasks(open ? serviceName : null, { refetchInterval: open ? 5000 : false }, accountId);
   const { t } = useTranslation();
 
   return (

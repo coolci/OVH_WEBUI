@@ -1,3 +1,4 @@
+import React from "react";
 import { HardDrive, Database, Plus, Cog, Zap, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,11 +10,12 @@ import { useTranslation } from "react-i18next";
 import { StorageModeOption } from "./StorageModeOption";
 import { PartitionRow } from "./PartitionRow";
 import { HARDWARE_RAID_LEVELS, SOFTWARE_RAID_LEVELS, type StorageMode } from "./constants";
-import type {
-  useServerDiskInfo,
-  useServerRaidProfiles,
-  useServerPartitionSchemes,
-  CustomPartition,
+import {
+  minDisksForHwRaid,
+  type useServerDiskInfo,
+  type useServerRaidProfiles,
+  type useServerPartitionSchemes,
+  type CustomPartition,
 } from "@/hooks/use-server-control";
 
 export interface StoragePartitionSectionProps {
@@ -31,6 +33,7 @@ export interface StoragePartitionSectionProps {
   vzMaxGB: number;
   zfsCap: { singleDiskGB: number; diskCount: number; usableMB: number; maxVzGB: number };
   disk: ReturnType<typeof useServerDiskInfo>;
+  defaultDiskGroupId?: number;
   raid: ReturnType<typeof useServerRaidProfiles>;
   ps: ReturnType<typeof useServerPartitionSchemes>;
   partitionSchemeName: string;
@@ -40,10 +43,10 @@ export interface StoragePartitionSectionProps {
   setKeepDiskGroups: (s: Set<number>) => void;
   hardwareRaid: Record<number, string>;
   setHardwareRaid: (hr: Record<number, string>) => void;
-  hwRaidArrays: string;
-  setHwRaidArrays: (v: string) => void;
-  hwRaidSpares: string;
-  setHwRaidSpares: (v: string) => void;
+  hwRaidArrays: Record<number, string>;
+  setHwRaidArrays: React.Dispatch<React.SetStateAction<Record<number, string>>>;
+  hwRaidSpares: Record<number, string>;
+  setHwRaidSpares: React.Dispatch<React.SetStateAction<Record<number, string>>>;
   useSoftwareRaid: boolean;
   setUseSoftwareRaid: (v: boolean) => void;
   softwareRaidLevel: string;
@@ -73,6 +76,7 @@ export function StoragePartitionSection({
   vzMaxGB,
   zfsCap,
   disk,
+  defaultDiskGroupId,
   raid,
   ps,
   partitionSchemeName,
@@ -100,6 +104,11 @@ export function StoragePartitionSection({
   lvmReady,
 }: StoragePartitionSectionProps) {
   const { t } = useTranslation();
+
+  const diskGroupIds = Object.keys(disk.data || {})
+    .map((s) => parseInt(s, 10))
+    .filter((n) => Number.isInteger(n) && n > 0)
+    .sort((a, b) => a - b);
 
   return (
     <div className="space-y-5">
@@ -219,7 +228,7 @@ export function StoragePartitionSection({
                     {" "}
                     {t("ctrl.reinstall.zfs.vzDetail", {
                       disks: zfsCap.diskCount,
-                      size: zfsCap.singleDiskGB,
+                      size: Number(zfsCap.singleDiskGB.toFixed(2)),
                       level: zfsRaidLevel,
                       usable: Math.floor(zfsCap.usableMB / 1024),
                     })}
@@ -279,7 +288,7 @@ export function StoragePartitionSection({
 
         {useCustomStorage && (
           <div className="space-y-4 border border-border rounded-2xl p-4 bg-secondary/30">
-            {/* 磁盘组 + 硬件 RAID */}
+            {/* 磁盘组 + 硬件 RAID（按 diskGroupId 独立隔离维护热备盘与阵列数） */}
             {disk.isPending ? (
               <Skeleton className="h-20 rounded-md" />
             ) : disk.isError ? (
@@ -297,11 +306,26 @@ export function StoragePartitionSection({
                 <h4 className="text-[12px] font-semibold">{t("ctrl.reinstall.disk.groupTitle")}</h4>
                 {Object.entries(disk.data || {}).map(([gidStr, group]) => {
                   const gid = parseInt(gidStr, 10);
+                  const raidMode = hardwareRaid[gid] || "";
+                  const raidLevel = raidMode ? parseInt(raidMode.replace("raid", ""), 10) : NaN;
+                  const supportsArrays = raidMode === "raid10" || raidMode === "raid50" || raidMode === "raid60";
+                  const totalDisks = group.disks?.length || 0;
+                  const minDisks = !Number.isNaN(raidLevel) ? minDisksForHwRaid(raidLevel, totalDisks) : 0;
+                  const sparesStr = hwRaidSpares[gid] ?? "";
+                  const sparesNum = sparesStr ? parseInt(sparesStr, 10) || 0 : 0;
+                  const activeDisks = totalDisks - sparesNum;
+                  const sparesOverflow = Boolean(raidMode && totalDisks > 0 && activeDisks < minDisks);
+
                   return (
                     <div key={gid} className="border border-border rounded-xl p-3 space-y-2 bg-background">
                       <div className="flex items-center gap-2 text-[12px]">
                         <HardDrive className="w-3.5 h-3.5 text-muted-foreground" />
                         <span className="font-semibold">{t("ctrl.reinstall.disk.group", { id: gid })}</span>
+                        {group.isDefault && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
+                            {t("ctrl.reinstall.mode.default")}
+                          </span>
+                        )}
                         {group.raidController && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-border">
                             {group.raidController}
@@ -344,56 +368,92 @@ export function StoragePartitionSection({
                             {t("ctrl.reinstall.hwRaid.unsupported")}
                           </p>
                         ) : (
-                          <Select
-                            value={hardwareRaid[gid] || ""}
-                            onValueChange={(v) => setHardwareRaid({ ...hardwareRaid, [gid]: v === " " ? "" : v })}
-                          >
-                            <SelectTrigger className="h-9">
-                              <SelectValue placeholder={t("ctrl.reinstall.hwRaid.none")} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {HARDWARE_RAID_LEVELS.map((l) => (
-                                <SelectItem key={l.value || "none"} value={l.value || " "}>
-                                  {t(l.label)}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          <div className="space-y-2">
+                            <Select
+                              value={raidMode}
+                              onValueChange={(v) => {
+                                const nextMode = v === " " ? "" : v;
+                                setHardwareRaid({ ...hardwareRaid, [gid]: nextMode });
+                                if (!nextMode) {
+                                  setHwRaidArrays((prev) => {
+                                    const copy = { ...prev };
+                                    delete copy[gid];
+                                    return copy;
+                                  });
+                                  setHwRaidSpares((prev) => {
+                                    const copy = { ...prev };
+                                    delete copy[gid];
+                                    return copy;
+                                  });
+                                } else if (nextMode !== "raid10" && nextMode !== "raid50" && nextMode !== "raid60") {
+                                  setHwRaidArrays((prev) => {
+                                    const copy = { ...prev };
+                                    delete copy[gid];
+                                    return copy;
+                                  });
+                                }
+                              }}
+                            >
+                              <SelectTrigger className="h-9">
+                                <SelectValue placeholder={t("ctrl.reinstall.hwRaid.none")} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {HARDWARE_RAID_LEVELS.map((l) => (
+                                  <SelectItem key={l.value || "none"} value={l.value || " "}>
+                                    {l.fallbackLabel ? t(l.label, { defaultValue: l.fallbackLabel }) : t(l.label)}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+
+                            {raidMode && (
+                              <div className="flex flex-wrap items-center gap-3 pt-1 text-[11px]">
+                                {supportsArrays && (
+                                  <label className="flex items-center gap-1.5">
+                                    <span className="text-muted-foreground">{t("ctrl.reinstall.hwRaid.arrays")}</span>
+                                    <Input
+                                      type="number"
+                                      min={1}
+                                      value={hwRaidArrays[gid] ?? ""}
+                                      onChange={(e) => {
+                                        const val = e.target.value.replace(/\D/g, "");
+                                        setHwRaidArrays((prev) => ({ ...prev, [gid]: val }));
+                                      }}
+                                      placeholder={t("ctrl.reinstall.hwRaid.auto")}
+                                      className="h-7 w-20"
+                                    />
+                                  </label>
+                                )}
+                                <label className="flex items-center gap-1.5">
+                                  <span className="text-muted-foreground">{t("ctrl.reinstall.hwRaid.spares")}</span>
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    max={Math.max(0, totalDisks - minDisks)}
+                                    value={sparesStr}
+                                    onChange={(e) => {
+                                      const val = e.target.value.replace(/\D/g, "");
+                                      setHwRaidSpares((prev) => ({ ...prev, [gid]: val }));
+                                    }}
+                                    placeholder={t("ctrl.reinstall.hwRaid.none")}
+                                    className="h-7 w-20"
+                                  />
+                                </label>
+                                {totalDisks > 0 && (
+                                  <span className={sparesOverflow ? "text-destructive font-medium" : "text-muted-foreground"}>
+                                    {sparesOverflow
+                                      ? `物理盘 ${totalDisks} 扣除热备盘 ${sparesNum} 后仅剩 ${activeDisks} 块，RAID ${raidLevel} 至少需 ${minDisks} 块`
+                                      : `成员盘: ${activeDisks} / ${totalDisks}`}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
                     </div>
                   );
                 })}
-              </div>
-            )}
-
-            {/* 官方 hardwareRaid 高级参数:RAID10 阵列数 + 热备盘 */}
-            {raid.data?.supported && Object.values(hardwareRaid).some((v) => v && v !== "") && (
-              <div className="flex flex-wrap items-center gap-3 text-[11px]">
-                {Object.values(hardwareRaid).includes("raid10") && (
-                  <label className="flex items-center gap-1.5">
-                    <span className="text-muted-foreground">{t("ctrl.reinstall.hwRaid.arrays")}</span>
-                    <Input
-                      type="number"
-                      min={1}
-                      value={hwRaidArrays}
-                      onChange={(e) => setHwRaidArrays(e.target.value.replace(/\D/g, ""))}
-                      placeholder={t("ctrl.reinstall.hwRaid.auto")}
-                      className="h-7 w-20"
-                    />
-                  </label>
-                )}
-                <label className="flex items-center gap-1.5">
-                  <span className="text-muted-foreground">{t("ctrl.reinstall.hwRaid.spares")}</span>
-                  <Input
-                    type="number"
-                    min={0}
-                    value={hwRaidSpares}
-                    onChange={(e) => setHwRaidSpares(e.target.value.replace(/\D/g, ""))}
-                    placeholder={t("ctrl.reinstall.hwRaid.none")}
-                    className="h-7 w-20"
-                  />
-                </label>
               </div>
             )}
 
@@ -466,7 +526,13 @@ export function StoragePartitionSection({
                     type="button"
                     size="sm"
                     variant="outline"
-                    onClick={() =>
+                    onClick={() => {
+                      const preferredGid =
+                        diskGroupIds.length === 1
+                          ? diskGroupIds[0]
+                          : defaultDiskGroupId && !keepDiskGroups.has(defaultDiskGroupId)
+                            ? defaultDiskGroupId
+                            : diskGroupIds.find((id) => !keepDiskGroups.has(id));
                       setCustomPartitions([
                         ...customPartitions,
                         {
@@ -476,10 +542,10 @@ export function StoragePartitionSection({
                           order: customPartitions.length + 1,
                           type: "primary",
                           raid: useSoftwareRaid ? softwareRaidLevel : undefined,
-                          diskGroupId: undefined,
+                          diskGroupId: preferredGid,
                         },
-                      ])
-                    }
+                      ]);
+                    }}
                   >
                     <Plus className="w-3.5 h-3.5 mr-1" />
                     {t("ctrl.reinstall.part.add")}
@@ -493,7 +559,7 @@ export function StoragePartitionSection({
                     <PartitionRow
                       key={idx}
                       partition={p}
-                      diskGroupIds={Object.keys(disk.data || {}).map((s) => parseInt(s, 10))}
+                      diskGroupIds={diskGroupIds}
                       filesystems={osFilesystems}
                       lvmReady={lvmReady}
                       softRaidOnlyMirroring={softRaidOnlyMirroring}

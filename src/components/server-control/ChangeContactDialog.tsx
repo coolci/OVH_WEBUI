@@ -8,7 +8,6 @@ import { Skeleton } from "@/components/common/Skeleton";
 import { EmptyState } from "@/components/common/EmptyState";
 import { Chip } from "@/components/common/Chip";
 import { PartialNotice } from "@/components/common/PartialNotice";
-import { useActiveAccountEndpoint } from "@/components/common/active-endpoint";
 import { useChangeContact, useContactChangeRequests, useContactRequestAction } from "@/hooks/use-server-control";
 import { toast } from "sonner";
 import { useTranslation, Trans } from "react-i18next";
@@ -16,23 +15,27 @@ import { errorMessage } from "@/lib/api-error";
 import { fmtDateTime } from "@/i18n/format";
 import type { ContactChangeRequest } from "@/lib/types";
 import { errorField, errorText } from "@/lib/api-error";
+import { useScopedServerAccountId, useScopedServerEndpoint } from "./server-scope";
 
 /** 变更联系人对话框：提交新 NIC + 查看 / 接受 / 拒绝 / 重发邮件 待审请求 + token 子对话框 */
 export function ChangeContactDialog({
   serviceName,
   open,
   onOpenChange,
+  accountId: propAccountId,
 }: {
   serviceName: string;
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  accountId?: string;
 }) {
   const { t } = useTranslation();
-  const submit = useChangeContact();
-  const list = useContactChangeRequests(open);
-  const action = useContactRequestAction();
+  const accountId = useScopedServerAccountId(propAccountId);
+  const submit = useChangeContact(accountId);
+  const list = useContactChangeRequests(open, accountId);
+  const action = useContactRequestAction(accountId);
   // 美区账户没有 NIC 联系人体系，提交必然 400，入口就禁掉
-  const { isUS, ready } = useActiveAccountEndpoint();
+  const { isUS, ready } = useScopedServerEndpoint(accountId);
   const usUnsupported = ready && isUS;
 
   const [admin, setAdmin] = useState("");

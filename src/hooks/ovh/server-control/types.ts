@@ -118,6 +118,7 @@ export interface HardwareInfo {
   threadsPerProcessor: number;
   memorySize?: { value: number; unit: string };
   diskGroups?: HardwareDiskGroup[];
+  defaultDiskGroupId?: number;
   expansionCards?: Record<string, unknown>[];
   lottery?: HardwareLottery | null;
 }
@@ -224,6 +225,7 @@ export interface CustomizeQuestion {
   type?: string;
   description?: string;
   required?: boolean;
+  mandatory?: boolean;
   enum?: string[];
   default?: string;
 }
@@ -255,6 +257,7 @@ export interface DiskGroup {
   diskType?: string;
   description?: string;
   id?: number;
+  isDefault?: boolean;
 }
 
 export interface PartitionScheme {
@@ -278,11 +281,12 @@ export interface ReinstallArgs {
   serviceName: string;
   templateName: string;
   customHostname?: string;
-  customizations?: Record<string, string | boolean>;
+  customizations?: Record<string, string | number | boolean>;
   keepDiskGroups?: number[];
   softwareRaidDisks?: number;
-  hwRaidArrays?: number;
-  hwRaidSpares?: number;
+  hwRaidArrays?: Record<number, number> | number;
+  hwRaidSpares?: Record<number, number> | number;
+  defaultDiskGroupId?: number;
   useProxmox9Zfs?: boolean;
   zfsRaidLevel?: 0 | 1;
   zfsVzSize?: number;

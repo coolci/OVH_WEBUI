@@ -1,7 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/http";
 import { qk } from "@/lib/query";
-import { useActiveAccount } from "@/hooks/use-active-account";
 import { readPartialList, type PartialList } from "../partial-list";
 import type {
   MitigationBlock,
@@ -14,12 +13,12 @@ import type {
 } from "./types";
 import { useServerAccount, withAccount } from "./account";
 
-export function useMitigation(serviceName: string | null) {
-  const [accountId] = useActiveAccount();
+export function useMitigation(serviceName: string | null, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   return useQuery({
     queryKey: qk.serverControl.mitigation(serviceName || "", accountId),
     queryFn: async () => {
-      const res = await api.get(`/server-control/${encodeURIComponent(serviceName || "")}/mitigation`, { params: { account: accountId } });
+      const res = await api.get(`/server-control/${encodeURIComponent(serviceName || "")}/mitigation`, withAccount(accountId));
       return (res.data?.ips || []) as MitigationBlock[];
     },
     enabled: !!serviceName && !!accountId,
@@ -34,8 +33,8 @@ export function useMitigation(serviceName: string | null) {
   });
 }
 
-export function useEnableMitigation(serviceName: string) {
-  const accountId = useServerAccount();
+export function useEnableMitigation(serviceName: string, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (vars: { ip: string; block: string }) => {
@@ -52,8 +51,8 @@ export function useEnableMitigation(serviceName: string) {
   });
 }
 
-export function useDisableMitigation(serviceName: string) {
-  const accountId = useServerAccount();
+export function useDisableMitigation(serviceName: string, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (vars: { ip: string; block: string }) => {
@@ -69,8 +68,8 @@ export function useDisableMitigation(serviceName: string) {
   });
 }
 
-export function useServerIps(serviceName: string | null) {
-  const accountId = useServerAccount();
+export function useServerIps(serviceName: string | null, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   return useQuery({
     queryKey: qk.serverControl.ips(serviceName || "", accountId),
     queryFn: async () => {
@@ -81,8 +80,8 @@ export function useServerIps(serviceName: string | null) {
   });
 }
 
-export function useServerNetworkInterfaces(serviceName: string | null) {
-  const accountId = useServerAccount();
+export function useServerNetworkInterfaces(serviceName: string | null, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   return useQuery({
     queryKey: qk.serverControl.networkInterfaces(serviceName || "", accountId),
     queryFn: async (): Promise<PartialList<NetworkInterface>> => {
@@ -93,8 +92,8 @@ export function useServerNetworkInterfaces(serviceName: string | null) {
   });
 }
 
-export function useServerSecondaryDns(serviceName: string | null) {
-  const accountId = useServerAccount();
+export function useServerSecondaryDns(serviceName: string | null, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   return useQuery({
     queryKey: qk.serverControl.secondaryDns(serviceName || "", accountId),
     queryFn: async (): Promise<PartialList<SecondaryDnsDomain>> => {
@@ -105,8 +104,8 @@ export function useServerSecondaryDns(serviceName: string | null) {
   });
 }
 
-export function useAddServerSecondaryDns(serviceName: string) {
-  const accountId = useServerAccount();
+export function useAddServerSecondaryDns(serviceName: string, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (domain: string) => {
@@ -119,8 +118,8 @@ export function useAddServerSecondaryDns(serviceName: string) {
   });
 }
 
-export function useDeleteServerSecondaryDns(serviceName: string) {
-  const accountId = useServerAccount();
+export function useDeleteServerSecondaryDns(serviceName: string, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (domain: string) => {
@@ -133,8 +132,8 @@ export function useDeleteServerSecondaryDns(serviceName: string) {
   });
 }
 
-export function useServerVirtualMac(serviceName: string | null) {
-  const accountId = useServerAccount();
+export function useServerVirtualMac(serviceName: string | null, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   return useQuery({
     queryKey: qk.serverControl.virtualMac(serviceName || "", accountId),
     queryFn: async (): Promise<PartialList<VirtualMacEntry>> => {
@@ -145,8 +144,8 @@ export function useServerVirtualMac(serviceName: string | null) {
   });
 }
 
-export function useServerVrack(serviceName: string | null) {
-  const accountId = useServerAccount();
+export function useServerVrack(serviceName: string | null, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   return useQuery({
     queryKey: qk.serverControl.vrack(serviceName || "", accountId),
     queryFn: async (): Promise<PartialList<VrackEntry>> => {
@@ -157,8 +156,8 @@ export function useServerVrack(serviceName: string | null) {
   });
 }
 
-export function useServerIpSpecs(serviceName: string | null) {
-  const accountId = useServerAccount();
+export function useServerIpSpecs(serviceName: string | null, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   return useQuery({
     queryKey: qk.serverControl.ipSpecs(serviceName || "", accountId),
     queryFn: async () => {
@@ -169,8 +168,8 @@ export function useServerIpSpecs(serviceName: string | null) {
   });
 }
 
-export function useServerNetworkSpecs(serviceName: string | null, enabled = true) {
-  const accountId = useServerAccount();
+export function useServerNetworkSpecs(serviceName: string | null, enabled = true, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   return useQuery({
     queryKey: qk.serverControl.networkSpecs(serviceName || "", accountId),
     queryFn: async () => {
@@ -186,8 +185,8 @@ export interface ReverseDnsRecord {
   reverse: string;
 }
 
-export function useServerReverseDns(serviceName: string | null) {
-  const accountId = useServerAccount();
+export function useServerReverseDns(serviceName: string | null, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   return useQuery({
     queryKey: qk.serverControl.reverseDns(serviceName || "", accountId),
     queryFn: async () => {
@@ -198,8 +197,8 @@ export function useServerReverseDns(serviceName: string | null) {
   });
 }
 
-export function useSetServerReverseDns(serviceName: string) {
-  const accountId = useServerAccount();
+export function useSetServerReverseDns(serviceName: string, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (vars: { ip: string; reverse: string }) => {
@@ -213,8 +212,8 @@ export function useSetServerReverseDns(serviceName: string) {
   });
 }
 
-export function useDeleteServerReverseDns(serviceName: string) {
-  const accountId = useServerAccount();
+export function useDeleteServerReverseDns(serviceName: string, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (ip: string) => {

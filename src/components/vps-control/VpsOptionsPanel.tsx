@@ -5,9 +5,9 @@ import { ShieldCheck, Clock, Archive } from "lucide-react";
 
 const EMPTY_OPTIONS: VpsOption[] = [];
 
-export function VpsOptionsPanel({ serviceName, region }: { serviceName: string; region: string }) {
-  const q = useVpsOptions(serviceName);
-  const autoBackupQ = useVpsAutomatedBackup(serviceName);
+export function VpsOptionsPanel({ serviceName, region, accountId }: { serviceName: string; region: string; accountId?: string }) {
+  const q = useVpsOptions(serviceName, accountId);
+  const autoBackupQ = useVpsAutomatedBackup(serviceName, accountId);
   const list = q.data || EMPTY_OPTIONS;
   const autoBackupData = autoBackupQ.data;
 
