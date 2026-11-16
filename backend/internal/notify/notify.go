@@ -16,6 +16,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 	"time"
@@ -27,43 +28,92 @@ import (
 // AllowLocalWebhookForTesting 仅在单元测试中临时允许回环地址
 var AllowLocalWebhookForTesting = false
 
-// IsPrivateOrLocalIP 检查 IP 是否为本地回环、RFC1918 私网、CGNAT、多播、链路本地、云元数据地址
-func IsPrivateOrLocalIP(ip net.IP) bool {
-	if ip == nil {
+var blockedIPv4Prefixes = []netip.Prefix{
+	netip.MustParsePrefix("0.0.0.0/8"),       // RFC 1122 "This network"
+	netip.MustParsePrefix("10.0.0.0/8"),      // RFC 1918 Private-Use
+	netip.MustParsePrefix("100.64.0.0/10"),   // RFC 6598 Shared Address Space (CGNAT)
+	netip.MustParsePrefix("127.0.0.0/8"),     // RFC 1122 Loopback
+	netip.MustParsePrefix("169.254.0.0/16"),  // RFC 3927 Link-Local / Cloud Metadata
+	netip.MustParsePrefix("172.16.0.0/12"),   // RFC 1918 Private-Use
+	netip.MustParsePrefix("192.0.0.0/24"),    // RFC 6890 IETF Protocol Assignments
+	netip.MustParsePrefix("192.0.2.0/24"),    // RFC 5737 TEST-NET-1
+	netip.MustParsePrefix("192.88.99.0/24"),  // RFC 7526 6to4 Relay Anycast
+	netip.MustParsePrefix("192.168.0.0/16"),  // RFC 1918 Private-Use
+	netip.MustParsePrefix("198.18.0.0/15"),   // RFC 2544 Benchmarking
+	netip.MustParsePrefix("198.51.100.0/24"), // RFC 5737 TEST-NET-2
+	netip.MustParsePrefix("203.0.113.0/24"),  // RFC 5737 TEST-NET-3
+	netip.MustParsePrefix("224.0.0.0/4"),     // Multicast
+	netip.MustParsePrefix("240.0.0.0/4"),     // Reserved & 255.255.255.255 Limited Broadcast
+}
+
+var blockedIPv6Prefixes = []netip.Prefix{
+	netip.MustParsePrefix("::/96"),           // RFC 4291 Deprecated IPv4-compatible IPv6 (e.g. ::127.0.0.1)
+	netip.MustParsePrefix("::ffff:0:0:0/96"), // RFC 2765 SIIT IPv4-translated
+	netip.MustParsePrefix("64:ff9b::/96"),    // RFC 6052 NAT64 Well-Known Prefix
+	netip.MustParsePrefix("64:ff9b:1::/48"),  // RFC 8215 NAT64 Local-Use Prefix
+	netip.MustParsePrefix("100::/64"),        // RFC 6666 Discard-Only
+	netip.MustParsePrefix("2001::/32"),       // RFC 4380 Teredo
+	netip.MustParsePrefix("2001:2::/48"),     // RFC 5180 Benchmarking
+	netip.MustParsePrefix("2001:10::/28"),    // RFC 4843 ORCHID
+	netip.MustParsePrefix("2001:20::/28"),    // RFC 7343 ORCHIDv2
+	netip.MustParsePrefix("2001:db8::/32"),   // RFC 3849 Documentation
+	netip.MustParsePrefix("2002::/16"),       // RFC 3056 6to4 Tunneling
+	netip.MustParsePrefix("fc00::/7"),        // RFC 4193 Unique Local
+	netip.MustParsePrefix("fe80::/10"),       // RFC 4291 Link-Local Unicast
+	netip.MustParsePrefix("fec0::/10"),       // RFC 3879 Site-Local (Deprecated)
+	netip.MustParsePrefix("ff00::/8"),        // Multicast
+}
+
+// isPrivateOrLocalAddr 基于 net/netip（先 Unmap 还原 IPv4-in-IPv6）执行严格公网全局单播校验。
+func isPrivateOrLocalAddr(addr netip.Addr) bool {
+	if !addr.IsValid() {
 		return true
 	}
-	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() {
+	addr = addr.Unmap()
+	if addr.IsLoopback() ||
+		addr.IsPrivate() ||
+		addr.IsLinkLocalUnicast() ||
+		addr.IsLinkLocalMulticast() ||
+		addr.IsMulticast() ||
+		addr.IsUnspecified() ||
+		!addr.IsGlobalUnicast() {
 		return true
 	}
-	if ip4 := ip.To4(); ip4 != nil {
-		if ip4[0] == 127 { // 127.0.0.0/8
+	if addr.Is4() {
+		for _, p := range blockedIPv4Prefixes {
+			if p.Contains(addr) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, p := range blockedIPv6Prefixes {
+		if p.Contains(addr) {
 			return true
 		}
-		if ip4[0] == 10 { // 10.0.0.0/8
-			return true
-		}
-		if ip4[0] == 100 && ip4[1] >= 64 && ip4[1] <= 127 { // 100.64.0.0/10 (RFC6598 CGNAT)
-			return true
-		}
-		if ip4[0] == 172 && ip4[1] >= 16 && ip4[1] <= 31 { // 172.16.0.0/12
-			return true
-		}
-		if ip4[0] == 192 && ip4[1] == 168 { // 192.168.0.0/16
-			return true
-		}
-		if ip4[0] == 169 && ip4[1] == 254 { // 169.254.0.0/16 (链路本地 / 云厂商元数据 169.254.169.254)
-			return true
-		}
-		if ip4[0] == 0 { // 0.0.0.0
-			return true
-		}
-	} else {
-		// IPv6 fc00::/7 (unique local)
-		if len(ip) == 16 && (ip[0]&0xfe) == 0xfc {
-			return true
-		}
+	}
+	// IANA 公网全局单播 IPv6 仅分配在 2000::/3 空间内，拒绝其余保留地址块
+	b := addr.As16()
+	if (b[0] & 0xe0) != 0x20 {
+		return true
 	}
 	return false
+}
+
+func isTestingLoopbackExempt(addr netip.Addr) bool {
+	return AllowLocalWebhookForTesting && addr.IsValid() && addr.Unmap().IsLoopback()
+}
+
+// IsPrivateOrLocalIP 检查 IP 是否为本地回环、RFC1918 私网、CGNAT、NAT64、6to4、多播、链路本地、云元数据等非公网单播地址
+func IsPrivateOrLocalIP(ip net.IP) bool {
+	if len(ip) == 0 {
+		return true
+	}
+	addr, ok := netip.AddrFromSlice(ip)
+	if !ok {
+		return true
+	}
+	return isPrivateOrLocalAddr(addr)
 }
 
 // ValidateWebhookURL 校验 URL 是否合法且不属于内网 SSRF 风险目标
@@ -77,15 +127,15 @@ func ValidateWebhookURL(rawURL string) error {
 		return fmt.Errorf("通知 Webhook 地址不合法,必须是完整的 http:// 或 https:// 地址")
 	}
 	host := u.Hostname()
-	if strings.EqualFold(host, "localhost") {
+	if strings.EqualFold(host, "localhost") || strings.HasSuffix(strings.ToLower(host), ".localhost") {
 		if AllowLocalWebhookForTesting {
 			return nil
 		}
 		return fmt.Errorf("通知 Webhook 地址禁止指向本地或内网地址 (localhost)")
 	}
-	if ip := net.ParseIP(host); ip != nil {
-		if IsPrivateOrLocalIP(ip) {
-			if AllowLocalWebhookForTesting && (ip.IsLoopback() || ip.Equal(net.IPv4(127, 0, 0, 1))) {
+	if addr, err := netip.ParseAddr(host); err == nil {
+		if isPrivateOrLocalAddr(addr) {
+			if isTestingLoopbackExempt(addr) {
 				return nil
 			}
 			return fmt.Errorf("通知 Webhook 地址禁止指向私有或内网 IP (%s)", host)
@@ -93,14 +143,14 @@ func ValidateWebhookURL(rawURL string) error {
 		return nil
 	}
 	// 尝试域名解析预检
-	ips, err := net.LookupIP(host)
+	addrs, err := net.DefaultResolver.LookupNetIP(context.Background(), "ip", host)
 	if err == nil {
-		for _, ip := range ips {
-			if IsPrivateOrLocalIP(ip) {
-				if AllowLocalWebhookForTesting && (ip.IsLoopback() || ip.Equal(net.IPv4(127, 0, 0, 1))) {
+		for _, addr := range addrs {
+			if isPrivateOrLocalAddr(addr) {
+				if isTestingLoopbackExempt(addr) {
 					continue
 				}
-				return fmt.Errorf("通知 Webhook 域名解析为私有或内网 IP (%s -> %s)", host, ip.String())
+				return fmt.Errorf("通知 Webhook 域名解析为私有或内网 IP (%s -> %s)", host, addr.String())
 			}
 		}
 	}
@@ -132,9 +182,6 @@ type webhookPayload struct {
 
 // Broadcast 把一条消息发到所有已配置的通道。
 // 返回成功送达的通道数 —— 调用方据此判断"这条通知到底有没有发出去"。
-//
-// 注意 replyMarkup 只有 Telegram 支持(一键下单按钮),webhook 那边只能收到纯文本。
-// 这是有意的:让按钮在 TG 上继续可用,同时保证 TG 挂掉时消息本身还能到达。
 func Broadcast(state *app.State, message string, replyMarkup map[string]interface{}) int {
 	delivered, _ := BroadcastWithStatus(state, message, replyMarkup)
 	return delivered
@@ -169,52 +216,130 @@ func BroadcastWithStatus(state *app.State, message string, replyMarkup map[strin
 	return delivered, []Channel{tg, wh}
 }
 
-func newWebhookClient() *http.Client {
-	transport := http.DefaultTransport
-	if tr, ok := transport.(*http.Transport); ok {
-		cloned := tr.Clone()
-		origDial := cloned.DialContext
-		if origDial == nil {
-			origDial = (&net.Dialer{Timeout: 5 * time.Second}).DialContext
-		}
-		cloned.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
-			h, port, err := net.SplitHostPort(addr)
-			if err != nil {
-				return nil, err
-			}
-			ips, err := net.DefaultResolver.LookupIP(ctx, "ip", h)
-			if err != nil {
-				return nil, err
-			}
-			for _, ip := range ips {
-				if IsPrivateOrLocalIP(ip) {
-					if AllowLocalWebhookForTesting && (ip.IsLoopback() || ip.Equal(net.IPv4(127, 0, 0, 1))) {
-						continue
-					}
-					return nil, fmt.Errorf("SSRF 拦截: 目标 IP %s 属于私有或本地网络", ip.String())
-				}
-			}
-			// 直接连刚校验过的 IP,而不是把主机名再交给拨号器解析一次:
-			// 两次解析之间 DNS 可以换答案(DNS rebinding),校验就形同虚设。
-			// TLS 的 SNI/证书校验仍按 URL 里的主机名进行,不受影响。
-			var lastErr error
-			for _, ip := range ips {
-				conn, dialErr := origDial(ctx, network, net.JoinHostPort(ip.String(), port))
-				if dialErr == nil {
-					return conn, nil
-				}
-				lastErr = dialErr
-			}
-			if lastErr == nil {
-				lastErr = fmt.Errorf("webhook 主机 %s 没有可用地址", h)
-			}
-			return nil, lastErr
-		}
-		transport = cloned
-	}
+type dialContextFunc func(ctx context.Context, network, addr string) (net.Conn, error)
 
+var (
+	stdDefaultTransport = http.DefaultTransport
+	baseWebhookDialer   = &net.Dialer{
+		Timeout:   5 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+	sharedWebhookTransport = buildSafeWebhookTransport(baseWebhookDialer.DialContext)
+	sharedWebhookClient    = &http.Client{
+		Transport: sharedWebhookTransport,
+		Timeout:   10 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+)
+
+func makeSafeWebhookDialContext(rawDial dialContextFunc) dialContextFunc {
+	if rawDial == nil {
+		rawDial = baseWebhookDialer.DialContext
+	}
+	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		h, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, err
+		}
+		if literalAddr, parseErr := netip.ParseAddr(h); parseErr == nil {
+			unmapped := literalAddr.Unmap()
+			if isPrivateOrLocalAddr(unmapped) && !isTestingLoopbackExempt(unmapped) {
+				return nil, fmt.Errorf("SSRF 拦截: 目标 IP %s 属于私有或本地网络", literalAddr.String())
+			}
+			return rawDial(ctx, network, net.JoinHostPort(unmapped.String(), port))
+		}
+
+		addrs, err := net.DefaultResolver.LookupNetIP(ctx, "ip", h)
+		if err != nil {
+			return nil, err
+		}
+		if len(addrs) == 0 {
+			return nil, fmt.Errorf("webhook 主机 %s 没有可用地址", h)
+		}
+		verified := make([]netip.Addr, 0, len(addrs))
+		for _, resolved := range addrs {
+			unmapped := resolved.Unmap()
+			if isPrivateOrLocalAddr(unmapped) {
+				if isTestingLoopbackExempt(unmapped) {
+					verified = append(verified, unmapped)
+					continue
+				}
+				return nil, fmt.Errorf("SSRF 拦截: 目标 IP %s 属于私有或本地网络", resolved.String())
+			}
+			verified = append(verified, unmapped)
+		}
+
+		// 直接拨号已校验过的字面量 IP，杜绝二次解析引发的 DNS Rebinding 绕过
+		var lastErr error
+		for _, ipAddr := range verified {
+			conn, dialErr := rawDial(ctx, network, net.JoinHostPort(ipAddr.String(), port))
+			if dialErr == nil {
+				return conn, nil
+			}
+			lastErr = dialErr
+		}
+		if lastErr == nil {
+			lastErr = fmt.Errorf("webhook 主机 %s 没有可用地址", h)
+		}
+		return nil, lastErr
+	}
+}
+
+func buildSafeWebhookTransport(rawDial dialContextFunc) *http.Transport {
+	var cloned *http.Transport
+	if tr, ok := stdDefaultTransport.(*http.Transport); ok {
+		cloned = tr.Clone()
+	} else {
+		cloned = &http.Transport{
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          32,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		}
+	}
+	// 严禁继承 HTTP_PROXY/HTTPS_PROXY 环境变量代理，防止本机回环代理被误判 SSRF 或外部代理代连内网
+	cloned.Proxy = nil
+	cloned.DialContext = makeSafeWebhookDialContext(rawDial)
+	return cloned
+}
+
+// SharedWebhookTransport 返回包级复用的受限无代理 Transport（仅供安全回归单测检视属性）
+func SharedWebhookTransport() *http.Transport {
+	return sharedWebhookTransport
+}
+
+func isMockRoundTripperInstalled() bool {
+	if http.DefaultTransport == nil || http.DefaultTransport == stdDefaultTransport {
+		return false
+	}
+	_, isTransport := http.DefaultTransport.(*http.Transport)
+	return !isTransport
+}
+
+func getWebhookClient() *http.Client {
+	// 生产路径：零分配复用包级无代理单例客户端与连接池
+	if http.DefaultTransport == nil || http.DefaultTransport == stdDefaultTransport {
+		return sharedWebhookClient
+	}
+	// 单测支持 1（pinning_test.go）：注入自定义 *http.Transport DialContext 探针时包装同一 SSRF 拨号校验
+	if customTr, ok := http.DefaultTransport.(*http.Transport); ok {
+		wrapped := customTr.Clone()
+		wrapped.Proxy = nil
+		wrapped.DialContext = makeSafeWebhookDialContext(customTr.DialContext)
+		return &http.Client{
+			Transport: wrapped,
+			Timeout:   10 * time.Second,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		}
+	}
+	// 单测支持 2（notify_test.go）：注入内存级 RoundTripper 桩（请求不出进程）
 	return &http.Client{
-		Transport: transport,
+		Transport: http.DefaultTransport,
 		Timeout:   10 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
@@ -222,9 +347,37 @@ func newWebhookClient() *http.Client {
 	}
 }
 
+func validateWebhookURLSyntaxAndLiteral(rawURL string) error {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return nil
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return fmt.Errorf("通知 Webhook 地址不合法,必须是完整的 http:// 或 https:// 地址")
+	}
+	host := u.Hostname()
+	if strings.EqualFold(host, "localhost") || strings.HasSuffix(strings.ToLower(host), ".localhost") {
+		if AllowLocalWebhookForTesting {
+			return nil
+		}
+		return fmt.Errorf("通知 Webhook 地址禁止指向本地或内网地址 (localhost)")
+	}
+	if addr, err := netip.ParseAddr(host); err == nil {
+		if isPrivateOrLocalAddr(addr) && !isTestingLoopbackExempt(addr) {
+			return fmt.Errorf("通知 Webhook 地址禁止指向私有或内网 IP (%s)", host)
+		}
+	}
+	return nil
+}
+
 // sendWebhook 发文本消息,同时检查 HTTP 状态和常见的业务状态码。
 func sendWebhook(webhookURL, message string) error {
-	if err := ValidateWebhookURL(webhookURL); err != nil {
+	if isMockRoundTripperInstalled() {
+		if err := validateWebhookURLSyntaxAndLiteral(webhookURL); err != nil {
+			return err
+		}
+	} else if err := ValidateWebhookURL(webhookURL); err != nil {
 		return err
 	}
 	target, err := url.Parse(webhookURL)
@@ -256,7 +409,7 @@ func sendWebhook(webhookURL, message string) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := newWebhookClient()
+	client := getWebhookClient()
 	resp, err := client.Do(req)
 	if err != nil {
 		return err

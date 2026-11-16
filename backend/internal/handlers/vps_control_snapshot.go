@@ -21,14 +21,21 @@ import (
 // createSnapshot / snapshot/revert 也一样 —— 整个快照家族不需要区域门控。
 func GetVpsSnapshot(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		snapPath, ok := ovhPathOrAbort(c, "vps", svc, "snapshot")
+		if !ok {
+			return
+		}
 		var snap map[string]interface{}
-		if err := client.Get("/vps/"+svc+"/snapshot", &snap); err != nil {
+		if err := client.Get(snapPath, &snap); err != nil {
 			// 404 = 没快照,正常状态。判 HTTP 状态码而不是匹配错误文案:
 			// 三个站点是独立部署,报错文案各写各的(而且会随 OVH 改版变),
 			// 匹配 "does not exist" 这类英文串在某个区一旦对不上,就会把"没快照"渲染成一条 500。
@@ -52,7 +59,10 @@ func GetVpsSnapshot(state *app.State) gin.HandlerFunc {
 // 失败常见原因:已有一个快照(免费档不允许多个),需先 delete 旧的
 func CreateVpsSnapshot(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -66,8 +76,12 @@ func CreateVpsSnapshot(state *app.State) gin.HandlerFunc {
 		if body.Description != "" {
 			params["description"] = body.Description
 		}
+		createPath, ok := ovhPathOrAbort(c, "vps", svc, "createSnapshot")
+		if !ok {
+			return
+		}
 		var task map[string]interface{}
-		if err := client.Post("/vps/"+svc+"/createSnapshot", params, &task); err != nil {
+		if err := client.Post(createPath, params, &task); err != nil {
 			// 这里只能靠文案兜一层:OVH 对"已有快照"回的是 400/409,状态码本身区分不出
 			// 具体原因。文案匹配仅用于把提示说得更友好,匹配不上也会照常把原始错误返回,
 			// 不像 404 降级那样会改变语义,所以三区文案差异在这里是可接受的。
@@ -103,7 +117,10 @@ func CreateVpsSnapshot(state *app.State) gin.HandlerFunc {
 // PUT /vps/{name}/snapshot 返回 void/vps.Snapshot,body 是完整 vps.Snapshot
 func UpdateVpsSnapshotDescription(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -113,10 +130,14 @@ func UpdateVpsSnapshotDescription(state *app.State) gin.HandlerFunc {
 			Description string `json:"description"`
 		}
 		_ = c.ShouldBindJSON(&body)
+		snapPath, ok := ovhPathOrAbort(c, "vps", svc, "snapshot")
+		if !ok {
+			return
+		}
 		// vps.Snapshot 里只有 description 可写(id / creationDate / region 只读),
 		// 所以直接发这一个字段。以前是 GET 回整个对象再 merge 回去,
 		// 那会把只读字段一并发回,被 OVH 400 掉
-		if err := client.Put("/vps/"+svc+"/snapshot",
+		if err := client.Put(snapPath,
 			map[string]interface{}{"description": body.Description}, nil); err != nil {
 			if ovhIsNotFound(err) {
 				c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "当前没有快照,无法修改描述", "code": "E3E1F5824"})
@@ -136,7 +157,10 @@ func UpdateVpsSnapshotDescription(state *app.State) gin.HandlerFunc {
 // POST /vps/{name}/snapshot/revert 返回 vps.Task
 func RevertVpsSnapshot(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -155,8 +179,12 @@ func RevertVpsSnapshot(state *app.State) gin.HandlerFunc {
 			})
 			return
 		}
+		revertPath, ok := ovhPathOrAbort(c, "vps", svc, "snapshot", "revert")
+		if !ok {
+			return
+		}
 		var task map[string]interface{}
-		if err := client.Post("/vps/"+svc+"/snapshot/revert", map[string]interface{}{}, &task); err != nil {
+		if err := client.Post(revertPath, map[string]interface{}{}, &task); err != nil {
 			if ovhIsNotFound(err) {
 				c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "当前没有快照可回滚", "code": "E2BA0443E"})
 				return
@@ -175,14 +203,21 @@ func RevertVpsSnapshot(state *app.State) gin.HandlerFunc {
 // DELETE /vps/{name}/snapshot 返回 vps.Task
 func DeleteVpsSnapshot(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		snapPath, ok := ovhPathOrAbort(c, "vps", svc, "snapshot")
+		if !ok {
+			return
+		}
 		var task map[string]interface{}
-		if err := client.Delete("/vps/"+svc+"/snapshot", &task); err != nil {
+		if err := client.Delete(snapPath, &task); err != nil {
 			// 404 = 当前没有快照可删(双击第二发/快照已被删):幂等成功,不是服务器错误。
 			// GET 侧同文件早已把 404 认定为"无快照"正常态,写侧对齐
 			if ovhIsNotFound(err) {

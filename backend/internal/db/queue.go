@@ -139,18 +139,33 @@ func (db *DB) ListQueue() ([]types.QueueItem, error) {
 	return out, nil
 }
 
-// ReplaceQueue 用给定列表覆盖整张表（事务内 DELETE + 批量 INSERT）。
-// 与原 storage.WriteJSON 语义对齐。
+// ReplaceQueue 用给定列表覆盖整张表（事务内 DELETE + 批量 INSERT），
+// 并在同一 IMMEDIATE 事务内自动过滤已被删除且未重建的非空 account_id，防止旧快照复活已删账户任务。
 func (db *DB) ReplaceQueue(items []types.QueueItem) error {
 	tx, err := db.Beginx()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+
+	var deletedIDs []string
+	if err := tx.Select(&deletedIDs, `SELECT id FROM deleted_ovh_accounts WHERE id NOT IN (SELECT id FROM ovh_accounts)`); err != nil {
+		return fmt.Errorf("read deleted accounts in ReplaceQueue: %w", err)
+	}
+	deletedSet := make(map[string]struct{}, len(deletedIDs))
+	for _, id := range deletedIDs {
+		deletedSet[id] = struct{}{}
+	}
+
 	if _, err := tx.Exec(`DELETE FROM queue`); err != nil {
 		return fmt.Errorf("clear queue: %w", err)
 	}
 	for _, q := range items {
+		if q.AccountID != "" {
+			if _, gone := deletedSet[q.AccountID]; gone {
+				continue
+			}
+		}
 		r, err := queueItemToRow(q)
 		if err != nil {
 			return err

@@ -9,9 +9,11 @@ import (
 	"time"
 
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/catalog"
+	"github.com/ovh-webui/server/internal/domain/datacenter"
 	"github.com/ovh-webui/server/internal/numconv"
 	"github.com/ovh-webui/server/internal/orderterm"
 	"github.com/ovh-webui/server/internal/ovh"
@@ -33,17 +35,44 @@ type PrewarmedCart struct {
 }
 
 var (
-	prewarmMu    sync.Mutex
-	prewarmCarts = map[string]*PrewarmedCart{}
-	cartTTL      = 90 * time.Minute // OVH 购物车有效期通常为 2 小时，保守设为 90 分钟
+	prewarmMu         sync.Mutex
+	prewarmCarts      = map[string]*PrewarmedCart{}
+	cartTTL           = 90 * time.Minute // OVH 购物车有效期通常为 2 小时，保守设为 90 分钟
+	prewarmGroup      singleflight.Group
+	prewarmGlobalSem  = make(chan struct{}, 12)
+	prewarmAccountSem sync.Map // accountID -> chan struct{}
 )
 
+const maxPrewarmPerAccount = 3
+
+func acquirePrewarmSlots(ctx context.Context, accountID string) (func(), error) {
+	v, _ := prewarmAccountSem.LoadOrStore(accountID, make(chan struct{}, maxPrewarmPerAccount))
+	accSem := v.(chan struct{})
+	select {
+	case accSem <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	select {
+	case prewarmGlobalSem <- struct{}{}:
+	case <-ctx.Done():
+		<-accSem
+		return nil, ctx.Err()
+	}
+	return func() {
+		<-prewarmGlobalSem
+		<-accSem
+	}, nil
+}
+
 // 购买时长是键的一部分:月付预热车绝不能被年付任务直接结账(反之亦然)。
-func prewarmKey(accountID, planCode, datacenter string, options []string, coupon, duration string) string {
+// 机房码统一通过 domain/datacenter.InventoryCode 归一化，消除显示码(mum/tor/par-a)与库存码失配。
+func prewarmKey(accountID, planCode, dc string, options []string, coupon, duration string) string {
+	normDC := datacenter.InventoryCode(dc)
 	return fmt.Sprintf("%s|%s|%s|%s|%s|%s",
 		accountID,
 		planCode,
-		strings.ToLower(datacenter),
+		normDC,
 		fingerprint(options),
 		strings.TrimSpace(coupon),
 		normalizedDuration(duration),
@@ -137,13 +166,64 @@ func ClearPrewarmPool(state *app.State) {
 	prewarmCarts = map[string]*PrewarmedCart{}
 }
 
+func peekPrewarmedCart(key string) *PrewarmedCart {
+	prewarmMu.Lock()
+	defer prewarmMu.Unlock()
+	c, ok := prewarmCarts[key]
+	if !ok {
+		return nil
+	}
+	if time.Since(c.CreatedAt) > cartTTL {
+		delete(prewarmCarts, key)
+		ovh.ReleaseCart(c.CartID)
+		return nil
+	}
+	cp := *c
+	cp.Options = append([]string(nil), c.Options...)
+	return &cp
+}
+
 // AssemblePrewarmedCart 在后台静默组装一辆完整的预热购物车。
 // 组装成功后直接存入预热池，供探测发现有货时以 0ms 装车延迟直接结账。
-func AssemblePrewarmedCart(ctx context.Context, state *app.State, accountID, planCode, datacenter string, options []string, coupon, duration string) (*PrewarmedCart, error) {
+// 内置按 prewarmKey 的 singleflight 去重与每账户/全局并发上限，根绝并发 /prewarm 造成孤儿购物车风暴。
+func AssemblePrewarmedCart(ctx context.Context, state *app.State, accountID, planCode, dc string, options []string, coupon, duration string) (*PrewarmedCart, error) {
 	selectedDuration, err := orderterm.Normalize(duration)
 	if err != nil {
 		return nil, err
 	}
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	normDC := datacenter.InventoryCode(dc)
+	if normDC == "" {
+		normDC = strings.ToLower(strings.TrimSpace(dc))
+	}
+	key := prewarmKey(accountID, planCode, normDC, options, coupon, selectedDuration)
+	if existing := peekPrewarmedCart(key); existing != nil {
+		return existing, nil
+	}
+
+	val, sfErr, _ := prewarmGroup.Do(key, func() (interface{}, error) {
+		if existing := peekPrewarmedCart(key); existing != nil {
+			return existing, nil
+		}
+		releaseSlots, slotErr := acquirePrewarmSlots(ctx, accountID)
+		if slotErr != nil {
+			return nil, slotErr
+		}
+		defer releaseSlots()
+		if existing := peekPrewarmedCart(key); existing != nil {
+			return existing, nil
+		}
+		return assemblePrewarmedCartOnce(ctx, state, accountID, planCode, normDC, options, coupon, selectedDuration)
+	})
+	if sfErr != nil {
+		return nil, sfErr
+	}
+	return val.(*PrewarmedCart), nil
+}
+
+func assemblePrewarmedCartOnce(ctx context.Context, state *app.State, accountID, planCode, datacenter string, options []string, coupon, selectedDuration string) (*PrewarmedCart, error) {
 	client, err := state.OVH.IsolatedClientFor(accountID)
 	if err != nil {
 		return nil, fmt.Errorf("取 client 失败: %w", err)

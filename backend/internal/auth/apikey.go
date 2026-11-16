@@ -11,6 +11,31 @@ import (
 	"time"
 )
 
+// MinAPIKeyLength 开启鉴权时允许的最小主密钥长度。
+const MinAPIKeyLength = 24
+
+// ValidateStartupAPIKey 校验生产启动时的主密钥强度，拒绝空口令、常见默认弱口令及过短密钥。
+func ValidateStartupAPIKey(key string) error {
+	trimmed := strings.TrimSpace(key)
+	if trimmed == "" {
+		return errors.New("API_SECRET_KEY 不能为空")
+	}
+	lower := strings.ToLower(trimmed)
+	switch lower {
+	case "123456", "12345678", "1234567890", "password", "admin", "secret", "changeme", "default", "ovh-webui-dev-key":
+		return fmt.Errorf("检测到高危默认弱口令 %q，请在配置文件中置空以自动生成随机密钥或设置至少 %d 位强随机密钥", trimmed, MinAPIKeyLength)
+	}
+	for _, weakPrefix := range []string{"change-me", "your-api-key", "replace-me"} {
+		if strings.HasPrefix(lower, weakPrefix) {
+			return fmt.Errorf("检测到示例占位弱口令 %q，请更换为至少 %d 位强随机密钥", trimmed, MinAPIKeyLength)
+		}
+	}
+	if len(trimmed) < MinAPIKeyLength {
+		return fmt.Errorf("API_SECRET_KEY 长度不足（当前 %d 位，至少需要 %d 位强随机字符）", len(trimmed), MinAPIKeyLength)
+	}
+	return nil
+}
+
 // ResolveAPIKey preserves configured keys and persists a random key for an unconfigured installation.
 func ResolveAPIKey(dataDir, configured string) (string, bool, error) {
 	if strings.TrimSpace(configured) != "" {

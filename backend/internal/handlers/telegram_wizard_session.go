@@ -1,10 +1,13 @@
 package handlers
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/telegram"
@@ -146,28 +149,50 @@ func rememberShort(state *app.State, full string, category ...string) string {
 	}
 
 	cleaned := strings.ReplaceAll(full, "-", "")
-	// 基础长度 8 位，若冲突则逐步扩展至 10、12 位
+	runes := []rune(cleaned)
+	// 基础长度 8 个字符（按 rune 安全切分，绝不腰斩 UTF-8），若冲突则逐步扩展至 10、12、14 位；
+	// 超长前缀冲突或含分隔符/多字节超限时回退确定性短哈希，确保 callback_data 永远 <= 64 字节。
 	targetLen := 8
-	if targetLen > len(cleaned) {
-		targetLen = len(cleaned)
+	if targetLen > len(runes) {
+		targetLen = len(runes)
 	}
-	s := cleaned[:targetLen]
+	s := string(runes[:targetLen])
+	needsHash := len(s) > 16 || strings.Contains(s, ":") || !utf8.ValidString(s)
 
 	shortMu.Lock()
-	// 防哈希碰撞自增长度
-	for {
-		existing, exists := shortToID[s]
-		if !exists || existing == full {
-			break
-		}
-		if targetLen < len(cleaned) {
-			targetLen += 2
-			if targetLen > len(cleaned) {
-				targetLen = len(cleaned)
+	if !needsHash {
+		// 防哈希碰撞自增长度（上限 14 runes / 16 bytes）
+		for {
+			existing, exists := shortToID[s]
+			if !exists || existing == full {
+				break
 			}
-			s = cleaned[:targetLen]
-		} else {
-			break
+			if targetLen < len(runes) && targetLen < 14 {
+				targetLen += 2
+				if targetLen > len(runes) {
+					targetLen = len(runes)
+				}
+				cand := string(runes[:targetLen])
+				if len(cand) > 16 || strings.Contains(cand, ":") {
+					needsHash = true
+					break
+				}
+				s = cand
+			} else {
+				needsHash = true
+				break
+			}
+		}
+	}
+	if needsHash {
+		sum := sha256.Sum256([]byte(full))
+		hexDigest := hex.EncodeToString(sum[:])
+		for hashLen := 11; hashLen <= 15; hashLen += 2 {
+			cand := "h" + hexDigest[:hashLen]
+			if existing, exists := shortToID[cand]; !exists || existing == full {
+				s = cand
+				break
+			}
 		}
 	}
 
@@ -190,6 +215,42 @@ func rememberShort(state *app.State, full string, category ...string) string {
 		_ = state.TelegramRepo.UpsertShortID(s, full, cat)
 	}
 	return s
+}
+
+// wizardPlanCallbackRef 将型号编码为安全的 Telegram callback_data 片段（确保整串严格 <= 64 字节）。
+func wizardPlanCallbackRef(state *app.State, planCode string) string {
+	planCode = strings.TrimSpace(planCode)
+	if planCode == "" {
+		return ""
+	}
+	if len(planCode) <= 20 && !strings.Contains(planCode, ":") && utf8.ValidString(planCode) {
+		return planCode
+	}
+	return rememberShort(state, planCode, "plan")
+}
+
+// resolvePlanCallbackRef 解析由 wizardPlanCallbackRef 生成的型号短码（不做账户/任务前缀启发式匹配）。
+func resolvePlanCallbackRef(state *app.State, ref string) string {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return ""
+	}
+	shortMu.Lock()
+	if v, ok := shortToID[ref]; ok && v != "" {
+		shortMu.Unlock()
+		return v
+	}
+	shortMu.Unlock()
+
+	if state != nil && state.TelegramRepo != nil {
+		if full, ok, err := state.TelegramRepo.GetShortID(ref); err == nil && ok && full != "" {
+			shortMu.Lock()
+			shortToID[ref] = full
+			shortMu.Unlock()
+			return full
+		}
+	}
+	return ref
 }
 
 func resolveShort(state *app.State, s string) string {

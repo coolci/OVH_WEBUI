@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	ovhsdk "github.com/ovh/go-ovh/ovh"
@@ -24,8 +25,12 @@ var engagementEndStrategies = map[string]bool{
 // serviceIDForDedicated 从 /dedicated/server/{name}/serviceInfos 拿 serviceId(数字 ID),
 // engagement / mitigation 等基于服务 ID 的端点都要先做这步换算。失败返 0。
 func serviceIDForDedicated(client *ovhsdk.Client, svc string) (int64, error) {
+	p, err := buildOVHPath("dedicated", "server", svc, "serviceInfos")
+	if err != nil {
+		return 0, err
+	}
 	var info map[string]interface{}
-	if err := client.Get("/dedicated/server/"+svc+"/serviceInfos", &info); err != nil {
+	if err := client.Get(p, &info); err != nil {
 		return 0, err
 	}
 	id, _ := numconv.ToInt64(info["serviceId"])
@@ -39,7 +44,10 @@ func serviceIDForDedicated(client *ovhsdk.Client, svc string) (int64, error) {
 // 返回当前 engagement 详情(承诺期开始 / 结束 / 到期策略)。无 engagement 返 null。
 func GetEngagement(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -50,8 +58,12 @@ func GetEngagement(state *app.State) gin.HandlerFunc {
 			respondOVHError(c, err)
 			return
 		}
+		engPath, ok := ovhPathOrAbort(c, "services", strconv.FormatInt(serviceID, 10), "billing", "engagement")
+		if !ok {
+			return
+		}
 		var eng map[string]interface{}
-		if err := client.Get(fmt.Sprintf("/services/%d/billing/engagement", serviceID), &eng); err != nil {
+		if err := client.Get(engPath, &eng); err != nil {
 			// 只有 404 才等价于"该服务没有 engagement(标准月付)";其它错误如实上报,
 			// 否则查询失败会被前端渲染成确定性的"未签合同期",误导用户做退订决策
 			if ovhIsNotFound(err) {
@@ -70,7 +82,10 @@ func GetEngagement(state *app.State) gin.HandlerFunc {
 // 列出可订阅的 engagement 价格选项(不同周期 / 不同折扣)。
 func GetEngagementAvailable(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -81,8 +96,12 @@ func GetEngagementAvailable(state *app.State) gin.HandlerFunc {
 			respondOVHError(c, err)
 			return
 		}
+		availPath, ok := ovhPathOrAbort(c, "services", strconv.FormatInt(serviceID, 10), "billing", "engagement", "available")
+		if !ok {
+			return
+		}
 		var pricings []map[string]interface{}
-		if err := client.Get(fmt.Sprintf("/services/%d/billing/engagement/available", serviceID), &pricings); err != nil {
+		if err := client.Get(availPath, &pricings); err != nil {
 			respondOVHError(c, err)
 			return
 		}
@@ -94,7 +113,10 @@ func GetEngagementAvailable(state *app.State) gin.HandlerFunc {
 // 查询是否有进行中的 engagement 变更请求(用户已请求但未生效)。无 → null。
 func GetEngagementRequest(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -105,8 +127,12 @@ func GetEngagementRequest(state *app.State) gin.HandlerFunc {
 			respondOVHError(c, err)
 			return
 		}
+		reqPath, ok := ovhPathOrAbort(c, "services", strconv.FormatInt(serviceID, 10), "billing", "engagement", "request")
+		if !ok {
+			return
+		}
 		var req map[string]interface{}
-		if err := client.Get(fmt.Sprintf("/services/%d/billing/engagement/request", serviceID), &req); err != nil {
+		if err := client.Get(reqPath, &req); err != nil {
 			// 同上:只有 404 才是"没有进行中的请求"。查询失败若被说成"无请求",
 			// 前端会把订阅按钮重新放开,用户对同一服务重复提交 engagement 请求
 			if ovhIsNotFound(err) {
@@ -125,7 +151,10 @@ func GetEngagementRequest(state *app.State) gin.HandlerFunc {
 // 提交 engagement 变更请求(切换到更长承诺期)。body: { pricingMode }
 func CreateEngagementRequest(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -144,8 +173,12 @@ func CreateEngagementRequest(state *app.State) gin.HandlerFunc {
 			respondOVHError(c, err)
 			return
 		}
+		reqPath, ok := ovhPathOrAbort(c, "services", strconv.FormatInt(serviceID, 10), "billing", "engagement", "request")
+		if !ok {
+			return
+		}
 		var result map[string]interface{}
-		err = client.Post(fmt.Sprintf("/services/%d/billing/engagement/request", serviceID),
+		err = client.Post(reqPath,
 			map[string]interface{}{"pricingMode": body.PricingMode}, &result)
 		if err != nil {
 			respondOVHError(c, err)
@@ -160,7 +193,10 @@ func CreateEngagementRequest(state *app.State) gin.HandlerFunc {
 // 取消进行中的 engagement 变更请求(还没生效前可撤回)。
 func DeleteEngagementRequest(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -171,7 +207,11 @@ func DeleteEngagementRequest(state *app.State) gin.HandlerFunc {
 			respondOVHError(c, err)
 			return
 		}
-		if err := client.Delete(fmt.Sprintf("/services/%d/billing/engagement/request", serviceID), nil); err != nil {
+		reqPath, ok := ovhPathOrAbort(c, "services", strconv.FormatInt(serviceID, 10), "billing", "engagement", "request")
+		if !ok {
+			return
+		}
+		if err := client.Delete(reqPath, nil); err != nil {
 			respondOVHError(c, err)
 			return
 		}
@@ -184,7 +224,10 @@ func DeleteEngagementRequest(state *app.State) gin.HandlerFunc {
 // 改 engagement 到期策略(自动续 / 转月付 / 销毁等)。body: { strategy }
 func UpdateEngagementEndRule(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -214,10 +257,14 @@ func UpdateEngagementEndRule(state *app.State) gin.HandlerFunc {
 			respondOVHError(c, err)
 			return
 		}
+		endRulePath, ok := ovhPathOrAbort(c, "services", strconv.FormatInt(serviceID, 10), "billing", "engagement", "endRule")
+		if !ok {
+			return
+		}
 		if body.Strategy == "CANCEL_SERVICE" {
 			state.Logger.Warn(fmt.Sprintf("服务器 %s 到期策略即将设为 CANCEL_SERVICE(承诺期结束后销毁服务)", svc), "server_control")
 		}
-		if err := client.Put(fmt.Sprintf("/services/%d/billing/engagement/endRule", serviceID),
+		if err := client.Put(endRulePath,
 			map[string]interface{}{"strategy": body.Strategy}, nil); err != nil {
 			respondOVHError(c, err)
 			return

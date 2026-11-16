@@ -141,17 +141,33 @@ func (db *DB) ListHistory() ([]types.PurchaseHistoryEntry, error) {
 	return out, nil
 }
 
-// ReplaceHistory 全表覆盖（保留 ReplaceX API 一致）
+// ReplaceHistory 全表覆盖（保留 ReplaceX API 一致），
+// 并在同一 IMMEDIATE 事务内过滤已被删除且未重建的非空 account_id，彻底杜绝已删账户历史复活。
 func (db *DB) ReplaceHistory(items []types.PurchaseHistoryEntry) error {
 	tx, err := db.Beginx()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+
+	var deletedIDs []string
+	if err := tx.Select(&deletedIDs, `SELECT id FROM deleted_ovh_accounts WHERE id NOT IN (SELECT id FROM ovh_accounts)`); err != nil {
+		return fmt.Errorf("read deleted accounts in ReplaceHistory: %w", err)
+	}
+	deletedSet := make(map[string]struct{}, len(deletedIDs))
+	for _, id := range deletedIDs {
+		deletedSet[id] = struct{}{}
+	}
+
 	if _, err := tx.Exec(`DELETE FROM history`); err != nil {
 		return fmt.Errorf("clear history: %w", err)
 	}
 	for _, h := range items {
+		if h.AccountID != "" {
+			if _, gone := deletedSet[h.AccountID]; gone {
+				continue
+			}
+		}
 		r, err := historyToRow(h)
 		if err != nil {
 			return err

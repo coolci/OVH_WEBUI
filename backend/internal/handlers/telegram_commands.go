@@ -63,7 +63,7 @@ func cmdStock(state *app.State, args []string, monOpt ...*monitor.Monitor) strin
 	if len(monOpt) > 0 {
 		mon = monOpt[0]
 	}
-	accountID := telegram.DefaultAccountID(state)
+	accountID := tgEffectiveAccountID(state)
 	var explicitAccount *types.OVHAccount
 	for _, a := range args[1:] {
 		if strings.HasPrefix(a, "@") && len(a) > 1 {
@@ -304,7 +304,7 @@ func cmdPrice(state *app.State, args []string, monOpt ...*monitor.Monitor) strin
 	if len(monOpt) > 0 {
 		mon = monOpt[0]
 	}
-	accountID := telegram.DefaultAccountID(state)
+	accountID := tgEffectiveAccountID(state)
 	var explicitAccount *types.OVHAccount
 	for _, a := range args[2:] {
 		if strings.HasPrefix(a, "@") && len(a) > 1 {
@@ -455,10 +455,7 @@ func cmdTasksText(state *app.State) string {
 	b.WriteString(fmt.Sprintf("📋 当前抢购任务队列 (共 %d 个活跃任务)\n", len(active)))
 	b.WriteString(telegram.CardDivider + "\n")
 	for i, it := range active {
-		shortID := it.ID
-		if len(shortID) > 8 {
-			shortID = shortID[:8]
-		}
+		shortID := truncate(it.ID, 8)
 		accTag := it.AccountID
 		if acc, ok := state.FindAccount(it.AccountID); ok {
 			accTag = acc.Name
@@ -712,15 +709,16 @@ func handleTelegramText(state *app.State, mon *monitor.Monitor, text string, cha
 				showDCPicker(state, chatID, 0, "pr", cmd.Args[0], false)
 				return
 			}
-			rawPrice := cmdPrice(state, cmd.Args)
+			rawPrice := cmdPrice(state, cmd.Args, mon)
 			plan, dc := cmd.Args[0], cmd.Args[1]
+			planRef := wizardPlanCallbackRef(state, plan)
 			var markup map[string]interface{}
 			if strings.HasPrefix(rawPrice, "❌") {
 				validDCs, _ := validAndInStockDCs(state, plan, "")
 				var rows [][]map[string]string
 				if len(validDCs) > 0 && validDCs[0] != dc {
 					rows = append(rows, []map[string]string{
-						telegram.CallbackButton("💰 查看 "+telegram.DisplayDC(validDCs[0])+" 价格", "i:D:pr:"+plan+":"+validDCs[0]),
+						telegram.CallbackButton("💰 查看 "+telegram.DisplayDC(validDCs[0])+" 价格", "i:D:pr:"+planRef+":"+validDCs[0]),
 					})
 				}
 				rows = append(rows, []map[string]string{
@@ -730,8 +728,8 @@ func handleTelegramText(state *app.State, mon *monitor.Monitor, text string, cha
 			} else {
 				markup = telegram.InlineKeyboard([][]map[string]string{
 					{
-						telegram.CallbackButton("⚡ "+telegram.DisplayDC(dc)+" 立即开抢", "i:D:b:"+plan+":"+dc),
-						telegram.CallbackButton("👀 监控此型号", "i:M:"+plan),
+						telegram.CallbackButton("⚡ "+telegram.DisplayDC(dc)+" 立即开抢", "i:D:b:"+planRef+":"+dc),
+						telegram.CallbackButton("👀 监控此型号", "i:M:"+planRef),
 					},
 					{
 						telegram.CallbackButton("🔙 重新询价", "i:cat:pr:root"),
@@ -860,7 +858,7 @@ func hudDashboardMessage(state *app.State, mon *monitor.Monitor) string {
 			if zone == "" {
 				zone = "EU"
 			}
-			accText = fmt.Sprintf("%s · %s (%s 区 · 共 %d 个账户)", acc.Name, zone, ovh.SubsidiaryRegion(zone), len(state.Accounts))
+			accText = fmt.Sprintf("%s · %s (%s 区 · 共 %d 个账户)", acc.Name, zone, ovh.SubsidiaryRegion(zone), len(listAccounts(state)))
 		}
 	}
 

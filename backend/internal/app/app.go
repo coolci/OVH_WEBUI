@@ -411,15 +411,20 @@ func (s *State) SyncDefaultAccountConfig() {
 		cfg.Zone = defAcc.Zone
 		changed = true
 	}
-	if defAcc.IAM != "" && cfg.IAM != defAcc.IAM {
-		cfg.IAM = defAcc.IAM
+	effectiveIAM := defAcc.IAM
+	if effectiveIAM == "" && defAcc.Zone != "" {
+		effectiveIAM = "go-ovh-" + strings.ToLower(defAcc.Zone)
+	}
+	if effectiveIAM != "" && cfg.IAM != effectiveIAM {
+		cfg.IAM = effectiveIAM
 		changed = true
 	}
 	if defAcc.Endpoint != "" && cfg.Endpoint != defAcc.Endpoint {
 		cfg.Endpoint = defAcc.Endpoint
 		changed = true
 	}
-	if defAcc.AppKey != "" && cfg.AppKey == "" {
+	// 无条件同步新默认账户的三项凭据（BUG-BE-04），防止切换默认账户后残留旧账户密钥与新区域跨区串配
+	if cfg.AppKey != defAcc.AppKey || cfg.AppSecret != defAcc.AppSecret || cfg.ConsumerKey != defAcc.ConsumerKey {
 		cfg.AppKey = defAcc.AppKey
 		cfg.AppSecret = defAcc.AppSecret
 		cfg.ConsumerKey = defAcc.ConsumerKey
@@ -593,10 +598,34 @@ func (s *State) SaveQueue() error {
 	}
 	s.saveQueueMu.Lock()
 	defer s.saveQueueMu.Unlock()
+
+	var deleted map[string]struct{}
+	if s.DB != nil {
+		deleted, _ = s.DB.DeletedAccountIDSet()
+	}
+
+	var goneTaskIDs []string
 	s.QueueMu.Lock()
+	if len(deleted) > 0 {
+		kept := make([]types.QueueItem, 0, len(s.Queue))
+		for _, it := range s.Queue {
+			if it.AccountID != "" {
+				if _, isDel := deleted[it.AccountID]; isDel {
+					goneTaskIDs = append(goneTaskIDs, it.ID)
+					continue
+				}
+			}
+			kept = append(kept, it)
+		}
+		s.Queue = kept
+	}
 	cp := make([]types.QueueItem, len(s.Queue))
 	copy(cp, s.Queue)
 	s.QueueMu.Unlock()
+
+	for _, id := range goneTaskIDs {
+		s.MarkTaskDeleted(id)
+	}
 	if s.DB == nil {
 		return nil
 	}
@@ -889,17 +918,36 @@ func (s *State) UnregisterTaskCancel(id string) {
 	}
 }
 
-// SaveHistory 把内存中 History 整表覆盖写入 SQLite
+// SaveHistory 把内存中 History 整表覆盖写入 SQLite（持 saveHistoryMu 获取最新快照并剔除已删账户残留）
 func (s *State) SaveHistory() error {
 	if err := s.SaveBlocked("history"); err != nil {
 		return err
 	}
 	s.saveHistoryMu.Lock()
 	defer s.saveHistoryMu.Unlock()
+
+	var deleted map[string]struct{}
+	if s.DB != nil {
+		deleted, _ = s.DB.DeletedAccountIDSet()
+	}
+
 	s.HistoryMu.Lock()
+	if len(deleted) > 0 {
+		kept := make([]types.PurchaseHistoryEntry, 0, len(s.History))
+		for _, h := range s.History {
+			if h.AccountID != "" {
+				if _, isDel := deleted[h.AccountID]; isDel {
+					continue
+				}
+			}
+			kept = append(kept, h)
+		}
+		s.History = kept
+	}
 	cp := make([]types.PurchaseHistoryEntry, len(s.History))
 	copy(cp, s.History)
 	s.HistoryMu.Unlock()
+
 	if s.DB == nil {
 		return nil
 	}

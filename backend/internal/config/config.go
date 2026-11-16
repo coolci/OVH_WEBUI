@@ -30,6 +30,7 @@ func encryptConfig(c types.Config) types.Config {
 	c.ConsumerKey = secret.Encrypt(c.ConsumerKey)
 	c.AppKey = secret.Encrypt(c.AppKey)
 	c.TgToken = secret.Encrypt(c.TgToken)
+	c.NotifyWebhookURL = secret.Encrypt(c.NotifyWebhookURL)
 	return c
 }
 
@@ -47,6 +48,7 @@ func decryptConfig(c types.Config) types.Config {
 	c.AppSecret = dec(c.AppSecret)
 	c.ConsumerKey = dec(c.ConsumerKey)
 	c.TgToken = dec(c.TgToken)
+	c.NotifyWebhookURL = dec(c.NotifyWebhookURL)
 	return c
 }
 

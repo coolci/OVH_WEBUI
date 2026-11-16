@@ -37,7 +37,12 @@ func miscParallelGetStringKeys(client *ovhsdk.Client, keys []string, pathFn func
 				errs[idx] = err
 				return
 			}
-			if err := client.Get(pathFn(key), &d); err != nil {
+			p := pathFn(key)
+			if p == "" {
+				errs[idx] = errUnsafeOVHSegment
+				return
+			}
+			if err := client.Get(p, &d); err != nil {
 				errs[idx] = err
 				return
 			}
@@ -69,7 +74,12 @@ func miscParallelGetDetails(client *ovhsdk.Client, keys []interface{}, pathFn fu
 				errs[idx] = err
 				return
 			}
-			if err := client.Get(pathFn(key), &d); err != nil {
+			p := pathFn(key)
+			if p == "" {
+				errs[idx] = errUnsafeOVHSegment
+				return
+			}
+			if err := client.Get(p, &d); err != nil {
 				errs[idx] = err
 				return
 			}
@@ -113,19 +123,26 @@ func miscMergeDetails(keys []interface{}, keyField string, details []map[string]
 // Secondary DNS
 func GetSecondaryDNS(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		dnsPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "secondaryDnsDomains")
+		if !ok {
+			return
+		}
 		var domains []string
-		if err := client.Get("/dedicated/server/"+svc+"/secondaryDnsDomains", &domains); err != nil {
+		if err := client.Get(dnsPath, &domains); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		details, detailErrs := miscParallelGetStringKeys(client, domains, func(d string) string {
-			return "/dedicated/server/" + svc + "/secondaryDnsDomains/" + d
+			return safePathFn("dedicated", "server", svc, "secondaryDnsDomains", d)
 		}, 10)
 		list, failed := miscMergeDetails(miscKeysAsIface(domains), "domain", details, detailErrs)
 		if failed > 0 {
@@ -137,7 +154,10 @@ func GetSecondaryDNS(state *app.State) gin.HandlerFunc {
 
 func AddSecondaryDNS(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -152,11 +172,15 @@ func AddSecondaryDNS(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少domain参数", "code": "E5BE84C8C"})
 			return
 		}
-		if !strings.Contains(body.Domain, ".") || len(body.Domain) > 255 {
+		if !strings.Contains(body.Domain, ".") || len(body.Domain) > 255 || strings.ContainsAny(body.Domain, "/?#%& ") {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "域名格式不正确", "code": "E_INVALID_DOMAIN"})
 			return
 		}
-		if err := client.Post("/dedicated/server/"+svc+"/secondaryDnsDomains", map[string]interface{}{"domain": body.Domain}, nil); err != nil {
+		dnsPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "secondaryDnsDomains")
+		if !ok {
+			return
+		}
+		if err := client.Post(dnsPath, map[string]interface{}{"domain": body.Domain}, nil); err != nil {
 			// 已添加过的域名(already exists):幂等成功
 			if strings.Contains(strings.ToLower(err.Error()), "already") {
 				c.JSON(http.StatusOK, gin.H{"success": true, "message": "该域名已在二级 DNS 列表中,无需重复添加", "code": "E4D9E7F86"})
@@ -172,14 +196,24 @@ func AddSecondaryDNS(state *app.State) gin.HandlerFunc {
 
 func DeleteSecondaryDNS(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
-		domain := c.Param("domain")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
+		domain, ok := requireSafeSingleSegment(c, "domain", "域名", "E_INVALID_DOMAIN")
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
-		if err := client.Delete("/dedicated/server/"+svc+"/secondaryDnsDomains/"+domain, nil); err != nil {
+		delPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "secondaryDnsDomains", domain)
+		if !ok {
+			return
+		}
+		if err := client.Delete(delPath, nil); err != nil {
 			if ovhIsNotFound(err) {
 				c.JSON(http.StatusOK, gin.H{"success": true, "message": "该域名不在二级 DNS 列表中,无需删除", "code": "E1C4B0FD2"})
 				return
@@ -195,19 +229,26 @@ func DeleteSecondaryDNS(state *app.State) gin.HandlerFunc {
 // Virtual MAC
 func GetVirtualMACList(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		vmacPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "virtualMac")
+		if !ok {
+			return
+		}
 		var macs []string
-		if err := client.Get("/dedicated/server/"+svc+"/virtualMac", &macs); err != nil {
+		if err := client.Get(vmacPath, &macs); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		details, detailErrs := miscParallelGetStringKeys(client, macs, func(m string) string {
-			return "/dedicated/server/" + svc + "/virtualMac/" + m
+			return safePathFn("dedicated", "server", svc, "virtualMac", m)
 		}, 10)
 		list, failed := miscMergeDetails(miscKeysAsIface(macs), "macAddress", details, detailErrs)
 		if failed > 0 {
@@ -219,7 +260,10 @@ func GetVirtualMACList(state *app.State) gin.HandlerFunc {
 
 func CreateVirtualMAC(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -242,8 +286,12 @@ func CreateVirtualMAC(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "无效的虚拟MAC类型: " + body.Type + " (只支持 ovh / vmware)"})
 			return
 		}
+		vmacPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "virtualMac")
+		if !ok {
+			return
+		}
 		var result map[string]interface{}
-		if err := client.Post("/dedicated/server/"+svc+"/virtualMac", map[string]interface{}{
+		if err := client.Post(vmacPath, map[string]interface{}{
 			"ipAddress":          body.IPAddress,
 			"type":               body.Type,
 			"virtualMachineName": body.VirtualMachineName,
@@ -259,19 +307,26 @@ func CreateVirtualMAC(state *app.State) gin.HandlerFunc {
 // Virtual Network Interface
 func GetVirtualNetworkInterfaces(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		vniPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "virtualNetworkInterface")
+		if !ok {
+			return
+		}
 		var uuids []string
-		if err := client.Get("/dedicated/server/"+svc+"/virtualNetworkInterface", &uuids); err != nil {
+		if err := client.Get(vniPath, &uuids); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		details, detailErrs := miscParallelGetStringKeys(client, uuids, func(u string) string {
-			return "/dedicated/server/" + svc + "/virtualNetworkInterface/" + u
+			return safePathFn("dedicated", "server", svc, "virtualNetworkInterface", u)
 		}, 10)
 		list, failed := miscMergeDetails(miscKeysAsIface(uuids), "uuid", details, detailErrs)
 		if failed > 0 {
@@ -289,19 +344,26 @@ func GetVirtualNetworkInterfaces(state *app.State) gin.HandlerFunc {
 // vRack
 func GetVRackList(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		vrPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "vrack")
+		if !ok {
+			return
+		}
 		var vracks []string
-		if err := client.Get("/dedicated/server/"+svc+"/vrack", &vracks); err != nil {
+		if err := client.Get(vrPath, &vracks); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		details, detailErrs := miscParallelGetStringKeys(client, vracks, func(v string) string {
-			return "/dedicated/server/" + svc + "/vrack/" + v
+			return safePathFn("dedicated", "server", svc, "vrack", v)
 		}, 10)
 		list, failed := miscMergeDetails(miscKeysAsIface(vracks), "vrackName", details, detailErrs)
 		if failed > 0 {
@@ -313,14 +375,24 @@ func GetVRackList(state *app.State) gin.HandlerFunc {
 
 func RemoveFromVRack(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
-		vrack := c.Param("vrack")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
+		vrack, ok := requireSafeSingleSegment(c, "vrack", "vRack", "INVALID_VRACK")
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
-		if err := client.Delete("/dedicated/server/"+svc+"/vrack/"+vrack, nil); err != nil {
+		delPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "vrack", vrack)
+		if !ok {
+			return
+		}
+		if err := client.Delete(delPath, nil); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
@@ -332,14 +404,21 @@ func RemoveFromVRack(state *app.State) gin.HandlerFunc {
 // Orderable
 func GetOrderableBandwidth(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		p, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "orderable", "bandwidth")
+		if !ok {
+			return
+		}
 		var d interface{}
-		if err := client.Get("/dedicated/server/"+svc+"/orderable/bandwidth", &d); err != nil {
+		if err := client.Get(p, &d); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
@@ -349,14 +428,21 @@ func GetOrderableBandwidth(state *app.State) gin.HandlerFunc {
 
 func GetOrderableTraffic(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		p, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "orderable", "traffic")
+		if !ok {
+			return
+		}
 		var d interface{}
-		if err := client.Get("/dedicated/server/"+svc+"/orderable/traffic", &d); err != nil {
+		if err := client.Get(p, &d); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
@@ -366,14 +452,21 @@ func GetOrderableTraffic(state *app.State) gin.HandlerFunc {
 
 func GetOrderableIP(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		p, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "orderable", "ip")
+		if !ok {
+			return
+		}
 		var d interface{}
-		if err := client.Get("/dedicated/server/"+svc+"/orderable/ip", &d); err != nil {
+		if err := client.Get(p, &d); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
@@ -384,19 +477,26 @@ func GetOrderableIP(state *app.State) gin.HandlerFunc {
 // Options
 func GetServerOptions(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		p, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "option")
+		if !ok {
+			return
+		}
 		var opts []string
-		if err := client.Get("/dedicated/server/"+svc+"/option", &opts); err != nil {
+		if err := client.Get(p, &opts); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		details, detailErrs := miscParallelGetStringKeys(client, opts, func(o string) string {
-			return "/dedicated/server/" + svc + "/option/" + o
+			return safePathFn("dedicated", "server", svc, "option", o)
 		}, 10)
 		list, failed := miscMergeDetails(miscKeysAsIface(opts), "option", details, detailErrs)
 		if failed > 0 {
@@ -409,14 +509,21 @@ func GetServerOptions(state *app.State) gin.HandlerFunc {
 // IP specs
 func GetIPSpecs(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		p, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "specifications", "ip")
+		if !ok {
+			return
+		}
 		var d interface{}
-		if err := client.Get("/dedicated/server/"+svc+"/specifications/ip", &d); err != nil {
+		if err := client.Get(p, &d); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
@@ -426,23 +533,30 @@ func GetIPSpecs(state *app.State) gin.HandlerFunc {
 
 func GetIPCanBeMovedTo(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
-		// schema: ip 是 query 必填(类型 ipBlock,可以带掩码,所以这里不做 ipv4 严格校验),
-		// 不拼这个 query 的话 OVH 必定以缺参拒绝
-		ip := c.Query("ip")
+		// schema: ip 是 query 必填(类型 ipBlock,可以带掩码)
+		ip := strings.TrimSpace(c.Query("ip"))
 		if ip == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少ip参数", "code": "EB7965AF4"})
 			return
 		}
-		// 该端点返回 void:它只做"这个 IP 能不能搬到本机"的校验,不返回任何目标列表,
-		// 所以对外不再叫 targets。OVH 用什么状态码表达"不能搬"schema 没写死,
-		// 不猜语义:出错就原样把 OVH 的错误交出去,由调用方判断,免得把权限/网络故障说成"不能迁移"
-		if err := client.Get("/dedicated/server/"+svc+"/ipCanBeMovedTo?ip="+url.QueryEscape(ip), nil); err != nil {
+		if _, ok := validateIPOrCIDR(ip); !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "ip 参数格式不合法", "code": "INVALID_IP"})
+			return
+		}
+		checkPath, ok := ovhPathQueryOrAbort(c, url.Values{"ip": {ip}}, "dedicated", "server", svc, "ipCanBeMovedTo")
+		if !ok {
+			return
+		}
+		if err := client.Get(checkPath, nil); err != nil {
 			state.Logger.Warn("检查 IP "+ip+" 能否迁移到服务器 "+svc+" 失败: "+err.Error(), "server_control")
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err), "ip": ip})
 			return
@@ -453,14 +567,21 @@ func GetIPCanBeMovedTo(state *app.State) gin.HandlerFunc {
 
 func GetIPCountryAvailable(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		p, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "ipCountryAvailable")
+		if !ok {
+			return
+		}
 		var d interface{}
-		if err := client.Get("/dedicated/server/"+svc+"/ipCountryAvailable", &d); err != nil {
+		if err := client.Get(p, &d); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
@@ -470,24 +591,47 @@ func GetIPCountryAvailable(state *app.State) gin.HandlerFunc {
 
 func MoveIP(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
+		// /ipMove 的语义是"把这个 IP 搬到 URL 里的这台服务器",目标就是 svc 本身。
+		// 防呆护栏:若旧调用方误把源实例放在路由 :service_name、目标实例放在请求体 to 中,
+		// 必须立即 400 拦截,绝不把故障转移 IP 反向迁回源机器！
+		var body struct {
+			IP string `json:"ip"`
+			To string `json:"to"`
+		}
+		_ = c.ShouldBindJSON(&body)
+		body.IP = strings.TrimSpace(body.IP)
+		body.To = strings.TrimSpace(body.To)
+		if body.IP == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少ip参数", "code": "EB7965AF4"})
+			return
+		}
+		if _, ok := validateIPOrCIDR(body.IP); !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "ip 参数格式不合法", "code": "INVALID_IP"})
+			return
+		}
+		if body.To != "" && !strings.EqualFold(body.To, svc) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"success": false,
+				"error":   "路由服务名与请求体目标服务器(to)冲突：POST /server-control/{service_name}/ip/move 中的 {service_name} 必须为迁入目标服务器",
+				"code":    "MOVE_IP_TARGET_MISMATCH",
+			})
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
-		// /ipMove 的语义是"把这个 IP 搬到 URL 里的这台服务器",目标就是 svc 本身;
-		// schema 里 body 只有 ip 一个参数,原来的 to 字段既非法又让调用方误以为能指定去向
-		var body struct {
-			IP string `json:"ip"`
-		}
-		_ = c.ShouldBindJSON(&body)
-		if body.IP == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少ip参数", "code": "EB7965AF4"})
+		movePath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "ipMove")
+		if !ok {
 			return
 		}
 		var result map[string]interface{}
-		if err := client.Post("/dedicated/server/"+svc+"/ipMove", map[string]interface{}{
+		if err := client.Post(movePath, map[string]interface{}{
 			"ip": body.IP,
 		}, &result); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
@@ -501,14 +645,21 @@ func MoveIP(state *app.State) gin.HandlerFunc {
 // Ongoing
 func GetOngoingTasks(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		p, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "ongoing")
+		if !ok {
+			return
+		}
 		var d interface{}
-		if err := client.Get("/dedicated/server/"+svc+"/ongoing", &d); err != nil {
+		if err := client.Get(p, &d); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
@@ -526,14 +677,21 @@ func GetOngoingTasks(state *app.State) gin.HandlerFunc {
 // 否则美区用户会点到一个必然 404 的按钮。
 func GetCompliantWindowsVersions(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		p, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "license", "compliantWindows")
+		if !ok {
+			return
+		}
 		var d interface{}
-		if err := client.Get("/dedicated/server/"+svc+"/license/compliantWindows", &d); err != nil {
+		if err := client.Get(p, &d); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
@@ -543,14 +701,21 @@ func GetCompliantWindowsVersions(state *app.State) gin.HandlerFunc {
 
 func GetCompliantWindowsSqlVersions(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		p, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "license", "compliantWindowsSqlServer")
+		if !ok {
+			return
+		}
 		var d interface{}
-		if err := client.Get("/dedicated/server/"+svc+"/license/compliantWindowsSqlServer", &d); err != nil {
+		if err := client.Get(p, &d); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
@@ -597,17 +762,21 @@ var terminationFutureUses = map[string]bool{
 // terminate 和 terminateAtExpirationDate 是两个不同的动作,这个端点只对应前者。
 func TerminateService(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
-		// OVH /terminate 返回一个 string,是这次请求的确认信息;真正的终止 token 按 schema
-		// (confirmTermination.token: "sent by email to the admin contact")只会发到管理员邮箱,
-		// 所以这里不能把它当 token 交给前端,否则用户会拿这段文字去确认终止
+		termPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "terminate")
+		if !ok {
+			return
+		}
 		var resp string
-		if err := client.Post("/dedicated/server/"+svc+"/terminate", map[string]interface{}{}, &resp); err != nil {
+		if err := client.Post(termPath, map[string]interface{}{}, &resp); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
@@ -618,7 +787,10 @@ func TerminateService(state *app.State) gin.HandlerFunc {
 
 func ConfirmTermination(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -635,8 +807,6 @@ func ConfirmTermination(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少token参数", "code": "ED4D892CA"})
 			return
 		}
-		// reason / futureUse / commentary 是 schema 里的可选参数;枚举值先本地校验,
-		// 非法值直接挡掉而不是发出去等 OVH 报错(终止确认这一步失败重来成本高)
 		if body.Reason != "" && !terminationReasons[body.Reason] {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "无效的终止原因: " + body.Reason})
 			return
@@ -646,7 +816,6 @@ func ConfirmTermination(state *app.State) gin.HandlerFunc {
 			return
 		}
 		payload := map[string]interface{}{"token": body.Token}
-		// 只把用户真填了的可选字段发出去,不给 OVH 送多余的空值
 		if body.Reason != "" {
 			payload["reason"] = body.Reason
 		}
@@ -656,9 +825,12 @@ func ConfirmTermination(state *app.State) gin.HandlerFunc {
 		if body.Commentary != "" {
 			payload["commentary"] = body.Commentary
 		}
-		// OVH /confirmTermination 返回 string(确认信息)
+		confirmPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "confirmTermination")
+		if !ok {
+			return
+		}
 		var resp string
-		if err := client.Post("/dedicated/server/"+svc+"/confirmTermination", payload, &resp); err != nil {
+		if err := client.Post(confirmPath, payload, &resp); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
@@ -670,20 +842,27 @@ func ConfirmTermination(state *app.State) gin.HandlerFunc {
 // SPLA
 func GetSPLAList(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		splaPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "spla")
+		if !ok {
+			return
+		}
 		var ids []interface{}
-		if err := client.Get("/dedicated/server/"+svc+"/spla", &ids); err != nil {
+		if err := client.Get(splaPath, &ids); err != nil {
 			state.Logger.Error("获取SPLA列表失败: "+err.Error(), "server_control")
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		details, detailErrs := miscParallelGetDetails(client, ids, func(k interface{}) string {
-			return "/dedicated/server/" + svc + "/spla/" + idToString(k)
+			return safePathFn("dedicated", "server", svc, "spla", idToString(k))
 		}, 10)
 		list, failed := miscMergeDetails(ids, "id", details, detailErrs)
 		if failed > 0 {
@@ -695,7 +874,10 @@ func GetSPLAList(state *app.State) gin.HandlerFunc {
 
 func CreateSPLA(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -710,21 +892,21 @@ func CreateSPLA(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少type参数", "code": "E47BAC7E6"})
 			return
 		}
-		// dedicated.server.SplaTypeEnum 只有这三个取值
 		if body.Type != "os" && body.Type != "sqlstd" && body.Type != "sqlweb" {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "无效的许可证类型: " + body.Type + " (只支持 os / sqlstd / sqlweb)"})
 			return
 		}
-		// serialNumber 在 schema 里是必填 string,发 JSON null 会被 OVH 拒,
-		// 不如本地挡下并给出中文提示
 		if body.SerialNumber == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少serialNumber参数", "code": "E9AF18D58"})
 			return
 		}
+		splaPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "spla")
+		if !ok {
+			return
+		}
 		payload := map[string]interface{}{"type": body.Type, "serialNumber": body.SerialNumber}
-		// OVH /spla 返回 long(新建 SPLA 的 ID),不是对象
 		var newID int64
-		if err := client.Post("/dedicated/server/"+svc+"/spla", payload, &newID); err != nil {
+		if err := client.Post(splaPath, payload, &newID); err != nil {
 			state.Logger.Error("创建SPLA许可证失败: "+err.Error(), "server_control")
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
@@ -737,18 +919,23 @@ func CreateSPLA(state *app.State) gin.HandlerFunc {
 // BIOS
 func GetBIOSSettings(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		biosPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "biosSettings")
+		if !ok {
+			return
+		}
 		state.Logger.Info("[BIOS] 获取服务器 "+svc+" BIOS 设置", "server_control")
 		var d map[string]interface{}
-		if err := client.Get("/dedicated/server/"+svc+"/biosSettings", &d); err != nil {
+		if err := client.Get(biosPath, &d); err != nil {
 			msg := err.Error()
-			// 只有 OVH 明确回 404 才是"这台机器没有 BIOS 设置对象";原来的 "object" 子串匹配
-			// 会把 403(无权限)、锁定等临时错误也说成"不支持",用户会以为硬件不支持而放弃
 			if ovhIsNotFound(err) {
 				state.Logger.Warn("[BIOS] 服务器 "+svc+" 不支持 BIOS 设置: "+msg, "server_control")
 				c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "BIOS 设置不可用", "code": "E2995BE84"})
@@ -763,15 +950,22 @@ func GetBIOSSettings(state *app.State) gin.HandlerFunc {
 
 func GetBIOSSettingsSGX(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		sgxPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "biosSettings", "sgx")
+		if !ok {
+			return
+		}
 		state.Logger.Info("[BIOS] 获取服务器 "+svc+" SGX BIOS 设置", "server_control")
 		var d map[string]interface{}
-		if err := client.Get("/dedicated/server/"+svc+"/biosSettings/sgx", &d); err != nil {
+		if err := client.Get(sgxPath, &d); err != nil {
 			msg := err.Error()
 			// 同上:只认 404,别把权限/锁定错误误报成"SGX 不可用"
 			if ovhIsNotFound(err) {

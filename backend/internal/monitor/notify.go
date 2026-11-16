@@ -193,6 +193,31 @@ func formatConfigSpec(configInfo map[string]interface{}) (summary string, mem st
 			summary = telegram.HumanizeOptionCodes(opts)
 		}
 	}
+	if rawSys, _ := configInfo["system_storage"].(string); rawSys != "" && rawSys != "N/A" {
+		sysH := telegram.HumanizeStorage(rawSys)
+		if sysH == "" {
+			sysH = telegram.HumanizeOptionCode(rawSys)
+		}
+		if sysH == "" {
+			sysH = rawSys
+		}
+		if summary != "" {
+			summary += " ｜ " + sysH
+		} else {
+			summary = sysH
+		}
+	}
+	if rawGPU, _ := configInfo["gpu"].(string); rawGPU != "" && rawGPU != "N/A" {
+		gpuH := telegram.HumanizeOptionCode(rawGPU)
+		if gpuH == "" {
+			gpuH = rawGPU
+		}
+		if summary != "" {
+			summary += " ｜ " + gpuH
+		} else {
+			summary = gpuH
+		}
+	}
 	return summary, mem, disk
 }
 
@@ -433,7 +458,11 @@ func (m *Monitor) buildAvailabilityAlert(planCode string, availableDCs []map[str
 			}
 		}
 	}
-	btnAccountID := m.resolveNotifyAccountID(planCode, accountID...)
+	explicitAccounts := append([]string(nil), accountID...)
+	if cfgAcc := accountIDFromConfig(configInfo); cfgAcc != "" {
+		explicitAccounts = append(explicitAccounts, cfgAcc)
+	}
+	btnAccountID := m.resolveNotifyAccountID(planCode, explicitAccounts...)
 	if btnAccountID == "" {
 		// 不是错误:单账户用户、或订阅没勾自动下单时本来就没有账户维度。
 		// 记一行是为了在"按钮下到了错误大区"的事故里能一眼看出按钮当时是无账户的。
@@ -586,7 +615,8 @@ func (m *Monitor) SendUnavailableAlertGrouped(planCode string, unavailableDCs []
 }
 
 func (m *Monitor) SendAvailabilityAlert(planCode, datacenter, status, changeType string,
-	configInfo map[string]interface{}, serverName, durationText, priceCheckError, traceID, configTraceID, detectedTime string) {
+	configInfo map[string]interface{}, serverName, durationText, priceCheckError, traceID, configTraceID, detectedTime string,
+	accountID ...string) {
 
 	var msg strings.Builder
 	pushTime := m.nowBeijing()
@@ -755,6 +785,10 @@ func (m *Monitor) SendAvailabilityAlert(planCode, datacenter, status, changeType
 	var replyMarkup map[string]interface{}
 	if changeType == "available" {
 		options := optionsFromConfig(configInfo)
+		explicitAccounts := append([]string(nil), accountID...)
+		if cfgAcc := accountIDFromConfig(configInfo); cfgAcc != "" {
+			explicitAccounts = append(explicitAccounts, cfgAcc)
+		}
 		btnAccounts := m.AccountsForPlan(planCode)
 		if len(btnAccounts) <= 1 {
 			btnAccounts = nil
@@ -782,7 +816,7 @@ func (m *Monitor) SendAvailabilityAlert(planCode, datacenter, status, changeType
 			kb = append(kb, accRow)
 			masterUUID := uuid.NewString()
 			m.AddMessageUUID(masterUUID, planCode, datacenter, options, configInfo)
-			if btnAccID := m.resolveNotifyAccountID(planCode); btnAccID != "" && m.state.DB != nil {
+			if btnAccID := m.resolveNotifyAccountID(planCode, explicitAccounts...); btnAccID != "" && m.state.DB != nil {
 				_ = m.state.DB.SetTelegramButtonAccount(masterUUID, btnAccID)
 			}
 			cbQ, _ := json.Marshal(map[string]string{"a": "add_to_queue", "u": masterUUID})
@@ -794,7 +828,7 @@ func (m *Monitor) SendAvailabilityAlert(planCode, datacenter, status, changeType
 		} else {
 			btnUUID := uuid.NewString()
 			m.AddMessageUUID(btnUUID, planCode, datacenter, options, configInfo)
-			btnAccID := m.resolveNotifyAccountID(planCode)
+			btnAccID := m.resolveNotifyAccountID(planCode, explicitAccounts...)
 			if btnAccID != "" && m.state.DB != nil {
 				_ = m.state.DB.SetTelegramButtonAccount(btnUUID, btnAccID)
 			}
@@ -938,7 +972,11 @@ func (m *Monitor) prewarmAlertButtons(planCode string, availableDCs []map[string
 	}
 	options := optionsFromConfig(configInfo)
 	coupon := telegram.ActiveCoupon(m.state)
-	btnAccountID := m.resolveNotifyAccountID(planCode, accountID...)
+	explicitAccounts := append([]string(nil), accountID...)
+	if cfgAcc := accountIDFromConfig(configInfo); cfgAcc != "" {
+		explicitAccounts = append(explicitAccounts, cfgAcc)
+	}
+	btnAccountID := m.resolveNotifyAccountID(planCode, explicitAccounts...)
 	seen := map[string]bool{}
 	n := 0
 	for _, t := range m.orderButtonTargets(planCode, availableDCs, btnAccountID) {

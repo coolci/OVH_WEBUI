@@ -157,9 +157,26 @@ func (db *DB) ListMonitorSubscriptions() ([]types.Subscription, error) {
 // 取的是"这次 INSERT 尝试插入的值",列不在 INSERT 列表里时它等于列默认值(空串),
 // 于是每次更新都会把订阅的自动下单账户清空。
 func (db *DB) UpsertMonitorSubscription(s types.Subscription) error {
+	preserveLast := 0
+	if s.LastStatus == nil {
+		preserveLast = 1
+	}
+	preserveHist := 0
+	if s.History == nil {
+		preserveHist = 1
+	}
 	r, err := monitorSubToRow(s)
 	if err != nil {
 		return err
+	}
+	args := struct {
+		monitorSubRow
+		PreserveLastStatus int `db:"preserve_last_status"`
+		PreserveHistory    int `db:"preserve_history"`
+	}{
+		monitorSubRow:      r,
+		PreserveLastStatus: preserveLast,
+		PreserveHistory:    preserveHist,
 	}
 	_, err = db.NamedExec(`
 		INSERT INTO monitor_subscriptions
@@ -172,8 +189,8 @@ func (db *DB) UpsertMonitorSubscription(s types.Subscription) error {
 		  datacenters        = excluded.datacenters,
 		  notify_available   = excluded.notify_available,
 		  notify_unavailable = excluded.notify_unavailable,
-		  last_status        = CASE WHEN excluded.last_status != '' AND excluded.last_status != '{}' THEN excluded.last_status ELSE monitor_subscriptions.last_status END,
-		  history            = CASE WHEN excluded.history != '' AND excluded.history != '[]' THEN excluded.history ELSE monitor_subscriptions.history END,
+		  last_status        = CASE WHEN :preserve_last_status = 1 THEN monitor_subscriptions.last_status ELSE excluded.last_status END,
+		  history            = CASE WHEN :preserve_history = 1 THEN monitor_subscriptions.history ELSE excluded.history END,
 		  server_name        = excluded.server_name,
 		  auto_order             = excluded.auto_order,
 		  quantity               = excluded.quantity,
@@ -183,7 +200,7 @@ func (db *DB) UpsertMonitorSubscription(s types.Subscription) error {
 		  duration               = excluded.duration,
           paused                 = excluded.paused,
 		  options                = excluded.options
-	`, r)
+	`, args)
 	if err != nil {
 		return fmt.Errorf("upsert monitor sub %s: %w", s.PlanCode, err)
 	}

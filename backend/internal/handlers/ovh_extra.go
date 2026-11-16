@@ -2,9 +2,9 @@ package handlers
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -68,8 +68,9 @@ func GetDefaultPayment(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "缺少有效账户"})
 			return
 		}
+		cacheKey := accountCacheFingerprint(account)
 		defaultPaymentCache.Lock()
-		if e, hit := defaultPaymentCache.m[account.ID]; hit && time.Since(e.at) < 10*time.Minute && c.Query("refresh") == "" {
+		if e, hit := defaultPaymentCache.m[cacheKey]; hit && time.Since(e.at) < 10*time.Minute && c.Query("refresh") == "" {
 			defaultPaymentCache.Unlock()
 			c.JSON(http.StatusOK, e.info)
 			return
@@ -83,7 +84,7 @@ func GetDefaultPayment(state *app.State) gin.HandlerFunc {
 			return
 		}
 		defaultPaymentCache.Lock()
-		defaultPaymentCache.m[account.ID] = struct {
+		defaultPaymentCache.m[cacheKey] = struct {
 			at   time.Time
 			info DefaultPaymentInfo
 		}{time.Now(), info}
@@ -98,14 +99,22 @@ func fetchDefaultPayment(ctx context.Context, state *app.State, accountID string
 		return DefaultPaymentInfo{}, err
 	}
 	var ids []int64
-	if err := client.GetWithContext(ctx, "/me/payment/method?default=true", &ids); err != nil {
+	listPath, err := buildOVHPathQuery(url.Values{"default": {"true"}}, "me", "payment", "method")
+	if err != nil {
+		return DefaultPaymentInfo{}, err
+	}
+	if err := client.GetWithContext(ctx, listPath, &ids); err != nil {
 		return DefaultPaymentInfo{}, err
 	}
 	if len(ids) == 0 {
 		return DefaultPaymentInfo{Reason: "该账户没有设置默认支付方式"}, nil
 	}
 	var m registeredPaymentMethod
-	if err := client.GetWithContext(ctx, fmt.Sprintf("/me/payment/method/%d", ids[0]), &m); err != nil {
+	detailPath, err := buildOVHPath("me", "payment", "method", strconv.FormatInt(ids[0], 10))
+	if err != nil {
+		return DefaultPaymentInfo{}, err
+	}
+	if err := client.GetWithContext(ctx, detailPath, &m); err != nil {
 		return DefaultPaymentInfo{}, err
 	}
 	label := m.Label
@@ -168,17 +177,26 @@ func GetOrderFollowUp(state *app.State) gin.HandlerFunc {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
 		defer cancel()
 		var steps []OrderFollowUpStep
-		followErr := client.GetWithContext(ctx, "/me/order/"+orderID+"/followUp", &steps)
+		followPath, ok := ovhPathOrAbort(c, "me", "order", orderID, "followUp")
+		if !ok {
+			return
+		}
+		followErr := client.GetWithContext(ctx, followPath, &steps)
 		// 交付出来的服务名:明细的 domain 字段(付款前多为 "*" 或空)
 		var services []string
 		var detailIDs []int64
-		if err := client.GetWithContext(ctx, "/me/order/"+orderID+"/details", &detailIDs); err == nil {
+		detailsPath, ok := ovhPathOrAbort(c, "me", "order", orderID, "details")
+		if !ok {
+			return
+		}
+		if err := client.GetWithContext(ctx, detailsPath, &detailIDs); err == nil {
 			seen := map[string]bool{}
 			for _, id := range detailIDs {
 				var detail struct {
 					Domain string `json:"domain"`
 				}
-				if err := client.GetWithContext(ctx, fmt.Sprintf("/me/order/%s/details/%d", orderID, id), &detail); err != nil {
+				itemPath, pErr := buildOVHPath("me", "order", orderID, "details", strconv.FormatInt(id, 10))
+				if pErr != nil || client.GetWithContext(ctx, itemPath, &detail) != nil {
 					continue
 				}
 				d := strings.TrimSpace(detail.Domain)
@@ -237,7 +255,7 @@ func GetOSAvailability(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "缺少有效账户"})
 			return
 		}
-		key := account.Endpoint + "|" + plan
+		key := accountCacheFingerprint(account) + "|" + plan
 		osAvailabilityCache.Lock()
 		if e, hit := osAvailabilityCache.m[key]; hit && time.Since(e.at) < time.Hour {
 			osAvailabilityCache.Unlock()
@@ -253,7 +271,11 @@ func GetOSAvailability(state *app.State) gin.HandlerFunc {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 20*time.Second)
 		defer cancel()
 		var oss []string
-		if err := client.GetUnAuthWithContext(ctx, "/dedicated/server/osAvailabilities?hardware="+url.QueryEscape(plan), &oss); err != nil {
+		availPath, ok := ovhPathQueryOrAbort(c, url.Values{"hardware": {plan}}, "dedicated", "server", "osAvailabilities")
+		if !ok {
+			return
+		}
+		if err := client.GetUnAuthWithContext(ctx, availPath, &oss); err != nil {
 			c.JSON(http.StatusBadGateway, gin.H{"error": "无法读取可安装系统: " + ovh.Explain(err)})
 			return
 		}

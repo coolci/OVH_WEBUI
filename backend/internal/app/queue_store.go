@@ -247,7 +247,14 @@ func (s *State) ClearHistoryEntries() error {
 }
 
 // ReloadQueueFromDB 从数据库重载队列并同步清理被级联删除的运行中任务。
+// 与 SaveQueue 共享 saveQueueMu，保证不会与并发落库交错导致已删账户复活或新任务丢失。
 func (s *State) ReloadQueueFromDB() error {
+	s.saveQueueMu.Lock()
+	defer s.saveQueueMu.Unlock()
+	return s.reloadQueueFromDBLocked()
+}
+
+func (s *State) reloadQueueFromDBLocked() error {
 	items, err := s.DB.ListQueue()
 	if err != nil {
 		return err
@@ -277,17 +284,69 @@ func (s *State) ReloadQueueFromDB() error {
 }
 
 // ReloadHistoryFromDB 从数据库重载购买历史到内存。
+// 与 SaveHistory 共享 saveHistoryMu，并保留尚未触发 SaveHistory 的存活账户内存新订单，同时彻底剔除已删账户记录。
 func (s *State) ReloadHistoryFromDB() error {
+	s.saveHistoryMu.Lock()
+	defer s.saveHistoryMu.Unlock()
+	return s.reloadHistoryFromDBLocked()
+}
+
+func (s *State) reloadHistoryFromDBLocked() error {
 	items, err := s.DB.ListHistory()
 	if err != nil {
 		return err
 	}
-	s.HistoryMu.Lock()
 	if items == nil {
-		s.History = []types.PurchaseHistoryEntry{}
-	} else {
-		s.History = items
+		items = []types.PurchaseHistoryEntry{}
 	}
+	deleted, _ := s.DB.DeletedAccountIDSet()
+
+	needPersist := false
+	s.HistoryMu.Lock()
+	if len(deleted) > 0 && len(s.History) > 0 {
+		inDB := make(map[string]struct{}, len(items))
+		for _, h := range items {
+			inDB[h.ID] = struct{}{}
+		}
+		var unsavedAlive []types.PurchaseHistoryEntry
+		for _, h := range s.History {
+			if _, ok := inDB[h.ID]; ok {
+				continue
+			}
+			if h.AccountID != "" {
+				if _, isDel := deleted[h.AccountID]; isDel {
+					continue
+				}
+			}
+			unsavedAlive = append(unsavedAlive, h)
+		}
+		if len(unsavedAlive) > 0 {
+			items = append(unsavedAlive, items...)
+			needPersist = true
+		}
+	}
+	s.History = items
+	cp := make([]types.PurchaseHistoryEntry, len(s.History))
+	copy(cp, s.History)
 	s.HistoryMu.Unlock()
+
+	if needPersist && s.SaveBlocked("history") == nil {
+		_ = s.DB.ReplaceHistory(cp)
+	}
 	return nil
+}
+
+// DeleteAccountSynchronized 在 saveQueueMu + saveHistoryMu 串行保护下原子完成删号与队列/历史重载（BUG-BE-01）。
+func (s *State) DeleteAccountSynchronized(accountID string, deleteFn func(string) error) (delErr error, queueReloadErr error, historyReloadErr error) {
+	s.saveQueueMu.Lock()
+	defer s.saveQueueMu.Unlock()
+	s.saveHistoryMu.Lock()
+	defer s.saveHistoryMu.Unlock()
+
+	if err := deleteFn(accountID); err != nil {
+		return err, nil, nil
+	}
+	queueReloadErr = s.reloadQueueFromDBLocked()
+	historyReloadErr = s.reloadHistoryFromDBLocked()
+	return nil, queueReloadErr, historyReloadErr
 }

@@ -20,10 +20,26 @@ type wizardPlan struct {
 	Storage string
 }
 
-func getPlansForCategory(state *app.State, mon *monitor.Monitor, category string) (string, []wizardPlan) {
+func wizardPlansSnapshot(state *app.State) []types.ServerPlan {
+	if state == nil {
+		return nil
+	}
+	accID := tgEffectiveAccountID(state)
+	if accID != "" && state.ServerCache != nil {
+		if cached, _ := state.ServerCache.GetBucket(state.ServerCacheKey(accID)); len(cached) > 0 {
+			out := make([]types.ServerPlan, len(cached))
+			copy(out, cached)
+			return out
+		}
+	}
 	state.ServerPlansMu.RLock()
-	allPlans := append([]types.ServerPlan{}, state.ServerPlans...)
+	out := append([]types.ServerPlan{}, state.ServerPlans...)
 	state.ServerPlansMu.RUnlock()
+	return out
+}
+
+func getPlansForCategory(state *app.State, mon *monitor.Monitor, category string) (string, []wizardPlan) {
+	allPlans := wizardPlansSnapshot(state)
 
 	planMap := make(map[string]types.ServerPlan, len(allPlans))
 	for _, p := range allPlans {
@@ -217,9 +233,7 @@ type topPickModel struct {
 }
 
 func getTopPickModels(state *app.State, mon *monitor.Monitor) []topPickModel {
-	state.ServerPlansMu.RLock()
-	allPlans := append([]types.ServerPlan{}, state.ServerPlans...)
-	state.ServerPlansMu.RUnlock()
+	allPlans := wizardPlansSnapshot(state)
 
 	planMap := make(map[string]types.ServerPlan, len(allPlans))
 	for _, p := range allPlans {
@@ -235,9 +249,7 @@ func getTopPickModels(state *app.State, mon *monitor.Monitor) []topPickModel {
 		if clean == "" || strings.EqualFold(clean, code) {
 			return ""
 		}
-		if len(clean) > 8 {
-			clean = clean[:8]
-		}
+		clean = truncate(clean, 8)
 		return clean
 	}
 
@@ -421,17 +433,12 @@ func renderCategoryPicker(state *app.State, mon *monitor.Monitor, chatID interfa
 		if p.ShortName != "" {
 			label = fmt.Sprintf("%s %s %s", p.Badge, p.Code, p.ShortName)
 		}
-		data := fmt.Sprintf("i:P:%s:%s", mode, p.Code)
-		modelBtns = append(modelBtns, telegram.CallbackButton(label, data))
+		data := fmt.Sprintf("i:P:%s:%s", mode, wizardPlanCallbackRef(state, p.Code))
+		modelBtns = append(modelBtns, telegram.CallbackButton(tgBtnLabel(label), data))
 	}
 	rows := telegram.ChunkButtons(modelBtns, 2)
 
-	totalPlansCount := 0
-	if state != nil {
-		state.ServerPlansMu.RLock()
-		totalPlansCount = len(state.ServerPlans)
-		state.ServerPlansMu.RUnlock()
-	}
+	totalPlansCount := len(wizardPlansSnapshot(state))
 
 	allLabel := "🔍 全部型号"
 	if totalPlansCount > 0 {
@@ -497,12 +504,10 @@ func renderPlanPage(state *app.State, mon *monitor.Monitor, chatID interface{}, 
 		}
 		cleanName = strings.TrimSpace(cleanName)
 		if cleanName != "" && !strings.EqualFold(cleanName, p.Code) {
-			if len(cleanName) > 10 {
-				cleanName = cleanName[:10]
-			}
+			cleanName = truncate(cleanName, 10)
 			label = fmt.Sprintf("⚡ %s %s", p.Code, cleanName)
 		}
-		modelBtns = append(modelBtns, telegram.CallbackButton(label, prefix+p.Code))
+		modelBtns = append(modelBtns, telegram.CallbackButton(tgBtnLabel(label), prefix+wizardPlanCallbackRef(state, p.Code)))
 	}
 	rows := telegram.ChunkButtons(modelBtns, 2)
 
@@ -547,9 +552,7 @@ func findMatchingPlans(state *app.State, raw string) (canonical string, matches 
 	if state == nil {
 		return "", nil
 	}
-	state.ServerPlansMu.RLock()
-	plans := append([]types.ServerPlan{}, state.ServerPlans...)
-	state.ServerPlansMu.RUnlock()
+	plans := wizardPlansSnapshot(state)
 
 	for _, p := range plans {
 		pCodeClean := strings.ToLower(p.PlanCode)
@@ -593,13 +596,11 @@ func renderMatchedPlansPicker(state *app.State, mon *monitor.Monitor, chatID int
 		cleanName = strings.TrimSpace(cleanName)
 		label := "⚡ " + p.PlanCode
 		if cleanName != "" && !strings.EqualFold(cleanName, p.PlanCode) {
-			if len(cleanName) > 10 {
-				cleanName = cleanName[:10]
-			}
+			cleanName = truncate(cleanName, 10)
 			label = fmt.Sprintf("⚡ %s %s", p.PlanCode, cleanName)
 		}
-		data := fmt.Sprintf("i:P:%s:%s", mode, p.PlanCode)
-		modelBtns = append(modelBtns, telegram.CallbackButton(label, data))
+		data := fmt.Sprintf("i:P:%s:%s", mode, wizardPlanCallbackRef(state, p.PlanCode))
+		modelBtns = append(modelBtns, telegram.CallbackButton(tgBtnLabel(label), data))
 	}
 	rows := telegram.ChunkButtons(modelBtns, 2)
 	rows = append(rows, []map[string]string{
@@ -617,8 +618,8 @@ func renderMatchedPlansPicker(state *app.State, mon *monitor.Monitor, chatID int
 }
 
 func validAndInStockDCs(state *app.State, planCode, accountID string) (validDCs []string, inStockDCs []string) {
-	if accountID == "" {
-		accountID = telegram.DefaultAccountID(state)
+	if strings.TrimSpace(accountID) == "" {
+		accountID = tgEffectiveAccountID(state)
 	}
 	avail := catalog.CheckServerAvailabilityWithConfigs(state, planCode, accountID)
 	validMap := map[string]bool{}
@@ -668,8 +669,8 @@ func startPlanPicker(state *app.State, mon *monitor.Monitor, chatID interface{},
 }
 
 func enumerateWizardConfigs(state *app.State, planCode, accountID string) []wizardConfigChoice {
-	if accountID == "" {
-		accountID = telegram.ActiveAccountID(state)
+	if strings.TrimSpace(accountID) == "" {
+		accountID = tgEffectiveAccountID(state)
 	}
 	byConfig := catalog.CheckServerAvailabilityWithConfigs(state, planCode, accountID)
 	out := make([]wizardConfigChoice, 0, len(byConfig))
@@ -734,7 +735,7 @@ func showConfigPicker(state *app.State, mon *monitor.Monitor, chatID interface{}
 	}
 	rows := telegram.ChunkButtons(btns, 1)
 	rows = append(rows, []map[string]string{
-		telegram.CallbackButton("🔙 返回机房选择", "i:P:"+mode+":"+planCode),
+		telegram.CallbackButton("🔙 返回机房选择", "i:P:"+mode+":"+wizardPlanCallbackRef(state, planCode)),
 	})
 
 	var b strings.Builder
@@ -751,7 +752,8 @@ func showConfigPicker(state *app.State, mon *monitor.Monitor, chatID interface{}
 }
 
 func showDCPicker(state *app.State, chatID interface{}, messageID int64, mode, planCode string, edit bool) {
-	accountID := telegram.DefaultAccountID(state)
+	accountID := tgEffectiveAccountID(state)
+	planRef := wizardPlanCallbackRef(state, planCode)
 	validDCs, stock := validAndInStockDCs(state, planCode, accountID)
 	targetDCs := validDCs
 	if len(targetDCs) == 0 {
@@ -770,7 +772,7 @@ func showDCPicker(state *app.State, chatID interface{}, messageID int64, mode, p
 			if stockSet[dc] {
 				dot = "🟢 "
 			}
-			btns = append(btns, telegram.CallbackButton(dot+telegram.DisplayDC(dc), "i:D:pr:"+planCode+":"+dc))
+			btns = append(btns, telegram.CallbackButton(dot+telegram.DisplayDC(dc), "i:D:pr:"+planRef+":"+dc))
 		}
 		rows := telegram.ChunkButtons(btns, 3)
 		rows = append(rows, []map[string]string{
@@ -813,7 +815,7 @@ func showDCPicker(state *app.State, chatID interface{}, messageID int64, mode, p
 			cfgBtnLabel = "⚙ 配置: " + sess.ConfigLabel + " ▾"
 		}
 		rows = append(rows, []map[string]string{
-			telegram.CallbackButton(tgBtnLabel(cfgBtnLabel), fmt.Sprintf("i:cfgshow:%s:%s", mode, planCode)),
+			telegram.CallbackButton(tgBtnLabel(cfgBtnLabel), fmt.Sprintf("i:cfgshow:%s:%s", mode, planRef)),
 		})
 	}
 
@@ -832,7 +834,7 @@ func showDCPicker(state *app.State, chatID interface{}, messageID int64, mode, p
 			selectedCount++
 			selectedList = append(selectedList, telegram.DisplayDC(dc))
 		}
-		data := "i:D:t:" + mode + ":" + planCode + ":" + dc
+		data := "i:D:t:" + mode + ":" + planRef + ":" + dc
 		btns = append(btns, telegram.CallbackButton(label, data))
 	}
 	rows = append(rows, telegram.ChunkButtons(btns, 3)...)
@@ -846,18 +848,18 @@ func showDCPicker(state *app.State, chatID interface{}, messageID int64, mode, p
 			submitLabel = fmt.Sprintf("👁 开启监控 (已选 %d 机房)", selectedCount)
 		}
 		rows = append(rows, []map[string]string{
-			telegram.CallbackButton(submitLabel, "i:D:ok:"+mode+":"+planCode),
+			telegram.CallbackButton(submitLabel, "i:D:ok:"+mode+":"+planRef),
 		})
 	}
 
 	// 快速挂机与操作行
 	actionRow := []map[string]string{
-		telegram.CallbackButton("🌐 全部机房挂机", "i:D:allq:"+mode+":"+planCode),
+		telegram.CallbackButton("🌐 全部机房挂机", "i:D:allq:"+mode+":"+planRef),
 	}
 	if selectedCount > 0 {
-		actionRow = append(actionRow, telegram.CallbackButton("🔄 清空", "i:D:cl:"+mode+":"+planCode))
+		actionRow = append(actionRow, telegram.CallbackButton("🔄 清空", "i:D:cl:"+mode+":"+planRef))
 	} else if len(stock) > 0 {
-		actionRow = append(actionRow, telegram.CallbackButton("⚡ 全选有货", "i:D:as:"+mode+":"+planCode))
+		actionRow = append(actionRow, telegram.CallbackButton("⚡ 全选有货", "i:D:as:"+mode+":"+planRef))
 	}
 	rows = append(rows, actionRow)
 

@@ -16,6 +16,7 @@ services:
     environment:
       GIN_MODE: release
       ENABLE_API_KEY_AUTH: "true"
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-172.16.0.0/12,127.0.0.1,::1}
       # 供业务拼绝对链接时可选
       PUBLIC_BASE_URL: https://${DOMAIN}
 

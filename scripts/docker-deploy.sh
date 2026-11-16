@@ -7,6 +7,7 @@
 #   ./scripts/docker-deploy.sh --down
 #   ./scripts/docker-deploy.sh --logs
 set -euo pipefail
+umask 077
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -27,21 +28,39 @@ for a in "$@"; do
   esac
 done
 
+gen_hex() {
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -hex 32
+  else
+    head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n'
+  fi
+}
+
 if [[ ! -f .env ]]; then
   echo "==> creating .env from .env.example"
-  cp .env.example .env
-  if command -v openssl >/dev/null 2>&1; then
-    KEY="$(openssl rand -hex 32)"
-    # portable sed
-    if sed --version >/dev/null 2>&1; then
-      sed -i "s/API_SECRET_KEY=.*/API_SECRET_KEY=$KEY/" .env
-    else
-      sed -i '' "s/API_SECRET_KEY=.*/API_SECRET_KEY=$KEY/" .env
-    fi
-    echo "    generated API_SECRET_KEY (see .env)"
-  else
-    echo "    WARN: set API_SECRET_KEY in .env manually"
+  KEY="$(gen_hex)"
+  tmp=".env.tmp.$$"
+  NEW_API_KEY="$KEY" awk '
+    BEGIN { key = ENVIRON["NEW_API_KEY"]; replaced = 0 }
+    /^API_SECRET_KEY=.*/ {
+      if (!replaced) { print "API_SECRET_KEY=" key; replaced = 1 }
+      next
+    }
+    { print }
+    END {
+      if (!replaced) { print "API_SECRET_KEY=" key }
+    }
+  ' .env.example > "$tmp"
+  chmod 600 "$tmp"
+  mv -f "$tmp" .env
+  chmod 600 .env
+  if ! grep -Fxq "API_SECRET_KEY=$KEY" .env; then
+    echo "ERROR: failed to write API_SECRET_KEY to .env" >&2
+    exit 1
   fi
+  echo "    generated API_SECRET_KEY (mode 0600, see .env)"
+else
+  chmod 600 .env
 fi
 
 COMPOSE=(docker compose -f docker-compose.yml)

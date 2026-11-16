@@ -19,7 +19,10 @@ import (
 // 这里提前拒,避免 OVH 报 404 让人摸不着头脑。
 func ChangeVpsContact(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		if vpsRegionFor(state, c) == vpsRegionUS {
 			vpsUnsupportedWrite(c, "美区 OVHcloud 未提供 VPS「变更联系人」接口(该端点仅欧洲区 / 加拿大区有)——"+
 				"US 站点没有 NIC 联系人体系,过户需直接联系 OVHcloud US 客服")
@@ -46,8 +49,12 @@ func ChangeVpsContact(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "至少需要指定一个联系人", "code": "EA60C93FC"})
 			return
 		}
+		contactPath, ok := ovhPathOrAbort(c, "vps", svc, "changeContact")
+		if !ok {
+			return
+		}
 		var taskIDs []int64
-		if err := client.Post("/vps/"+svc+"/changeContact", params, &taskIDs); err != nil {
+		if err := client.Post(contactPath, params, &taskIDs); err != nil {
 			respondOVHError(c, err)
 			return
 		}
@@ -60,14 +67,21 @@ func ChangeVpsContact(state *app.State) gin.HandlerFunc {
 // 跟 dedicated 一致:OVH 返回 string(确认 token,通过邮件验证)
 func TerminateVps(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		termPath, ok := ovhPathOrAbort(c, "vps", svc, "terminate")
+		if !ok {
+			return
+		}
 		var token string
-		if err := client.Post("/vps/"+svc+"/terminate", map[string]interface{}{}, &token); err != nil {
+		if err := client.Post(termPath, map[string]interface{}{}, &token); err != nil {
 			respondOVHError(c, err)
 			return
 		}
@@ -80,7 +94,10 @@ func TerminateVps(state *app.State) gin.HandlerFunc {
 // /vps/{name}/confirmTermination 返回 string(确认消息)。body 至少需要 token + commentary 之一
 func ConfirmVpsTermination(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -103,8 +120,12 @@ func ConfirmVpsTermination(state *app.State) gin.HandlerFunc {
 		if body.Commentary != "" {
 			params["commentary"] = body.Commentary
 		}
+		confirmPath, ok := ovhPathOrAbort(c, "vps", svc, "confirmTermination")
+		if !ok {
+			return
+		}
 		var resp string
-		if err := client.Post("/vps/"+svc+"/confirmTermination", params, &resp); err != nil {
+		if err := client.Post(confirmPath, params, &resp); err != nil {
 			respondOVHError(c, err)
 			return
 		}
@@ -117,19 +138,26 @@ func ConfirmVpsTermination(state *app.State) gin.HandlerFunc {
 // /vps/{name}/secondaryDnsDomains 返回 string[](域名数组)
 func GetVpsSecondaryDns(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		dnsPath, ok := ovhPathOrAbort(c, "vps", svc, "secondaryDnsDomains")
+		if !ok {
+			return
+		}
 		var domains []string
-		if err := client.Get("/vps/"+svc+"/secondaryDnsDomains", &domains); err != nil {
+		if err := client.Get(dnsPath, &domains); err != nil {
 			respondOVHError(c, err)
 			return
 		}
 		details := parallelGetStringKeys(client, domains, func(d string) string {
-			return "/vps/" + svc + "/secondaryDnsDomains/" + d
+			return safePathFn("vps", svc, "secondaryDnsDomains", d)
 		}, 8)
 		list := []interface{}{}
 		for i, d := range domains {
@@ -151,7 +179,10 @@ func GetVpsSecondaryDns(state *app.State) gin.HandlerFunc {
 // 不填时 OVH 自己去解析域名的主 DNS,所以这里不能比 OVH 更严。
 func AddVpsSecondaryDns(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -167,7 +198,7 @@ func AddVpsSecondaryDns(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "domain 必填", "code": "E19126073"})
 			return
 		}
-		if !strings.Contains(body.Domain, ".") || len(body.Domain) > 255 {
+		if !strings.Contains(body.Domain, ".") || len(body.Domain) > 255 || strings.ContainsAny(body.Domain, "/?#%& ") {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "域名格式不正确", "code": "E_INVALID_DOMAIN"})
 			return
 		}
@@ -180,7 +211,11 @@ func AddVpsSecondaryDns(state *app.State) gin.HandlerFunc {
 			}
 			params["ip"] = body.IP
 		}
-		if err := client.Post("/vps/"+svc+"/secondaryDnsDomains", params, nil); err != nil {
+		dnsPath, ok := ovhPathOrAbort(c, "vps", svc, "secondaryDnsDomains")
+		if !ok {
+			return
+		}
+		if err := client.Post(dnsPath, params, nil); err != nil {
 			if strings.Contains(strings.ToLower(err.Error()), "already") {
 				c.JSON(http.StatusOK, gin.H{"success": true, "message": "该域名已在二级 DNS 列表中,无需重复添加", "code": "E4D9E7F86"})
 				return
@@ -196,14 +231,24 @@ func AddVpsSecondaryDns(state *app.State) gin.HandlerFunc {
 // DeleteVpsSecondaryDns DELETE /api/vps-control/:service_name/secondary-dns/:domain
 func DeleteVpsSecondaryDns(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
-		domain := c.Param("domain")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
+		domain, ok := requireSafeSingleSegment(c, "domain", "域名", "E_INVALID_DOMAIN")
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
-		if err := client.Delete("/vps/"+svc+"/secondaryDnsDomains/"+domain, nil); err != nil {
+		delPath, ok := ovhPathOrAbort(c, "vps", svc, "secondaryDnsDomains", domain)
+		if !ok {
+			return
+		}
+		if err := client.Delete(delPath, nil); err != nil {
 			if ovhIsNotFound(err) {
 				c.JSON(http.StatusOK, gin.H{"success": true, "message": "该域名不在二级 DNS 列表中,无需删除", "code": "E1C4B0FD2"})
 				return
@@ -242,20 +287,27 @@ var usUnmanageableVpsOptions = map[string]string{
 // 这两条路径三区都有(US 标 BETA),不做整体门控;只对个别在美区管不了的选项打标记。
 func GetVpsOptions(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
 		isUS := vpsRegionFor(state, c) == vpsRegionUS
+		optPath, ok := ovhPathOrAbort(c, "vps", svc, "option")
+		if !ok {
+			return
+		}
 		var opts []string
-		if err := client.Get("/vps/"+svc+"/option", &opts); err != nil {
+		if err := client.Get(optPath, &opts); err != nil {
 			respondOVHError(c, err)
 			return
 		}
 		details := parallelGetStringKeys(client, opts, func(o string) string {
-			return "/vps/" + svc + "/option/" + o
+			return safePathFn("vps", svc, "option", o)
 		}, 8)
 		list := []interface{}{}
 		for i, opt := range opts {
@@ -288,6 +340,12 @@ func GetVpsOptions(state *app.State) gin.HandlerFunc {
 // 列表/详情(GET /option、GET /option/{option})还活着,不受影响。
 func DeleteVpsOption(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if _, ok := requireServiceName(c); !ok {
+			return
+		}
+		if _, ok := requireSafeSingleSegment(c, "option", "附加选项", "INVALID_OPTION"); !ok {
+			return
+		}
 		c.JSON(http.StatusGone, gin.H{
 			"success": false,
 			"error":   "OVH 已移除「取消 VPS 附加选项」接口(2026-10 从 API 下线,无替代)。请到 OVH 控制台(My services → 该 VPS → 选项)取消", "code": "ED28E63E8",
@@ -302,14 +360,21 @@ func DeleteVpsOption(state *app.State) gin.HandlerFunc {
 // 不要因为"美区缺备份相关端点"就顺手给它加门控。
 func GetVpsAutomatedBackup(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		abPath, ok := ovhPathOrAbort(c, "vps", svc, "automatedBackup")
+		if !ok {
+			return
+		}
 		var d map[string]interface{}
-		if err := client.Get("/vps/"+svc+"/automatedBackup", &d); err != nil {
+		if err := client.Get(abPath, &d); err != nil {
 			// 只有 404 才代表「这台 VPS 没订阅自动备份」。401/403/429/5xx 也吞成 null 的话,
 			// 已经买了备份的机器会被显示成「无备份」,这比报错更危险。
 			if ovhIsNotFound(err) {

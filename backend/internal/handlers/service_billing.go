@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -37,8 +36,15 @@ type serviceBilling struct {
 
 // readServiceBilling 只读服务级能力,不创建续费订单或修改续费策略。
 func readServiceBilling(client *ovhsdk.Client, id int64) (*serviceBilling, error) {
+	if id <= 0 {
+		return nil, errUnsafeOVHSegment
+	}
+	svcPath, err := buildOVHPath("services", strconv.FormatInt(id, 10))
+	if err != nil {
+		return nil, err
+	}
 	var value serviceBilling
-	if err := client.Get(fmt.Sprintf("/services/%d", id), &value); err != nil {
+	if err := client.Get(svcPath, &value); err != nil {
 		return nil, err
 	}
 	return &value, nil

@@ -135,6 +135,27 @@ func StartPoller(state *app.State, onUpdate func(map[string]interface{})) {
 		return
 	}
 	pollerMu.Lock()
+	var prevStoppingDone chan struct{}
+	if pollerStarted {
+		if pollerStop != nil {
+			select {
+			case <-pollerStop:
+				prevStoppingDone = pollerDone
+			default:
+				pollerMu.Unlock()
+				return
+			}
+		} else {
+			pollerMu.Unlock()
+			return
+		}
+	}
+	pollerMu.Unlock()
+	if prevStoppingDone != nil {
+		<-prevStoppingDone
+	}
+
+	pollerMu.Lock()
 	if pollerStarted {
 		pollerMu.Unlock()
 		return
@@ -146,7 +167,14 @@ func StartPoller(state *app.State, onUpdate func(map[string]interface{})) {
 	kick, stop, done := pollerKick, pollerStop, pollerDone
 	pollerMu.Unlock()
 	go func() {
-		defer close(done)
+		defer func() {
+			pollerMu.Lock()
+			if pollerDone == done {
+				pollerStarted = false
+			}
+			pollerMu.Unlock()
+			close(done)
+		}()
 		runPoller(state, onUpdate, kick, stop)
 	}()
 }
@@ -169,6 +197,11 @@ func StopPoller(timeout time.Duration) {
 	pollerMu.Unlock()
 	select {
 	case <-done:
+		pollerMu.Lock()
+		if pollerDone == done {
+			pollerStarted = false
+		}
+		pollerMu.Unlock()
 	case <-time.After(timeout):
 	}
 	patchPoller(func(s *PollerStatus) { s.Running = false })

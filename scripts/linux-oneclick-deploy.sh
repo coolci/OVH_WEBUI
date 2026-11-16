@@ -16,6 +16,7 @@
 #   ./scripts/linux-oneclick-deploy.sh --logs | --down
 #
 set -euo pipefail
+umask 077
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -98,7 +99,10 @@ echo "    目录: $ROOT"
 # ─── .env ─────────────────────────────────────────────────
 if [[ ! -f .env ]]; then
   cp .env.example .env
-  grn "    已创建 .env"
+  chmod 600 .env
+  grn "    已创建 .env (0600)"
+else
+  chmod 600 .env
 fi
 
 gen_hex() {
@@ -109,30 +113,57 @@ gen_hex() {
   fi
 }
 
+# 安全字面量重写 .env 键值：彻底杜绝未转义 sed 分隔符/反向引用/换行注入及遗留 .bak
 upsert_env() {
   local k="$1" v="$2"
-  if grep -qE "^${k}=" .env 2>/dev/null; then
-    if sed --version >/dev/null 2>&1; then
-      sed -i "s|^${k}=.*|${k}=${v}|" .env
-    else
-      sed -i '' "s|^${k}=.*|${k}=${v}|" .env
-    fi
-  else
-    echo "${k}=${v}" >> .env
-  fi
+  v="${v//$'\r'/}"
+  v="${v//$'\n'/}"
+  local tmp=".env.tmp.$$"
+  UPSERT_KEY="$k" UPSERT_VAL="$v" awk '
+    BEGIN {
+      k = ENVIRON["UPSERT_KEY"]
+      v = ENVIRON["UPSERT_VAL"]
+      prefix = k "="
+      found = 0
+    }
+    index($0, prefix) == 1 {
+      if (!found) {
+        print prefix v
+        found = 1
+      }
+      next
+    }
+    { print }
+    END {
+      if (!found) {
+        print prefix v
+      }
+    }
+  ' .env > "$tmp"
+  chmod 600 "$tmp"
+  mv -f "$tmp" .env
+  chmod 600 .env
 }
 
 # 随机 API 密钥
-if grep -qE 'API_SECRET_KEY=(change-me-to-a-long-random-string|ovh-webui-dev-key)?[[:space:]]*$' .env \
-  || grep -q 'API_SECRET_KEY=change-me-to-a-long-random-string' .env; then
+EXISTING_API_KEY="$(grep -E '^API_SECRET_KEY=' .env 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\r' | tr -d '\"' | tr -d \"\'\")" || true
+if [[ -z "$EXISTING_API_KEY" || "${#EXISTING_API_KEY}" -lt 24 ]] \
+  || [[ "$EXISTING_API_KEY" == "123456" ]] \
+  || [[ "$EXISTING_API_KEY" == "ovh-webui-dev-key" ]] \
+  || [[ "$EXISTING_API_KEY" == change-me* ]]; then
   KEY="$(gen_hex)"
   upsert_env API_SECRET_KEY "$KEY"
+  if ! grep -Fxq "API_SECRET_KEY=$KEY" .env; then
+    red "写入 API_SECRET_KEY 校验失败"
+    exit 1
+  fi
   grn "    已生成随机 API_SECRET_KEY"
 fi
 
 # 数据库凭据加密密钥（生产 compose 必填）
 if ! grep -qE '^OVH_DB_KEY=.+' .env; then
-  upsert_env OVH_DB_KEY "$(gen_hex)"
+  DB_KEY="$(gen_hex)"
+  upsert_env OVH_DB_KEY "$DB_KEY"
   grn "    已生成 OVH_DB_KEY（保存在宿主机 .env，备份恢复数据必须包含此文件）"
 fi
 
@@ -164,10 +195,18 @@ if [[ "$NO_SSL" -eq 0 ]]; then
     DOMAIN="${DOMAIN#http://}"
     DOMAIN="${DOMAIN%%/*}"
     DOMAIN="${DOMAIN%%/}"
+    if [[ ! "$DOMAIN" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]]; then
+      red "域名格式不合法: $DOMAIN"
+      exit 1
+    fi
     if [[ -z "$ACME_EMAIL" && "$YES" -eq 0 ]]; then
       read -r -p "Let's Encrypt 邮箱 [admin@${DOMAIN}]: " ACME_EMAIL || true
     fi
     ACME_EMAIL="${ACME_EMAIL:-admin@${DOMAIN}}"
+    if [[ ! "$ACME_EMAIL" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; then
+      red "邮箱格式不合法: $ACME_EMAIL"
+      exit 1
+    fi
     USE_SSL=1
 
     upsert_env DOMAIN "$DOMAIN"

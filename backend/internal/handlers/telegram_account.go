@@ -24,6 +24,18 @@ type resolvedAccount struct {
 	Ambiguous []types.OVHAccount
 }
 
+// tgEffectiveAccountID 统一解析 Telegram 当前有效账户 ID：
+// 优先采用用户显式切换且仍有效存在的 ActiveAccountID，否则自动回退至 DefaultAccountID。
+func tgEffectiveAccountID(state *app.State) string {
+	if state == nil {
+		return ""
+	}
+	if id := telegram.ActiveAccountID(state); id != "" {
+		return id
+	}
+	return telegram.DefaultAccountID(state)
+}
+
 // resolveOrderAccount 决定这个 planCode 该落到哪个账户。
 // 原则：能算就算，算不出来也绝不拒绝。
 func resolveOrderAccount(state *app.State, mon *monitor.Monitor, planCode string) resolvedAccount {

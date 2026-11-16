@@ -54,7 +54,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 			telegram.AnswerCallback(state, cbID, "按钮无效", true)
 			return true
 		}
-		mode, plan := parts[2], parts[3]
+		mode, plan := parts[2], resolvePlanCallbackRef(state, parts[3])
 		if mode == "s" {
 			telegram.AnswerCallback(state, cbID, "已查库存: "+plan, false)
 			showStockCardWithButtons(state, mon, chatID, messageID, plan)
@@ -82,7 +82,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 		tok, cfgIdxStr := parts[2], parts[3]
 		// 兼容旧按钮 i:cfg:<mode>:<plan>:<idx>
 		if len(parts) >= 5 && (tok == "b" || tok == "q" || tok == "m") {
-			mode, plan := parts[2], parts[3]
+			mode, plan := parts[2], resolvePlanCallbackRef(state, parts[3])
 			cfgIdxStr = parts[4]
 			sess := getPickerSession(chatID, messageID, mode, plan)
 			if cfgIdxStr == "any" {
@@ -129,7 +129,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 			if qty < 1 {
 				qty = 1
 			}
-			accID := telegram.ActiveAccountID(state)
+			accID := tgEffectiveAccountID(state)
 			if len(offer.TargetDCs) == 1 {
 				res := telegram.ProcessOrder(state, accID, offer.PlanCode, offer.TargetDCs[0], qty, opts)
 				text := res.Message
@@ -155,7 +155,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 			telegram.AnswerCallback(state, cbID, "按钮无效", true)
 			return true
 		}
-		mode, plan := parts[2], parts[3]
+		mode, plan := parts[2], resolvePlanCallbackRef(state, parts[3])
 		telegram.AnswerCallback(state, cbID, "请选择配置", false)
 		showConfigPicker(state, mon, chatID, messageID, mode, plan, true, nil, 1)
 		return true
@@ -172,7 +172,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 				telegram.AnswerCallback(state, cbID, "按钮无效", true)
 				return true
 			}
-			mode, plan, dc := parts[3], parts[4], parts[5]
+			mode, plan, dc := parts[3], resolvePlanCallbackRef(state, parts[4]), parts[5]
 			sess := getPickerSession(chatID, messageID, mode, plan)
 			sess.Selected[dc] = !sess.Selected[dc]
 			dcLabel := telegram.DisplayDC(dc)
@@ -180,7 +180,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 				telegram.AnswerCallback(state, cbID, "已勾选 "+dcLabel, false)
 				// 选型向导前置预热：用户在 TG 勾选目标机房时，后台静默准备预热车，按下确认抢购即 0ms 直出！
 				if mode == "b" {
-					accID := telegram.ActiveAccountID(state)
+					accID := tgEffectiveAccountID(state)
 					go func(a, p, d string, opts []string) {
 						ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 						defer cancel()
@@ -197,7 +197,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 				telegram.AnswerCallback(state, cbID, "按钮无效", true)
 				return true
 			}
-			mode, plan := parts[3], parts[4]
+			mode, plan := parts[3], resolvePlanCallbackRef(state, parts[4])
 			sess := getPickerSession(chatID, messageID, mode, plan)
 			_, stock := validAndInStockDCs(state, plan, "")
 			if len(stock) == 0 {
@@ -207,7 +207,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 			for _, d := range stock {
 				sess.Selected[d] = true
 				if mode == "b" {
-					accID := telegram.ActiveAccountID(state)
+					accID := tgEffectiveAccountID(state)
 					go func(a, p, dcCode string, opts []string) {
 						ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 						defer cancel()
@@ -223,7 +223,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 				telegram.AnswerCallback(state, cbID, "按钮无效", true)
 				return true
 			}
-			mode, plan := parts[3], parts[4]
+			mode, plan := parts[3], resolvePlanCallbackRef(state, parts[4])
 			sess := getPickerSession(chatID, messageID, mode, plan)
 			validDCs, _ := validAndInStockDCs(state, plan, "")
 			if len(validDCs) == 0 {
@@ -240,7 +240,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 				telegram.AnswerCallback(state, cbID, "按钮无效", true)
 				return true
 			}
-			mode, plan := parts[3], parts[4]
+			mode, plan := parts[3], resolvePlanCallbackRef(state, parts[4])
 			sess := getPickerSession(chatID, messageID, mode, plan)
 			sess.Selected = map[string]bool{}
 			telegram.AnswerCallback(state, cbID, "已清空机房选择", false)
@@ -251,7 +251,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 				telegram.AnswerCallback(state, cbID, "按钮无效", true)
 				return true
 			}
-			mode, plan := parts[3], parts[4]
+			mode, plan := parts[3], resolvePlanCallbackRef(state, parts[4])
 			sess := getPickerSession(chatID, messageID, mode, plan)
 			validDCs, _ := validAndInStockDCs(state, plan, "")
 			if len(validDCs) == 0 {
@@ -268,7 +268,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 				telegram.AnswerCallback(state, cbID, "按钮无效", true)
 				return true
 			}
-			mode, plan := parts[3], parts[4]
+			mode, plan := parts[3], resolvePlanCallbackRef(state, parts[4])
 			sess := getPickerSession(chatID, messageID, mode, plan)
 			var selectedDCs []string
 			for dc, sel := range sess.Selected {
@@ -288,14 +288,12 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 			if mode == "m" {
 				if mon != nil {
 					var serverName string
-					state.ServerPlansMu.RLock()
-					for _, s := range state.ServerPlans {
+					for _, s := range wizardPlansSnapshot(state) {
 						if s.PlanCode == plan {
 							serverName = s.Name
 							break
 						}
 					}
-					state.ServerPlansMu.RUnlock()
 					mon.AddSubscription(plan, selectedDCs, true, false, serverName, nil, nil, false, 0, "", false, pickedOpts)
 					mon.SaveToDB()
 					if !mon.Running() {
@@ -333,28 +331,29 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 				telegram.AnswerCallback(state, cbID, "按钮无效", true)
 				return true
 			}
-			plan, dc := parts[3], parts[4]
+			plan, dc := resolvePlanCallbackRef(state, parts[3]), parts[4]
+			planRef := wizardPlanCallbackRef(state, plan)
 			telegram.AnswerCallback(state, cbID, "询价完成", false)
-			rawPrice := cmdPrice(state, []string{plan, dc})
+			rawPrice := cmdPrice(state, []string{plan, dc}, mon)
 			var markup map[string]interface{}
 			if strings.HasPrefix(rawPrice, "❌") {
 				validDCs, _ := validAndInStockDCs(state, plan, "")
 				var rows [][]map[string]string
 				if len(validDCs) > 0 && validDCs[0] != dc {
 					rows = append(rows, []map[string]string{
-						telegram.CallbackButton("💰 查看 "+telegram.DisplayDC(validDCs[0])+" 价格", "i:D:pr:"+plan+":"+validDCs[0]),
+						telegram.CallbackButton("💰 查看 "+telegram.DisplayDC(validDCs[0])+" 价格", "i:D:pr:"+planRef+":"+validDCs[0]),
 					})
 				}
 				rows = append(rows, []map[string]string{
-					telegram.CallbackButton("🔙 重新选择机房", "i:P:pr:"+plan),
+					telegram.CallbackButton("🔙 重新选择机房", "i:P:pr:"+planRef),
 					telegram.CallbackButton("🔙 重新选择机型", "i:cat:pr:root"),
 				})
 				markup = telegram.InlineKeyboard(rows)
 			} else {
 				markup = telegram.InlineKeyboard([][]map[string]string{
 					{
-						telegram.CallbackButton("⚡ "+telegram.DisplayDC(dc)+" 立即开抢", "i:D:b:"+plan+":"+dc),
-						telegram.CallbackButton("👀 监控此型号", "i:M:"+plan),
+						telegram.CallbackButton("⚡ "+telegram.DisplayDC(dc)+" 立即开抢", "i:D:b:"+planRef+":"+dc),
+						telegram.CallbackButton("👀 监控此型号", "i:M:"+planRef),
 					},
 					{
 						telegram.CallbackButton("🔙 重新询价", "i:cat:pr:root"),
@@ -365,12 +364,12 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 			return true
 		default:
 			if len(parts) >= 5 {
-				mode, plan, dc := parts[2], parts[3], parts[4]
+				mode, plan, dc := parts[2], resolvePlanCallbackRef(state, parts[3]), parts[4]
 				sess := getPickerSession(chatID, messageID, mode, plan)
 				pickedOpts := append([]string{}, sess.Options...)
 				pickedCfgLabel := sess.ConfigLabel
 				if len(pickedOpts) == 0 {
-					avail := catalog.CheckServerAvailabilityWithConfigs(state, plan, "")
+					avail := catalog.CheckServerAvailabilityWithConfigs(state, plan, tgEffectiveAccountID(state))
 					for _, cfg := range avail {
 						if cfg != nil && catalog.IsAvailableForOrder(cfg.Datacenters[dc]) && len(cfg.Options) > 0 {
 							pickedOpts = append([]string{}, cfg.Options...)
@@ -388,14 +387,12 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 					}
 					if mon != nil {
 						var serverName string
-						state.ServerPlansMu.RLock()
-						for _, s := range state.ServerPlans {
+						for _, s := range wizardPlansSnapshot(state) {
 							if s.PlanCode == plan {
 								serverName = s.Name
 								break
 							}
 						}
-						state.ServerPlansMu.RUnlock()
 						mon.AddSubscription(plan, dcs, true, false, serverName, nil, nil, false, 0, "", false, nil)
 						mon.SaveToDB()
 						if !mon.Running() {
@@ -424,7 +421,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 			telegram.AnswerCallback(state, cbID, "按钮无效", true)
 			return true
 		}
-		mode, plan := parts[2], parts[3]
+		mode, plan := parts[2], resolvePlanCallbackRef(state, parts[3])
 		dcs := inStockDisplayDCs(state, plan, "")
 		if len(dcs) == 0 {
 			telegram.AnswerCallback(state, cbID, "当前无有货机房，请点单个机房排队", true)
@@ -437,7 +434,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 			telegram.AnswerCallback(state, cbID, "按钮无效", true)
 			return true
 		}
-		mode, plan := parts[2], parts[3]
+		mode, plan := parts[2], resolvePlanCallbackRef(state, parts[3])
 		validDCs, _ := validAndInStockDCs(state, plan, "")
 		if len(validDCs) == 0 {
 			telegram.AnswerCallback(state, cbID, "该机型当前无可用机房，请稍后重试", true)
@@ -463,17 +460,15 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 			telegram.AnswerCallback(state, cbID, "按钮无效", true)
 			return true
 		}
-		plan := parts[2]
+		plan := resolvePlanCallbackRef(state, parts[2])
 		if mon != nil {
 			var serverName string
-			state.ServerPlansMu.RLock()
-			for _, s := range state.ServerPlans {
+			for _, s := range wizardPlansSnapshot(state) {
 				if s.PlanCode == plan {
 					serverName = s.Name
 					break
 				}
 			}
-			state.ServerPlansMu.RUnlock()
 			mon.AddSubscription(plan, nil, true, false, serverName, nil, nil, false, 0, "", false, nil)
 			mon.SaveToDB()
 			if !mon.Running() {
@@ -717,7 +712,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 			return true
 		}
 		if subAct == "del" && len(parts) >= 4 {
-			planToDel := parts[3]
+			planToDel := resolvePlanCallbackRef(state, parts[3])
 			if mon != nil {
 				mon.RemoveSubscription(planToDel)
 				mon.SaveToDB()

@@ -16,23 +16,34 @@ import (
 // GetBootConfig GET /api/server-control/:service_name/boot
 func GetBootConfig(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		srvPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc)
+		if !ok {
+			return
+		}
 		var info map[string]interface{}
-		if err := client.Get("/dedicated/server/"+svc, &info); err != nil {
+		if err := client.Get(srvPath, &info); err != nil {
 			respondOVHError(c, err)
 			return
 		}
 		bootID := info["bootId"]
 		bootIDInt, _ := numconv.ToInt64(bootID)
+		bootListPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "boot")
+		if !ok {
+			return
+		}
 		var bootList []int64
 		// 这个错误之前被吞掉：OVH 限流/权限不足时前端只会看到"没有可用启动模式"，
 		// 用户以为机器不支持切 rescue，实际是调用失败，必须原样报出来
-		if err := client.Get("/dedicated/server/"+svc+"/boot", &bootList); err != nil {
+		if err := client.Get(bootListPath, &bootList); err != nil {
 			state.Logger.Error("获取服务器 "+svc+" 启动模式列表失败: "+err.Error(), "server_control")
 			respondOVHError(c, err)
 			return
@@ -49,12 +60,17 @@ func GetBootConfig(state *app.State) gin.HandlerFunc {
 				defer wg.Done()
 				defer func() { <-sem }()
 				var d map[string]interface{}
+				bPath, pErr := buildOVHPath("dedicated", "server", svc, "boot", strconv.FormatInt(b, 10))
+				if pErr != nil {
+					detailErrs[idx] = pErr
+					return
+				}
 				client, err := ovh.IsolateClient(client)
 				if err != nil {
 					detailErrs[idx] = err
 					return
 				}
-				if err := client.Get(fmt.Sprintf("/dedicated/server/%s/boot/%d", svc, b), &d); err != nil {
+				if err := client.Get(bPath, &d); err != nil {
 					detailErrs[idx] = err
 					return
 				}
@@ -102,12 +118,15 @@ func GetBootConfig(state *app.State) gin.HandlerFunc {
 // SetBootConfig PUT /api/server-control/:service_name/boot/:boot_id
 func SetBootConfig(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		bootIDStr := c.Param("boot_id")
 		// OVH API 的 bootId 字段要求整数
 		// 之前 Go 把字符串直接塞进 body 会被 OVH 拒
 		bootID, err := strconv.ParseInt(bootIDStr, 10, 64)
-		if err != nil {
+		if err != nil || bootID <= 0 {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "boot_id 必须是整数", "code": "EECA8B342"})
 			return
 		}
@@ -116,20 +135,11 @@ func SetBootConfig(state *app.State) gin.HandlerFunc {
 			noOVHResp(c)
 			return
 		}
-		// PUT /dedicated/server/{serviceName} 只发要改的那一个属性,不要"补全"。
-		//
-		// dedicated.server.Dedicated 里 monitoring / noIntervention / state 三个是
-		// readOnly:false + canBeNull:false,形状和 service.RenewType 那次
-		// 400 "[renew] Missing properties: (forced)" 一模一样,所以很容易被误判成
-		// "这里也漏了字段"。但 OVH 官方指南对这个端点写得很明确 —— 换启动盘就是
-		// "Specify 1 in the bootId attribute",指南里那段带 monitoring/state 的 JSON
-		// 是 GET 的响应示例,不是 PUT 的请求体模板:
-		// https://github.com/ovh/docs/blob/develop/pages/bare_metal_cloud/dedicated_servers/ipxe-scripts/guide.en-us.md
-		//
-		// canBeNull:false ⇒ 必填,这条只在 PUT 的**嵌套复杂对象**上成立(RenewType),
-		// 顶层模型不适用 —— 同理 order.cart.Creation 的 description/expire 也是
-		// canBeNull:false,而建车只发 ovhSubsidiary 一直是通的。
-		if err := client.Put("/dedicated/server/"+svc, map[string]interface{}{
+		srvPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc)
+		if !ok {
+			return
+		}
+		if err := client.Put(srvPath, map[string]interface{}{
 			"bootId": bootID,
 		}, nil); err != nil {
 			state.Logger.Error("设置服务器 "+svc+" 启动模式失败: "+err.Error(), "server_control")
@@ -144,14 +154,21 @@ func SetBootConfig(state *app.State) gin.HandlerFunc {
 // GetMonitoringStatus GET /api/server-control/:service_name/monitoring
 func GetMonitoringStatus(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		srvPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc)
+		if !ok {
+			return
+		}
 		var info map[string]interface{}
-		if err := client.Get("/dedicated/server/"+svc, &info); err != nil {
+		if err := client.Get(srvPath, &info); err != nil {
 			respondOVHError(c, err)
 			return
 		}
@@ -167,7 +184,10 @@ func GetMonitoringStatus(state *app.State) gin.HandlerFunc {
 // SetMonitoringStatus PUT /api/server-control/:service_name/monitoring
 func SetMonitoringStatus(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -192,20 +212,11 @@ func SetMonitoringStatus(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少 enabled 参数（必须显式传 true 或 false）", "code": "E574F984F"})
 			return
 		}
-		// PUT /dedicated/server/{serviceName} 只发要改的那一个属性,不要"补全"。
-		//
-		// dedicated.server.Dedicated 里 monitoring / noIntervention / state 三个是
-		// readOnly:false + canBeNull:false,形状和 service.RenewType 那次
-		// 400 "[renew] Missing properties: (forced)" 一模一样,所以很容易被误判成
-		// "这里也漏了字段"。但 OVH 官方指南对这个端点写得很明确 —— 换启动盘就是
-		// "Specify 1 in the bootId attribute",指南里那段带 monitoring/state 的 JSON
-		// 是 GET 的响应示例,不是 PUT 的请求体模板:
-		// https://github.com/ovh/docs/blob/develop/pages/bare_metal_cloud/dedicated_servers/ipxe-scripts/guide.en-us.md
-		//
-		// canBeNull:false ⇒ 必填,这条只在 PUT 的**嵌套复杂对象**上成立(RenewType),
-		// 顶层模型不适用 —— 同理 order.cart.Creation 的 description/expire 也是
-		// canBeNull:false,而建车只发 ovhSubsidiary 一直是通的。
-		if err := client.Put("/dedicated/server/"+svc, map[string]interface{}{
+		srvPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc)
+		if !ok {
+			return
+		}
+		if err := client.Put(srvPath, map[string]interface{}{
 			"monitoring": *enabled,
 		}, nil); err != nil {
 			state.Logger.Error("设置服务器 "+svc+" 监控失败: "+err.Error(), "server_control")
@@ -224,22 +235,33 @@ func SetMonitoringStatus(state *app.State) gin.HandlerFunc {
 // GetBootModes GET /api/server-control/:service_name/boot-mode
 func GetBootModes(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		srvPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc)
+		if !ok {
+			return
+		}
 		var info map[string]interface{}
-		if err := client.Get("/dedicated/server/"+svc, &info); err != nil {
+		if err := client.Get(srvPath, &info); err != nil {
 			respondOVHError(c, err)
 			return
 		}
 		currentBootID := info["bootId"]
 		currentBootIDInt, _ := numconv.ToInt64(currentBootID)
+		bootListPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "boot")
+		if !ok {
+			return
+		}
 		var bootIDs []int64
 		// 同 GetBootConfig：吞掉这个错误会让 boot-mode 页面显示成空列表且无任何提示
-		if err := client.Get("/dedicated/server/"+svc+"/boot", &bootIDs); err != nil {
+		if err := client.Get(bootListPath, &bootIDs); err != nil {
 			state.Logger.Error("获取服务器 "+svc+" 启动模式列表失败: "+err.Error(), "server_control")
 			respondOVHError(c, err)
 			return
@@ -256,12 +278,17 @@ func GetBootModes(state *app.State) gin.HandlerFunc {
 				defer bWg.Done()
 				defer func() { <-bSem }()
 				var bi map[string]interface{}
+				bPath, pErr := buildOVHPath("dedicated", "server", svc, "boot", strconv.FormatInt(b, 10))
+				if pErr != nil {
+					biErrs[idx] = pErr
+					return
+				}
 				client, err := ovh.IsolateClient(client)
 				if err != nil {
 					biErrs[idx] = err
 					return
 				}
-				if err := client.Get(fmt.Sprintf("/dedicated/server/%s/boot/%d", svc, b), &bi); err != nil {
+				if err := client.Get(bPath, &bi); err != nil {
 					biErrs[idx] = err
 					return
 				}
@@ -314,7 +341,10 @@ func GetBootModes(state *app.State) gin.HandlerFunc {
 // ChangeBootMode PUT /api/server-control/:service_name/boot-mode
 func ChangeBootMode(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -324,25 +354,16 @@ func ChangeBootMode(state *app.State) gin.HandlerFunc {
 			BootID int64 `json:"bootId"`
 		}
 		_ = c.ShouldBindJSON(&body)
-		if body.BootID == 0 {
+		if body.BootID <= 0 {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少bootId参数", "code": "E81B66FDC"})
 			return
 		}
+		srvPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc)
+		if !ok {
+			return
+		}
 		state.Logger.Info(fmt.Sprintf("[Boot] 切换服务器 %s 启动模式到 %d", svc, body.BootID), "server_control")
-		// PUT /dedicated/server/{serviceName} 只发要改的那一个属性,不要"补全"。
-		//
-		// dedicated.server.Dedicated 里 monitoring / noIntervention / state 三个是
-		// readOnly:false + canBeNull:false,形状和 service.RenewType 那次
-		// 400 "[renew] Missing properties: (forced)" 一模一样,所以很容易被误判成
-		// "这里也漏了字段"。但 OVH 官方指南对这个端点写得很明确 —— 换启动盘就是
-		// "Specify 1 in the bootId attribute",指南里那段带 monitoring/state 的 JSON
-		// 是 GET 的响应示例,不是 PUT 的请求体模板:
-		// https://github.com/ovh/docs/blob/develop/pages/bare_metal_cloud/dedicated_servers/ipxe-scripts/guide.en-us.md
-		//
-		// canBeNull:false ⇒ 必填,这条只在 PUT 的**嵌套复杂对象**上成立(RenewType),
-		// 顶层模型不适用 —— 同理 order.cart.Creation 的 description/expire 也是
-		// canBeNull:false,而建车只发 ovhSubsidiary 一直是通的。
-		if err := client.Put("/dedicated/server/"+svc, map[string]interface{}{
+		if err := client.Put(srvPath, map[string]interface{}{
 			"bootId": body.BootID,
 		}, nil); err != nil {
 			respondOVHError(c, err)

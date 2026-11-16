@@ -35,7 +35,7 @@ const (
 )
 
 // 只识别本工具支持的 Eco 系列候选;是否存在仍须由库存接口确认。
-var ecoStockPlanCode = regexp.MustCompile(`(?i)^[0-9]{2}(sk|sys|rise)[a-z0-9]*(-v[0-9]+)?(-[a-z]+)?$`)
+var ecoStockPlanCode = regexp.MustCompile(`(?i)^([0-9]{2}(sk|sys|rise|adv)[a-z0-9]*(-v[0-9]+)?|ks-[a-z0-9-]+)(-[a-z]+)?$`)
 
 // IsEcoPlanCode reports whether planCode matches the Eco dedicated server family pattern.
 func IsEcoPlanCode(planCode string) bool {

@@ -12,6 +12,30 @@ paths:
     get:
       summary: Health check endpoint
       operationId: GetHealth
+      servers:
+        - url: /
+          description: Root server prefix
+      tags:
+        - F11
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  version:
+                    type: string
+                    example: 3.0.0
+
+  /health/:
+    get:
+      summary: API health check endpoint (/api/health)
+      operationId: GetApiHealth
       tags:
         - F11
       responses:
@@ -43,9 +67,17 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Account'
+                type: object
+                required:
+                  - accounts
+                  - total
+                properties:
+                  accounts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Account'
+                  total:
+                    type: integer
         '401':
           $ref: '#/components/responses/Unauthorized'
     post:
@@ -190,7 +222,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
                 items:
                   $ref: '#/components/schemas/ServerPlan'
         '400':
@@ -217,7 +249,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
                 items:
                   $ref: '#/components/schemas/DatacenterAvailability'
     post:
@@ -240,7 +272,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
                 items:
                   $ref: '#/components/schemas/DatacenterAvailability'
 
@@ -371,12 +403,12 @@ paths:
             schema:
               type: object
               required:
-                - interval
+                - retryInterval
               properties:
-                interval:
+                retryInterval:
                   type: integer
-                  minimum: 1
-                  maximum: 86400
+                  minimum: 5
+                  maximum: 3600
                   example: 30
       responses:
         '200':
@@ -386,8 +418,8 @@ paths:
               schema:
                 type: object
                 properties:
-                  success:
-                    type: boolean
+                  status:
+                    type: string
         '400':
           $ref: '#/components/responses/BadRequest'
 
@@ -1398,7 +1430,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequest'
 
-  /servers/list:
+  /server-control/list:
     get:
       summary: List dedicated servers belonging to account
       operationId: ListMyServers
@@ -1418,11 +1450,22 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/DedicatedServerDetail'
+                type: object
+                required:
+                  - success
+                  - servers
+                  - total
+                properties:
+                  success:
+                    type: boolean
+                  servers:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DedicatedServerDetail'
+                  total:
+                    type: integer
 
-  /servers/aliases:
+  /server-control/aliases:
     get:
       summary: List all user-defined server aliases
       operationId: ListServerAliases
@@ -1440,7 +1483,7 @@ paths:
                 additionalProperties:
                   type: string
 
-  /servers/order-mapping:
+  /server-control/order-mapping:
     get:
       summary: Get mapping between servers and OVH purchase orders
       operationId: GetOrderMapping
@@ -1456,7 +1499,7 @@ paths:
               schema:
                 type: object
 
-  /servers/{service_name}/alias:
+  /server-control/{service_name}/alias:
     put:
       summary: Set user-defined alias for a server
       operationId: SetServerAlias
@@ -1515,7 +1558,7 @@ paths:
                   success:
                     type: boolean
 
-  /servers/{service_name}/reboot:
+  /server-control/{service_name}/reboot:
     post:
       summary: Reboot dedicated server (hard power cycle)
       operationId: RebootServer
@@ -1544,7 +1587,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequest'
 
-  /servers/{service_name}/templates:
+  /server-control/{service_name}/templates:
     get:
       summary: List available installation OS templates for server
       operationId: GetOSTemplates
@@ -1564,7 +1607,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
                 items:
                   type: object
                   properties:
@@ -1573,7 +1616,7 @@ paths:
                     distribution:
                       type: string
 
-  /servers/{service_name}/install:
+  /server-control/{service_name}/install:
     post:
       summary: Install operating system on dedicated server
       operationId: InstallOS
@@ -1598,10 +1641,27 @@ paths:
               properties:
                 templateName:
                   type: string
-                hostname:
+                customHostname:
                   type: string
-                sshKeyName:
+                customizations:
+                  type: object
+                  additionalProperties: true
+                partitionSchemeName:
                   type: string
+                storageConfig:
+                  type: array
+                  items:
+                    type: object
+                    additionalProperties: true
+                useProxmox9Zfs:
+                  type: boolean
+                zfsRaidLevel:
+                  type: integer
+                  enum: [0, 1, 5, 6, 7]
+                zfsVzSize:
+                  type: integer
+                diskGroupId:
+                  type: integer
       responses:
         '200':
           description: OS install task started
@@ -1610,12 +1670,14 @@ paths:
               schema:
                 type: object
                 properties:
-                  taskId:
-                    type: integer
+                  success:
+                    type: boolean
+                  task:
+                    type: object
         '400':
           $ref: '#/components/responses/BadRequest'
 
-  /servers/{service_name}/install/status:
+  /server-control/{service_name}/install/status:
     get:
       summary: Get ongoing OS installation progress
       operationId: GetInstallStatus
@@ -1642,7 +1704,7 @@ paths:
                   status:
                     type: string
 
-  /servers/{service_name}/tasks:
+  /server-control/{service_name}/tasks:
     get:
       summary: List recent operations and maintenance tasks for server
       operationId: GetServerTasks
@@ -1662,11 +1724,11 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
                 items:
                   $ref: '#/components/schemas/ServerTask'
 
-  /servers/{service_name}/tasks/{task_id}/available-timeslots:
+  /server-control/{service_name}/tasks/{task_id}/available-timeslots:
     get:
       summary: Get available timeslots for a scheduled maintenance task
       operationId: GetTaskAvailableTimeslots
@@ -1691,11 +1753,11 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
                 items:
                   type: string
 
-  /servers/{service_name}/tasks/{task_id}/schedule:
+  /server-control/{service_name}/tasks/{task_id}/schedule:
     post:
       summary: Schedule a maintenance timeslot for task
       operationId: ScheduleTaskTimeslot
@@ -1721,10 +1783,16 @@ paths:
             schema:
               type: object
               required:
-                - timeslot
+                - hasPerformedBackup
               properties:
-                timeslot:
+                wantedBeginingDate:
                   type: string
+                  format: date-time
+                startDate:
+                  type: string
+                  format: date-time
+                hasPerformedBackup:
+                  type: boolean
       responses:
         '200':
           description: Task scheduled
@@ -1736,7 +1804,7 @@ paths:
                   success:
                     type: boolean
 
-  /servers/{service_name}/boot:
+  /server-control/{service_name}/boot:
     get:
       summary: Get server boot script / iPXE configuration
       operationId: GetBootConfig
@@ -1758,7 +1826,7 @@ paths:
               schema:
                 type: object
 
-  /servers/{service_name}/boot/{boot_id}:
+  /server-control/{service_name}/boot/{boot_id}:
     put:
       summary: Update server boot configuration by ID
       operationId: SetBootConfig
@@ -1794,7 +1862,7 @@ paths:
                   success:
                     type: boolean
 
-  /servers/{service_name}/boot-mode:
+  /server-control/{service_name}/boot-mode:
     get:
       summary: Get available and current boot modes
       operationId: GetBootModes
@@ -1835,12 +1903,11 @@ paths:
             schema:
               type: object
               required:
-                - bootMode
+                - bootId
               properties:
-                bootMode:
-                  type: string
-                rescueMail:
-                  type: string
+                bootId:
+                  type: integer
+                  format: int64
       responses:
         '200':
           description: Boot mode changed
@@ -1852,7 +1919,7 @@ paths:
                   success:
                     type: boolean
 
-  /servers/{service_name}/monitoring:
+  /server-control/{service_name}/monitoring:
     get:
       summary: Get ping/monitoring alert status from OVH SLA system
       operationId: GetMonitoringStatus
@@ -1895,9 +1962,9 @@ paths:
           application/json:
             schema:
               type: object
-              required:
-                - monitoring
               properties:
+                enabled:
+                  type: boolean
                 monitoring:
                   type: boolean
       responses:
@@ -1911,7 +1978,7 @@ paths:
                   success:
                     type: boolean
 
-  /servers/{service_name}/hardware:
+  /server-control/{service_name}/hardware:
     get:
       summary: Get physical hardware specifications of dedicated server
       operationId: GetHardwareInfo
@@ -1933,7 +2000,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ServerHardwareInfo'
 
-  /servers/{service_name}/hardware-disk-info:
+  /server-control/{service_name}/hardware-disk-info:
     get:
       summary: Get physical disks and SMART details
       operationId: GetHardwareDiskInfo
@@ -1953,11 +2020,11 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
                 items:
                   type: object
 
-  /servers/{service_name}/hardware-raid-profiles:
+  /server-control/{service_name}/hardware-raid-profiles:
     get:
       summary: Get hardware RAID profiles available on server controller
       operationId: GetHardwareRaidProfiles
@@ -1977,11 +2044,11 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
                 items:
                   type: object
 
-  /servers/{service_name}/hardware/replace:
+  /server-control/{service_name}/hardware/replace:
     post:
       summary: Request technician hardware component replacement
       operationId: HardwareReplace
@@ -2002,12 +2069,30 @@ paths:
             schema:
               type: object
               required:
-                - component
+                - componentType
               properties:
-                component:
+                componentType:
                   type: string
+                  enum: [hardDiskDrive, memory, cooling]
                 comment:
                   type: string
+                details:
+                  type: string
+                inverse:
+                  type: boolean
+                disks:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      disk_serial:
+                        type: string
+                      slot_id:
+                        type: integer
+                slots:
+                  type: array
+                  items:
+                    type: string
       responses:
         '200':
           description: Replacement ticket opened
@@ -2019,7 +2104,7 @@ paths:
                   taskId:
                     type: integer
 
-  /servers/{service_name}/bios-settings:
+  /server-control/{service_name}/bios-settings:
     get:
       summary: Get motherboard BIOS settings
       operationId: GetBIOSSettings
@@ -2041,7 +2126,7 @@ paths:
               schema:
                 type: object
 
-  /servers/{service_name}/bios-settings/sgx:
+  /server-control/{service_name}/bios-settings/sgx:
     get:
       summary: Get Intel SGX security enclave configuration
       operationId: GetBIOSSettingsSGX
@@ -2063,7 +2148,7 @@ paths:
               schema:
                 type: object
 
-  /servers/{service_name}/partition-schemes:
+  /server-control/{service_name}/partition-schemes:
     get:
       summary: Get available partitioning schemes for server disk geometry
       operationId: GetPartitionSchemes
@@ -2083,11 +2168,11 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
                 items:
                   type: object
 
-  /servers/{service_name}/ips:
+  /server-control/{service_name}/ips:
     get:
       summary: List IP addresses routed to dedicated server
       operationId: GetServerIPs
@@ -2107,11 +2192,11 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
                 items:
                   type: string
 
-  /servers/{service_name}/ip-specs:
+  /server-control/{service_name}/ip-specs:
     get:
       summary: Get IP specifications and quota limits
       operationId: GetIPSpecs
@@ -2133,7 +2218,7 @@ paths:
               schema:
                 type: object
 
-  /servers/{service_name}/reverse:
+  /server-control/{service_name}/reverse:
     get:
       summary: List reverse DNS records configured on server IPs
       operationId: GetReverseDNS
@@ -2153,7 +2238,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
                 items:
                   $ref: '#/components/schemas/ServerReverseDNS'
     post:
@@ -2186,7 +2271,7 @@ paths:
                   success:
                     type: boolean
 
-  /servers/{service_name}/reverse/{ip}:
+  /server-control/{service_name}/reverse/{ip}:
     delete:
       summary: Delete reverse DNS record for an IP address
       operationId: DeleteReverseDNS
@@ -2216,7 +2301,7 @@ paths:
                   success:
                     type: boolean
 
-  /servers/{service_name}/secondary-dns:
+  /server-control/{service_name}/secondary-dns:
     get:
       summary: List secondary DNS slave domains
       operationId: GetSecondaryDNS
@@ -2236,7 +2321,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
                 items:
                   type: string
     post:
@@ -2274,7 +2359,7 @@ paths:
                   success:
                     type: boolean
 
-  /servers/{service_name}/secondary-dns/{domain}:
+  /server-control/{service_name}/secondary-dns/{domain}:
     delete:
       summary: Delete secondary DNS slave zone
       operationId: DeleteSecondaryDNS
@@ -2304,7 +2389,7 @@ paths:
                   success:
                     type: boolean
 
-  /servers/{service_name}/network-interfaces:
+  /server-control/{service_name}/network-interfaces:
     get:
       summary: List physical network interface cards and MAC addresses
       operationId: GetNetworkInterfaces
@@ -2324,11 +2409,11 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
                 items:
                   type: object
 
-  /servers/{service_name}/network-specs:
+  /server-control/{service_name}/network-specs:
     get:
       summary: Get network specifications (public/vrack bandwidth limits)
       operationId: GetNetworkSpecs
@@ -2350,7 +2435,7 @@ paths:
               schema:
                 type: object
 
-  /servers/{service_name}/network-stats:
+  /server-control/{service_name}/network-stats:
     get:
       summary: Get real-time network interface packet statistics
       operationId: GetNetworkInterfaceStats
@@ -2372,7 +2457,7 @@ paths:
               schema:
                 type: object
 
-  /servers/{service_name}/mrtg:
+  /server-control/{service_name}/mrtg:
     get:
       summary: Get MRTG traffic metrics graph data
       operationId: GetMRTGData
@@ -2398,11 +2483,11 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
                 items:
                   type: object
 
-  /servers/{service_name}/statistics:
+  /server-control/{service_name}/statistics:
     get:
       summary: Get aggregate bandwidth consumption statistics
       operationId: GetTrafficStatistics
@@ -2424,7 +2509,7 @@ paths:
               schema:
                 type: object
 
-  /servers/{service_name}/console:
+  /server-control/{service_name}/console:
     get:
       summary: Request IPMI / KVM console session URL
       operationId: GetIPMIConsole
@@ -2438,6 +2523,17 @@ paths:
           required: true
           schema:
             type: string
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [kvmipHtml5URL, kvmipJnlp, serialOverLanURL, serialOverLanSshKey]
+        - name: sshKey
+          in: query
+          required: false
+          schema:
+            type: string
       responses:
         '200':
           description: IPMI console session
@@ -2449,7 +2545,7 @@ paths:
                   url:
                     type: string
 
-  /servers/{service_name}/ipmi-types:
+  /server-control/{service_name}/ipmi-types:
     get:
       summary: Get supported remote console types (HTML5, Java, SOL)
       operationId: GetIPMIAccessTypes
@@ -2469,11 +2565,11 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
                 items:
                   type: string
 
-  /servers/{service_name}/burst:
+  /server-control/{service_name}/burst:
     get:
       summary: Get network bandwidth burst status
       operationId: GetBurst
@@ -2518,7 +2614,7 @@ paths:
               properties:
                 status:
                   type: string
-                  enum: [active, inactive]
+                  enum: [active, inactive, inactiveLocked]
       responses:
         '200':
           description: Burst updated
@@ -2530,7 +2626,7 @@ paths:
                   success:
                     type: boolean
 
-  /servers/{service_name}/firewall:
+  /server-control/{service_name}/firewall:
     get:
       summary: Get hardware anti-DDoS firewall state
       operationId: GetFirewall
@@ -2586,7 +2682,7 @@ paths:
                   success:
                     type: boolean
 
-  /servers/{service_name}/backup-ftp:
+  /server-control/{service_name}/backup-ftp:
     get:
       summary: Get free 500GB Backup FTP storage details
       operationId: GetBackupFTP
@@ -2654,7 +2750,7 @@ paths:
                   success:
                     type: boolean
 
-  /servers/{service_name}/backup-ftp/access:
+  /server-control/{service_name}/backup-ftp/access:
     get:
       summary: List authorized IP blocks for Backup FTP access
       operationId: GetBackupFTPAccess
@@ -2674,7 +2770,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
                 items:
                   type: string
     post:
@@ -2740,7 +2836,7 @@ paths:
                   success:
                     type: boolean
 
-  /servers/{service_name}/backup-ftp/access/{ip_block}:
+  /server-control/{service_name}/backup-ftp/access/{ip_block}:
     delete:
       summary: Remove authorized IP block by path from Backup FTP
       operationId: DeleteBackupFTPAccess
@@ -2770,7 +2866,7 @@ paths:
                   success:
                     type: boolean
 
-  /servers/{service_name}/backup-ftp/authorizable-blocks:
+  /server-control/{service_name}/backup-ftp/authorizable-blocks:
     get:
       summary: List eligible IP blocks that can be authorized for Backup FTP
       operationId: GetBackupFTPAuthorizableBlocks
@@ -2790,11 +2886,11 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
                 items:
                   type: string
 
-  /servers/{service_name}/backup-ftp/password:
+  /server-control/{service_name}/backup-ftp/password:
     post:
       summary: Reset Backup FTP password (sent to account primary email)
       operationId: ChangeBackupFTPPassword
@@ -2819,7 +2915,7 @@ paths:
                   success:
                     type: boolean
 
-  /servers/{service_name}/backup-cloud:
+  /server-control/{service_name}/backup-cloud:
     get:
       summary: Get Backup Cloud storage configuration
       operationId: GetBackupCloud
@@ -2887,7 +2983,7 @@ paths:
                   success:
                     type: boolean
 
-  /servers/{service_name}/backup-cloud/offer-details:
+  /server-control/{service_name}/backup-cloud/offer-details:
     get:
       summary: Get Backup Cloud offer details and quota limits
       operationId: GetBackupCloudOfferDetails
@@ -2909,7 +3005,7 @@ paths:
               schema:
                 type: object
 
-  /servers/{service_name}/backup-cloud/password:
+  /server-control/{service_name}/backup-cloud/password:
     post:
       summary: Reset Backup Cloud password
       operationId: ChangeBackupCloudPassword
@@ -2934,7 +3030,7 @@ paths:
                   success:
                     type: boolean
 
-  /servers/{service_name}/serviceinfo:
+  /server-control/{service_name}/serviceinfo:
     get:
       summary: Get server subscription billing and renewal metadata
       operationId: GetServiceInfo
@@ -2963,9 +3059,9 @@ paths:
                   status:
                     type: string
 
-  /servers/{service_name}/serviceinfo/renewal:
+  /server-control/{service_name}/serviceinfo/renewal:
     put:
-      summary: Update server renewal policy (manual / automatic)
+      summary: Update server renewal policy (auto / manual / delete)
       operationId: UpdateServiceRenewal
       tags:
         - F08
@@ -2988,7 +3084,9 @@ paths:
               properties:
                 mode:
                   type: string
-                  enum: [manual, automatic]
+                  enum: [auto, manual, delete]
+                period:
+                  type: integer
       responses:
         '200':
           description: Renewal policy updated
@@ -3000,7 +3098,7 @@ paths:
                   success:
                     type: boolean
 
-  /servers/{service_name}/terminate:
+  /server-control/{service_name}/terminate:
     post:
       summary: Immediately suspend and terminate dedicated server
       operationId: TerminateService
@@ -3025,7 +3123,7 @@ paths:
                   success:
                     type: boolean
 
-  /servers/{service_name}/confirm-termination:
+  /server-control/{service_name}/confirm-termination:
     post:
       summary: Confirm secondary token for server termination
       operationId: ConfirmTermination
@@ -3063,7 +3161,7 @@ paths:
                   success:
                     type: boolean
 
-  /servers/{service_name}/termination-policy:
+  /server-control/{service_name}/termination-policy:
     put:
       summary: Set server expiration termination policy
       operationId: UpdateTerminationPolicy
@@ -3084,10 +3182,11 @@ paths:
             schema:
               type: object
               required:
-                - terminateAtExpiration
+                - policy
               properties:
-                terminateAtExpiration:
-                  type: boolean
+                policy:
+                  type: string
+                  enum: [empty, terminateAtExpirationDate, terminateAtEngagementDate]
       responses:
         '200':
           description: Termination policy updated
@@ -3099,7 +3198,7 @@ paths:
                   success:
                     type: boolean
 
-  /vps/list:
+  /vps-control/list:
     get:
       summary: List all VPS instances
       operationId: ListVps
@@ -3113,11 +3212,22 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  type: string
+                type: object
+                required:
+                  - success
+                  - vps
+                  - total
+                properties:
+                  success:
+                    type: boolean
+                  vps:
+                    type: array
+                    items:
+                      type: object
+                  total:
+                    type: integer
 
-  /vps/{service_name}/automated-backup:
+  /vps-control/{service_name}/automated-backup:
     get:
       summary: Get VPS automated backup status
       operationId: GetVpsAutomatedBackup
@@ -3139,7 +3249,7 @@ paths:
               schema:
                 type: object
 
-  /vps/{service_name}/change-contact:
+  /vps-control/{service_name}/change-contact:
     post:
       summary: Request change of contacts for VPS
       operationId: ChangeVpsContact
@@ -3174,7 +3284,7 @@ paths:
               schema:
                 type: object
 
-  /vps/{service_name}/confirm-termination:
+  /vps-control/{service_name}/confirm-termination:
     post:
       summary: Confirm VPS termination with token
       operationId: ConfirmVpsTermination
@@ -3207,7 +3317,7 @@ paths:
               schema:
                 type: object
 
-  /vps/{service_name}/console:
+  /vps-control/{service_name}/console:
     post:
       summary: Generate VPS web console URL
       operationId: VpsGetConsoleUrl
@@ -3232,7 +3342,7 @@ paths:
                   url:
                     type: string
 
-  /vps/{service_name}/current-os:
+  /vps-control/{service_name}/current-os:
     get:
       summary: Get currently installed operating system on VPS
       operationId: GetVpsCurrentOS
@@ -3254,7 +3364,7 @@ paths:
               schema:
                 type: object
 
-  /vps/{service_name}/datacenter:
+  /vps-control/{service_name}/datacenter:
     get:
       summary: Get VPS datacenter location
       operationId: GetVpsDatacenter
@@ -3276,7 +3386,7 @@ paths:
               schema:
                 type: object
 
-  /vps/{service_name}/engagement:
+  /vps-control/{service_name}/engagement:
     get:
       summary: Get VPS commitment / engagement details
       operationId: GetVpsEngagement
@@ -3298,7 +3408,7 @@ paths:
               schema:
                 type: object
 
-  /vps/{service_name}/engagement/available:
+  /vps-control/{service_name}/engagement/available:
     get:
       summary: Get available engagement options for VPS
       operationId: GetVpsEngagementAvailable
@@ -3318,9 +3428,9 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
 
-  /vps/{service_name}/engagement/end-rule:
+  /vps-control/{service_name}/engagement/end-rule:
     put:
       summary: Update VPS commitment end rule
       operationId: UpdateVpsEngagementEndRule
@@ -3340,9 +3450,14 @@ paths:
           application/json:
             schema:
               type: object
+              required:
+                - strategy
               properties:
                 strategy:
                   type: string
+                  enum: [CANCEL_SERVICE, REACTIVATE_ENGAGEMENT, STOP_ENGAGEMENT_FALLBACK_DEFAULT_PRICE, STOP_ENGAGEMENT_KEEP_PRICE]
+                confirm:
+                  type: boolean
       responses:
         '200':
           description: Engagement end rule updated
@@ -3351,7 +3466,7 @@ paths:
               schema:
                 type: object
 
-  /vps/{service_name}/engagement/request:
+  /vps-control/{service_name}/engagement/request:
     get:
       summary: Get current commitment request
       operationId: GetVpsEngagementRequest
@@ -3419,7 +3534,7 @@ paths:
               schema:
                 type: object
 
-  /vps/{service_name}/info:
+  /vps-control/{service_name}/info:
     get:
       summary: Get VPS technical specifications and status
       operationId: GetVpsInfo
@@ -3441,7 +3556,7 @@ paths:
               schema:
                 type: object
 
-  /vps/{service_name}/ips:
+  /vps-control/{service_name}/ips:
     get:
       summary: Get IP addresses assigned to VPS
       operationId: GetVpsIps
@@ -3461,11 +3576,11 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
                 items:
                   type: string
 
-  /vps/{service_name}/ips/{ip}/reverse:
+  /vps-control/{service_name}/ips/{ip}/reverse:
     put:
       summary: Set reverse DNS for VPS IP address
       operationId: SetVpsIpReverse
@@ -3503,7 +3618,7 @@ paths:
               schema:
                 type: object
 
-  /vps/{service_name}/mitigation:
+  /vps-control/{service_name}/mitigation:
     get:
       summary: Get VPS anti-DDoS mitigation status
       operationId: GetVpsMitigation
@@ -3525,9 +3640,10 @@ paths:
               schema:
                 type: object
 
-  /vps/{service_name}/mitigation/{ip}:
+  /vps-control/{service_name}/mitigation/{ip}:
     post:
-      summary: Enable anti-DDoS permanent mitigation for VPS IP
+      deprecated: true
+      summary: Enable anti-DDoS permanent mitigation for VPS IP (Retired - 410 Gone)
       operationId: EnableVpsMitigation
       tags:
         - F09
@@ -3545,14 +3661,23 @@ paths:
           schema:
             type: string
       responses:
-        '200':
-          description: Mitigation enabled
+        '410':
+          description: Permanent mitigation write API retired by OVHcloud
           content:
             application/json:
               schema:
                 type: object
+                properties:
+                  success:
+                    type: boolean
+                  code:
+                    type: string
+                    example: PERMANENT_MITIGATION_REMOVED
+                  error:
+                    type: string
     delete:
-      summary: Disable anti-DDoS permanent mitigation for VPS IP
+      deprecated: true
+      summary: Disable anti-DDoS permanent mitigation for VPS IP (Retired - 410 Gone)
       operationId: DisableVpsMitigation
       tags:
         - F09
@@ -3570,14 +3695,22 @@ paths:
           schema:
             type: string
       responses:
-        '200':
-          description: Mitigation disabled
+        '410':
+          description: Permanent mitigation write API retired by OVHcloud
           content:
             application/json:
               schema:
                 type: object
+                properties:
+                  success:
+                    type: boolean
+                  code:
+                    type: string
+                    example: PERMANENT_MITIGATION_REMOVED
+                  error:
+                    type: string
 
-  /vps/{service_name}/options:
+  /vps-control/{service_name}/options:
     get:
       summary: Get active options on VPS
       operationId: GetVpsOptions
@@ -3597,13 +3730,14 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
                 items:
                   type: string
 
-  /vps/{service_name}/options/{option}:
+  /vps-control/{service_name}/options/{option}:
     delete:
-      summary: Terminate/delete an active VPS option
+      deprecated: true
+      summary: Terminate/delete an active VPS option (Retired - 410 Gone)
       operationId: DeleteVpsOption
       tags:
         - F09
@@ -3621,16 +3755,25 @@ paths:
           schema:
             type: string
       responses:
-        '200':
-          description: Option terminated
+        '410':
+          description: VPS option termination API retired by OVHcloud
           content:
             application/json:
               schema:
                 type: object
+                properties:
+                  success:
+                    type: boolean
+                  code:
+                    type: string
+                    example: ED28E63E8
+                  error:
+                    type: string
 
-  /vps/{service_name}/password:
+  /vps-control/{service_name}/password:
     post:
-      summary: Request VPS root password reset
+      deprecated: true
+      summary: Request VPS root password reset (Retired - 410 Gone)
       operationId: VpsSetPassword
       tags:
         - F09
@@ -3643,14 +3786,22 @@ paths:
           schema:
             type: string
       responses:
-        '200':
-          description: Password reset task created
+        '410':
+          description: VPS setPassword API retired by OVHcloud
           content:
             application/json:
               schema:
                 type: object
+                properties:
+                  success:
+                    type: boolean
+                  code:
+                    type: string
+                    example: E2D28CDC9
+                  error:
+                    type: string
 
-  /vps/{service_name}/reboot:
+  /vps-control/{service_name}/reboot:
     post:
       summary: Soft or hard reboot VPS instance
       operationId: VpsReboot
@@ -3672,7 +3823,7 @@ paths:
               schema:
                 type: object
 
-  /vps/{service_name}/rebuild:
+  /vps-control/{service_name}/rebuild:
     post:
       summary: Reinstall / rebuild VPS operating system
       operationId: ReinstallVps
@@ -3705,7 +3856,7 @@ paths:
               schema:
                 type: object
 
-  /vps/{service_name}/secondary-dns:
+  /vps-control/{service_name}/secondary-dns:
     get:
       summary: Get secondary DNS domains configured for VPS
       operationId: GetVpsSecondaryDns
@@ -3725,7 +3876,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
                 items:
                   type: string
     post:
@@ -3760,7 +3911,7 @@ paths:
               schema:
                 type: object
 
-  /vps/{service_name}/secondary-dns/{domain}:
+  /vps-control/{service_name}/secondary-dns/{domain}:
     delete:
       summary: Delete secondary DNS domain for VPS
       operationId: DeleteVpsSecondaryDns
@@ -3787,7 +3938,7 @@ paths:
               schema:
                 type: object
 
-  /vps/{service_name}/serviceinfo:
+  /vps-control/{service_name}/serviceinfo:
     get:
       summary: Get VPS service contract info (expiration, renewal)
       operationId: GetVpsServiceInfo
@@ -3809,7 +3960,7 @@ paths:
               schema:
                 type: object
 
-  /vps/{service_name}/serviceinfo/renewal:
+  /vps-control/{service_name}/serviceinfo/renewal:
     put:
       summary: Update VPS service renewal policy
       operationId: UpdateVpsRenewal
@@ -3829,13 +3980,12 @@ paths:
           application/json:
             schema:
               type: object
+              required:
+                - mode
               properties:
-                automatic:
-                  type: boolean
-                deleteAtExpiration:
-                  type: boolean
-                forced:
-                  type: boolean
+                mode:
+                  type: string
+                  enum: [auto, manual, delete]
                 period:
                   type: integer
       responses:
@@ -3846,7 +3996,7 @@ paths:
               schema:
                 type: object
 
-  /vps/{service_name}/snapshot:
+  /vps-control/{service_name}/snapshot:
     get:
       summary: Get VPS snapshot details
       operationId: GetVpsSnapshot
@@ -3947,7 +4097,7 @@ paths:
               schema:
                 type: object
 
-  /vps/{service_name}/snapshot/revert:
+  /vps-control/{service_name}/snapshot/revert:
     post:
       summary: Revert VPS to snapshot
       operationId: RevertVpsSnapshot
@@ -3961,6 +4111,17 @@ paths:
           required: true
           schema:
             type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - confirm
+              properties:
+                confirm:
+                  type: boolean
       responses:
         '200':
           description: Snapshot revert task initiated
@@ -3969,7 +4130,7 @@ paths:
               schema:
                 type: object
 
-  /vps/{service_name}/start:
+  /vps-control/{service_name}/start:
     post:
       summary: Start VPS instance
       operationId: VpsStart
@@ -3991,7 +4152,7 @@ paths:
               schema:
                 type: object
 
-  /vps/{service_name}/status:
+  /vps-control/{service_name}/status:
     get:
       summary: Get VPS operational state and status
       operationId: GetVpsServiceStatus
@@ -4013,7 +4174,7 @@ paths:
               schema:
                 type: object
 
-  /vps/{service_name}/stop:
+  /vps-control/{service_name}/stop:
     post:
       summary: Stop VPS instance
       operationId: VpsStop
@@ -4035,7 +4196,7 @@ paths:
               schema:
                 type: object
 
-  /vps/{service_name}/tasks:
+  /vps-control/{service_name}/tasks:
     get:
       summary: Get recent tasks for VPS instance
       operationId: GetVpsTasks
@@ -4055,11 +4216,11 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
                 items:
                   type: integer
 
-  /vps/{service_name}/tasks/{task_id}:
+  /vps-control/{service_name}/tasks/{task_id}:
     get:
       summary: Get VPS task details
       operationId: GetVpsTaskDetail
@@ -4086,7 +4247,7 @@ paths:
               schema:
                 type: object
 
-  /vps/{service_name}/templates:
+  /vps-control/{service_name}/templates:
     get:
       summary: Get available OS templates for VPS
       operationId: GetVpsTemplates
@@ -4106,9 +4267,9 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
 
-  /vps/{service_name}/terminate:
+  /vps-control/{service_name}/terminate:
     post:
       summary: Request VPS termination
       operationId: TerminateVps
@@ -4130,7 +4291,7 @@ paths:
               schema:
                 type: object
 
-  /vps/{service_name}/termination-policy:
+  /vps-control/{service_name}/termination-policy:
     put:
       summary: Update VPS expiration termination policy
       operationId: UpdateVpsTerminationPolicy
@@ -4151,10 +4312,11 @@ paths:
             schema:
               type: object
               required:
-                - terminateAtExpiration
+                - policy
               properties:
-                terminateAtExpiration:
-                  type: boolean
+                policy:
+                  type: string
+                  enum: [empty, terminateAtExpirationDate, terminateAtEngagementDate]
       responses:
         '200':
           description: VPS termination policy updated
@@ -4164,7 +4326,7 @@ paths:
                 type: object
 
 
-  /servers/{service_name}/change-contact:
+  /server-control/{service_name}/change-contact:
     post:
       summary: Change server contacts
       operationId: ChangeServerContact
@@ -4199,7 +4361,7 @@ paths:
               schema:
                 type: object
 
-  /servers/{service_name}/engagement:
+  /server-control/{service_name}/engagement:
     get:
       summary: Get server commitment details
       operationId: GetServerEngagement
@@ -4221,7 +4383,7 @@ paths:
               schema:
                 type: object
 
-  /servers/{service_name}/engagement/available:
+  /server-control/{service_name}/engagement/available:
     get:
       summary: Get available commitment periods for server
       operationId: GetServerEngagementAvailable
@@ -4241,9 +4403,9 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
 
-  /servers/{service_name}/engagement/end-rule:
+  /server-control/{service_name}/engagement/end-rule:
     put:
       summary: Update commitment end rule for server
       operationId: UpdateServerEngagementEndRule
@@ -4263,6 +4425,14 @@ paths:
           application/json:
             schema:
               type: object
+              required:
+                - strategy
+              properties:
+                strategy:
+                  type: string
+                  enum: [CANCEL_SERVICE, REACTIVATE_ENGAGEMENT, STOP_ENGAGEMENT_FALLBACK_DEFAULT_PRICE, STOP_ENGAGEMENT_KEEP_PRICE]
+                confirm:
+                  type: boolean
       responses:
         '200':
           description: End rule updated
@@ -4271,7 +4441,7 @@ paths:
               schema:
                 type: object
 
-  /servers/{service_name}/engagement/request:
+  /server-control/{service_name}/engagement/request:
     get:
       summary: Get active commitment request
       operationId: GetServerEngagementRequest
@@ -4339,7 +4509,7 @@ paths:
               schema:
                 type: object
 
-  /servers/{service_name}/interventions:
+  /server-control/{service_name}/interventions:
     get:
       summary: List datacenter hardware interventions for server
       operationId: GetServerInterventions
@@ -4359,9 +4529,9 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
 
-  /servers/{service_name}/interventions/{intervention_id}:
+  /server-control/{service_name}/interventions/{intervention_id}:
     get:
       summary: Get hardware intervention details
       operationId: GetServerInterventionDetails
@@ -4388,7 +4558,7 @@ paths:
               schema:
                 type: object
 
-  /servers/{service_name}/ip/can-be-moved-to:
+  /server-control/{service_name}/ip/can-be-moved-to:
     get:
       summary: List servers that an IP can be moved to
       operationId: GetIPCanBeMovedTo
@@ -4408,9 +4578,9 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
 
-  /servers/{service_name}/ip/country-available:
+  /server-control/{service_name}/ip/country-available:
     get:
       summary: List countries available for failover IPs
       operationId: GetIPCountryAvailable
@@ -4430,11 +4600,11 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
 
-  /servers/{service_name}/ip/move:
+  /server-control/{service_name}/ip/move:
     post:
-      summary: Move failover IP to another server
+      summary: Move failover IP to target dedicated server ({service_name})
       operationId: MoveIP
       tags:
         - F08
@@ -4444,6 +4614,7 @@ paths:
         - name: service_name
           in: path
           required: true
+          description: Target destination dedicated server service name
           schema:
             type: string
       requestBody:
@@ -4454,12 +4625,12 @@ paths:
               type: object
               required:
                 - ip
-                - to
               properties:
                 ip:
                   type: string
                 to:
                   type: string
+                  description: Optional target server name; if provided, must match path {service_name}
       responses:
         '200':
           description: IP move task started
@@ -4468,7 +4639,7 @@ paths:
               schema:
                 type: object
 
-  /servers/{service_name}/license/windows-sql/compliant:
+  /server-control/{service_name}/license/windows-sql/compliant:
     get:
       summary: Get compliant Windows SQL versions
       operationId: GetCompliantWindowsSqlVersions
@@ -4488,9 +4659,9 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
 
-  /servers/{service_name}/license/windows/compliant:
+  /server-control/{service_name}/license/windows/compliant:
     get:
       summary: Get compliant Windows Server OS versions
       operationId: GetCompliantWindowsVersions
@@ -4510,9 +4681,9 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
 
-  /servers/{service_name}/mitigation:
+  /server-control/{service_name}/mitigation:
     get:
       summary: Get server anti-DDoS mitigation status
       operationId: GetServerMitigation
@@ -4534,9 +4705,10 @@ paths:
               schema:
                 type: object
 
-  /servers/{service_name}/mitigation/{ip}:
+  /server-control/{service_name}/mitigation/{ip}:
     post:
-      summary: Enable anti-DDoS permanent mitigation for server IP
+      deprecated: true
+      summary: Enable anti-DDoS permanent mitigation for server IP (Retired - 410 Gone)
       operationId: EnableServerMitigation
       tags:
         - F08
@@ -4554,14 +4726,23 @@ paths:
           schema:
             type: string
       responses:
-        '200':
-          description: Mitigation enabled
+        '410':
+          description: Permanent mitigation write API retired by OVHcloud
           content:
             application/json:
               schema:
                 type: object
+                properties:
+                  success:
+                    type: boolean
+                  code:
+                    type: string
+                    example: PERMANENT_MITIGATION_REMOVED
+                  error:
+                    type: string
     delete:
-      summary: Disable anti-DDoS permanent mitigation for server IP
+      deprecated: true
+      summary: Disable anti-DDoS permanent mitigation for server IP (Retired - 410 Gone)
       operationId: DisableServerMitigation
       tags:
         - F08
@@ -4579,14 +4760,22 @@ paths:
           schema:
             type: string
       responses:
-        '200':
-          description: Mitigation disabled
+        '410':
+          description: Permanent mitigation write API retired by OVHcloud
           content:
             application/json:
               schema:
                 type: object
+                properties:
+                  success:
+                    type: boolean
+                  code:
+                    type: string
+                    example: PERMANENT_MITIGATION_REMOVED
+                  error:
+                    type: string
 
-  /servers/{service_name}/ola/aggregation:
+  /server-control/{service_name}/ola/aggregation:
     post:
       summary: Configure OVHcloud Link Aggregation (OLA)
       operationId: ConfigureOLAAggregation
@@ -4614,7 +4803,7 @@ paths:
               schema:
                 type: object
 
-  /servers/{service_name}/ola/group:
+  /server-control/{service_name}/ola/group:
     post:
       summary: Group network interfaces into OLA
       operationId: OLAGroup
@@ -4642,7 +4831,7 @@ paths:
               schema:
                 type: object
 
-  /servers/{service_name}/ola/reset:
+  /server-control/{service_name}/ola/reset:
     post:
       summary: Reset OLA network configuration
       operationId: ResetOLAConfiguration
@@ -4664,7 +4853,7 @@ paths:
               schema:
                 type: object
 
-  /servers/{service_name}/ola/ungroup:
+  /server-control/{service_name}/ola/ungroup:
     post:
       summary: Ungroup interfaces from OLA
       operationId: OLAUngroup
@@ -4686,7 +4875,7 @@ paths:
               schema:
                 type: object
 
-  /servers/{service_name}/ongoing:
+  /server-control/{service_name}/ongoing:
     get:
       summary: Get ongoing tasks for dedicated server
       operationId: GetOngoingTasks
@@ -4706,9 +4895,9 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
 
-  /servers/{service_name}/options:
+  /server-control/{service_name}/options:
     get:
       summary: Get active options for dedicated server
       operationId: GetServerOptions
@@ -4728,9 +4917,9 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
 
-  /servers/{service_name}/orderable/bandwidth:
+  /server-control/{service_name}/orderable/bandwidth:
     get:
       summary: Get orderable bandwidth upgrades
       operationId: GetOrderableBandwidth
@@ -4752,7 +4941,7 @@ paths:
               schema:
                 type: object
 
-  /servers/{service_name}/orderable/ip:
+  /server-control/{service_name}/orderable/ip:
     get:
       summary: Get orderable IP specifications
       operationId: GetOrderableIP
@@ -4774,7 +4963,7 @@ paths:
               schema:
                 type: object
 
-  /servers/{service_name}/orderable/traffic:
+  /server-control/{service_name}/orderable/traffic:
     get:
       summary: Get orderable traffic options
       operationId: GetOrderableTraffic
@@ -4796,7 +4985,7 @@ paths:
               schema:
                 type: object
 
-  /servers/{service_name}/planned-interventions:
+  /server-control/{service_name}/planned-interventions:
     get:
       summary: List planned datacenter interventions
       operationId: GetPlannedInterventions
@@ -4816,9 +5005,9 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
 
-  /servers/{service_name}/planned-interventions/{intervention_id}:
+  /server-control/{service_name}/planned-interventions/{intervention_id}:
     get:
       summary: Get planned intervention details
       operationId: GetPlannedInterventionDetails
@@ -4845,7 +5034,7 @@ paths:
               schema:
                 type: object
 
-  /servers/{service_name}/spla:
+  /server-control/{service_name}/spla:
     get:
       summary: List SPLA licenses attached to server
       operationId: GetSPLAList
@@ -4865,7 +5054,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
     post:
       summary: Add SPLA license to server
       operationId: CreateSPLA
@@ -4885,10 +5074,14 @@ paths:
           application/json:
             schema:
               type: object
+              required:
+                - type
+                - serialNumber
               properties:
                 type:
                   type: string
-                serial:
+                  enum: [os, sqlstd, sqlweb]
+                serialNumber:
                   type: string
       responses:
         '200':
@@ -4898,7 +5091,7 @@ paths:
               schema:
                 type: object
 
-  /servers/{service_name}/virtual-mac:
+  /server-control/{service_name}/virtual-mac:
     get:
       summary: Get virtual MAC list for dedicated server
       operationId: GetVirtualMACList
@@ -4918,7 +5111,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
     post:
       summary: Create new virtual MAC on dedicated server
       operationId: CreateVirtualMAC
@@ -4956,7 +5149,7 @@ paths:
               schema:
                 type: object
 
-  /servers/{service_name}/virtual-network-interface:
+  /server-control/{service_name}/virtual-network-interface:
     get:
       summary: List virtual network interfaces
       operationId: GetVirtualNetworkInterfaces
@@ -4976,63 +5169,9 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-
-  /servers/{service_name}/virtual-network-interface/{uuid}/disable:
-    post:
-      summary: Disable virtual network interface
-      operationId: DisableVirtualNetworkInterface
-      tags:
-        - F08
-      security:
-        - ApiKeyAuth: []
-      parameters:
-        - name: service_name
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: uuid
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Interface disabled
-          content:
-            application/json:
-              schema:
                 type: object
 
-  /servers/{service_name}/virtual-network-interface/{uuid}/enable:
-    post:
-      summary: Enable virtual network interface
-      operationId: EnableVirtualNetworkInterface
-      tags:
-        - F08
-      security:
-        - ApiKeyAuth: []
-      parameters:
-        - name: service_name
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: uuid
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Interface enabled
-          content:
-            application/json:
-              schema:
-                type: object
-
-  /servers/{service_name}/vrack:
+  /server-control/{service_name}/vrack:
     get:
       summary: List vRack associations for dedicated server
       operationId: GetVRackList
@@ -5052,9 +5191,9 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
 
-  /servers/{service_name}/vrack/{vrack}:
+  /server-control/{service_name}/vrack/{vrack}:
     delete:
       summary: Remove server from vRack
       operationId: RemoveFromVRack
@@ -5170,36 +5309,9 @@ paths:
               schema:
                 type: object
 
-  /accounts/proxy/test:
-    post:
-      summary: Test custom proxy configuration
-      operationId: TestCustomProxy
-      tags:
-        - F01
-      security:
-        - ApiKeyAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - proxyUrl
-              properties:
-                proxyUrl:
-                  type: string
-      responses:
-        '200':
-          description: Proxy validation result
-          content:
-            application/json:
-              schema:
-                type: object
-
   /endpoint-config:
     get:
-      summary: Get supported OVH API endpoints configuration
+      summary: Get default OVH API endpoint and zone configuration
       operationId: GetEndpointConfig
       tags:
         - F01
@@ -5209,7 +5321,12 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
+                properties:
+                  endpoint:
+                    type: string
+                  zone:
+                    type: string
 
   /verify-auth:
     post:
@@ -5226,8 +5343,10 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                  - valid
                 properties:
-                  authenticated:
+                  valid:
                     type: boolean
 
   /ovh/account/bills:
@@ -5249,7 +5368,22 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
+                properties:
+                  status:
+                    type: string
+                  data:
+                    type: array
+                    items:
+                      type: object
+                  total:
+                    type: integer
+                  failed:
+                    type: integer
+                  truncated:
+                    type: boolean
+                  warning:
+                    type: string
 
   /ovh/account/credit-balance:
     get:
@@ -5333,7 +5467,26 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
+                properties:
+                  status:
+                    type: string
+                  data:
+                    type: array
+                    items:
+                      type: object
+                  orders:
+                    type: array
+                    items:
+                      type: object
+                  total:
+                    type: integer
+                  failed:
+                    type: integer
+                  truncated:
+                    type: boolean
+                  warning:
+                    type: string
 
   /ovh/account/refunds:
     get:
@@ -5375,7 +5528,18 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
+                properties:
+                  status:
+                    type: string
+                  data:
+                    type: array
+                    items:
+                      type: object
+                  total:
+                    type: integer
+                  failed:
+                    type: integer
 
   /ovh/contact-change-requests:
     get:
@@ -5396,7 +5560,18 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
+                properties:
+                  status:
+                    type: string
+                  data:
+                    type: array
+                    items:
+                      type: object
+                  total:
+                    type: integer
+                  failed:
+                    type: integer
 
   /ovh/contact-change-requests/{task_id}:
     get:
@@ -5690,7 +5865,20 @@ paths:
           content:
             application/json:
               schema:
-                type: array
+                type: object
+                required:
+                  - channels
+                  - anyAvailable
+                  - verified
+                properties:
+                  channels:
+                    type: array
+                    items:
+                      type: object
+                  anyAvailable:
+                    type: boolean
+                  verified:
+                    type: boolean
 
   /cache/clear:
     post:

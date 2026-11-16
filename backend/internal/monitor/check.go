@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/ovh-webui/server/internal/catalog"
+	"github.com/ovh-webui/server/internal/domain/datacenter"
 	"github.com/ovh-webui/server/internal/ovh"
 	"github.com/ovh-webui/server/internal/types"
 )
@@ -482,6 +483,12 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 		memory := configData.Memory
 		storage := configData.Storage
 		configDisplay := memory + " + " + storage
+		if configData.SystemStorage != "" && configData.SystemStorage != "N/A" {
+			configDisplay += " + " + configData.SystemStorage
+		}
+		if configData.GPU != "" && configData.GPU != "N/A" {
+			configDisplay += " + " + configData.GPU
+		}
 
 		configTraceID := uuid.NewString()
 		m.state.Logger.Info(fmt.Sprintf("检查配置: %s [config-trace:%s]", configDisplay, configTraceID), "monitor")
@@ -491,6 +498,12 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 			"storage": storage,
 			"display": configDisplay,
 			"options": effectiveOptions,
+		}
+		if configData.SystemStorage != "" && configData.SystemStorage != "N/A" {
+			configInfo["system_storage"] = configData.SystemStorage
+		}
+		if configData.GPU != "" && configData.GPU != "N/A" {
+			configInfo["gpu"] = configData.GPU
 		}
 		// 询价必须走上面选中的那个账户:验价账户和下单账户不一致时,
 		// endpoint 与 ovhSubsidiary 都会错(A 账户买得到 B 账户买不到,反之亦然)。
@@ -523,7 +536,7 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 		priceCheckTasks := []string{}
 		priceCheckSkipped := map[string]bool{}
 		for dc, status := range configData.Datacenters {
-			if len(monitoredDCs) > 0 && !containsString(monitoredDCs, dc) {
+			if len(monitoredDCs) > 0 && !matchesMonitoredDC(monitoredDCs, dc) {
 				continue
 			}
 			statusKey := dc + "|" + configKey
@@ -607,13 +620,15 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 
 			concurrentTasks := make([]string, 0, len(priceCheckTasks))
 			concurrentTasks = append(concurrentTasks, prewarmedTasks...)
-			if len(liveTasks) > 0 && configData.CatalogMissing {
+			if len(liveTasks) > 0 && (configData.CatalogMissing || m.hasPendingUpstream504(choice.accountID, choice.subsidiary, planCode)) {
 				if runPriceVerify(liveTasks[0]) {
 					concurrentTasks = append(concurrentTasks, liveTasks[1:]...)
-				} else {
+				} else if configData.CatalogMissing || m.isPlanInCooldown(choice.accountID, choice.subsidiary, planCode) {
 					for _, skippedDC := range liveTasks[1:] {
 						priceCheckSkipped[skippedDC] = true
 					}
+				} else {
+					concurrentTasks = append(concurrentTasks, liveTasks[1:]...)
 				}
 			} else {
 				concurrentTasks = append(concurrentTasks, liveTasks...)
@@ -966,7 +981,7 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 				return
 			}
 			m.SendAvailabilityAlertGrouped(planCode, availDCs, configInfoWithPrice, cfg.ServerName,
-				errIfNoPrice, traceID, configTraceForNotif)
+				errIfNoPrice, traceID, configTraceForNotif, choice.accountID)
 			sideEffects = true
 
 			entries := make([]HistoryEntry, 0, len(availables))
@@ -1001,7 +1016,7 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 				return
 			}
 			m.SendAvailabilityAlert(planCode, n.dc, "unavailable", "price_check_failed",
-				configInfoFailed, cfg.ServerName, "", n.priceCheckError, traceID, n.configTraceID, n.detectedTime)
+				configInfoFailed, cfg.ServerName, "", n.priceCheckError, traceID, n.configTraceID, n.detectedTime, choice.accountID)
 			sideEffects = true
 			sub.appendHistory([]HistoryEntry{{
 				Timestamp:  m.nowBeijing().Format(time.RFC3339Nano),
@@ -1096,6 +1111,15 @@ func statusEqual(a, b map[string]string) bool {
 		}
 	}
 	return true
+}
+
+func matchesMonitoredDC(monitored []string, dc string) bool {
+	for _, m := range monitored {
+		if strings.EqualFold(strings.TrimSpace(m), strings.TrimSpace(dc)) || datacenter.SameZoneOrAlias(m, dc) {
+			return true
+		}
+	}
+	return false
 }
 
 func containsString(list []string, s string) bool {

@@ -16,6 +16,7 @@ import (
 	ovhsdk "github.com/ovh/go-ovh/ovh"
 
 	"github.com/ovh-webui/server/internal/app"
+	"github.com/ovh-webui/server/internal/domain/datacenter"
 	"github.com/ovh-webui/server/internal/numconv"
 	"github.com/ovh-webui/server/internal/ovh"
 	"github.com/ovh-webui/server/internal/types"
@@ -190,8 +191,28 @@ func ReconcileRecentOrderEx(client *ovhsdk.Client, endpoint, planCode string, si
 	return "", "", nil
 }
 
+// multiSegDCTokens 多段长机房/可用区记号（按长度降序优先提取，避免把 eu-west-par-b 拆成孤立的 par）。
+var multiSegDCTokens = []string{
+	"ap-southeast-sgp-a", "ap-southeast-syd-a",
+	"ap-southeast-sgp", "ap-southeast-syd",
+	"ap-south-mum-a", "ap-south-mum",
+	"eu-central-waw", "eu-central-lim", "eu-central-fra",
+	"eu-west-par-a", "eu-west-par-b", "eu-west-par-c", "eu-west-par",
+	"ca-east-tor-a", "ca-east-tor-b", "ca-east-tor-c", "ca-east-tor",
+	"us-east-vin-a", "us-east-vin", "us-west-hil-a", "us-west-hil",
+	"eu-west-lim", "eu-west-eri", "eu-west-gra", "eu-west-rbx", "eu-west-sbg", "eu-west-lon",
+	"ca-east-bhs", "eu-south-mil",
+	"us-east-va", "us-west-or",
+	"par-a", "par-b", "par-c",
+}
+
+var shortDCTokens = []string{
+	"rbx", "gra", "sbg", "bhs", "waw", "fra", "lon", "syd", "sgp",
+	"vin", "hil", "par", "eri", "lim", "tor", "yyz", "ynm", "mum", "mil",
+}
+
 func orderDetailContradictsDC(detail map[string]interface{}, targetDC string) bool {
-	target := strings.ToLower(strings.TrimSpace(targetDC))
+	target := strings.TrimSpace(targetDC)
 	if target == "" {
 		return false
 	}
@@ -199,21 +220,57 @@ func orderDetailContradictsDC(detail map[string]interface{}, targetDC string) bo
 	domain, _ := detail["domain"].(string)
 	blob := strings.ToLower(desc + "\n" + domain)
 
-	knownDCs := []string{"rbx", "gra", "sbg", "bhs", "waw", "fra", "lon", "syd", "sgp", "vin", "hil", "par", "eri", "lim", "tor", "yyz", "ynm", "mum"}
-	// 必须按完整机房记号匹配,不能用子串:"graphics" 含 gra、"along" 含 lon、
-	// "saving" 含 vin、"frame" 含 fra。子串匹配会把一张真实建成的订单判成"别的机房",
-	// 对账就认不出它,结账超时后的重试会再买一台。
-	if !containsDCToken(blob, target) {
-		for _, dc := range knownDCs {
-			if dc != target && containsDCToken(blob, dc) {
-				return true
-			}
+	// 先提取多段长码（如 eu-west-par-b）并将命中区间掩码，再提取独立三字码（允许 gra3/rbx8 数字后缀，
+	// 拒绝 graphics/along/saving/frame 等英文单词子串），最后通过 domain/datacenter 规范族比对：
+	// mum↔ynm、yyz/ca-east-tor-a↔tor、eu-west-par-a↔par 等同站点别名绝不误判为冲突！
+	tokens, masked := extractMultiSegDCTokens(blob)
+	for _, dc := range shortDCTokens {
+		if containsDCToken(masked, dc) {
+			tokens = append(tokens, dc)
 		}
 	}
-	return false
+	if len(tokens) == 0 {
+		return false
+	}
+	hasConflict := false
+	for _, tok := range tokens {
+		if !datacenter.Contradicts(tok, target) {
+			return false
+		}
+		hasConflict = true
+	}
+	return hasConflict
 }
 
-// containsDCToken 判断 blob 里是否出现独立的机房记号(前后不能紧挨字母;
+func extractMultiSegDCTokens(blob string) (tokens []string, masked string) {
+	buf := []byte(blob)
+	cur := string(buf)
+	for _, tok := range multiSegDCTokens {
+		for start := 0; start < len(cur); {
+			i := strings.Index(cur[start:], tok)
+			if i < 0 {
+				break
+			}
+			i += start
+			end := i + len(tok)
+			beforeOK := i == 0 || (!isASCIILetter(cur[i-1]) && !isASCIIDigit(cur[i-1]))
+			afterOK := end == len(cur) || !isASCIILetter(cur[end])
+			if beforeOK && afterOK {
+				tokens = append(tokens, tok)
+				for k := i; k < end; k++ {
+					buf[k] = ' '
+				}
+				cur = string(buf)
+				start = end
+				continue
+			}
+			start = i + 1
+		}
+	}
+	return tokens, cur
+}
+
+// containsDCToken 判断 blob 里是否出现独立的机房记号(前不能紧挨字母或数字,后不能紧挨字母;
 // 允许数字后缀,如 gra3 / rbx8)。blob 需已转小写。
 func containsDCToken(blob, dc string) bool {
 	for start := 0; ; {
@@ -223,7 +280,7 @@ func containsDCToken(blob, dc string) bool {
 		}
 		i += start
 		end := i + len(dc)
-		beforeOK := i == 0 || !isASCIILetter(blob[i-1])
+		beforeOK := i == 0 || (!isASCIILetter(blob[i-1]) && !isASCIIDigit(blob[i-1]))
 		afterOK := end == len(blob) || !isASCIILetter(blob[end])
 		if beforeOK && afterOK {
 			return true
@@ -233,6 +290,7 @@ func containsDCToken(blob, dc string) bool {
 }
 
 func isASCIILetter(b byte) bool { return b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' }
+func isASCIIDigit(b byte) bool  { return b >= '0' && b <= '9' }
 
 func listRecentOrders(client *ovhsdk.Client, endpoint string, since time.Time) (ids []int64, objects []map[string]interface{}, err error) {
 	// US 的 /me/order 没有查询参数。其它区用 date.from，被 400 拒绝时再降级成全量，

@@ -44,8 +44,12 @@ func resolveIPBlock(client *ovhsdk.Client, ip string) string {
 	if strings.Contains(ip, "/") {
 		return ip
 	}
+	qPath, err := buildOVHPathQuery(url.Values{"ip": {ip}}, "ip")
+	if err != nil {
+		return ip
+	}
 	var blocks []string
-	if err := client.Get("/ip?ip="+url.QueryEscape(ip), &blocks); err != nil {
+	if err := client.Get(qPath, &blocks); err != nil {
 		return ip
 	}
 	for _, b := range blocks {
@@ -66,14 +70,21 @@ func resolveIPBlock(client *ovhsdk.Client, ip string) string {
 // 启用/关闭接口,这样列表和写操作用的是同一个 OVH 认的服务名。
 func GetVpsMitigation(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		ipsPath, ok := ovhPathOrAbort(c, "vps", svc, "ips")
+		if !ok {
+			return
+		}
 		var ips []string
-		if err := client.Get("/vps/"+svc+"/ips", &ips); err != nil {
+		if err := client.Get(ipsPath, &ips); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
@@ -105,9 +116,13 @@ func GetVpsMitigation(state *app.State) gin.HandlerFunc {
 					return
 				}
 				block := resolveIPBlock(client, ipAddr)
-				encoded := strings.ReplaceAll(block, "/", "%2F")
+				mitiPath, pErr := buildOVHPath("ip", block, "mitigation")
+				if pErr != nil {
+					results[idx] = ipResult{ip: ipAddr, block: block, err: pErr}
+					return
+				}
 				var miti []string
-				if err := client.Get("/ip/"+encoded+"/mitigation", &miti); err != nil {
+				if err := client.Get(mitiPath, &miti); err != nil {
 					results[idx] = ipResult{ip: ipAddr, block: block, err: err}
 					return
 				}
@@ -116,7 +131,11 @@ func GetVpsMitigation(state *app.State) gin.HandlerFunc {
 				details := make([]map[string]interface{}, 0, len(miti))
 				for _, m := range miti {
 					var d map[string]interface{}
-					if err := client.Get("/ip/"+encoded+"/mitigation/"+m, &d); err != nil {
+					detailPath, dErr := buildOVHPath("ip", block, "mitigation", m)
+					if dErr != nil {
+						continue
+					}
+					if err := client.Get(detailPath, &d); err != nil {
 						state.Logger.Warn("[VPS Mitigation] 获取 "+m+" 缓解详情失败: "+err.Error(), "vps_control")
 						item := map[string]interface{}{
 							"ipOnMitigation": m,
@@ -161,74 +180,54 @@ func GetVpsMitigation(state *app.State) gin.HandlerFunc {
 }
 
 // EnableVpsMitigation POST /api/vps-control/:service_name/mitigation/:ip?block=xxx
-func EnableVpsMitigation(state *app.State) gin.HandlerFunc {
+//
+// 与专用服务器侧(EnableMitigation)一致:OVH 已于 2025-11 下线永久 DDoS 缓解手动开关能力，
+// 不再向已退役的上游路径发送无效写请求，统一在校验路径/查询参数后返回 410 Gone。
+func EnableVpsMitigation(_ *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		ip := c.Param("ip")
-		ipBlock := c.Query("block")
-		if ipBlock == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少 block 参数", "code": "E4079B204"})
+		if _, ok := requireServiceName(c); !ok {
 			return
 		}
+		ip := strings.TrimSpace(c.Param("ip"))
 		if !isIPv4(ip) {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"success": false,
-				"error":   "OVH anti-DDoS Mitigation 只支持 IPv4。IPv6 地址在 OVH 网络层默认免疫常见 volumetric 攻击,无需手动配置", "code": "E94F05C58",
+				"error":   "OVH anti-DDoS Mitigation 只支持合法的 IPv4 地址",
+				"code":    "E94F05C58",
 			})
 			return
 		}
-		client, err := ovhClientFor(state, c)
-		if err != nil {
-			noOVHResp(c)
-			return
-		}
-		// 前端可能拿到的是老响应里的裸 IP(或用户手工调接口),这里再归一化一次:
-		// 写操作频率低,多一次 GET /ip 换取路径参数符合 schema 的 ipBlock 类型是划算的。
-		encoded := strings.ReplaceAll(resolveIPBlock(client, ipBlock), "/", "%2F")
-		var result map[string]interface{}
-		if err := client.Post("/ip/"+encoded+"/mitigation",
-			map[string]interface{}{"ipOnMitigation": ip}, &result); err != nil {
-			// 已开启 permanent 再开启被拒:幂等成功
-			lower := strings.ToLower(err.Error())
-			if strings.Contains(lower, "already") || ovh.IsTaskConflict(err) {
-				c.JSON(http.StatusOK, gin.H{"success": true, "message": "该 IP 已在永久缓解中,无需重复开启", "code": "E7E8BB801"})
+		if rawBlock := strings.TrimSpace(c.Query("block")); rawBlock != "" {
+			if _, ok := validateIPOrCIDR(rawBlock); !ok {
+				c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "block 参数格式不合法", "code": "INVALID_IP_BLOCK"})
 				return
 			}
-			respondOVHError(c, err)
-			return
 		}
-		state.Logger.Info("VPS IP "+ip+" 启用永久 DDoS 缓解", "vps_control")
-		c.JSON(http.StatusOK, gin.H{"success": true, "message": "DDoS 缓解已启用", "code": "ED793E10A", "mitigation": result})
+		permanentMitigationRemoved(c)
 	}
 }
 
 // DisableVpsMitigation DELETE /api/vps-control/:service_name/mitigation/:ip?block=xxx
-func DisableVpsMitigation(state *app.State) gin.HandlerFunc {
+func DisableVpsMitigation(_ *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		ip := c.Param("ip")
-		ipBlock := c.Query("block")
-		if ipBlock == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少 block 参数", "code": "E4079B204"})
+		if _, ok := requireServiceName(c); !ok {
 			return
 		}
+		ip := strings.TrimSpace(c.Param("ip"))
 		if !isIPv4(ip) {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "IPv6 不支持 anti-DDoS Mitigation", "code": "ED5483A75"})
+			c.JSON(http.StatusBadRequest, gin.H{
+				"success": false,
+				"error":   "OVH anti-DDoS Mitigation 只支持合法的 IPv4 地址",
+				"code":    "ED5483A75",
+			})
 			return
 		}
-		client, err := ovhClientFor(state, c)
-		if err != nil {
-			noOVHResp(c)
-			return
-		}
-		encoded := strings.ReplaceAll(resolveIPBlock(client, ipBlock), "/", "%2F")
-		if err := client.Delete("/ip/"+encoded+"/mitigation/"+ip, nil); err != nil {
-			if ovhIsNotFound(err) {
-				c.JSON(http.StatusOK, gin.H{"success": true, "message": "该 IP 未开启永久缓解,无需关闭", "code": "E9E0B7F01"})
+		if rawBlock := strings.TrimSpace(c.Query("block")); rawBlock != "" {
+			if _, ok := validateIPOrCIDR(rawBlock); !ok {
+				c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "block 参数格式不合法", "code": "INVALID_IP_BLOCK"})
 				return
 			}
-			respondOVHError(c, err)
-			return
 		}
-		state.Logger.Info("VPS IP "+ip+" 关闭永久 DDoS 缓解", "vps_control")
-		c.JSON(http.StatusOK, gin.H{"success": true, "message": "DDoS 缓解已关闭", "code": "E3830D769"})
+		permanentMitigationRemoved(c)
 	}
 }

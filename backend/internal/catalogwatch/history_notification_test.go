@@ -92,11 +92,18 @@ func testAutomaticPurchaseNotification(t *testing.T, lost bool) {
 		case strings.HasSuffix(p, "/order/cart/notification-cart") && r.Method == "GET":
 			body = `{"readOnly":true}`
 		case strings.HasSuffix(p, "/notification-cart/checkout") && r.Method == "GET":
-			body = `{"orderId":4242}`
+			t.Errorf("must never call simulation endpoint GET %s", p)
+			body = `{"orderId":null}`
+		case strings.HasSuffix(p, "/me/order") && r.Method == "GET":
+			body = `[4242]`
+		case strings.HasSuffix(p, "/me/order/4242/details") && r.Method == "GET":
+			body = `[1]`
+		case strings.HasSuffix(p, "/me/order/4242/details/1") && r.Method == "GET":
+			body = `{"orderDetailId":1,"description":"KS (24sk40-v1) - Datacenter: gra"}`
 		case strings.HasSuffix(p, "/me/order/4242/status"):
 			body = `"notPaid"`
 		case strings.HasSuffix(p, "/me/order/4242"):
-			body = `{"orderId":4242,"priceWithoutTax":{"value":1,"currencyCode":"EUR"}}`
+			body = fmt.Sprintf(`{"orderId":4242,"date":%q,"priceWithoutTax":{"value":1,"currencyCode":"EUR"}}`, time.Now().UTC().Format(time.RFC3339))
 		default:
 			return nil, fmt.Errorf("unexpected request blocked: %s %s", r.Method, p)
 		}

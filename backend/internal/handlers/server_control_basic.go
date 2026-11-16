@@ -27,6 +27,19 @@ import (
 // API 密钥完全正确。混用 401 会让没配账户的用户被反复踢出登录页,
 // 而他怎么重新输密钥都没用,因为问题根本不在密钥上。
 func noOVHResp(c *gin.Context) {
+	if statusVal, exists := c.Get(ctxOVHErrStatusKey); exists {
+		status, _ := statusVal.(int)
+		code := c.GetString(ctxOVHErrCodeKey)
+		msg := c.GetString(ctxOVHErrMsgKey)
+		if status >= 400 && msg != "" {
+			c.JSON(status, gin.H{
+				"success": false,
+				"error":   msg,
+				"code":    code,
+			})
+			return
+		}
+	}
 	c.JSON(http.StatusPreconditionFailed, gin.H{
 		"success": false,
 		"error":   "未配置 OVH 账户或凭据不全，请到「设置 → OVH 账户」添加",
@@ -70,6 +83,8 @@ func ListMyServers(state *app.State) gin.HandlerFunc {
 			noOVHResp(c)
 			return
 		}
+		acc, _ := ovhAccountFor(state, c)
+		cacheScope := accountCacheFingerprint(acc)
 		var names []string
 		if err := client.Get("/dedicated/server", &names); err != nil {
 			state.Logger.Error("获取服务器列表失败: "+err.Error(), "server_control")
@@ -101,7 +116,12 @@ func ListMyServers(state *app.State) gin.HandlerFunc {
 					results[idx].detailError = err
 					return
 				}
-				if err := client.Get("/dedicated/server/"+nm, &info); err != nil {
+				infoPath, pErr := buildOVHPath("dedicated", "server", nm)
+				if pErr != nil {
+					results[idx].detailError = pErr
+					return
+				}
+				if err := client.Get(infoPath, &info); err != nil {
 					results[idx].detailError = err
 					return
 				}
@@ -109,7 +129,12 @@ func ListMyServers(state *app.State) gin.HandlerFunc {
 				var svc map[string]interface{}
 				// serviceInfos 的错误不能吞：吞掉之后"查不到"会被渲染成"没开自动续费"，
 				// 用户以为不用管，机器到期就被回收了
-				if err := client.Get("/dedicated/server/"+nm+"/serviceInfos", &svc); err != nil {
+				svcPath, sErr := buildOVHPath("dedicated", "server", nm, "serviceInfos")
+				if sErr != nil {
+					results[idx].svcInfoError = sErr
+					return
+				}
+				if err := client.Get(svcPath, &svc); err != nil {
 					results[idx].svcInfoError = err
 					return
 				}
@@ -119,7 +144,7 @@ func ListMyServers(state *app.State) gin.HandlerFunc {
 				}
 				// 中奖摘要:详情页算过就纯缓存读(0 请求),没算过补 1 次 hardware GET,
 				// 1h TTL。徽章是锦上添花,失败只当没有,不影响列表
-				results[idx].lottery = hwLotteryFor(client, nm)
+				results[idx].lottery = hwLotteryFor(client, cacheScope, nm)
 			}(i, name)
 		}
 		wg.Wait()
@@ -218,14 +243,21 @@ func valueOr(m map[string]interface{}, key, fallback string) interface{} {
 // Reboot POST /api/server-control/:service_name/reboot
 func Reboot(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		rebootPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "reboot")
+		if !ok {
+			return
+		}
 		var result map[string]interface{}
-		if err := client.Post("/dedicated/server/"+svc+"/reboot", map[string]interface{}{}, &result); err != nil {
+		if err := client.Post(rebootPath, map[string]interface{}{}, &result); err != nil {
 			// 重启防抖(OVH 回 403 + "A reboot has already been requested")不是失败:
 			// 用户要的重启已经在进行,当成功返回,别让人误以为权限出了问题
 			if ovh.IsRebootAlreadyRequested(err) {
@@ -253,14 +285,21 @@ func Reboot(state *app.State) gin.HandlerFunc {
 // GetOSTemplates GET /api/server-control/:service_name/templates
 func GetOSTemplates(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		compatPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "install", "compatibleTemplates")
+		if !ok {
+			return
+		}
 		var templates map[string]interface{}
-		if err := client.Get("/dedicated/server/"+svc+"/install/compatibleTemplates", &templates); err != nil {
+		if err := client.Get(compatPath, &templates); err != nil {
 			state.Logger.Error("获取服务器 "+svc+" 系统模板失败: "+err.Error(), "server_control")
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
@@ -297,7 +336,8 @@ func GetOSTemplates(state *app.State) gin.HandlerFunc {
 					}
 					return
 				}
-				if err := client.Get("/dedicated/installationTemplate/"+name, &detail); err != nil {
+				tplPath, tErr := buildOVHPath("dedicated", "installationTemplate", name)
+				if tErr != nil || client.Get(tplPath, &detail) != nil {
 					details[idx] = gin.H{
 						"templateName": name,
 						"distribution": name,
@@ -532,6 +572,45 @@ func checkFSRaidCompat(fs string, level int64) string {
 	return ""
 }
 
+// validateRaidDiskCount 校验指定 RAID 级别所需的最低物理磁盘数与奇偶约束。
+func validateRaidDiskCount(raidLevel int64, diskCount int) string {
+	switch raidLevel {
+	case 0:
+		if diskCount < 1 {
+			return "RAID 0 至少需要 1 块物理磁盘"
+		}
+	case 1:
+		if diskCount < 2 {
+			return fmt.Sprintf("该磁盘组只有 %d 块物理磁盘，RAID 1 至少需要 2 块磁盘", diskCount)
+		}
+	case 5:
+		if diskCount < 3 {
+			return fmt.Sprintf("该磁盘组只有 %d 块物理磁盘，RAID 5 (RAID-Z1) 至少需要 3 块磁盘", diskCount)
+		}
+	case 6:
+		if diskCount < 4 {
+			return fmt.Sprintf("该磁盘组只有 %d 块物理磁盘，RAID 6 (RAID-Z2) 至少需要 4 块磁盘", diskCount)
+		}
+	case 7:
+		if diskCount < 5 {
+			return fmt.Sprintf("该磁盘组只有 %d 块物理磁盘，RAID 7 (RAID-Z3) 至少需要 5 块磁盘", diskCount)
+		}
+	case 10:
+		if diskCount < 4 || diskCount%2 != 0 {
+			return fmt.Sprintf("该磁盘组只有 %d 块物理磁盘，RAID 10 至少需要 4 块且总盘数必须为偶数", diskCount)
+		}
+	case 50:
+		if diskCount < 6 || diskCount%2 != 0 {
+			return fmt.Sprintf("该磁盘组只有 %d 块物理磁盘，RAID 50 至少需要 6 块且总盘数必须为偶数", diskCount)
+		}
+	case 60:
+		if diskCount < 8 || diskCount%2 != 0 {
+			return fmt.Sprintf("该磁盘组只有 %d 块物理磁盘，RAID 60 至少需要 8 块且总盘数必须为偶数", diskCount)
+		}
+	}
+	return ""
+}
+
 func normalizeStorageConfig(raw interface{}) ([]map[string]interface{}, error) {
 	groups, ok := raw.([]interface{})
 	if !ok {
@@ -734,9 +813,18 @@ func validatePreservedStorage(storage []map[string]interface{}) error {
 // InstallOS POST /api/server-control/:service_name/install
 func InstallOS(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
+		client, err := ovhClientFor(state, c)
+		if err != nil {
+			noOVHResp(c)
+			return
+		}
+		acc, _ := ovhAccountFor(state, c)
 
-		mu, ok := acquireInstallLock(svc)
+		mu, ok := acquireInstallLock("srv|" + acc.ID + "|" + svc)
 		if !ok {
 			c.JSON(http.StatusConflict, gin.H{
 				"success": false,
@@ -745,12 +833,6 @@ func InstallOS(state *app.State) gin.HandlerFunc {
 			return
 		}
 		defer mu.Unlock()
-
-		client, err := ovhClientFor(state, c)
-		if err != nil {
-			noOVHResp(c)
-			return
-		}
 		var body map[string]interface{}
 		if err := c.ShouldBindJSON(&body); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "请求体格式错误: " + ovh.Explain(err)})
@@ -849,6 +931,16 @@ func InstallOS(state *app.State) gin.HandlerFunc {
 				})
 				return
 			}
+			// OVH 官方分区兼容表明确禁止 ZFS + RAID 10，必须在预设入口拦截
+			if msg := checkFSRaidCompat("zfs", raidLevel); msg != "" {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"success": false,
+					"error":   msg,
+					"code":    "PARTITION_FS_RAID_INCOMPAT",
+					"params":  map[string]interface{}{"mp": "/", "reason": msg, "level": raidLevel},
+				})
+				return
+			}
 			vzSizeMB := int64(102400)
 			if raw, ok := body["zfsVzSize"]; ok && raw != nil {
 				v, ok := numconv.ToInt64(raw)
@@ -870,57 +962,104 @@ func InstallOS(state *app.State) gin.HandlerFunc {
 			}
 			diskCount := 2
 			var diskGroupID interface{}
+			hwPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "specifications", "hardware")
+			if !ok {
+				return
+			}
 			var hardware map[string]interface{}
-			if err := client.Get("/dedicated/server/"+svc+"/specifications/hardware", &hardware); err != nil {
+			if err := client.Get(hwPath, &hardware); err != nil {
 				state.Logger.Error("获取硬件信息失败，无法安全计算 ZFS 分区容量: "+err.Error(), "server_control")
 				respondOVHError(c, err)
 				return
 			}
-			if v, ok := numconv.ToInt64(hardware["defaultDiskGroupId"]); ok {
-				diskGroupID = v
+
+			var explicitGID int64
+			hasExplicitGID := false
+			if rawGID, exists := body["diskGroupId"]; exists && rawGID != nil {
+				if v, ok := numconv.ToInt64(rawGID); ok && v > 0 {
+					explicitGID = v
+					hasExplicitGID = true
+				}
 			}
+			defaultGID, hasDefaultGID := numconv.ToInt64(hardware["defaultDiskGroupId"])
+			if defaultGID <= 0 {
+				hasDefaultGID = false
+			}
+			wantGID := int64(0)
+			if hasExplicitGID {
+				wantGID = explicitGID
+				diskGroupID = explicitGID
+			} else if hasDefaultGID {
+				wantGID = defaultGID
+				diskGroupID = defaultGID
+			}
+
+			// 严禁用 diskGroups[0] 覆盖已识别的 defaultDiskGroupId（防止混合盘机型误格大容量数据盘组）！
+			// 按 wantGID 在 diskGroups 中精准匹配目标系统盘组，仅在未提供任何默认/显式组号时才回退 diskGroups[0]。
+			var targetDG map[string]interface{}
 			if dgs, ok := hardware["diskGroups"].([]interface{}); ok && len(dgs) > 0 {
-				if dg, ok := dgs[0].(map[string]interface{}); ok {
-					if v, ok := numconv.ToInt64(dg["numberOfDisks"]); ok {
-						diskCount = int(v)
+				if wantGID > 0 {
+					for _, item := range dgs {
+						dg, ok := item.(map[string]interface{})
+						if !ok {
+							continue
+						}
+						if gid, ok := numconv.ToInt64(dg["diskGroupId"]); ok && gid == wantGID {
+							targetDG = dg
+							break
+						}
 					}
-					// 容量是按 diskGroups[0] 算的，diskGroupId 就得跟着它走；
-					// 之前写死 0 会出现"按 A 组算容量、往默认组下分区"
-					if v, ok := numconv.ToInt64(dg["diskGroupId"]); ok {
+					if hasExplicitGID && targetDG == nil {
+						c.JSON(http.StatusBadRequest, gin.H{
+							"success": false,
+							"error":   fmt.Sprintf("指定的磁盘组 %d 不存在", explicitGID),
+							"code":    "DISK_GROUP_NOT_FOUND",
+						})
+						return
+					}
+				} else if dg0, ok := dgs[0].(map[string]interface{}); ok {
+					targetDG = dg0
+					if v, ok := numconv.ToInt64(dg0["diskGroupId"]); ok && v > 0 {
 						diskGroupID = v
 					}
-					if singleDiskGB, ok := diskSizeToGB(dg["diskSize"]); ok {
-						switch raidLevel {
-						case 0:
-							totalCapacityGB = singleDiskGB * diskCount
-						case 1:
-							totalCapacityGB = singleDiskGB
-						case 5:
-							if diskCount > 1 {
-								totalCapacityGB = singleDiskGB * (diskCount - 1)
-							} else {
-								totalCapacityGB = singleDiskGB
-							}
-						case 6, 7:
-							if diskCount > 2 {
-								totalCapacityGB = singleDiskGB * (diskCount - 2)
-							} else {
-								totalCapacityGB = singleDiskGB
-							}
-						case 10:
-							if diskCount >= 2 {
-								totalCapacityGB = singleDiskGB * (diskCount / 2)
-							} else {
-								totalCapacityGB = singleDiskGB
-							}
-						default:
+				}
+			}
+
+			if targetDG != nil {
+				if v, ok := numconv.ToInt64(targetDG["numberOfDisks"]); ok && v > 0 {
+					diskCount = int(v)
+				}
+				if singleDiskGB, ok := diskSizeToGB(targetDG["diskSize"]); ok {
+					switch raidLevel {
+					case 0:
+						totalCapacityGB = singleDiskGB * diskCount
+					case 1:
+						totalCapacityGB = singleDiskGB
+					case 5:
+						if diskCount > 1 {
+							totalCapacityGB = singleDiskGB * (diskCount - 1)
+						} else {
 							totalCapacityGB = singleDiskGB
 						}
-						state.Logger.Info(fmt.Sprintf("📊 检测到磁盘: %dx%dGB, RAID%d 总容量: %dGB",
-							diskCount, singleDiskGB, raidLevel, totalCapacityGB), "server_control")
-					} else {
-						state.Logger.Warn(fmt.Sprintf("磁盘容量或单位无法识别，使用默认容量: %dGB", totalCapacityGB), "server_control")
+					case 6:
+						if diskCount > 2 {
+							totalCapacityGB = singleDiskGB * (diskCount - 2)
+						} else {
+							totalCapacityGB = singleDiskGB
+						}
+					case 7:
+						if diskCount > 3 {
+							totalCapacityGB = singleDiskGB * (diskCount - 3)
+						} else {
+							totalCapacityGB = singleDiskGB
+						}
+					default:
+						totalCapacityGB = singleDiskGB
 					}
+					state.Logger.Info(fmt.Sprintf("📊 检测到磁盘: %dx%dGB, RAID%d 总容量: %dGB",
+						diskCount, singleDiskGB, raidLevel, totalCapacityGB), "server_control")
+				} else {
+					state.Logger.Warn(fmt.Sprintf("磁盘容量或单位无法识别，使用默认容量: %dGB", totalCapacityGB), "server_control")
 				}
 			}
 
@@ -929,6 +1068,15 @@ func InstallOS(state *app.State) gin.HandlerFunc {
 					"success": false,
 					"error":   fmt.Sprintf("该服务器只有 %d 块磁盘，无法使用 RAID%d，请改用 RAID0", diskCount, raidLevel),
 					"code":    "ZFS_SINGLE_DISK_RAID",
+					"params":  map[string]interface{}{"count": diskCount, "level": raidLevel},
+				})
+				return
+			}
+			if msg := validateRaidDiskCount(raidLevel, diskCount); msg != "" {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"success": false,
+					"error":   msg,
+					"code":    "ZFS_INSUFFICIENT_DISKS",
 					"params":  map[string]interface{}{"count": diskCount, "level": raidLevel},
 				})
 				return
@@ -957,10 +1105,11 @@ func InstallOS(state *app.State) gin.HandlerFunc {
 			state.Logger.Info(fmt.Sprintf("💾 容量计算: 理论%dGB, 实际可用~%dGB, 根目录%dGB",
 				totalCapacityGB, usableCapacityMB/1024, rootSizeMB/1024), "server_control")
 
-			// swap 之前写死 raidLevel:1，单盘机器必然失败；只有 2 盘及以上才做镜像
-			swapRaidLevel := int64(1)
+			// /boot (ext4) 与 swap 在单盘机器用 RAID 0，多盘机器用 RAID 1 镜像：
+			// 绝不透传 RAID 5/6/7（ext4 明令禁止 RAID 7 且引导分区只支持镜像/单盘）
+			bootSwapRaidLevel := int64(1)
 			if diskCount < 2 {
-				swapRaidLevel = 0
+				bootSwapRaidLevel = 0
 			}
 			storageEntry := map[string]interface{}{
 				"partitioning": map[string]interface{}{
@@ -968,13 +1117,13 @@ func InstallOS(state *app.State) gin.HandlerFunc {
 						{
 							"fileSystem": "ext4",
 							"mountPoint": "/boot",
-							"raidLevel":  raidLevel,
+							"raidLevel":  bootSwapRaidLevel,
 							"size":       bootSizeMB,
 						},
 						{
 							"fileSystem": "swap",
 							"mountPoint": "swap",
-							"raidLevel":  swapRaidLevel,
+							"raidLevel":  bootSwapRaidLevel,
 							"size":       swapSizeMB,
 						},
 						{
@@ -1039,8 +1188,12 @@ func InstallOS(state *app.State) gin.HandlerFunc {
 		// 之前这里手拼签名 + 本地时钟时间戳：宿主机时钟一漂就只有重装报 Invalid signature，
 		// 而且 base URL 是自己映射的，未知 endpoint 会静默落到 EU。
 		// go-ovh 会先跟 /auth/time 校时再签名，并且用的就是该账户自己的 endpoint
+		reinstallPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "reinstall")
+		if !ok {
+			return
+		}
 		var result map[string]interface{}
-		if err := client.Post("/dedicated/server/"+svc+"/reinstall", installParams, &result); err != nil {
+		if err := client.Post(reinstallPath, installParams, &result); err != nil {
 			state.Logger.Error("重装服务器 "+svc+" 系统失败: "+err.Error(), "server_control")
 			c.JSON(http.StatusBadGateway, gin.H{"success": false, "error": "OVH API错误: " + ovh.Explain(err)})
 			return
@@ -1174,18 +1327,25 @@ func translateInstallStep(comment string) string {
 // GetInstallStatus GET /api/server-control/:service_name/install/status
 func GetInstallStatus(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		statusPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "install", "status")
+		if !ok {
+			return
+		}
 		var status map[string]interface{}
-		if err := client.Get("/dedicated/server/"+svc+"/install/status", &status); err != nil {
+		if err := client.Get(statusPath, &status); err != nil {
 			// 之前拿 err.Error() 做子串匹配，"404" 三个字必然命中 go-ovh 的错误文案，
 			// 服务器名写错/机器不属于当前账户也被当成"没有安装任务"。
 			// 改成判 HTTP 状态码，并且 404 时多问一次服务器本体，
-			// 确认机器确实存在才敢降级成"当前没有安装"
+			// 确认机器确实存在才敢降级成"没有安装"
 			var apiErr *ovhsdk.APIError
 			if errors.As(err, &apiErr) {
 				// 只认 OVH 明确说"这台机器没有安装任务"的这几句文案；
@@ -1206,8 +1366,12 @@ func GetInstallStatus(state *app.State) gin.HandlerFunc {
 				}
 				if apiErr.Code == http.StatusNotFound {
 					// 404 文案不确定时多问一次服务器本体：机器确实在，才敢说"没有安装"
+					srvPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc)
+					if !ok {
+						return
+					}
 					var info map[string]interface{}
-					if serr := client.Get("/dedicated/server/"+svc, &info); serr != nil {
+					if serr := client.Get(srvPath, &info); serr != nil {
 						state.Logger.Error("获取服务器 "+svc+" 安装状态失败(服务器不可访问): "+serr.Error(), "server_control")
 						c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "服务器不存在或不属于当前账户", "code": "E834268F5"})
 						return
@@ -1294,14 +1458,21 @@ func GetInstallStatus(state *app.State) gin.HandlerFunc {
 // GetServerTasks GET /api/server-control/:service_name/tasks
 func GetServerTasks(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		taskListPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "task")
+		if !ok {
+			return
+		}
 		var taskIDs []interface{}
-		if err := client.Get("/dedicated/server/"+svc+"/task", &taskIDs); err != nil {
+		if err := client.Get(taskListPath, &taskIDs); err != nil {
 			state.Logger.Error("获取服务器 "+svc+" 任务列表失败: "+err.Error(), "server_control")
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
@@ -1336,7 +1507,12 @@ func GetServerTasks(state *app.State) gin.HandlerFunc {
 					detailErrs[idx] = err
 					return
 				}
-				if err := client.Get("/dedicated/server/"+svc+"/task/"+idToString(id), &d); err != nil {
+				tPath, tErr := buildOVHPath("dedicated", "server", svc, "task", idToString(id))
+				if tErr != nil {
+					detailErrs[idx] = tErr
+					return
+				}
+				if err := client.Get(tPath, &d); err != nil {
 					detailErrs[idx] = err
 					return
 				}
@@ -1402,8 +1578,14 @@ func normalizeAPIDate(s string) (string, bool) {
 // GetTaskAvailableTimeslots GET /api/server-control/:service_name/tasks/:task_id/available-timeslots
 func GetTaskAvailableTimeslots(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
-		taskID := c.Param("task_id")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
+		taskID, ok := requirePositiveIDParam(c, "task_id", "任务 ID", "INVALID_TASK_ID")
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -1424,7 +1606,10 @@ func GetTaskAvailableTimeslots(state *app.State) gin.HandlerFunc {
 		q := url.Values{}
 		q.Set("periodStart", periodStart)
 		q.Set("periodEnd", periodEnd)
-		path := fmt.Sprintf("/dedicated/server/%s/task/%s/availableTimeslots?%s", svc, taskID, q.Encode())
+		path, ok := ovhPathQueryOrAbort(c, q, "dedicated", "server", svc, "task", taskID, "availableTimeslots")
+		if !ok {
+			return
+		}
 		if err := client.Get(path, &slots); err != nil {
 			var apiErr *ovhsdk.APIError
 			if errors.As(err, &apiErr) {
@@ -1460,8 +1645,14 @@ func GetTaskAvailableTimeslots(state *app.State) gin.HandlerFunc {
 // ScheduleTaskTimeslot POST /api/server-control/:service_name/tasks/:task_id/schedule
 func ScheduleTaskTimeslot(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
-		taskID := c.Param("task_id")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
+		taskID, ok := requirePositiveIDParam(c, "task_id", "任务 ID", "INVALID_TASK_ID")
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -1503,7 +1694,10 @@ func ScheduleTaskTimeslot(state *app.State) gin.HandlerFunc {
 			state.Logger.Warn(fmt.Sprintf("[Task] 任务 %s 预约干预时声明未备份数据(hasPerformedBackup=false)，干预可能导致数据丢失", taskID), "server_control")
 		}
 		state.Logger.Info(fmt.Sprintf("[Task] 预约任务 %s 干预开始时间 %s", taskID, wantedTime.Format(time.RFC3339)), "server_control")
-		path := fmt.Sprintf("/dedicated/server/%s/task/%s/schedule", svc, taskID)
+		path, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "task", taskID, "schedule")
+		if !ok {
+			return
+		}
 		// 该端点返回 void，不给 resType，免得 go-ovh 去解析一个空 body
 		if err := client.Post(path, map[string]interface{}{
 			"wantedBeginingDate": wantedTime.Format(time.RFC3339),

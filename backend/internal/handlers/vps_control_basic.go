@@ -110,7 +110,12 @@ func ListVps(state *app.State) gin.HandlerFunc {
 					results[idx].err = err
 					return
 				}
-				if err := client.Get("/vps/"+nm, &info); err != nil {
+				infoPath, pErr := buildOVHPath("vps", nm)
+				if pErr != nil {
+					results[idx].err = pErr
+					return
+				}
+				if err := client.Get(infoPath, &info); err != nil {
 					results[idx].err = err
 					return
 				}
@@ -118,7 +123,12 @@ func ListVps(state *app.State) gin.HandlerFunc {
 				var svcInfo map[string]interface{}
 				// 10 并发拉列表时 OVH 很容易对 serviceInfos 限流。以前这里丢错,
 				// 结果「没取到」被渲染成 renewalType:false / status:"unknown",跟真值无法区分。
-				if err := client.Get("/vps/"+nm+"/serviceInfos", &svcInfo); err != nil {
+				svcPath, sErr := buildOVHPath("vps", nm, "serviceInfos")
+				if sErr != nil {
+					results[idx].svcErr = sErr
+					return
+				}
+				if err := client.Get(svcPath, &svcInfo); err != nil {
 					results[idx].svcErr = err
 					return
 				}
@@ -215,14 +225,21 @@ func ListVps(state *app.State) gin.HandlerFunc {
 // 返回 VPS 详细信息(model + state + zone 等)
 func GetVpsInfo(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		infoPath, ok := ovhPathOrAbort(c, "vps", svc)
+		if !ok {
+			return
+		}
 		var info map[string]interface{}
-		if err := client.Get("/vps/"+svc, &info); err != nil {
+		if err := client.Get(infoPath, &info); err != nil {
 			respondOVHError(c, err)
 			return
 		}
@@ -237,6 +254,9 @@ func GetVpsInfo(state *app.State) gin.HandlerFunc {
 // 不至于 404,响应固定为 removed:true,新前端已不再请求这条。
 func GetVpsServiceStatus(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if _, ok := requireServiceName(c); !ok {
+			return
+		}
 		c.JSON(http.StatusOK, gin.H{
 			"success": true, "status": nil, "removed": true,
 			"message": "OVH 已下线 VPS 端口探测接口(2026-10-15 废弃,无替代)。想看端口存活请自行用外部监控", "code": "ECC15035A",
@@ -248,14 +268,21 @@ func GetVpsServiceStatus(state *app.State) gin.HandlerFunc {
 // 跟 dedicated 一致:返回 renew + expiration + creation,字段名对齐已有的 RenewalDialog
 func GetVpsServiceInfo(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		svcPath, ok := ovhPathOrAbort(c, "vps", svc, "serviceInfos")
+		if !ok {
+			return
+		}
 		var info map[string]interface{}
-		if err := client.Get("/vps/"+svc+"/serviceInfos", &info); err != nil {
+		if err := client.Get(svcPath, &info); err != nil {
 			respondOVHError(c, err)
 			return
 		}
@@ -307,7 +334,10 @@ func GetVpsServiceInfo(state *app.State) gin.HandlerFunc {
 // 同 dedicated 的 UpdateServiceRenewal 逻辑:GET → merge renew → PUT
 func UpdateVpsRenewal(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -322,8 +352,12 @@ func UpdateVpsRenewal(state *app.State) gin.HandlerFunc {
 			return
 		}
 
+		svcPath, ok := ovhPathOrAbort(c, "vps", svc, "serviceInfos")
+		if !ok {
+			return
+		}
 		var info map[string]interface{}
-		if err := client.Get("/vps/"+svc+"/serviceInfos", &info); err != nil {
+		if err := client.Get(svcPath, &info); err != nil {
 			respondOVHError(c, err)
 			return
 		}
@@ -373,7 +407,7 @@ func UpdateVpsRenewal(state *app.State) gin.HandlerFunc {
 			sid = &v
 		}
 		// services.Service 只有 renew 可写,整对象发回去会被 400
-		if err := putServiceRenew(client, "/vps/"+svc+"/serviceInfos", sid, next, body.Period > 0); err != nil {
+		if err := putServiceRenew(client, svcPath, sid, next, body.Period > 0); err != nil {
 			respondRenewError(c, state, svc, err)
 			return
 		}
@@ -386,19 +420,26 @@ func UpdateVpsRenewal(state *app.State) gin.HandlerFunc {
 // /vps/{name}/ips 返回 ip[](IP 字符串数组),为每个 IP 并发拉详情
 func GetVpsIps(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		ipsPath, ok := ovhPathOrAbort(c, "vps", svc, "ips")
+		if !ok {
+			return
+		}
 		var ips []string
-		if err := client.Get("/vps/"+svc+"/ips", &ips); err != nil {
+		if err := client.Get(ipsPath, &ips); err != nil {
 			respondOVHError(c, err)
 			return
 		}
 		details := parallelGetStringKeys(client, ips, func(ip string) string {
-			return "/vps/" + svc + "/ips/" + ip
+			return safePathFn("vps", svc, "ips", ip)
 		}, 8)
 		list := []gin.H{}
 		for i, ip := range ips {
@@ -427,8 +468,15 @@ func GetVpsIps(state *app.State) gin.HandlerFunc {
 // 先 GET 拿当前 ip 详情,改 reverse 字段,再整体 PUT 回去 —— 防止 OVH 把其他字段当 null 重置。
 func SetVpsIpReverse(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
-		ip := c.Param("ip")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
+		ip, ok := validateSingleIP(c.Param("ip"))
+		if !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "IP 地址格式不正确", "code": "INVALID_IP"})
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -439,10 +487,14 @@ func SetVpsIpReverse(state *app.State) gin.HandlerFunc {
 		}
 		_ = c.ShouldBindJSON(&body)
 		body.Reverse = strings.TrimSuffix(strings.TrimSpace(body.Reverse), ".")
+		ipPath, ok := ovhPathOrAbort(c, "vps", svc, "ips", ip)
+		if !ok {
+			return
+		}
 		// vps.Ip 里只有 reverse 可写(ipAddress / type / version / gateway /
 		// geolocation / macAddress 都是只读),所以不需要先 GET 再 merge ——
 		// 那样反而会把只读字段一起发回去,被 OVH 400 掉
-		if err := client.Put("/vps/"+svc+"/ips/"+ip,
+		if err := client.Put(ipPath,
 			map[string]interface{}{"reverse": body.Reverse}, nil); err != nil {
 			respondOVHError(c, err)
 			return
@@ -459,14 +511,21 @@ func SetVpsIpReverse(state *app.State) gin.HandlerFunc {
 // responseType 都是 vps.Datacenter),不需要门控。
 func GetVpsDatacenter(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		dcPath, ok := ovhPathOrAbort(c, "vps", svc, "datacenter")
+		if !ok {
+			return
+		}
 		var dc map[string]interface{}
-		if err := client.Get("/vps/"+svc+"/datacenter", &dc); err != nil {
+		if err := client.Get(dcPath, &dc); err != nil {
 			respondOVHError(c, err)
 			return
 		}

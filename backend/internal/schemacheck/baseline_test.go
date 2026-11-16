@@ -50,7 +50,6 @@ var namespaces = []string{
 	"support",
 	"auth",
 	"ip",
-	"support",
 }
 
 // endpointSig 一个端点在某个区的签名。字段都是"变了就该有人看一眼"的那些。
@@ -350,14 +349,31 @@ func fetchSchema(region, ns string) (map[string]interface{}, error) {
 // collect 把三区 schema 拍成 {endpoint: {region: sig}}
 func collect(t *testing.T) baseline {
 	t.Helper()
-	want := map[string]bool{}
+	return collectWithFetcher(t, fetchSchema)
+}
+
+func collectWithFetcher(t *testing.T, fetcher func(region, ns string) (map[string]interface{}, error)) baseline {
+	t.Helper()
+	// 按归一化路径占位符（如 {detailId} ↔ {orderDetailId}）对齐三区 Schema，统一收敛到 usedEndpoints 的规范键名
+	canonByNorm := map[string]string{}
 	for _, e := range usedEndpoints {
-		want[e] = true
+		norm := normEndpoint(e)
+		if _, exists := canonByNorm[norm]; !exists {
+			canonByNorm[norm] = e
+		}
 	}
+	removedByNorm := map[string]string{}
+	for _, e := range removedEndpoints {
+		norm := normEndpoint(e)
+		if _, exists := removedByNorm[norm]; !exists {
+			removedByNorm[norm] = e
+		}
+	}
+	seenRemoved := map[string]bool{}
 	out := baseline{}
 	for region := range regions {
 		for _, ns := range namespaces {
-			doc, err := fetchSchema(region, ns)
+			doc, err := fetcher(region, ns)
 			if err != nil {
 				t.Fatalf("拉取 %s/%s 失败: %v", region, ns, err)
 			}
@@ -369,8 +385,13 @@ func collect(t *testing.T) baseline {
 				for _, oRaw := range ops {
 					o, _ := oRaw.(map[string]interface{})
 					method, _ := o["httpMethod"].(string)
-					key := method + " " + path
-					if !want[key] {
+					rawKey := method + " " + path
+					normKey := normEndpoint(rawKey)
+					if rem, isRem := removedByNorm[normKey]; isRem {
+						seenRemoved[rem] = true
+					}
+					key, ok := canonByNorm[normKey]
+					if !ok {
 						continue
 					}
 					sig := endpointSig{}
@@ -405,14 +426,21 @@ func collect(t *testing.T) baseline {
 	var never []string
 	removed := map[string]bool{}
 	for _, e := range removedEndpoints {
-		removed[e] = true
+		removed[normEndpoint(e)] = true
 	}
+	seenWant := map[string]bool{}
 	for _, e := range usedEndpoints {
-		if removed[e] {
+		norm := normEndpoint(e)
+		if seenWant[norm] {
+			continue
+		}
+		seenWant[norm] = true
+		if removed[norm] {
 			continue // 已知被删的登记在 removedEndpoints,不在这里报
 		}
-		if len(out[e]) == 0 {
-			never = append(never, e)
+		canon := canonByNorm[norm]
+		if len(out[canon]) == 0 {
+			never = append(never, canon)
 		}
 	}
 	if len(never) > 0 {
@@ -426,7 +454,7 @@ func collect(t *testing.T) baseline {
 	// 如果 OVH 哪天把它加回来了,这里会提醒把它挪回 usedEndpoints 恢复监控。
 	var revived []string
 	for _, e := range removedEndpoints {
-		if len(out[e]) > 0 {
+		if seenRemoved[e] || len(out[e]) > 0 {
 			revived = append(revived, e)
 		}
 	}
