@@ -85,7 +85,11 @@ func perNICMRTG(client *ovhsdk.Client, svc string, macs []string, period, traffi
 			q := url.Values{}
 			q.Set("period", period)
 			q.Set("type", trafficType)
-			path := "/dedicated/server/" + svc + "/networkInterfaceController/" + m + "/mrtg?" + q.Encode()
+			path, pErr := buildOVHPathQuery(q, "dedicated", "server", svc, "networkInterfaceController", m, "mrtg")
+			if pErr != nil {
+				results[idx] = mrtgResult{err: pErr}
+				return
+			}
 			client, err := ovh.IsolateClient(client)
 			if err != nil {
 				results[idx] = mrtgResult{err: err}
@@ -115,15 +119,22 @@ func perNICMRTG(client *ovhsdk.Client, svc string, macs []string, period, traffi
 // GetNetworkInterfaces GET /api/server-control/:service_name/network-interfaces
 func GetNetworkInterfaces(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		nicPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "networkInterfaceController")
+		if !ok {
+			return
+		}
 		state.Logger.Info("[网卡] 获取物理网卡列表: "+svc, "server_control")
 		var macs []string
-		if err := client.Get("/dedicated/server/"+svc+"/networkInterfaceController", &macs); err != nil {
+		if err := client.Get(nicPath, &macs); err != nil {
 			// networkInterfaceController 是 BETA 端点，对没有网卡数据的机器会回 404，
 			// 这类空资源降级成空列表是刻意的产品行为；401/403/5xx/传输层错误必须照实报出来，
 			// 否则切错账户或服务名拼错时用户只会看到「暂无网卡信息」，无从自查。
@@ -145,7 +156,7 @@ func GetNetworkInterfaces(state *app.State) gin.HandlerFunc {
 		// 并发拉每张网卡详情。用带 error 的版本:失败原因要原样带给前端,
 		// 编一句 "fetch failed" 会让用户分不清是权限问题还是这张卡真没数据。
 		details, errs := parallelGetStringKeysWithErrs(client, macs, func(m string) string {
-			return "/dedicated/server/" + svc + "/networkInterfaceController/" + m
+			return safePathFn("dedicated", "server", svc, "networkInterfaceController", m)
 		}, 10)
 		failed, firstErr := countErrs(errs)
 		if failed > 0 {
@@ -188,7 +199,10 @@ func GetNetworkInterfaces(state *app.State) gin.HandlerFunc {
 // GetMRTGData GET /api/server-control/:service_name/mrtg
 func GetMRTGData(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -199,10 +213,14 @@ func GetMRTGData(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": ovh.Explain(qErr)})
 			return
 		}
+		nicPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "networkInterfaceController")
+		if !ok {
+			return
+		}
 		state.Logger.Info(fmt.Sprintf("[MRTG] 获取流量数据: %s - %s - %s", svc, period, trafficType), "server_control")
 
 		var macs []string
-		listErr := client.Get("/dedicated/server/"+svc+"/networkInterfaceController", &macs)
+		listErr := client.Get(nicPath, &macs)
 		// 旧端点 /dedicated/server/{svc}/mrtg 三区 DEPRECATED(deletion 2018 年就到期),
 		// 按约定不再回落。网卡列表拿不到就如实报错 —— 空流量图配一条明确错误,
 		// 比静默画一张空图或打一条废弃接口强。
@@ -246,7 +264,10 @@ func GetMRTGData(state *app.State) gin.HandlerFunc {
 // ConfigureOLAAggregation POST /api/server-control/:service_name/ola/aggregation
 func ConfigureOLAAggregation(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -265,9 +286,13 @@ func ConfigureOLAAggregation(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "至少需要2个网络接口进行聚合", "code": "E0A44E5AC"})
 			return
 		}
+		olaPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "ola", "aggregation")
+		if !ok {
+			return
+		}
 		state.Logger.Info(fmt.Sprintf("[OLA] 配置网络聚合: %s - %s - %d个接口", svc, body.Name, len(body.VirtualNetworkInterfaces)), "server_control")
 		var result map[string]interface{}
-		if err := client.Post("/dedicated/server/"+svc+"/ola/aggregation", map[string]interface{}{
+		if err := client.Post(olaPath, map[string]interface{}{
 			"name":                     body.Name,
 			"virtualNetworkInterfaces": body.VirtualNetworkInterfaces,
 		}, &result); err != nil {
@@ -282,7 +307,10 @@ func ConfigureOLAAggregation(state *app.State) gin.HandlerFunc {
 // ResetOLAConfiguration POST /api/server-control/:service_name/ola/reset
 func ResetOLAConfiguration(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -296,9 +324,13 @@ func ResetOLAConfiguration(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少虚拟网络接口UUID(virtualNetworkInterface)参数", "code": "EAD1397D5"})
 			return
 		}
+		resetPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "ola", "reset")
+		if !ok {
+			return
+		}
 		state.Logger.Info("[OLA] 重置网络接口: "+svc+" - "+body.VirtualNetworkInterface, "server_control")
 		var result map[string]interface{}
-		if err := client.Post("/dedicated/server/"+svc+"/ola/reset", map[string]interface{}{
+		if err := client.Post(resetPath, map[string]interface{}{
 			"virtualNetworkInterface": body.VirtualNetworkInterface,
 		}, &result); err != nil {
 			respondOVHError(c, err)
@@ -317,7 +349,10 @@ func ResetOLAConfiguration(state *app.State) gin.HandlerFunc {
 // 还能避免 OVH 下线旧端点后这条路由突然 404。
 func OLAGroup(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -338,9 +373,13 @@ func OLAGroup(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "至少需要2个网络接口进行聚合", "code": "E0A44E5AC"})
 			return
 		}
+		olaPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "ola", "aggregation")
+		if !ok {
+			return
+		}
 		state.Logger.Info(fmt.Sprintf("[OLA] 创建OLA组(走 ola/aggregation): %s - %s - %d个接口", svc, body.Name, len(body.VirtualNetworkInterfaces)), "server_control")
 		var result map[string]interface{}
-		if err := client.Post("/dedicated/server/"+svc+"/ola/aggregation", map[string]interface{}{
+		if err := client.Post(olaPath, map[string]interface{}{
 			"name":                     body.Name,
 			"virtualNetworkInterfaces": body.VirtualNetworkInterfaces,
 		}, &result); err != nil {
@@ -360,7 +399,10 @@ func OLAGroup(state *app.State) gin.HandlerFunc {
 // 为了不破坏可能已按数组解析的调用方，tasks 仍以数组形式返回。
 func OLAUngroup(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -375,9 +417,13 @@ func OLAUngroup(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少虚拟网络接口UUID(virtualNetworkInterface)参数", "code": "EAD1397D5"})
 			return
 		}
+		resetPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "ola", "reset")
+		if !ok {
+			return
+		}
 		state.Logger.Info("[OLA] 解散OLA组(走 ola/reset): "+svc+" - "+body.VirtualNetworkInterface, "server_control")
 		var task map[string]interface{}
-		if err := client.Post("/dedicated/server/"+svc+"/ola/reset", map[string]interface{}{
+		if err := client.Post(resetPath, map[string]interface{}{
 			"virtualNetworkInterface": body.VirtualNetworkInterface,
 		}, &task); err != nil {
 			respondOVHError(c, err)
@@ -414,14 +460,21 @@ var ipmiAccessTypes = map[string]string{
 // 让用户等 20 秒才知道"原来这台机器没有 Java KVM"是很糟的体验。
 func GetIPMIAccessTypes(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		ipmiPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "features", "ipmi")
+		if !ok {
+			return
+		}
 		var ipmi map[string]interface{}
-		if err := client.Get("/dedicated/server/"+svc+"/features/ipmi", &ipmi); err != nil {
+		if err := client.Get(ipmiPath, &ipmi); err != nil {
 			if ovhIsNotFound(err) {
 				c.JSON(http.StatusOK, gin.H{
 					"success":        true,
@@ -465,15 +518,22 @@ func GetIPMIAccessTypes(state *app.State) gin.HandlerFunc {
 // IPMI Console
 func GetIPMIConsole(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		ipmiPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "features", "ipmi")
+		if !ok {
+			return
+		}
 		state.Logger.Info("[IPMI] 获取服务器 "+svc+" IPMI信息", "server_control")
 		var ipmi map[string]interface{}
-		if err := client.Get("/dedicated/server/"+svc+"/features/ipmi", &ipmi); err != nil {
+		if err := client.Get(ipmiPath, &ipmi); err != nil {
 			respondOVHError(c, err)
 			return
 		}
@@ -542,27 +602,23 @@ func GetIPMIConsole(state *app.State) gin.HandlerFunc {
 			// ttl 是 dedicated.server.CacheTTLEnum(enumType=long)，合法值 1/3/5/10/15，15 是上限
 			"ttl": 15,
 		}
-		// schema: ipToAllow 是 body 可选 ipv4。IPv6 客户端地址(通过 X-Forwarded-For 或
-		// c.ClientIP() 拿到的字面量)塞进去 OVH 必然 400；私网/回环/链路本地地址即使被接受，
-		// 放进 OVH 侧白名单也毫无意义。既然是可选字段，判不出公网 IPv4 就干脆省略。
 		if parsed := net.ParseIP(clientIP); parsed != nil && parsed.To4() != nil &&
 			!parsed.IsLoopback() && !parsed.IsPrivate() && !parsed.IsLinkLocalUnicast() && !parsed.IsUnspecified() {
-			// 用 String() 归一化，避免 ::ffff:1.2.3.4 这类 IPv4-mapped 写法直接透传
 			normalized := parsed.To4().String()
 			params["ipToAllow"] = normalized
 			state.Logger.Info("[IPMI] 添加IP白名单: "+normalized, "server_control")
 		} else {
-			// 省略 ipToAllow 意味着 OVH 侧这次会话不限来源 IP。填一个私网/回环地址反而更糟：
-			// OVH 永远看不到那个地址，等于把会话锁死成谁都进不去。所以这里选择省略并明确告警。
 			state.Logger.Warn("[IPMI] 跳过IP白名单（非公网 IPv4 地址: "+clientIP+"），本次控制台会话不限制来源 IP", "server_control")
 		}
-		// serialOverLanSshKey 方式需要一把公钥；schema 里 sshKey 是 body 可选(text)，
-		// 调用方没给就不发，交给 OVH 用账户里已登记的密钥。
 		if sshKey := strings.TrimSpace(c.Query("sshKey")); sshKey != "" {
 			params["sshKey"] = sshKey
 		}
+		accessPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "features", "ipmi", "access")
+		if !ok {
+			return
+		}
 		var task map[string]interface{}
-		if err := client.Post("/dedicated/server/"+svc+"/features/ipmi/access", params, &task); err != nil {
+		if err := client.Post(accessPath, params, &task); err != nil {
 			msg := ovh.Explain(err)
 			if !ipmiActivated {
 				msg += "（该服务器的 IPMI activated=false，很可能需要先在 OVH 管理后台启用 IPMI）"
@@ -571,6 +627,12 @@ func GetIPMIConsole(state *app.State) gin.HandlerFunc {
 			return
 		}
 		taskID := task["taskId"]
+		taskIDStr := strings.TrimSpace(idToString(taskID))
+		taskPath, pErr := buildOVHPath("dedicated", "server", svc, "task", taskIDStr)
+		if pErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "OVH 返回无效的 IPMI 任务 ID"})
+			return
+		}
 		state.Logger.Info(fmt.Sprintf("[IPMI] 创建访问任务: taskId=%v, status=%v", taskID, task["status"]), "server_control")
 		// 轮询
 		maxRetries := 10
@@ -580,7 +642,7 @@ func GetIPMIConsole(state *app.State) gin.HandlerFunc {
 			var ts map[string]interface{}
 			// OVH 错误直接返回 500，
 			// 之前 Go 静默 continue 会掩盖 OVH 真错误，最终用 "超时" 假面具吞掉
-			if err := client.Get(fmt.Sprintf("/dedicated/server/%s/task/%v", svc, taskID), &ts); err != nil {
+			if err := client.Get(taskPath, &ts); err != nil {
 				state.Logger.Error(fmt.Sprintf("[IPMI] 查询任务 %v 状态失败: %s", taskID, err.Error()), "server_control")
 				respondOVHError(c, err)
 				return
@@ -600,9 +662,13 @@ func GetIPMIConsole(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "IPMI访问任务超时", "code": "E8953934A"})
 			return
 		}
+		consolePath, ok := ovhPathQueryOrAbort(c, url.Values{"type": {accessType}}, "dedicated", "server", svc, "features", "ipmi", "access")
+		if !ok {
+			return
+		}
 		var consoleAccess map[string]interface{}
 		// 这一步的错误以前被 `_ =` 吞掉，前端只能拿到 success:true + console:null，日志里也查不到原因
-		if err := client.Get("/dedicated/server/"+svc+"/features/ipmi/access?type="+url.QueryEscape(accessType), &consoleAccess); err != nil {
+		if err := client.Get(consolePath, &consoleAccess); err != nil {
 			state.Logger.Error("[IPMI] 获取控制台地址失败: "+err.Error(), "server_control")
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "获取控制台地址失败: " + ovh.Explain(err)})
 			return
@@ -626,17 +692,12 @@ func GetIPMIConsole(state *app.State) gin.HandlerFunc {
 }
 
 // GetTrafficStatistics GET /api/server-control/:service_name/statistics
-//
-// OVH 独服根本没有 /dedicated/server/{svc}/statistics 这个端点：EU / US / CA 三区的本地 dump
-// 与 live 的 dedicated/server.json 都查不到(三区各自 grep "statistic" 结果均为空)，
-// 全局带 statistics 的只有 /vps/{serviceName}/statistics —— 这不是区域差异，是这个端点从来不存在。
-// 老实现还手搓 http.Request 却只塞了 X-Ovh-Application / X-Ovh-Consumer，
-// 漏了 v1 签名要求的 X-Ovh-Timestamp / X-Ovh-Signature，即使路径存在也必被 403。
-// 现改为走 schema 里真实存在的流量图端点(networkInterfaceController + 旧版 mrtg 兜底)，
-// 并统一用带签名的 go-ovh client，不再手搓请求。路由与 statistics 响应字段保持不变。
 func GetTrafficStatistics(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -649,10 +710,14 @@ func GetTrafficStatistics(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": ovh.Explain(qErr)})
 			return
 		}
+		nicPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "networkInterfaceController")
+		if !ok {
+			return
+		}
 		state.Logger.Info(fmt.Sprintf("[Stats] 获取服务器 %s 流量统计: %s - %s", svc, period, typeParam), "server_control")
 
 		var macs []string
-		listErr := client.Get("/dedicated/server/"+svc+"/networkInterfaceController", &macs)
+		listErr := client.Get(nicPath, &macs)
 		// 同 GetMRTGData:不再回落废弃的 /mrtg,拿不到网卡就如实说
 		if listErr != nil {
 			state.Logger.Error("[Stats] 网卡列表读取失败: "+listErr.Error(), "server_control")
@@ -685,21 +750,28 @@ func GetTrafficStatistics(state *app.State) gin.HandlerFunc {
 // GetNetworkInterfaceStats GET /api/server-control/:service_name/network-stats
 func GetNetworkInterfaceStats(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		nicPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "networkInterfaceController")
+		if !ok {
+			return
+		}
 		state.Logger.Info("[Network] 获取服务器 "+svc+" 网络接口信息", "server_control")
 		var macs []string
-		if err := client.Get("/dedicated/server/"+svc+"/networkInterfaceController", &macs); err != nil {
+		if err := client.Get(nicPath, &macs); err != nil {
 			respondOVHError(c, err)
 			return
 		}
 		// 并发拉每张网卡详情
 		details := parallelGetStringKeys(client, macs, func(m string) string {
-			return "/dedicated/server/" + svc + "/networkInterfaceController/" + m
+			return safePathFn("dedicated", "server", svc, "networkInterfaceController", m)
 		}, 10)
 		// 失败的网卡不能直接丢：静默少几张卡会让用户以为服务器就这么多网卡，
 		// 进而影响 OLA 聚合时的接口选择。与 GetNetworkInterfaces 保持一致的做法：按索引补位。

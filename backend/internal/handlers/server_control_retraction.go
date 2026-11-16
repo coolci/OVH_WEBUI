@@ -95,9 +95,9 @@ const (
 //
 // 绝大多数账户在第 2 步就全被剪光,总开销是"最近订单数 + 1"个请求。
 func retractableOrderFor(state *app.State, c *gin.Context, client *ovhsdk.Client,
-	accountID, serviceName string) (int64, bool, error) {
+	cacheScope, serviceName string) (int64, bool, error) {
 
-	key := accountID + "|" + serviceName
+	key := cacheScope + "|" + serviceName
 	retractionLookupMu.Lock()
 	if e, hit := retractionLookupCache[key]; hit && time.Since(e.at) < retractionLookupTTL {
 		retractionLookupMu.Unlock()
@@ -124,8 +124,12 @@ func retractableOrderFor(state *app.State, c *gin.Context, client *ovhsdk.Client
 	}
 
 	from := time.Now().AddDate(0, 0, -retractionScanDays).UTC().Format(time.RFC3339)
+	ordersPath, pErr := buildOVHPathQuery(url.Values{"date.from": {from}}, "me", "order")
+	if pErr != nil {
+		return 0, false, pErr
+	}
 	var ids []int64
-	if err := client.Get("/me/order?date.from="+url.QueryEscape(from), &ids); err != nil {
+	if err := client.Get(ordersPath, &ids); err != nil {
 		return 0, false, fmt.Errorf("读取最近订单列表失败: %w", err)
 	}
 	// 新的在前:撤回期内的订单必然是最近下的
@@ -135,8 +139,13 @@ func retractableOrderFor(state *app.State, c *gin.Context, client *ovhsdk.Client
 
 	// 第一轮：只看还在撤回窗口内的订单（通常 0~1 个），命中则直接返回
 	for _, id := range ids {
+		idStr := strconv.FormatInt(id, 10)
+		ordPath, err := buildOVHPath("me", "order", idStr)
+		if err != nil {
+			continue
+		}
 		var order map[string]interface{}
-		if err := client.Get(fmt.Sprintf("/me/order/%d", id), &order); err != nil {
+		if err := client.Get(ordPath, &order); err != nil {
 			continue // 单个订单读不到不影响别的
 		}
 		rd, _ := order["retractionDate"].(string)
@@ -147,13 +156,21 @@ func retractableOrderFor(state *app.State, c *gin.Context, client *ovhsdk.Client
 			continue // 已过期,第一轮剪掉
 		}
 		// 这一单还在窗口内 —— 查明细找 serviceName
+		detailsPath, err := buildOVHPath("me", "order", idStr, "details")
+		if err != nil {
+			continue
+		}
 		var detailIDs []int64
-		if err := client.Get(fmt.Sprintf("/me/order/%d/details", id), &detailIDs); err != nil {
+		if err := client.Get(detailsPath, &detailIDs); err != nil {
 			continue
 		}
 		for _, did := range detailIDs {
+			dPath, err := buildOVHPath("me", "order", idStr, "details", strconv.FormatInt(did, 10))
+			if err != nil {
+				continue
+			}
 			var d map[string]interface{}
-			if err := client.Get(fmt.Sprintf("/me/order/%d/details/%d", id, did), &d); err != nil {
+			if err := client.Get(dPath, &d); err != nil {
 				continue
 			}
 			// 整单没取消但某条明细被取消是常态,这种不算
@@ -182,14 +199,23 @@ func retractableOrderFor(state *app.State, c *gin.Context, client *ovhsdk.Client
 		maxFallback = len(ids)
 	}
 	for _, id := range ids[:maxFallback] {
+		idStr := strconv.FormatInt(id, 10)
+		detailsPath, err := buildOVHPath("me", "order", idStr, "details")
+		if err != nil {
+			continue
+		}
 		var detailIDs []int64
-		if err := client.Get(fmt.Sprintf("/me/order/%d/details", id), &detailIDs); err != nil {
+		if err := client.Get(detailsPath, &detailIDs); err != nil {
 			continue
 		}
 		matched := false
 		for _, did := range detailIDs {
+			dPath, err := buildOVHPath("me", "order", idStr, "details", strconv.FormatInt(did, 10))
+			if err != nil {
+				continue
+			}
 			var d map[string]interface{}
-			if err := client.Get(fmt.Sprintf("/me/order/%d/details/%d", id, did), &d); err != nil {
+			if err := client.Get(dPath, &d); err != nil {
 				continue
 			}
 			if cancelled, _ := d["cancelled"].(bool); cancelled {
@@ -225,19 +251,17 @@ func toOrderID(v interface{}) (int64, bool) {
 }
 
 // GetRetraction GET /api/server-control/:service_name/retraction
-//
-// 回答"这台机器现在还能不能无理由退"。
-//
-// 判据是 OVH 返回的 billing.Order.retractionDate,不是自己按"开通不到 14 天"去算:
-//   - 这个 fix 之前下的单在 checkout 时就弃权了,OVH 不会给它们 retractionDate。
-//     自己算 14 天的话,那些机器会显示一个点了必然失败的退款按钮。
-//   - 撤回期从哪个事件起算、不同产品是不是都 14 天,是 OVH 的合同细节。
-//     它已经把答案算好放在字段里了,没有理由再猜一遍。
-//
-// eligible=false 时 reason 说明是哪一种"不能退",三种含义完全不同:
-// 没有撤回权 / 已经过期 / 我们没查到订单。
 func GetRetraction(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		svc := strings.TrimSpace(c.Param("service_name"))
+		if svc == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少 service_name", "code": "E6803C9EF"})
+			return
+		}
+		if !isValidServiceName(svc) {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "非法的服务名称格式", "code": "INVALID_SERVICE_NAME"})
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -246,11 +270,6 @@ func GetRetraction(state *app.State) gin.HandlerFunc {
 		acc, ok := ovhAccountFor(state, c)
 		if !ok {
 			noOVHResp(c)
-			return
-		}
-		svc := strings.TrimSpace(c.Param("service_name"))
-		if svc == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少 service_name", "code": "E6803C9EF"})
 			return
 		}
 
@@ -266,7 +285,8 @@ func GetRetraction(state *app.State) gin.HandlerFunc {
 			return
 		}
 
-		orderID, found, err := retractableOrderFor(state, c, client, acc.ID, svc)
+		cacheScope := accountCacheFingerprint(acc)
+		orderID, found, err := retractableOrderFor(state, c, client, cacheScope, svc)
 		if err != nil {
 			// 查询失败 ≠ 这台机器没有撤回权。必须说成"没查到" ——
 			// 说成"不能退"的话用户会以为权利已经没了而放弃,而真相只是这次请求挂了。
@@ -280,9 +300,6 @@ func GetRetraction(state *app.State) gin.HandlerFunc {
 			return
 		}
 		if !found {
-			// retractableOrderFor 扫的是"最近 21 天里还在撤回期内的订单",
-			// 所以没找到有好几种含义,不能笼统说成"没找到订单"——
-			// 那听起来像系统出了问题,而实际上多半是这台机器本来就不在撤回期内。
 			c.JSON(http.StatusOK, gin.H{
 				"success":  true,
 				"eligible": false,
@@ -297,8 +314,12 @@ func GetRetraction(state *app.State) gin.HandlerFunc {
 			return
 		}
 
+		ordPath, ok := ovhPathOrAbort(c, "me", "order", strconv.FormatInt(orderID, 10))
+		if !ok {
+			return
+		}
 		var order map[string]interface{}
-		if err := client.Get(fmt.Sprintf("/me/order/%d", orderID), &order); err != nil {
+		if err := client.Get(ordPath, &order); err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success":  true,
 				"eligible": false,
@@ -314,12 +335,6 @@ func GetRetraction(state *app.State) gin.HandlerFunc {
 		orderURL := ovh.ManagerOrderURL(acc.Endpoint, strconv.FormatInt(orderID, 10))
 
 		if retractionDate == "" {
-			// OVH 没给撤回截止日 = 它认为这单没有撤回权。
-			//
-			// 原因不止一种,不能像以前那样只报"下单时弃权了"—— 那是把其中一种可能
-			// 说成了确定结论。企业账户(legalform 不是 individual)本来就没有消费者
-			// 撤回权,某些产品也可能不在范围内。这里只陈述事实 + 列可能性,
-			// 不替 OVH 解释它为什么不给。
 			c.JSON(http.StatusOK, gin.H{
 				"success":  true,
 				"eligible": false,
@@ -362,9 +377,6 @@ func GetRetraction(state *app.State) gin.HandlerFunc {
 			return
 		}
 
-		// orderDate 一起带上:撤回期是从**下单**起算的,不是从服务器开通起算。
-		// 只给"还剩 N 天"的话,用户会拿它去对「开通日 + 14 天」,对不上就以为算错了 ——
-		// 机器常常是下单后几天才交付,两个日期差好几天。把起止都写出来就没得猜。
 		orderDate, _ := order["date"].(string)
 		c.JSON(http.StatusOK, gin.H{
 			"success":        true,
@@ -374,22 +386,20 @@ func GetRetraction(state *app.State) gin.HandlerFunc {
 			"orderUrl":       orderURL,
 			"orderDate":      orderDate,
 			"retractionDate": retractionDate,
-			// 向上取整:剩 47.9 小时说成"1 天"会让用户以为还有一整天缓冲,
-			// 实际不到两天。宁可说得紧一点。
-			"hoursLeft": int(math.Ceil(time.Until(deadline).Hours())),
-			"reasons":   retractionReasons,
+			"hoursLeft":      int(math.Ceil(time.Until(deadline).Hours())),
+			"reasons":        retractionReasons,
 		})
 	}
 }
 
 // PostRetraction POST /api/server-control/:service_name/retraction
-// body: { "orderId": 123, "confirm": true, "reason": "other", "comment": "可选说明" }
-// 与官网一致,省略 reason 时默认为 other。
-//
-// 申请无理由撤单。这一步会把订单退掉、服务器随之注销 —— 不可逆,
-// 所以要求 confirm:true,和重装、终止服务同一套把关。
 func PostRetraction(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		svc := strings.TrimSpace(c.Param("service_name"))
+		if svc != "" && !isValidServiceName(svc) {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "非法的服务名称格式", "code": "INVALID_SERVICE_NAME"})
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -401,15 +411,12 @@ func PostRetraction(state *app.State) gin.HandlerFunc {
 			return
 		}
 		if !retractionSupportedRegion(acc.Endpoint) {
-			// 前端在 GET 那步就不会显示按钮,这里是纵深防御:接口可以被直接调,
-			// 而打过去的结果是 OVH 404,报错会很难懂
 			c.JSON(http.StatusBadRequest, gin.H{
 				"success": false,
 				"error":   "美区（OVHcloud US）的 API 没有撤单接口，无法从这里申请撤单", "code": "EA4C8E05B",
 			})
 			return
 		}
-		svc := strings.TrimSpace(c.Param("service_name"))
 		var body struct {
 			OrderID int64  `json:"orderId"`
 			Reason  string `json:"reason"`
@@ -421,15 +428,12 @@ func PostRetraction(state *app.State) gin.HandlerFunc {
 			return
 		}
 		if !body.Confirm {
-			// 撤单会连带注销服务器。前端已经有二次确认,这里是服务端的最后一道闸:
-			// 少一个 confirm 就少一次"手滑把在跑的机器退掉"的可能。
 			c.JSON(http.StatusBadRequest, gin.H{
 				"success": false,
 				"error":   "撤单不可逆（订单退款 + 服务器注销），必须带 confirm:true", "code": "E40730223",
 			})
 			return
 		}
-		// 官网确认页不要求用户填理由,它固定发送 other;保留旧客户端的合法枚举。
 		if body.Reason == "" {
 			body.Reason = "other"
 		}
@@ -442,7 +446,6 @@ func PostRetraction(state *app.State) gin.HandlerFunc {
 			return
 		}
 
-		// 确认的是页面展示的订单,不能在提交时重新猜另一张订单。
 		orderID := body.OrderID
 		if orderID <= 0 || svc == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "请重新打开撤单窗口,确认订单号后再提交", "code": "RETRACTION_ORDER_CHANGED"})
@@ -453,8 +456,13 @@ func PostRetraction(state *app.State) gin.HandlerFunc {
 			return
 		}
 
+		orderIDStr := strconv.FormatInt(orderID, 10)
+		ordPath, ok := ovhPathOrAbort(c, "me", "order", orderIDStr)
+		if !ok {
+			return
+		}
 		var orderCheck map[string]interface{}
-		if err := client.Get(fmt.Sprintf("/me/order/%d", orderID), &orderCheck); err == nil {
+		if err := client.Get(ordPath, &orderCheck); err == nil {
 			rd, _ := orderCheck["retractionDate"].(string)
 			if rd == "" {
 				c.JSON(http.StatusBadRequest, gin.H{
@@ -474,11 +482,15 @@ func PostRetraction(state *app.State) gin.HandlerFunc {
 			}
 		}
 
+		retractPath, ok := ovhPathOrAbort(c, "me", "order", orderIDStr, "retraction")
+		if !ok {
+			return
+		}
 		payload := map[string]interface{}{"reason": body.Reason}
 		if cm := strings.TrimSpace(body.Comment); cm != "" {
 			payload["comment"] = cm
 		}
-		if err := client.Post(fmt.Sprintf("/me/order/%d/retraction", orderID), payload, nil); err != nil {
+		if err := client.Post(retractPath, payload, nil); err != nil {
 			state.Logger.Error(fmt.Sprintf("申请撤单失败 (订单 %d / %s): %s", orderID, svc, err.Error()), "server_control")
 			c.JSON(http.StatusBadGateway, gin.H{
 				"success": false,
@@ -487,8 +499,9 @@ func PostRetraction(state *app.State) gin.HandlerFunc {
 			return
 		}
 		state.Logger.Warn(fmt.Sprintf("已为 %s 申请撤单 (订单 %d, 理由 %s)", svc, orderID, body.Reason), "server_control")
+		cacheScope := accountCacheFingerprint(acc)
 		retractionLookupMu.Lock()
-		delete(retractionLookupCache, acc.ID+"|"+svc)
+		delete(retractionLookupCache, cacheScope+"|"+svc)
 		retractionLookupMu.Unlock()
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
@@ -500,26 +513,39 @@ func PostRetraction(state *app.State) gin.HandlerFunc {
 
 // validateRetractionOrder 提交前重新确认期限与服务归属,不信任五分钟前的映射缓存。
 func validateRetractionOrder(client *ovhsdk.Client, orderID int64, svc string) error {
+	orderIDStr := strconv.FormatInt(orderID, 10)
+	ordPath, err := buildOVHPath("me", "order", orderIDStr)
+	if err != nil {
+		return err
+	}
 	var order struct {
 		RetractionDate string `json:"retractionDate"`
 	}
-	if err := client.Get(fmt.Sprintf("/me/order/%d", orderID), &order); err != nil {
+	if err := client.Get(ordPath, &order); err != nil {
 		return err
 	}
 	deadline, ok := parseOVHTime(order.RetractionDate)
 	if !ok || !time.Now().Before(deadline) {
 		return fmt.Errorf("withdrawal period unavailable")
 	}
+	detailsPath, err := buildOVHPath("me", "order", orderIDStr, "details")
+	if err != nil {
+		return err
+	}
 	var ids []int64
-	if err := client.Get(fmt.Sprintf("/me/order/%d/details", orderID), &ids); err != nil {
+	if err := client.Get(detailsPath, &ids); err != nil {
 		return err
 	}
 	for _, id := range ids {
+		dPath, err := buildOVHPath("me", "order", orderIDStr, "details", strconv.FormatInt(id, 10))
+		if err != nil {
+			return err
+		}
 		var detail struct {
 			Domain    string `json:"domain"`
 			Cancelled bool   `json:"cancelled"`
 		}
-		if err := client.Get(fmt.Sprintf("/me/order/%d/details/%d", orderID, id), &detail); err != nil {
+		if err := client.Get(dPath, &detail); err != nil {
 			return err
 		}
 		if detail.Domain == svc && !detail.Cancelled {

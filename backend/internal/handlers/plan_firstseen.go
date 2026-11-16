@@ -18,8 +18,9 @@ import (
 const kvPlanFirstSeen = "catalog_plan_first_seen"
 
 type planFirstSeenData struct {
-	Buckets map[string]bool  `json:"buckets"` // 已建立基线的目录视角
-	Plans   map[string]int64 `json:"plans"`   // planCode → unix 秒;0 = 基线时已在售
+	Buckets     map[string]bool             `json:"buckets"`               // 已建立基线的目录视角
+	BucketPlans map[string]map[string]int64 `json:"bucketPlans,omitempty"` // 按子公司/视角独立隔离的首次出现时间戳字典
+	Plans       map[string]int64            `json:"plans,omitempty"`       // 兼容旧落盘结构 & 全局已确认新品首次上架时间(>0)
 }
 
 var planFirstSeenMu sync.Mutex
@@ -38,9 +39,27 @@ func stampPlanFirstSeen(state *app.State, bucket string, plans []types.ServerPla
 	if data.Buckets == nil {
 		data.Buckets = map[string]bool{}
 	}
+	if data.BucketPlans == nil {
+		data.BucketPlans = map[string]map[string]int64{}
+	}
 	if data.Plans == nil {
 		data.Plans = map[string]int64{}
 	}
+
+	// 平滑迁移旧版扁平 JSON：仅对已建立过基线且尚未拆出独立分桶的旧 bucket 继承历史快照
+	if data.Buckets[bucket] && data.BucketPlans[bucket] == nil {
+		migrated := make(map[string]int64, len(data.Plans))
+		for k, v := range data.Plans {
+			migrated[k] = v
+		}
+		data.BucketPlans[bucket] = migrated
+	}
+	bucketMap := data.BucketPlans[bucket]
+	if bucketMap == nil {
+		bucketMap = map[string]int64{}
+		data.BucketPlans[bucket] = bucketMap
+	}
+
 	baseline := !data.Buckets[bucket]
 	now := time.Now().Unix()
 	changed := baseline
@@ -49,13 +68,26 @@ func stampPlanFirstSeen(state *app.State, bucket string, plans []types.ServerPla
 		if p.PlanCode == "" {
 			continue
 		}
-		if _, ok := data.Plans[p.PlanCode]; ok {
+		if _, ok := bucketMap[p.PlanCode]; ok {
 			continue
 		}
 		if baseline {
-			data.Plans[p.PlanCode] = 0
+			// 新视角首次建立基线：若其他已建基线的视角已经捕获到它是上架新品(>0)，沿用该首次发现时间；
+			// 否则仅在当前视角记 0，绝不向全局 Plans 写入 0 以免污染其他已有基线视角的新品判定！
+			if confirmedTs, ok := data.Plans[p.PlanCode]; ok && confirmedTs > 0 {
+				bucketMap[p.PlanCode] = confirmedTs
+			} else {
+				bucketMap[p.PlanCode] = 0
+			}
 		} else {
-			data.Plans[p.PlanCode] = now
+			ts := now
+			if confirmedTs, ok := data.Plans[p.PlanCode]; ok && confirmedTs > 0 && confirmedTs < ts {
+				ts = confirmedTs
+			}
+			bucketMap[p.PlanCode] = ts
+			if existing, ok := data.Plans[p.PlanCode]; !ok || existing <= 0 {
+				data.Plans[p.PlanCode] = ts
+			}
 		}
 		changed = true
 	}
@@ -66,7 +98,7 @@ func stampPlanFirstSeen(state *app.State, bucket string, plans []types.ServerPla
 	}
 	out := make(map[string]int64, len(plans))
 	for _, p := range plans {
-		out[p.PlanCode] = data.Plans[p.PlanCode]
+		out[p.PlanCode] = bucketMap[p.PlanCode]
 	}
 	return out
 }

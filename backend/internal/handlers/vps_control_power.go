@@ -14,14 +14,21 @@ import (
 // /vps/{name}/start 返回 vps.Task 对象 { id, state, type, progress, date }
 func VpsStart(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		startPath, ok := ovhPathOrAbort(c, "vps", svc, "start")
+		if !ok {
+			return
+		}
 		var task map[string]interface{}
-		if err := client.Post("/vps/"+svc+"/start", map[string]interface{}{}, &task); err != nil {
+		if err := client.Post(startPath, map[string]interface{}{}, &task); err != nil {
 			// 任务冲突(重装/快照/另一个电源操作在跑)回 409,不再当服务器错误
 			if ovh.IsTaskConflict(err) {
 				c.JSON(http.StatusConflict, gin.H{"success": false, "error": "该 VPS 已有任务在进行中(重装/快照/另一个电源操作),等它完成后再启动。原文见:" + ovh.Explain(err)})
@@ -40,14 +47,21 @@ func VpsStart(state *app.State) gin.HandlerFunc {
 // 注意:OVH 不会因为 stop 停止计费;省电是物理服务器视角,VPS 仍占用 hypervisor 配额
 func VpsStop(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		stopPath, ok := ovhPathOrAbort(c, "vps", svc, "stop")
+		if !ok {
+			return
+		}
 		var task map[string]interface{}
-		if err := client.Post("/vps/"+svc+"/stop", map[string]interface{}{}, &task); err != nil {
+		if err := client.Post(stopPath, map[string]interface{}{}, &task); err != nil {
 			// 任务冲突(重装/快照/另一个电源操作在跑)回 409,不再当服务器错误
 			if ovh.IsTaskConflict(err) {
 				c.JSON(http.StatusConflict, gin.H{"success": false, "error": "该 VPS 已有任务在进行中(重装/快照/另一个电源操作),等它完成后再关机。原文见:" + ovh.Explain(err)})
@@ -65,14 +79,21 @@ func VpsStop(state *app.State) gin.HandlerFunc {
 // VpsReboot POST /api/vps-control/:service_name/reboot
 func VpsReboot(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		rebootPath, ok := ovhPathOrAbort(c, "vps", svc, "reboot")
+		if !ok {
+			return
+		}
 		var task map[string]interface{}
-		if err := client.Post("/vps/"+svc+"/reboot", map[string]interface{}{}, &task); err != nil {
+		if err := client.Post(rebootPath, map[string]interface{}{}, &task); err != nil {
 			// 同独服:已有重启在跑时 OVH 拒绝重复请求,按幂等成功处理
 			if ovh.IsRebootAlreadyRequested(err) {
 				c.JSON(http.StatusOK, gin.H{
@@ -97,14 +118,21 @@ func VpsReboot(state *app.State) gin.HandlerFunc {
 // 那条只在 EU/CA 注册,US 站点没有,换过去美区控制台会直接坏掉。
 func VpsGetConsoleUrl(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		consolePath, ok := ovhPathOrAbort(c, "vps", svc, "getConsoleUrl")
+		if !ok {
+			return
+		}
 		var url string
-		if err := client.Post("/vps/"+svc+"/getConsoleUrl", map[string]interface{}{}, &url); err != nil {
+		if err := client.Post(consolePath, map[string]interface{}{}, &url); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
@@ -120,6 +148,9 @@ func VpsGetConsoleUrl(state *app.State) gin.HandlerFunc {
 // "已下线 + 替代做法"。改密码任何时候都能走 noVNC 里的 passwd。
 func VpsSetPassword(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if _, ok := requireServiceName(c); !ok {
+			return
+		}
 		c.JSON(http.StatusGone, gin.H{
 			"success": false,
 			"error":   "OVH 已下线 VPS 远程重置密码接口(2026-10-15 废弃,无替代)。请点「控制台」打开 noVNC,进系统后用 passwd 命令修改", "code": "E2D28CDC9",

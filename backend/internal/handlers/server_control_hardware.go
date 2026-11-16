@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"net/url"
 	"regexp"
 	"strings"
 	"sync"
@@ -45,14 +44,19 @@ func hardwareParallelGetDetails(client *ovhsdk.Client, keys []interface{}, pathF
 				errs[idx] = err
 				return
 			}
-			if err := client.Get(pathFn(key), &d); err != nil {
+			p := pathFn(key)
+			if p == "" {
+				errs[idx] = errUnsafeOVHSegment
+				return
+			}
+			if err := client.Get(p, &d); err != nil {
 				errs[idx] = err
 				return
 			}
 			// OVH 偶尔对已消失的资源回 200 + null,这里也算"没拿到",
 			// 保证 results[idx]==nil 与 errs[idx]!=nil 严格同步(调用方靠这个统计失败数)
 			if d == nil {
-				errs[idx] = fmt.Errorf("OVH 返回了空对象: %s", pathFn(key))
+				errs[idx] = fmt.Errorf("OVH 返回了空对象: %s", p)
 				return
 			}
 			results[idx] = d
@@ -77,28 +81,37 @@ func hardwareFirstErr(errs ...[]error) error {
 // GetHardwareInfo GET /api/server-control/:service_name/hardware
 func GetHardwareInfo(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		acc, _ := ovhAccountFor(state, c)
+		cacheScope := accountCacheFingerprint(acc)
+		hwPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "specifications", "hardware")
+		if !ok {
+			return
+		}
 		var hardware map[string]interface{}
-		if err := client.Get("/dedicated/server/"+svc+"/specifications/hardware", &hardware); err != nil {
+		if err := client.Get(hwPath, &hardware); err != nil {
 			state.Logger.Error("获取服务器 "+svc+" 硬件信息失败: "+err.Error(), "server_control")
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		// 订购配置 vs 实际硬件 → "中奖"比对。拉不到订购配置(权限 / 老合同)不影响硬件信息本身,
 		// 只是 lottery.checked=false,前端不显示中奖标识。
-		spec, specErr := fetchOrderedSpec(client, svc)
+		spec, specErr := fetchOrderedSpec(client, cacheScope, svc)
 		lottery := computeHardwareLottery(spec, hardware)
 		if specErr != nil {
 			lottery.Reason = ovh.Explain(specErr)
 			state.Logger.Warn("获取服务器 "+svc+" 订购配置失败,跳过中奖比对: "+specErr.Error(), "server_control")
 		}
 		// 顺手写入结果缓存:机器列表页的徽章从这里取,列表刷新就不用再打一遍这些请求
-		hwLotteryCache.Store(svc, hwLotteryEntry{lot: lottery, at: time.Now()})
+		hwLotteryCache.Store(cacheScope+"|"+svc, hwLotteryEntry{lot: lottery, at: time.Now()})
 
 		// 缺字段补 N/A / 0 / {} / []，
 		// 否则 JSON 序列化 null 让前端 .toLowerCase / .length 崩溃
@@ -129,14 +142,21 @@ func GetHardwareInfo(state *app.State) gin.HandlerFunc {
 // GetNetworkSpecs GET /api/server-control/:service_name/network-specs
 func GetNetworkSpecs(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		netPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "specifications", "network")
+		if !ok {
+			return
+		}
 		var network map[string]interface{}
-		if err := client.Get("/dedicated/server/"+svc+"/specifications/network", &network); err != nil {
+		if err := client.Get(netPath, &network); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
@@ -159,20 +179,27 @@ func GetNetworkSpecs(state *app.State) gin.HandlerFunc {
 // GetServerIPs GET /api/server-control/:service_name/ips
 func GetServerIPs(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		ipsPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "ips")
+		if !ok {
+			return
+		}
 		var list []string
-		if err := client.Get("/dedicated/server/"+svc+"/ips", &list); err != nil {
+		if err := client.Get(ipsPath, &list); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		// 并发拉每个 IP 的详情
 		details, _ := parallelGetStringKeysWithErrs(client, list, func(ip string) string {
-			return "/ip/" + strings.ReplaceAll(ip, "/", "%2F")
+			return safePathFn("ip", ip)
 		}, 10)
 		ips := []gin.H{}
 		for i, ip := range list {
@@ -214,14 +241,21 @@ func GetServerIPs(state *app.State) gin.HandlerFunc {
 // 流程:服务器 IP 块 → 每块查 reverse 列表 → 每个 IP 查 reverse 详情。
 func GetReverseDNS(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		ipsPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "ips")
+		if !ok {
+			return
+		}
 		var ipBlocks []string
-		if err := client.Get("/dedicated/server/"+svc+"/ips", &ipBlocks); err != nil {
+		if err := client.Get(ipsPath, &ipBlocks); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
@@ -242,7 +276,11 @@ func GetReverseDNS(state *app.State) gin.HandlerFunc {
 			go func(idx int, block string) {
 				defer wg.Done()
 				defer func() { <-sem }()
-				encoded := strings.ReplaceAll(block, "/", "%2F")
+				revPath, pErr := buildOVHPath("ip", block, "reverse")
+				if pErr != nil {
+					blockErrs[idx] = pErr
+					return
+				}
 				var ips []string
 				client, err := ovh.IsolateClient(client)
 				if err != nil {
@@ -250,7 +288,7 @@ func GetReverseDNS(state *app.State) gin.HandlerFunc {
 
 					return
 				}
-				if err := client.Get("/ip/"+encoded+"/reverse", &ips); err != nil {
+				if err := client.Get(revPath, &ips); err != nil {
 					blockErrs[idx] = err
 				}
 				blockResults[idx] = blockResult{block: block, ips: ips}
@@ -279,14 +317,18 @@ func GetReverseDNS(state *app.State) gin.HandlerFunc {
 			go func(idx int, en entry) {
 				defer wg2.Done()
 				defer func() { <-sem2 }()
-				encoded := strings.ReplaceAll(en.block, "/", "%2F")
+				detailPath, pErr := buildOVHPath("ip", en.block, "reverse", en.ip)
+				if pErr != nil {
+					detailErrs[idx] = pErr
+					return
+				}
 				var d map[string]interface{}
 				client, err := ovh.IsolateClient(client)
 				if err != nil {
 					detailErrs[idx] = err
 					return
 				}
-				if err := client.Get("/ip/"+encoded+"/reverse/"+en.ip, &d); err != nil {
+				if err := client.Get(detailPath, &d); err != nil {
 					detailErrs[idx] = err
 					return
 				}
@@ -349,7 +391,10 @@ func GetReverseDNS(state *app.State) gin.HandlerFunc {
 // 设反向 DNS 也走 /ip/{ipBlock}/reverse。需要先找到 body.IP 所属的 IP 块。
 func SetReverseDNS(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -366,14 +411,21 @@ func SetReverseDNS(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "IP地址和反向DNS不能为空", "code": "E907CF2B8"})
 			return
 		}
+		if _, ok := validateSingleIP(body.IP); !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "非法 IP 地址格式", "code": "INVALID_IP"})
+			return
+		}
 		// 找该 IP 所在的服务器 IP 块
 		block, err := findIPBlockForServer(client, svc, body.IP)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
-		encoded := strings.ReplaceAll(block, "/", "%2F")
-		if err := client.Post("/ip/"+encoded+"/reverse", map[string]interface{}{
+		revPath, ok := ovhPathOrAbort(c, "ip", block, "reverse")
+		if !ok {
+			return
+		}
+		if err := client.Post(revPath, map[string]interface{}{
 			"ipReverse": body.IP,
 			"reverse":   body.Reverse,
 		}, nil); err != nil {
@@ -389,8 +441,21 @@ func SetReverseDNS(state *app.State) gin.HandlerFunc {
 // OVH 的 DELETE /ip/{ipBlock}/reverse/{ipReverse} 删除单条反向记录。
 func DeleteReverseDNS(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
-		ip := c.Param("ip")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
+		ip, ok := validateSingleIP(c.Param("ip"))
+		if !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "非法 IP: " + c.Param("ip")})
+			return
+		}
+		if rawBlock := strings.TrimSpace(c.Query("block")); rawBlock != "" {
+			if _, ok := validateIPOrCIDR(rawBlock); !ok {
+				c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "非法 block 参数", "code": "INVALID_IP_BLOCK"})
+				return
+			}
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -401,8 +466,11 @@ func DeleteReverseDNS(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
-		encoded := strings.ReplaceAll(block, "/", "%2F")
-		if err := client.Delete("/ip/"+encoded+"/reverse/"+ip, nil); err != nil {
+		delPath, ok := ovhPathOrAbort(c, "ip", block, "reverse", ip)
+		if !ok {
+			return
+		}
+		if err := client.Delete(delPath, nil); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
@@ -420,8 +488,12 @@ func findIPBlockForServer(client interface {
 	if ip == nil {
 		return "", fmt.Errorf("非法 IP: %s", ipStr)
 	}
+	ipsPath, err := buildOVHPath("dedicated", "server", svc, "ips")
+	if err != nil {
+		return "", err
+	}
 	var blocks []string
-	if err := client.Get("/dedicated/server/"+svc+"/ips", &blocks); err != nil {
+	if err := client.Get(ipsPath, &blocks); err != nil {
 		return "", err
 	}
 	for _, blk := range blocks {
@@ -452,14 +524,21 @@ func findIPBlockForServer(client interface {
 // GetServiceInfo GET /api/server-control/:service_name/serviceinfo
 func GetServiceInfo(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		svcPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "serviceInfos")
+		if !ok {
+			return
+		}
 		var info map[string]interface{}
-		if err := client.Get("/dedicated/server/"+svc+"/serviceInfos", &info); err != nil {
+		if err := client.Get(svcPath, &info); err != nil {
 			state.Logger.Error("获取服务器 "+svc+" 服务信息失败: "+err.Error(), "server_control")
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
@@ -522,7 +601,10 @@ func GetServiceInfo(state *app.State) gin.HandlerFunc {
 // forced=true (engaged 合同期) 时 OVH 会拒,我们这里直接返 400 提示用户。
 func UpdateServiceRenewal(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -537,8 +619,12 @@ func UpdateServiceRenewal(state *app.State) gin.HandlerFunc {
 			return
 		}
 
+		svcPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "serviceInfos")
+		if !ok {
+			return
+		}
 		var info map[string]interface{}
-		if err := client.Get("/dedicated/server/"+svc+"/serviceInfos", &info); err != nil {
+		if err := client.Get(svcPath, &info); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
@@ -604,7 +690,7 @@ func UpdateServiceRenewal(state *app.State) gin.HandlerFunc {
 		// services.Service 里只有 renew 可写,其余 12 个字段全是只读 ——
 		// 把 GET 回来的整个对象发回去会被 OVH 400
 		// "Try to alter read-only properties: status, creation, expiration"
-		if err := putServiceRenew(client, "/dedicated/server/"+svc+"/serviceInfos", sid, next, body.Period > 0); err != nil {
+		if err := putServiceRenew(client, svcPath, sid, next, body.Period > 0); err != nil {
 			state.Logger.Error("修改服务器 "+svc+" 续费策略失败: "+err.Error(), "server_control")
 			respondRenewError(c, state, svc, err)
 			return
@@ -626,7 +712,10 @@ func UpdateServiceRenewal(state *app.State) gin.HandlerFunc {
 // endpoint 还有 kimsufi-* / soyoustart-* 别名,散装比较漏一种写法门控就失效了。
 func ChangeContact(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		if region := srvRegionFor(state, c); region == srvRegionUS {
 			state.Logger.Warn("账户所在大区 "+region+" 不提供服务器联系人变更(changeContact),已拦截请求", "server_control")
 			c.JSON(http.StatusBadRequest, gin.H{
@@ -659,8 +748,12 @@ func ChangeContact(state *app.State) gin.HandlerFunc {
 			return
 		}
 		// OVH 这个接口返回 long[](任务 ID 数组),不是 map
+		contactPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "changeContact")
+		if !ok {
+			return
+		}
 		var taskIDs []int64
-		if err := client.Post("/dedicated/server/"+svc+"/changeContact", params, &taskIDs); err != nil {
+		if err := client.Post(contactPath, params, &taskIDs); err != nil {
 			state.Logger.Error("变更服务器 "+svc+" 联系人失败: "+err.Error(), "server_control")
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
@@ -677,20 +770,27 @@ func ChangeContact(state *app.State) gin.HandlerFunc {
 // GetInterventions GET /api/server-control/:service_name/interventions
 func GetInterventions(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		intvPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "intervention")
+		if !ok {
+			return
+		}
 		var ids []interface{}
-		if err := client.Get("/dedicated/server/"+svc+"/intervention", &ids); err != nil {
+		if err := client.Get(intvPath, &ids); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		// 并发拉详情。失败的条目不能静默丢弃,否则限流/权限问题会让列表凭空变短
 		details, detailErrs := hardwareParallelGetDetails(client, ids, func(k interface{}) string {
-			return "/dedicated/server/" + svc + "/intervention/" + idToString(k)
+			return safePathFn("dedicated", "server", svc, "intervention", idToString(k))
 		}, 10)
 		list := []map[string]interface{}{}
 		for _, d := range details {
@@ -720,15 +820,25 @@ func GetInterventions(state *app.State) gin.HandlerFunc {
 // GetInterventionDetail GET /api/server-control/:service_name/interventions/:intervention_id
 func GetInterventionDetail(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
-		id := c.Param("intervention_id")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
+		id, ok := requirePositiveIDParam(c, "intervention_id", "干预 ID", "INVALID_INTERVENTION_ID")
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		detailPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "intervention", id)
+		if !ok {
+			return
+		}
 		var d map[string]interface{}
-		if err := client.Get("/dedicated/server/"+svc+"/intervention/"+id, &d); err != nil {
+		if err := client.Get(detailPath, &d); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
@@ -739,20 +849,27 @@ func GetInterventionDetail(state *app.State) gin.HandlerFunc {
 // GetPlannedInterventions GET /api/server-control/:service_name/planned-interventions
 func GetPlannedInterventions(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		piPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "plannedIntervention")
+		if !ok {
+			return
+		}
 		var ids []interface{}
-		if err := client.Get("/dedicated/server/"+svc+"/plannedIntervention", &ids); err != nil {
+		if err := client.Get(piPath, &ids); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
 		// 并发拉详情。同 GetInterventions:失败要显式暴露,不能让列表静默变空
 		details, detailErrs := hardwareParallelGetDetails(client, ids, func(k interface{}) string {
-			return "/dedicated/server/" + svc + "/plannedIntervention/" + idToString(k)
+			return safePathFn("dedicated", "server", svc, "plannedIntervention", idToString(k))
 		}, 10)
 		list := []map[string]interface{}{}
 		for _, d := range details {
@@ -782,15 +899,25 @@ func GetPlannedInterventions(state *app.State) gin.HandlerFunc {
 // GetPlannedInterventionDetail GET /api/server-control/:service_name/planned-interventions/:intervention_id
 func GetPlannedInterventionDetail(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
-		id := c.Param("intervention_id")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
+		id, ok := requirePositiveIDParam(c, "intervention_id", "计划干预 ID", "INVALID_INTERVENTION_ID")
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		detailPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "plannedIntervention", id)
+		if !ok {
+			return
+		}
 		var d map[string]interface{}
-		if err := client.Get(fmt.Sprintf("/dedicated/server/%s/plannedIntervention/%s", svc, id), &d); err != nil {
+		if err := client.Get(detailPath, &d); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
@@ -861,7 +988,10 @@ func parseMemorySlots(raw interface{}) []string {
 // HardwareReplace POST /api/server-control/:service_name/hardware/replace
 func HardwareReplace(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -904,7 +1034,11 @@ func HardwareReplace(state *app.State) gin.HandlerFunc {
 			if v, ok := body["inverse"].(bool); ok {
 				inverse = v
 			}
-			err2 = client.Post("/dedicated/server/"+svc+"/support/replace/hardDiskDrive", map[string]interface{}{
+			repPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "support", "replace", "hardDiskDrive")
+			if !ok {
+				return
+			}
+			err2 = client.Post(repPath, map[string]interface{}{
 				"comment": comment,
 				"disks":   disks,
 				"inverse": inverse,
@@ -927,7 +1061,11 @@ func HardwareReplace(state *app.State) gin.HandlerFunc {
 			if slots := parseMemorySlots(body["slots"]); len(slots) > 0 {
 				memoryBody["slots"] = slots
 			}
-			err2 = client.Post("/dedicated/server/"+svc+"/support/replace/memory", memoryBody, &result)
+			repPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "support", "replace", "memory")
+			if !ok {
+				return
+			}
+			err2 = client.Post(repPath, memoryBody, &result)
 		case "cooling":
 			details := "Cooling system failure"
 			if v, ok := body["details"].(string); ok && v != "" {
@@ -936,7 +1074,11 @@ func HardwareReplace(state *app.State) gin.HandlerFunc {
 			if comment == "" {
 				comment = "Request cooling system replacement - fan failure or overheating"
 			}
-			err2 = client.Post("/dedicated/server/"+svc+"/support/replace/cooling", map[string]interface{}{
+			repPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "support", "replace", "cooling")
+			if !ok {
+				return
+			}
+			err2 = client.Post(repPath, map[string]interface{}{
 				"comment": comment,
 				"details": details,
 			}, &result)
@@ -989,14 +1131,21 @@ func HardwareReplace(state *app.State) gin.HandlerFunc {
 // GetHardwareRaidProfiles GET /api/server-control/:service_name/hardware-raid-profiles
 func GetHardwareRaidProfiles(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		profPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "install", "hardwareRaidProfile")
+		if !ok {
+			return
+		}
 		var profiles interface{}
-		if err := client.Get("/dedicated/server/"+svc+"/install/hardwareRaidProfile", &profiles); err != nil {
+		if err := client.Get(profPath, &profiles); err != nil {
 			errMsg := strings.ToLower(err.Error())
 			if strings.Contains(errMsg, "not supported") {
 				c.JSON(http.StatusOK, gin.H{
@@ -1017,14 +1166,21 @@ func GetHardwareRaidProfiles(state *app.State) gin.HandlerFunc {
 // GetHardwareDiskInfo GET /api/server-control/:service_name/hardware-disk-info
 func GetHardwareDiskInfo(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		hwPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "specifications", "hardware")
+		if !ok {
+			return
+		}
 		var hardware map[string]interface{}
-		if err := client.Get("/dedicated/server/"+svc+"/specifications/hardware", &hardware); err != nil {
+		if err := client.Get(hwPath, &hardware); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
@@ -1078,19 +1234,27 @@ func GetHardwareDiskInfo(state *app.State) gin.HandlerFunc {
 // GetPartitionSchemes GET /api/server-control/:service_name/partition-schemes
 func GetPartitionSchemes(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if c.Param("service_name") != "" {
+			if _, ok := requireServiceName(c); !ok {
+				return
+			}
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
-		templateName := c.Query("templateName")
+		templateName := strings.TrimSpace(c.Query("templateName"))
 		if templateName == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少templateName参数", "code": "EB164A0F1"})
 			return
 		}
-		encodedTpl := url.PathEscape(templateName)
+		schemesPath, ok := ovhPathOrAbort(c, "dedicated", "installationTemplate", templateName, "partitionScheme")
+		if !ok {
+			return
+		}
 		var schemes []string
-		if err := client.Get("/dedicated/installationTemplate/"+encodedTpl+"/partitionScheme", &schemes); err != nil {
+		if err := client.Get(schemesPath, &schemes); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
@@ -1111,19 +1275,25 @@ func GetPartitionSchemes(state *app.State) gin.HandlerFunc {
 			go func(idx int, sname string) {
 				defer wg.Done()
 				defer func() { <-sem }()
-				es := url.PathEscape(sname)
+				sInfoPath, pErr := buildOVHPath("dedicated", "installationTemplate", templateName, "partitionScheme", sname)
+				if pErr != nil {
+					schemeResults[idx] = schemeResult{name: sname, missingInfo: true}
+					return
+				}
 				var info map[string]interface{}
 				client, err := ovh.IsolateClient(client)
 				if err != nil {
 					schemeResults[idx] = schemeResult{name: sname, missingInfo: true}
 					return
 				}
-				if err := client.Get("/dedicated/installationTemplate/"+encodedTpl+"/partitionScheme/"+es, &info); err != nil {
+				if err := client.Get(sInfoPath, &info); err != nil {
 					schemeResults[idx] = schemeResult{name: sname, missingInfo: true}
 					return
 				}
 				var partitions []string
-				_ = client.Get("/dedicated/installationTemplate/"+encodedTpl+"/partitionScheme/"+es+"/partition", &partitions)
+				if sPartPath, ppErr := buildOVHPath("dedicated", "installationTemplate", templateName, "partitionScheme", sname, "partition"); ppErr == nil {
+					_ = client.Get(sPartPath, &partitions)
+				}
 				schemeResults[idx] = schemeResult{name: sname, info: info, parts: partitions}
 			}(i, schemeName)
 		}
@@ -1140,7 +1310,7 @@ func GetPartitionSchemes(state *app.State) gin.HandlerFunc {
 				priority = int(v)
 			}
 			// 并发拉该 scheme 的 partition 详情
-			encodedScheme := url.PathEscape(sr.name)
+			sname := sr.name
 			partDetails := make([]gin.H, len(sr.parts))
 			pSem := make(chan struct{}, 10)
 			var pWg sync.WaitGroup
@@ -1150,12 +1320,16 @@ func GetPartitionSchemes(state *app.State) gin.HandlerFunc {
 				go func(pidx int, p string) {
 					defer pWg.Done()
 					defer func() { <-pSem }()
+					partPath, pErr := buildOVHPath("dedicated", "installationTemplate", templateName, "partitionScheme", sname, "partition", p)
+					if pErr != nil {
+						return
+					}
 					var partInfo map[string]interface{}
 					client, err := ovh.IsolateClient(client)
 					if err != nil {
 						return
 					}
-					if err := client.Get("/dedicated/installationTemplate/"+encodedTpl+"/partitionScheme/"+encodedScheme+"/partition/"+url.PathEscape(p), &partInfo); err != nil {
+					if err := client.Get(partPath, &partInfo); err != nil {
 						return
 					}
 					order := 0

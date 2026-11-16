@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	ovhsdk "github.com/ovh/go-ovh/ovh"
@@ -20,8 +21,12 @@ import (
 
 // serviceIDForVps 从 /vps/{name}/serviceInfos 拿 serviceId,engagement 端点需要数字 ID。
 func serviceIDForVps(client *ovhsdk.Client, svc string) (int64, error) {
+	svcPath, err := buildOVHPath("vps", svc, "serviceInfos")
+	if err != nil {
+		return 0, err
+	}
 	var info map[string]interface{}
-	if err := client.Get("/vps/"+svc+"/serviceInfos", &info); err != nil {
+	if err := client.Get(svcPath, &info); err != nil {
 		return 0, err
 	}
 	id, _ := numconv.ToInt64(info["serviceId"])
@@ -34,7 +39,10 @@ func serviceIDForVps(client *ovhsdk.Client, svc string) (int64, error) {
 // GetVpsEngagement GET /api/vps-control/:service_name/engagement
 func GetVpsEngagement(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -45,8 +53,12 @@ func GetVpsEngagement(state *app.State) gin.HandlerFunc {
 			respondOVHError(c, err)
 			return
 		}
+		engPath, ok := ovhPathOrAbort(c, "services", strconv.FormatInt(serviceID, 10), "billing", "engagement")
+		if !ok {
+			return
+		}
 		var eng map[string]interface{}
-		if err := client.Get(fmt.Sprintf("/services/%d/billing/engagement", serviceID), &eng); err != nil {
+		if err := client.Get(engPath, &eng); err != nil {
 			// 只有 404 才是「该服务没有合同期」这个正常业务态。该端点是 BETA,5xx/限流是常态,
 			// 把它们也吞成 null 会让合同期内的机器显示成「无合同期」,必须原样报出去。
 			if ovhIsNotFound(err) {
@@ -64,7 +76,10 @@ func GetVpsEngagement(state *app.State) gin.HandlerFunc {
 // GetVpsEngagementAvailable GET /api/vps-control/:service_name/engagement/available
 func GetVpsEngagementAvailable(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -75,8 +90,12 @@ func GetVpsEngagementAvailable(state *app.State) gin.HandlerFunc {
 			respondOVHError(c, err)
 			return
 		}
+		availPath, ok := ovhPathOrAbort(c, "services", strconv.FormatInt(serviceID, 10), "billing", "engagement", "available")
+		if !ok {
+			return
+		}
 		var pricings []map[string]interface{}
-		if err := client.Get(fmt.Sprintf("/services/%d/billing/engagement/available", serviceID), &pricings); err != nil {
+		if err := client.Get(availPath, &pricings); err != nil {
 			respondOVHError(c, err)
 			return
 		}
@@ -87,7 +106,10 @@ func GetVpsEngagementAvailable(state *app.State) gin.HandlerFunc {
 // GetVpsEngagementRequest GET /api/vps-control/:service_name/engagement/request
 func GetVpsEngagementRequest(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -98,8 +120,12 @@ func GetVpsEngagementRequest(state *app.State) gin.HandlerFunc {
 			respondOVHError(c, err)
 			return
 		}
+		reqPath, ok := ovhPathOrAbort(c, "services", strconv.FormatInt(serviceID, 10), "billing", "engagement", "request")
+		if !ok {
+			return
+		}
 		var req map[string]interface{}
-		if err := client.Get(fmt.Sprintf("/services/%d/billing/engagement/request", serviceID), &req); err != nil {
+		if err := client.Get(reqPath, &req); err != nil {
 			// 同上:404 = 当前没有待处理的合同期变更请求,其余错误一律上报,
 			// 否则用户会以为「没有待处理请求」而重复提交。
 			if ovhIsNotFound(err) {
@@ -117,7 +143,10 @@ func GetVpsEngagementRequest(state *app.State) gin.HandlerFunc {
 // CreateVpsEngagementRequest POST /api/vps-control/:service_name/engagement/request
 func CreateVpsEngagementRequest(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -136,8 +165,12 @@ func CreateVpsEngagementRequest(state *app.State) gin.HandlerFunc {
 			respondOVHError(c, err)
 			return
 		}
+		reqPath, ok := ovhPathOrAbort(c, "services", strconv.FormatInt(serviceID, 10), "billing", "engagement", "request")
+		if !ok {
+			return
+		}
 		var result map[string]interface{}
-		if err := client.Post(fmt.Sprintf("/services/%d/billing/engagement/request", serviceID),
+		if err := client.Post(reqPath,
 			map[string]interface{}{"pricingMode": body.PricingMode}, &result); err != nil {
 			respondOVHError(c, err)
 			return
@@ -150,7 +183,10 @@ func CreateVpsEngagementRequest(state *app.State) gin.HandlerFunc {
 // DeleteVpsEngagementRequest DELETE /api/vps-control/:service_name/engagement/request
 func DeleteVpsEngagementRequest(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -161,7 +197,11 @@ func DeleteVpsEngagementRequest(state *app.State) gin.HandlerFunc {
 			respondOVHError(c, err)
 			return
 		}
-		if err := client.Delete(fmt.Sprintf("/services/%d/billing/engagement/request", serviceID), nil); err != nil {
+		reqPath, ok := ovhPathOrAbort(c, "services", strconv.FormatInt(serviceID, 10), "billing", "engagement", "request")
+		if !ok {
+			return
+		}
+		if err := client.Delete(reqPath, nil); err != nil {
 			respondOVHError(c, err)
 			return
 		}
@@ -173,7 +213,10 @@ func DeleteVpsEngagementRequest(state *app.State) gin.HandlerFunc {
 // UpdateVpsEngagementEndRule PUT /api/vps-control/:service_name/engagement/end-rule
 func UpdateVpsEngagementEndRule(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
@@ -206,7 +249,11 @@ func UpdateVpsEngagementEndRule(state *app.State) gin.HandlerFunc {
 			respondOVHError(c, err)
 			return
 		}
-		if err := client.Put(fmt.Sprintf("/services/%d/billing/engagement/endRule", serviceID),
+		rulePath, ok := ovhPathOrAbort(c, "services", strconv.FormatInt(serviceID, 10), "billing", "engagement", "endRule")
+		if !ok {
+			return
+		}
+		if err := client.Put(rulePath,
 			map[string]interface{}{"strategy": body.Strategy}, nil); err != nil {
 			respondOVHError(c, err)
 			return

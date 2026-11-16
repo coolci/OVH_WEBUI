@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	ovhsdk "github.com/ovh/go-ovh/ovh"
@@ -46,7 +47,14 @@ var terminationPolicies = map[string]bool{
 // services.update.Service 的三个字段(displayName / renew / terminationPolicy)全部
 // canBeNull:true,所以只发要改的那一个是合法的 —— 不需要像 RenewType 那样补全。
 func setTerminationPolicy(client *ovhsdk.Client, serviceID int64, policy string) error {
-	return client.Put(fmt.Sprintf("/services/%d", serviceID),
+	if serviceID <= 0 {
+		return errUnsafeOVHSegment
+	}
+	svcPath, err := buildOVHPath("services", strconv.FormatInt(serviceID, 10))
+	if err != nil {
+		return err
+	}
+	return client.Put(svcPath,
 		map[string]interface{}{"terminationPolicy": policy}, nil)
 }
 
@@ -66,7 +74,10 @@ func terminationPolicyHandler(
 	logSource, label string,
 ) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)

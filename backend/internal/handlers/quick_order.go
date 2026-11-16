@@ -3,14 +3,42 @@ package handlers
 import (
 	"context"
 	"net/http"
+	"sort"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/orderterm"
+	"github.com/ovh-webui/server/internal/ovh"
 	"github.com/ovh-webui/server/internal/purchase"
 )
+
+var (
+	prewarmInflightMu sync.Mutex
+	prewarmInflight   = map[string]bool{}
+	prewarmSem        = make(chan struct{}, 4)
+)
+
+func canonicalPrewarmKey(accountID, planCode, datacenter string, options []string, coupon, duration string) string {
+	opts := make([]string, 0, len(options))
+	for _, o := range options {
+		if trimmed := strings.TrimSpace(o); trimmed != "" {
+			opts = append(opts, trimmed)
+		}
+	}
+	sort.Strings(opts)
+	return strings.Join([]string{
+		accountID,
+		planCode,
+		datacenter,
+		strings.Join(opts, ","),
+		strings.TrimSpace(coupon),
+		duration,
+	}, "|")
+}
 
 // QuickOrder POST /api/queue/quick-order
 // 外部主动调用或前端触发: 委托给领域层 purchase.EnqueueQuickOrder 执行校验与入队。
@@ -78,8 +106,15 @@ func PrewarmOrder(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "无效的预热参数: " + err.Error()})
 			return
 		}
-		if req.PlanCode == "" || req.Datacenter == "" {
+		planCode := strings.TrimSpace(req.PlanCode)
+		rawDC := strings.TrimSpace(req.Datacenter)
+		if planCode == "" || rawDC == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "planCode 和 datacenter 必填"})
+			return
+		}
+		datacenter := ovh.ConvertDisplayDCToAPIDC(rawDC)
+		if datacenter == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "无效的 datacenter 参数"})
 			return
 		}
 		duration, termErr := orderterm.Normalize(req.Duration)
@@ -93,9 +128,10 @@ func PrewarmOrder(state *app.State) gin.HandlerFunc {
 			return
 		}
 		accountID := acc.ID
+		coupon := strings.TrimSpace(req.Coupon)
 
 		// 若池中已就绪，直接返回
-		if purchase.HasPrewarmedCart(accountID, req.PlanCode, req.Datacenter, req.Options, req.Coupon, duration) {
+		if purchase.HasPrewarmedCart(accountID, planCode, datacenter, req.Options, coupon, duration) {
 			c.JSON(http.StatusOK, gin.H{
 				"success": true,
 				"ready":   true,
@@ -104,11 +140,39 @@ func PrewarmOrder(state *app.State) gin.HandlerFunc {
 			return
 		}
 
-		// 异步在 OVH 侧组装预热车
+		// 同键在途去重（Singleflight）：防止前端多组件/高频抖动同时触发 N 辆孤儿购物车风暴
+		inflightKey := canonicalPrewarmKey(accountID, planCode, datacenter, req.Options, coupon, duration)
+		prewarmInflightMu.Lock()
+		if prewarmInflight[inflightKey] {
+			prewarmInflightMu.Unlock()
+			c.JSON(http.StatusOK, gin.H{
+				"success":  true,
+				"ready":    false,
+				"inflight": true,
+				"message":  "相同配置的预热装车已在后台进行中",
+			})
+			return
+		}
+		prewarmInflight[inflightKey] = true
+		prewarmInflightMu.Unlock()
+
+		optionsCopy := append([]string(nil), req.Options...)
+		// 异步在 OVH 侧受并发信号量保护组装预热车
 		go func() {
+			defer func() {
+				prewarmInflightMu.Lock()
+				delete(prewarmInflight, inflightKey)
+				prewarmInflightMu.Unlock()
+			}()
+			prewarmSem <- struct{}{}
+			defer func() { <-prewarmSem }()
+
+			if purchase.HasPrewarmedCart(accountID, planCode, datacenter, optionsCopy, coupon, duration) {
+				return
+			}
 			ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 			defer cancel()
-			_, _ = purchase.AssemblePrewarmedCart(ctx, state, accountID, req.PlanCode, req.Datacenter, req.Options, req.Coupon, duration)
+			_, _ = purchase.AssemblePrewarmedCart(ctx, state, accountID, planCode, datacenter, optionsCopy, coupon, duration)
 		}()
 
 		c.JSON(http.StatusOK, gin.H{

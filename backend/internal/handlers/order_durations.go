@@ -48,7 +48,7 @@ func GetOrderDurations(state *app.State) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "缺少有效账户或型号"})
 			return
 		}
-		key := account.ID + "|" + account.Endpoint + "|" + strings.ToUpper(account.Zone) + "|" + plan
+		key := accountCacheFingerprint(account) + "|" + plan
 		orderDurationsCache.Lock()
 		if e, hit := orderDurationsCache.m[key]; hit && time.Since(e.at) < orderDurationsTTL {
 			orderDurationsCache.Unlock()
@@ -97,8 +97,12 @@ func fetchOrderDurations(ctx context.Context, state *app.State, accountID, subsi
 	if cart.ID == "" {
 		return nil, context.DeadlineExceeded
 	}
+	ecoPath, err := buildOVHPath("order", "cart", cart.ID, "eco")
+	if err != nil {
+		return nil, err
+	}
 	var offers []map[string]interface{}
-	if err := client.GetUnAuthWithContext(ctx, "/order/cart/"+cart.ID+"/eco", &offers); err != nil {
+	if err := client.GetUnAuthWithContext(ctx, ecoPath, &offers); err != nil {
 		return nil, err
 	}
 	for _, offer := range offers {

@@ -44,14 +44,21 @@ func mitigationErrorFields(err error) gin.H {
 //	ips: [{ ipBlock, mitigations: [{ ipOnMitigation, state, auto, permanent }] }]
 func GetMitigation(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		svc := c.Param("service_name")
+		svc, ok := requireServiceName(c)
+		if !ok {
+			return
+		}
 		client, err := ovhClientFor(state, c)
 		if err != nil {
 			noOVHResp(c)
 			return
 		}
+		ipsPath, ok := ovhPathOrAbort(c, "dedicated", "server", svc, "ips")
+		if !ok {
+			return
+		}
 		var ipBlocks []string
-		if err := client.Get("/dedicated/server/"+svc+"/ips", &ipBlocks); err != nil {
+		if err := client.Get(ipsPath, &ipBlocks); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": ovh.Explain(err)})
 			return
 		}
@@ -81,7 +88,11 @@ func GetMitigation(state *app.State) gin.HandlerFunc {
 			go func(idx int, ipBlock string) {
 				defer wg.Done()
 				defer func() { <-sem }()
-				encoded := strings.ReplaceAll(ipBlock, "/", "%2F")
+				mitPath, pErr := buildOVHPath("ip", ipBlock, "mitigation")
+				if pErr != nil {
+					results[idx] = ipResult{block: ipBlock, err: pErr}
+					return
+				}
 				// 1) 列出该 block 下处于 mitigation 的具体 IP
 				var ips []string
 				client, err := ovh.IsolateClient(client)
@@ -89,7 +100,7 @@ func GetMitigation(state *app.State) gin.HandlerFunc {
 					results[idx] = ipResult{block: ipBlock, err: err}
 					return
 				}
-				if err := client.Get("/ip/"+encoded+"/mitigation", &ips); err != nil {
+				if err := client.Get(mitPath, &ips); err != nil {
 					results[idx] = ipResult{block: ipBlock, err: err}
 					return
 				}
@@ -105,6 +116,17 @@ func GetMitigation(state *app.State) gin.HandlerFunc {
 						defer dwg.Done()
 						defer func() { <-detailSem }()
 						var d map[string]interface{}
+						detailPath, dpErr := buildOVHPath("ip", ipBlock, "mitigation", ipOnMitigation)
+						if dpErr != nil {
+							details[jdx] = map[string]interface{}{
+								"ipOnMitigation": ipOnMitigation,
+								"state":          "unknown",
+								"auto":           false,
+								"permanent":      false,
+								"_detailError":   dpErr.Error(),
+							}
+							return
+						}
 						client, err := ovh.IsolateClient(client)
 						if err != nil {
 							state.Logger.Warn("[Mitigation] 获取 "+ipOnMitigation+" 缓解详情失败: "+err.Error(), "server_control")
@@ -119,7 +141,7 @@ func GetMitigation(state *app.State) gin.HandlerFunc {
 							}
 							return
 						}
-						if err := client.Get("/ip/"+encoded+"/mitigation/"+ipOnMitigation, &d); err != nil {
+						if err := client.Get(detailPath, &d); err != nil {
 							state.Logger.Warn("[Mitigation] 获取 "+ipOnMitigation+" 缓解详情失败: "+err.Error(), "server_control")
 							// 占位要带齐前端会读的字段,否则 state/auto/permanent 是 undefined,
 							// 界面渲染出一个空白 Chip,看不出这行是"拉取失败"
@@ -179,6 +201,19 @@ func permanentMitigationRemoved(c *gin.Context) {
 // EnableMitigation 保留本地路由兼容，明确拒绝已退役的永久模式操作。
 func EnableMitigation(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if _, ok := requireServiceName(c); !ok {
+			return
+		}
+		if !isIPv4(strings.TrimSpace(c.Param("ip"))) {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "无效的 IPv4 地址", "code": "INVALID_IP_ADDRESS"})
+			return
+		}
+		if blk := strings.TrimSpace(c.Query("block")); blk != "" {
+			if _, ok := validateIPOrCIDR(blk); !ok {
+				c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "无效的 IP 块参数", "code": "INVALID_IP_BLOCK"})
+				return
+			}
+		}
 		permanentMitigationRemoved(c)
 	}
 }
@@ -186,6 +221,19 @@ func EnableMitigation(state *app.State) gin.HandlerFunc {
 // DisableMitigation 不删除自动缓解对象，避免把只读状态查询混成防护开关。
 func DisableMitigation(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if _, ok := requireServiceName(c); !ok {
+			return
+		}
+		if !isIPv4(strings.TrimSpace(c.Param("ip"))) {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "无效的 IPv4 地址", "code": "INVALID_IP_ADDRESS"})
+			return
+		}
+		if blk := strings.TrimSpace(c.Query("block")); blk != "" {
+			if _, ok := validateIPOrCIDR(blk); !ok {
+				c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "无效的 IP 块参数", "code": "INVALID_IP_BLOCK"})
+				return
+			}
+		}
 		permanentMitigationRemoved(c)
 	}
 }
