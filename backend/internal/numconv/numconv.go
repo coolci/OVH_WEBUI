@@ -103,12 +103,12 @@ func ToFloat64(v interface{}) (float64, bool) {
 	case uint64:
 		return float64(x), true
 	case float32:
-		return float64(x), true
+		return finiteFloat64(float64(x))
 	case float64:
-		return x, true
+		return finiteFloat64(x)
 	case json.Number:
 		if f, err := x.Float64(); err == nil {
-			return f, true
+			return finiteFloat64(f)
 		}
 		return 0, false
 	case string:
@@ -117,11 +117,18 @@ func ToFloat64(v interface{}) (float64, bool) {
 			return 0, false
 		}
 		if f, err := strconv.ParseFloat(s, 64); err == nil {
-			return f, true
+			return finiteFloat64(f)
 		}
 		return 0, false
 	}
 	return 0, false
+}
+
+func finiteFloat64(v float64) (float64, bool) {
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return 0, false
+	}
+	return v, true
 }
 
 // ToString 把任意数字/字符串转字符串，专用于 URL 拼接与日志

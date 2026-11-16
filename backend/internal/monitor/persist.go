@@ -77,10 +77,7 @@ func fromDBSub(s types.Subscription) *Subscription {
 			Config:     h.Config,
 		})
 	}
-	dcs := s.Datacenters
-	if dcs == nil {
-		dcs = []string{}
-	}
+	dcs := normalizeMonitoredDCs(s.Datacenters)
 	last := s.LastStatus
 	if last == nil {
 		last = map[string]string{}

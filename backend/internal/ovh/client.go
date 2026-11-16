@@ -12,6 +12,9 @@ import (
 	"github.com/ovh-webui/server/internal/types"
 )
 
+// DefaultSDKTimeout 默认 OVH 客户端单次请求超时时间（同步写入 sdk.Timeout 与 http.Client.Timeout）。
+const DefaultSDKTimeout = 60 * time.Second
+
 // AccountLookup 由 State 提供,根据 id 找账户:
 //
 //	id == ""  → 找默认账户(或第一个);适合"未指定账户时 fallback"
@@ -114,9 +117,9 @@ func (f *Factory) ClientFor(accountID string) (*ovh.Client, error) {
 	httpCli, herr := netfp.Client(netfp.Options{
 		ProxyURL: acc.ProxyURL,
 		Profile:  prof,
-		// go-ovh 默认没有超时。抢购链路上一个卡死的连接等于这一轮白等,
-		// 而下一轮要等到 retryInterval 之后。
-		Timeout: 60 * time.Second,
+		// go-ovh 默认 Timeout=180s 并在每次 NewRequest 时执行 c.Client.Timeout = c.Timeout。
+		// 必须同步设置 cli.Timeout，否则 60s 超时会在首次请求后被覆写回 180s。
+		Timeout: DefaultSDKTimeout,
 		// 代理层面的失败上报给看门狗:连续失败会暂停这个账户的任务并通知用户。
 		// 注入的是回调而不是直接 import proxyguard —— 那会绕成 import 环
 		// (proxyguard 依赖 app,app 依赖 ovh)。
@@ -135,6 +138,7 @@ func (f *Factory) ClientFor(accountID string) (*ovh.Client, error) {
 		return nil, fmt.Errorf("账户 %s 的出站代理配置有问题(%s): %w",
 			acc.Name, netfp.ScrubProxyURL(acc.ProxyURL), herr)
 	}
+	cli.Timeout = DefaultSDKTimeout
 	cli.Client = httpCli
 
 	f.cache[acc.ID] = cli
@@ -178,6 +182,10 @@ func (f *Factory) Client() (*ovh.Client, error) {
 	cli, err := ovh.NewClient(c.Endpoint, c.AppKey, c.AppSecret, c.ConsumerKey)
 	if err != nil {
 		return nil, err
+	}
+	cli.Timeout = DefaultSDKTimeout
+	if cli.Client != nil {
+		cli.Client.Timeout = DefaultSDKTimeout
 	}
 	return cli, nil
 }

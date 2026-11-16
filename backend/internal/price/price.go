@@ -3,9 +3,14 @@ package price
 import (
 	"fmt"
 	"net/url"
+	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	ovhsdk "github.com/ovh/go-ovh/ovh"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/catalog"
@@ -13,9 +18,6 @@ import (
 	"github.com/ovh-webui/server/internal/orderterm"
 	"github.com/ovh-webui/server/internal/ovh"
 	"github.com/ovh-webui/server/internal/types"
-	"sort"
-	"sync"
-	"time"
 )
 
 // Result 询价结果
@@ -60,9 +62,18 @@ type cacheEntry struct {
 
 const priceCacheTTL = 20 * time.Second
 
+var priceFlight singleflight.Group
+
+type priceFlightValue struct {
+	result    Result
+	cartID    string
+	cartTaken atomic.Bool
+}
+
 func priceCacheKey(accountID, planCode, datacenter string, options []string) string {
 	sort.Strings(options)
-	return accountID + "|" + planCode + "@" + datacenter + "|" + strings.Join(options, ",")
+	apiDC := ovh.ConvertDisplayDCToAPIDC(datacenter)
+	return accountID + "|" + planCode + "@" + apiDC + "|" + strings.Join(options, ",")
 }
 
 // GetInternalCached 带短 TTL 缓存的 GetInternal(监控轮询/批量入队路径用;
@@ -72,7 +83,7 @@ func GetInternalCached(state *app.State, accountID, planCode, datacenter string,
 	return r
 }
 
-// GetInternalCachedKeepCart 同 GetInternalCached,但询价成功(且未降级)时不删购物车,
+// GetInternalCachedKeepCart 同 GetInternalCached,但询价成功(且未降级、已完成 assign 绑定)时不删购物车,
 // 把配好的车号一并返回,调用方可直接拿去当预热车结账 —— 监控发现补货时要先验价,
 // 这辆车本来就是按下单的配置装好、绑定过的,删掉再重装一辆纯属浪费抢购时间。
 // 命中缓存时没有新车,cartID 为空;调用方不用这辆车时必须自己删掉。
@@ -93,19 +104,37 @@ func getInternalCached(state *app.State, accountID, planCode, datacenter string,
 		return e.result, ""
 	}
 	internalPriceCache.Unlock()
-	r, cartID := getInternal(state, accountID, planCode, datacenter, options, normalized, keepCart)
-	internalPriceCache.Lock()
-	// 防无限增长:超 512 条先清过期
-	if len(internalPriceCache.m) > 512 {
-		for k, e := range internalPriceCache.m {
-			if time.Since(e.at) >= priceCacheTTL {
-				delete(internalPriceCache.m, k)
-			}
+
+	val, _, _ := priceFlight.Do(key, func() (interface{}, error) {
+		internalPriceCache.Lock()
+		if e, ok := internalPriceCache.m[key]; ok && time.Since(e.at) < priceCacheTTL {
+			internalPriceCache.Unlock()
+			return &priceFlightValue{result: e.result}, nil
 		}
+		internalPriceCache.Unlock()
+
+		r, cid := getInternal(state, accountID, planCode, datacenter, options, normalized, keepCart)
+		// 严禁对失败结果（429/5xx/网络超时/尚未开售等）做负缓存，防止 20s 毒化补货黄金窗口
+		if r.Success {
+			internalPriceCache.Lock()
+			if len(internalPriceCache.m) > 512 {
+				for k, e := range internalPriceCache.m {
+					if time.Since(e.at) >= priceCacheTTL {
+						delete(internalPriceCache.m, k)
+					}
+				}
+			}
+			internalPriceCache.m[key] = cacheEntry{at: time.Now(), result: r}
+			internalPriceCache.Unlock()
+		}
+		return &priceFlightValue{result: r, cartID: cid}, nil
+	})
+
+	fv := val.(*priceFlightValue)
+	if keepCart && fv.cartID != "" && fv.cartTaken.CompareAndSwap(false, true) {
+		return fv.result, fv.cartID
 	}
-	internalPriceCache.m[key] = cacheEntry{at: time.Now(), result: r}
-	internalPriceCache.Unlock()
-	return r, cartID
+	return fv.result, ""
 }
 
 // GetInternal 询价。accountID 决定用哪个账户调 OVH(空 = 默认账户),
@@ -168,42 +197,56 @@ func getInternal(state *app.State, accountID, planCode, datacenter string, optio
 	hwOptions := filterHardwareOptions(state, options)
 	baseDuration, basePricingMode := selectedDuration, "default"
 	var itemResult map[string]interface{}
+	var assignErr error
 	var baseErr error
 	var baseFail *Result
 	var availableOpts []map[string]interface{}
 	var optsErr error
-	// 并发请求各用一个隔离 client:go-ovh 每次请求都会写 http.Client.Timeout,
-	// 共享同一实例并发调用就是数据竞争。有了 /auth/time 时差缓存,多建几个不多花网络往返。
-	fork := func() *ovhsdk.Client {
-		if c, err := state.OVH.IsolatedClientFor(accountID); err == nil {
-			return c
-		}
-		return client
+	// 并发请求各用一个从当前已创建 client 克隆出的隔离实例（ovh.IsolateClient），
+	// 严禁在账户中途刷新/删除时回退复用共享 client 触发 go-ovh Timeout 并发写竞态。
+	fork := func() (*ovhsdk.Client, error) {
+		return ovh.IsolateClient(client)
 	}
 	var wg sync.WaitGroup
 	wg.Add(1)
-	go func(client *ovhsdk.Client) {
+	go func() {
 		defer wg.Done()
-		// schema 里 POST /order/cart/{cartId}/assign 只有 path 参数、没有 body
-		if err := client.Post("/order/cart/"+cartID+"/assign", nil, nil); err != nil {
-			state.Logger.Warn("绑定购物车失败（可能不需要）: "+err.Error(), "price")
+		isoCli, ferr := fork()
+		if ferr != nil {
+			assignErr = ferr
+			return
 		}
-	}(fork())
+		// schema 里 POST /order/cart/{cartId}/assign 只有 path 参数、没有 body
+		if err := isoCli.Post("/order/cart/"+cartID+"/assign", nil, nil); err != nil {
+			assignErr = err
+			state.Logger.Warn("绑定购物车失败: "+err.Error(), "price")
+		}
+	}()
 	if len(hwOptions) > 0 {
 		wg.Add(1)
-		go func(client *ovhsdk.Client) {
+		go func() {
 			defer wg.Done()
+			isoCli, ferr := fork()
+			if ferr != nil {
+				optsErr = ferr
+				return
+			}
 			q := url.Values{}
 			q.Set("planCode", planCode)
-			optsErr = client.Get(fmt.Sprintf("/order/cart/%s/eco/options?%s", cartID, q.Encode()), &availableOpts)
-		}(fork())
+			optsErr = isoCli.Get(fmt.Sprintf("/order/cart/%s/eco/options?%s", cartID, q.Encode()), &availableOpts)
+		}()
 	}
 	wg.Add(1)
-	go func(client *ovhsdk.Client) {
+	go func() {
 		defer wg.Done()
+		isoCli, ferr := fork()
+		if ferr != nil {
+			baseErr = ferr
+			return
+		}
 		// 月付走零额外请求的快速路径;其他周期先查 OVH 给这个型号的真实计价
 		if selectedDuration != orderterm.Default {
-			d, pm, found := lookupEcoPricing(state, client, cartID, planCode, selectedDuration)
+			d, pm, found := lookupEcoPricing(state, isoCli, cartID, planCode, selectedDuration)
 			if !found {
 				baseFail = &Result{Success: false, Error: fmt.Sprintf("OVH 不支持 %s 按 %s 购买", planCode, orderterm.Label(selectedDuration))}
 				return
@@ -212,7 +255,7 @@ func getInternal(state *app.State, accountID, planCode, datacenter string, optio
 		}
 		postBase := func() error {
 			itemResult = nil
-			return client.Post("/order/cart/"+cartID+"/eco", map[string]interface{}{
+			return isoCli.Post("/order/cart/"+cartID+"/eco", map[string]interface{}{
 				"planCode":    planCode,
 				"pricingMode": basePricingMode,
 				"duration":    baseDuration,
@@ -220,7 +263,7 @@ func getInternal(state *app.State, accountID, planCode, datacenter string, optio
 			}, &itemResult)
 		}
 		if err := postBase(); err != nil {
-			if d, pm, found := lookupEcoPricing(state, client, cartID, planCode, baseDuration); found &&
+			if d, pm, found := lookupEcoPricing(state, isoCli, cartID, planCode, baseDuration); found &&
 				(d != baseDuration || pm != basePricingMode) {
 				state.Logger.Warn(fmt.Sprintf("以 %s/%s 加购 %s 失败(%s)，改用目录计价 %s/%s 重试",
 					baseDuration, basePricingMode, planCode, ovh.Explain(err), d, pm), "price")
@@ -229,7 +272,7 @@ func getInternal(state *app.State, accountID, planCode, datacenter string, optio
 			}
 			baseErr = err
 		}
-	}(fork())
+	}()
 	wg.Wait()
 	if baseFail != nil {
 		return *baseFail, ""
@@ -347,18 +390,28 @@ func getInternal(state *app.State, accountID, planCode, datacenter string, optio
 	var wg2 sync.WaitGroup
 	for i, cfg := range configurations {
 		wg2.Add(1)
-		go func(client *ovhsdk.Client, i int, label, value string) {
+		go func(i int, label, value string) {
 			defer wg2.Done()
-			cfgErrs[i] = client.Post(fmt.Sprintf("/order/cart/%s/item/%d/configuration", cartID, itemID),
+			isoCli, ferr := fork()
+			if ferr != nil {
+				cfgErrs[i] = ferr
+				return
+			}
+			cfgErrs[i] = isoCli.Post(fmt.Sprintf("/order/cart/%s/item/%d/configuration", cartID, itemID),
 				map[string]interface{}{"label": label, "value": value}, nil)
-		}(fork(), i, cfg.label, cfg.value)
+		}(i, cfg.label, cfg.value)
 	}
 	for i, ow := range optWrites {
 		wg2.Add(1)
-		go func(client *ovhsdk.Client, i int, body map[string]interface{}) {
+		go func(i int, body map[string]interface{}) {
 			defer wg2.Done()
-			optErrs[i] = client.Post(fmt.Sprintf("/order/cart/%s/eco/options", cartID), body, nil)
-		}(fork(), i, ow.body)
+			isoCli, ferr := fork()
+			if ferr != nil {
+				optErrs[i] = ferr
+				return
+			}
+			optErrs[i] = isoCli.Post(fmt.Sprintf("/order/cart/%s/eco/options", cartID), body, nil)
+		}(i, ow.body)
 	}
 	wg2.Wait()
 	for i, cfg := range configurations {
@@ -487,7 +540,8 @@ func getInternal(state *app.State, accountID, planCode, datacenter string, optio
 		DegradedReason: degradedReason,
 		Price:          priceInfo,
 	}
-	if keepCart && !degraded {
+	// 未成功完成 /assign 绑定的匿名裸车严禁保留用于预热池快速结账（否则直冲 /checkout 必报 400）
+	if keepCart && !degraded && assignErr == nil {
 		kept = true
 		return res, cartID
 	}

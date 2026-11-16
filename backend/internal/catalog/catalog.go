@@ -19,11 +19,13 @@ import (
 
 // 返回每个配置组合的可用性 + 匹配到的 API2 options
 type ConfigAvailability struct {
-	Memory      string            `json:"memory"`
-	Storage     string            `json:"storage"`
-	Datacenters map[string]string `json:"datacenters"`
-	FQN         string            `json:"fqn"`
-	Options     []string          `json:"options"`
+	Memory        string            `json:"memory"`
+	Storage       string            `json:"storage"`
+	SystemStorage string            `json:"systemStorage,omitempty"`
+	GPU           string            `json:"gpu,omitempty"`
+	Datacenters   map[string]string `json:"datacenters"`
+	FQN           string            `json:"fqn"`
+	Options       []string          `json:"options"`
 	// CatalogError 记录拉 /order/catalog/public/eco 时的 OVH 错误。
 	// 目录拉不到时 Options 会退化成空数组,调用方必须能区分"目录没拉到"和
 	// "这个配置确实没有可匹配 addon",否则会把 OVH 瞬断报成"该机房无可定价配置"。
@@ -128,8 +130,13 @@ func CheckServerAvailabilityWithConfigs(state *app.State, planCode string, accou
 	for _, item := range availabilities {
 		memory := getString(item, "memory", "N/A")
 		storage := getString(item, "storage", "N/A")
+		systemStorage := getString(item, "systemStorage", "N/A")
+		gpu := getString(item, "gpu", "N/A")
 		fqn := getString(item, "fqn", "")
 		configKey := fqn
+		if configKey == "" {
+			configKey = strings.Join([]string{memory, storage, systemStorage, gpu}, "|")
+		}
 
 		datacenters := map[string]string{}
 		if dcsRaw, ok := item["datacenters"].([]interface{}); ok {
@@ -146,33 +153,40 @@ func CheckServerAvailabilityWithConfigs(state *app.State, planCode string, accou
 			}
 		}
 
-		// 匹配 API2 options
+		// 匹配 API2 options（完整覆盖 memory / storage / system-storage / gpu 必选硬件家族）
 		api2Options := []string{}
-		memoryStd := ""
-		storageStd := ""
+		memoryStd, storageStd, sysStorageStd, gpuStd := "", "", "", ""
 		// 原始段(未标准化)是第一优先的匹配依据,"N/A" 视为没有该段
-		rawMemory, rawStorage := "", ""
-		if memory != "N/A" {
+		rawMemory, rawStorage, rawSysStorage, rawGPU := "", "", "", ""
+		if memory != "N/A" && memory != "" {
 			rawMemory = memory
 			memoryStd = StandardizeConfig(memory)
 		}
-		if storage != "N/A" {
+		if storage != "N/A" && storage != "" {
 			rawStorage = storage
 			storageStd = StandardizeConfig(storage)
 		}
+		if systemStorage != "N/A" && systemStorage != "" {
+			rawSysStorage = systemStorage
+			sysStorageStd = StandardizeConfig(systemStorage)
+		}
+		if gpu != "N/A" && gpu != "" {
+			rawGPU = gpu
+			gpuStd = StandardizeConfig(gpu)
+		}
 
-		state.Logger.Debug(fmt.Sprintf("[配置监控] 提取选项: memory=%s (标准化: %s), storage=%s (标准化: %s)",
-			memory, memoryStd, storage, storageStd), "monitor")
+		state.Logger.Debug(fmt.Sprintf("[配置监控] 提取选项: memory=%s (标准化: %s), storage=%s (标准化: %s), systemStorage=%s, gpu=%s",
+			memory, memoryStd, storage, storageStd, rawSysStorage, rawGPU), "monitor")
 
-		// 从缓存的 addonFamilies 里挑与本条 FQN 的内存/存储匹配的 addon planCode。
+		// 从缓存的 addonFamilies 里挑与本条 FQN 的内存/存储/系统盘/GPU 匹配的 addon planCode。
 		// 匹配口径见 matchAddonsForSegment(三段式,绝不用 Contains)。
 		wantedSegs, matchedSegs := 0, 0
-		matchAddons := func(family, raw, std string) {
+		matchAddons := func(candidates []string, raw, std string) {
 			if raw == "" && std == "" {
 				return
 			}
 			wantedSegs++
-			hits := matchAddonsForSegment(addonFamilies[family], raw, std)
+			hits := matchAddonsForSegment(candidates, raw, std)
 			if len(hits) == 0 {
 				return
 			}
@@ -185,11 +199,17 @@ func CheckServerAvailabilityWithConfigs(state *app.State, planCode string, accou
 		}
 		optionsNote := ""
 		if len(addonFamilies) > 0 {
-			// 原始段优先(避免标准化把机型后缀吃成粘连残渣导致错配),标准化段兜底
-			matchAddons("memory", rawMemory, memoryStd)
-			matchAddons("storage", rawStorage, storageStd)
+			// 原始段优先,标准化段兜底
+			matchAddons(addonFamilies["memory"], rawMemory, memoryStd)
+			matchAddons(addonFamilies["storage"], rawStorage, storageStd)
+			sysFam := addonFamilies["system-storage"]
+			if len(sysFam) == 0 {
+				sysFam = addonFamilies["systemstorage"]
+			}
+			matchAddons(sysFam, rawSysStorage, sysStorageStd)
+			matchAddons(addonFamilies["gpu"], rawGPU, gpuStd)
 			if wantedSegs > 0 && matchedSegs < wantedSegs {
-				// 目录在、plan 在,就是这套内存/存储在本子公司目录里没有对应 addon。
+				// 目录在、plan 在,就是这套硬件在本子公司目录里没有对应 addon。
 				// 实测确实存在(US 35 条、EU/CA 各 18 条,例:24rise04-v1 的 softraid-4x6000sa),
 				// 属于"这个配置在本子公司买不到",不能和"目录挂了"混为一谈。
 				optionsNote = fmt.Sprintf("该配置(%s / %s)在 %s 子公司的目录里没有对应 addon，本子公司买不到这套配置",
@@ -201,7 +221,7 @@ func CheckServerAvailabilityWithConfigs(state *app.State, planCode string, accou
 			// Keep those raw addon segments so a missing public catalog cannot
 			// silently discard the user's hardware filter. price/purchase resolve
 			// them against live eco/options and reject anything not orderable.
-			api2Options = stockHardwareOptions(planCode, fqn, rawMemory, rawStorage)
+			api2Options = stockHardwareOptions(planCode, fqn, rawMemory, rawStorage, rawSysStorage, rawGPU)
 		} else if catalogErr == "" {
 			state.Logger.Warn(fmt.Sprintf("[配置监控] %s 子公司的目录里 %s 没有 addonFamilies,无法匹配选项", subsidiary, planCode), "monitor")
 		}
@@ -210,9 +230,19 @@ func CheckServerAvailabilityWithConfigs(state *app.State, planCode string, accou
 			state.Logger.Info(fmt.Sprintf("[配置监控] 成功提取 %d 个API2选项: %v", len(api2Options), api2Options), "monitor")
 		}
 
+		sysOut := ""
+		if rawSysStorage != "" {
+			sysOut = systemStorage
+		}
+		gpuOut := ""
+		if rawGPU != "" {
+			gpuOut = gpu
+		}
 		result[configKey] = &ConfigAvailability{
 			Memory:         memory,
 			Storage:        storage,
+			SystemStorage:  sysOut,
+			GPU:            gpuOut,
 			Datacenters:    datacenters,
 			FQN:            fqn,
 			Options:        api2Options,
@@ -227,12 +257,12 @@ func CheckServerAvailabilityWithConfigs(state *app.State, planCode string, accou
 	return result
 }
 
-func stockHardwareOptions(planCode, fqn, memory, storage string) []string {
+func stockHardwareOptions(planCode, fqn string, rawParts ...string) []string {
 	var candidates []string
 	if suffix, ok := strings.CutPrefix(fqn, planCode+"."); ok {
 		candidates = strings.Split(suffix, ".")
 	} else {
-		candidates = []string{memory, storage}
+		candidates = rawParts
 	}
 	options := []string{}
 	for _, code := range candidates {
@@ -292,7 +322,7 @@ func matchAddonsForSegment(addons []string, seg, segStd string) []string {
 	// (…-26sk50a-v1 → …nvmea),正确项因此丢掉分隔符、反而落到比错误项更低的档,
 	// 实测就是这样把 €0 的 2x960NVMe 配成了 €24 的混合盘。
 	if seg != "" {
-		if best := shortestWithPrefix(addons, seg+"-"); best != "" {
+		if best := shortestWithAllowedPrefix(addons, seg+"-"); best != "" {
 			return []string{best}
 		}
 	}
@@ -308,11 +338,11 @@ func matchAddonsForSegment(addons []string, seg, segStd string) []string {
 		if len(exact) > 0 {
 			return exact
 		}
-		// 第 4 档:标准化后前缀,同样取剩余最短
+		// 第 4 档:标准化后带 "-" 边界且后缀仅为机型/区域标识的前缀
 		best, bestLen := "", -1
 		for _, addon := range addons {
 			as := StandardizeConfig(addon)
-			if !strings.HasPrefix(as, segStd) {
+			if !strings.HasPrefix(as, segStd+"-") || !IsAllowedOptionSuffix(strings.TrimPrefix(as, segStd+"-")) {
 				continue
 			}
 			if bestLen < 0 || len(as) < bestLen {
@@ -326,11 +356,16 @@ func matchAddonsForSegment(addons []string, seg, segStd string) []string {
 	return nil
 }
 
-// shortestWithPrefix 返回以 prefix 开头且整体最短的那个 addon(没有则空串)
-func shortestWithPrefix(addons []string, prefix string) string {
+// shortestWithAllowedPrefix 返回以 prefix 开头、剩余后缀仅为机型/区域标识且整体最短的 addon(没有则空串)
+func shortestWithAllowedPrefix(addons []string, prefix string) string {
 	best := ""
+	lowerPrefix := strings.ToLower(prefix)
 	for _, addon := range addons {
-		if !strings.HasPrefix(addon, prefix) {
+		low := strings.ToLower(addon)
+		if !strings.HasPrefix(low, lowerPrefix) {
+			continue
+		}
+		if !IsAllowedOptionSuffix(strings.TrimPrefix(low, lowerPrefix)) {
 			continue
 		}
 		if best == "" || len(addon) < len(best) {
@@ -370,27 +405,32 @@ func segmentMatchScore(optionCode, fqnSeg string) int {
 	if opt == seg {
 		return segScoreEqual
 	}
-	if strings.HasPrefix(opt, seg+"-") {
+	if strings.HasPrefix(opt, seg+"-") && IsAllowedOptionSuffix(strings.TrimPrefix(opt, seg+"-")) {
 		return segScorePrefix + len(seg)
 	}
-	if strings.HasPrefix(seg, opt+"-") {
+	if strings.HasPrefix(seg, opt+"-") && IsAllowedOptionSuffix(strings.TrimPrefix(seg, opt+"-")) {
 		return segScorePrefix + len(opt)
 	}
 	optStd, segStd := StandardizeConfig(opt), StandardizeConfig(seg)
 	if optStd != "" && optStd == segStd {
 		return segScoreStdEqual
 	}
-	if optStd != "" && segStd != "" && (strings.HasPrefix(optStd, segStd) || strings.HasPrefix(segStd, optStd)) {
-		return segScoreStdPrefix
+	if optStd != "" && segStd != "" {
+		if strings.HasPrefix(optStd, segStd+"-") && IsAllowedOptionSuffix(strings.TrimPrefix(optStd, segStd+"-")) {
+			return segScoreStdPrefix
+		}
+		if strings.HasPrefix(segStd, optStd+"-") && IsAllowedOptionSuffix(strings.TrimPrefix(segStd, optStd+"-")) {
+			return segScoreStdPrefix
+		}
 	}
 	return segScoreNoMatch
 }
 
-// fqnRelevantOption 只有内存/存储(含系统盘)这两类 addon 会出现在 FQN 里,
+// fqnRelevantOption 只有内存/存储(含系统盘)/GPU 这几类硬件 addon 会出现在 FQN 里,
 // bandwidth / vrack / OS / 许可证不会。把它们一起拿去匹配 FQN 会导致任何机型都匹配不上。
 func fqnRelevantOption(opt string) bool {
 	o := strings.ToLower(opt)
-	if strings.Contains(o, "ram-") || strings.Contains(o, "memory") {
+	if strings.Contains(o, "ram-") || strings.Contains(o, "memory") || strings.Contains(o, "gpu") {
 		return true
 	}
 	for _, kw := range []string{"raid", "disk", "nvme", "ssd", "hdd", "sas", "storage"} {
@@ -402,12 +442,12 @@ func fqnRelevantOption(opt string) bool {
 }
 
 // fqnSegmentsOf 取一条 availability 记录里参与配置匹配的段。
-// 用 memory/storage/systemStorage 三个字段而不是切 FQN 字符串:FQN 第一段是 planCode,
+// 用 memory/storage/systemStorage/gpu 四个字段而不是切 FQN 字符串:FQN 第一段是 planCode,
 // 而美区 planCode 自带 -us/-ca 后缀,按 "." 切完还要再判断哪段是什么,反而容易错。
 func fqnSegmentsOf(item map[string]interface{}) []string {
 	segs := []string{}
-	for _, key := range []string{"memory", "storage", "systemStorage"} {
-		if v := getString(item, key, ""); v != "" {
+	for _, key := range []string{"memory", "storage", "systemStorage", "gpu"} {
+		if v := getString(item, key, ""); v != "" && v != "N/A" {
 			segs = append(segs, v)
 		}
 	}
@@ -841,8 +881,9 @@ func LoadServerList(state *app.State, accountID string) ([]types.ServerPlan, int
 			linkedProd = ref
 		}
 
-		// 从预拉结果取（保持串行解析以确保 1:1）
+		// 从预拉结果取并按机房码去重合并最优可用状态（同一 planCode 下常有多条 FQN）
 		datacenters := []types.Datacenter{}
+		dcIdxByCode := map[string]int{}
 		var availabilities []map[string]interface{}
 		if entry, ok := availByPlan[planCode]; ok {
 			availabilities = entry.availabilities
@@ -854,9 +895,17 @@ func LoadServerList(state *app.State, accountID string) ([]types.ServerPlan, int
 					if !ok {
 						continue
 					}
+					dcCode := getString(dc, "datacenter", "")
+					avail := getString(dc, "availability", "unknown")
+					key := strings.ToLower(strings.TrimSpace(dcCode))
+					if idx, exists := dcIdxByCode[key]; exists {
+						datacenters[idx].Availability = pickBetterAvailability(datacenters[idx].Availability, avail)
+						continue
+					}
+					dcIdxByCode[key] = len(datacenters)
 					datacenters = append(datacenters, types.Datacenter{
-						Datacenter:   getString(dc, "datacenter", ""),
-						Availability: getString(dc, "availability", "unknown"),
+						Datacenter:   dcCode,
+						Availability: avail,
 					})
 				}
 			}
@@ -1214,6 +1263,37 @@ func contains(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// pickBetterAvailability 合并同一机房跨多条 FQN 的可用状态：可下单状态优先于不可下单状态。
+func pickBetterAvailability(cur, candidate string) string {
+	curOrd := IsAvailableForOrder(cur)
+	candOrd := IsAvailableForOrder(candidate)
+	if curOrd && !candOrd {
+		return cur
+	}
+	if !curOrd && candOrd {
+		return candidate
+	}
+	if !curOrd && !candOrd {
+		rank := func(s string) int {
+			switch s {
+			case "comingSoon":
+				return 3
+			case "unavailable":
+				return 2
+			case "unknown", "":
+				return 1
+			default:
+				return 1
+			}
+		}
+		if rank(candidate) > rank(cur) {
+			return candidate
+		}
+		return cur
+	}
+	return cur
 }
 
 // PassthroughAvailability 用 SDK 直接传请求（用于 sniper 监控）

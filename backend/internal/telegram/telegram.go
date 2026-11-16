@@ -224,6 +224,9 @@ func DeleteWebhook(token string) error {
 
 // AnswerCallback 应答 callback_query
 func AnswerCallback(state *app.State, callbackQueryID, text string, showAlert bool) {
+	if state == nil || state.Config == nil {
+		return
+	}
 	cfg := state.Config.Get()
 	if cfg.TgToken == "" {
 		return
@@ -234,11 +237,17 @@ func AnswerCallback(state *app.State, callbackQueryID, text string, showAlert bo
 		"show_alert":        showAlert,
 	}
 	body, _ := json.Marshal(payload)
-	client := tgClient(5 * time.Second)
-	req, _ := http.NewRequest(http.MethodPost,
+	req, err := http.NewRequest(http.MethodPost,
 		"https://api.telegram.org/bot"+cfg.TgToken+"/answerCallbackQuery",
 		bytes.NewReader(body))
+	if err != nil {
+		if state.Logger != nil {
+			state.Logger.Error("构建 answerCallbackQuery 请求失败: "+scrub(err.Error()), "telegram")
+		}
+		return
+	}
 	req.Header.Set("Content-Type", "application/json")
+	client := tgClient(5 * time.Second)
 	resp, err := client.Do(req)
 	if err == nil {
 		resp.Body.Close()
@@ -247,6 +256,9 @@ func AnswerCallback(state *app.State, callbackQueryID, text string, showAlert bo
 
 // SendReply 回复指定消息
 func SendReply(state *app.State, chatID interface{}, text string, replyToMessageID int64) {
+	if state == nil || state.Config == nil {
+		return
+	}
 	cfg := state.Config.Get()
 	if cfg.TgToken == "" {
 		return
@@ -257,11 +269,17 @@ func SendReply(state *app.State, chatID interface{}, text string, replyToMessage
 		"reply_to_message_id": replyToMessageID,
 	}
 	body, _ := json.Marshal(payload)
-	client := tgClient(10 * time.Second)
-	req, _ := http.NewRequest(http.MethodPost,
+	req, err := http.NewRequest(http.MethodPost,
 		"https://api.telegram.org/bot"+cfg.TgToken+"/sendMessage",
 		bytes.NewReader(body))
+	if err != nil {
+		if state.Logger != nil {
+			state.Logger.Error("构建 sendMessage 回复请求失败: "+scrub(err.Error()), "telegram")
+		}
+		return
+	}
 	req.Header.Set("Content-Type", "application/json")
+	client := tgClient(10 * time.Second)
 	resp, err := client.Do(req)
 	if err == nil {
 		resp.Body.Close()

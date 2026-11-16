@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ovh-webui/server/internal/catalog"
+	"github.com/ovh-webui/server/internal/domain/datacenter"
 	"github.com/ovh-webui/server/internal/purchase"
 )
 
@@ -28,8 +29,12 @@ var globalPrewarmCoord = &prewarmCoordinator{
 	failedCounts: map[string]int{},
 }
 
-func prewarmCoordKey(accountID, planCode, datacenter string, options []string, coupon, duration string) string {
-	return fmt.Sprintf("%s|%s|%s|%s|%s|%s", accountID, planCode, strings.ToLower(datacenter), OptionsKey(options), strings.TrimSpace(coupon), duration)
+func prewarmCoordKey(accountID, planCode, dc string, options []string, coupon, duration string) string {
+	normDC := datacenter.InventoryCode(dc)
+	if normDC == "" {
+		normDC = strings.ToLower(strings.TrimSpace(dc))
+	}
+	return fmt.Sprintf("%s|%s|%s|%s|%s|%s", accountID, planCode, normDC, OptionsKey(options), strings.TrimSpace(coupon), duration)
 }
 
 // ResetPrewarmCoordinator 重置预热协调器状态（供测试与重置使用）
@@ -96,7 +101,7 @@ func (m *Monitor) TriggerPrewarmForSubscription(sub *Subscription) {
 	}
 
 	for _, dc := range dcs {
-		dcTrimmed := strings.TrimSpace(dc)
+		dcTrimmed := datacenter.InventoryCode(dc)
 		if dcTrimmed == "" {
 			continue
 		}

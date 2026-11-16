@@ -21,6 +21,7 @@ func TestExactCartReconciliationDoesNotInferAbsence(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			nowISO := time.Now().UTC().Format(time.RFC3339)
 			client.Client.Transport = notificationTransport(func(r *http.Request) (*http.Response, error) {
 				if r.Method != "GET" {
 					t.Fatalf("reconciliation mutated OVH: %s", r.Method)
@@ -43,21 +44,37 @@ func TestExactCartReconciliationDoesNotInferAbsence(t *testing.T) {
 						body = `{"message":"limited"}`
 					}
 				case strings.HasSuffix(r.URL.Path, "/exact/checkout"):
-					body = `{"orderId":123}`
-					if scenario == "simulation" {
-						body = `{"orderId":0}`
+					t.Fatalf("must never call simulation endpoint GET %s", r.URL.Path)
+				case strings.HasSuffix(r.URL.Path, "/me/order"):
+					if scenario == "simulation" || scenario == "missing-cart" {
+						body = `[]`
+					} else {
+						body = `[123]`
 					}
 				case strings.HasSuffix(r.URL.Path, "/me/order/123"):
-					body = `{"orderId":123}`
+					body = fmt.Sprintf(`{"orderId":123,"date":%q,"url":"https://www.ovh.com/order/123"}`, nowISO)
+					if scenario == "saved-order" {
+						body = `{"orderId":123}`
+					}
+				case strings.HasSuffix(r.URL.Path, "/me/order/123/details"):
+					body = `[1]`
+				case strings.HasSuffix(r.URL.Path, "/me/order/123/details/1"):
+					body = `{"orderDetailId":1,"description":"Server (24sk40-v1) - gra"}`
 					if scenario == "wrong-order" {
-						body = `{"orderId":124}`
+						body = `{"orderDetailId":1,"description":"Other server (24other99) - rbx"}`
 					}
 				default:
 					t.Fatalf("unexpected query %s", r.URL.Path)
 				}
 				return &http.Response{StatusCode: code, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
 			})
-			journal := &purchase.CheckoutJournal{Submitted: true, CartID: "exact"}
+			journal := &purchase.CheckoutJournal{
+				Submitted:  true,
+				CartID:     "exact",
+				PlanCode:   "24sk40-v1",
+				Datacenter: "gra",
+				StartedAt:  time.Now().UTC().Format(time.RFC3339Nano),
+			}
 			if scenario == "saved-order" {
 				journal.OrderID = "123"
 			}

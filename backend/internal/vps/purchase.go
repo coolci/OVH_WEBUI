@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/ovh-webui/server/internal/app"
+	"github.com/ovh-webui/server/internal/domain/datacenter"
 	"github.com/ovh-webui/server/internal/notify"
 	"github.com/ovh-webui/server/internal/numconv"
 	"github.com/ovh-webui/server/internal/orderterm"
@@ -230,15 +231,20 @@ func purchaseVPSInternal(state *app.State, sub types.VPSSubscription, dcCode str
 			}
 			state.HistoryMu.Unlock()
 			oid, u, recErr := purchase.ReconcileRecentOrderEx(client, acc.Endpoint, sub.PlanCode, attemptStart, purchase.ReconcileOptions{
+				Datacenter:       dcCode,
 				ExcludedOrderIDs: claimed,
 			})
 			if recErr != nil {
 				state.Logger.Warn("[VPS下单] 对账查询失败(按未建单处理): "+recErr.Error(), "vps_purchase")
 			} else if oid != "" {
 				state.Logger.Warn(fmt.Sprintf("[VPS下单] checkout 报瞬态错误但对账发现订单已建(#%s),按成功处理", oid), "vps_purchase")
+				success = true
+				ovh.ReleaseCart(cartID)
 				return Outcome{Success: true, OrderID: oid, OrderURL: u}
 			}
-			// 对账未果:订单状态未知,标记 Fatal 终止本轮多机房继续抢购,避免同一补货事件买两台
+			// 对账未果:订单状态未知,切勿 DELETE 可能已建单的购物车,同时释放本地 inUseCarts 注册表引用
+			success = true
+			ovh.ReleaseCart(cartID)
 			return Outcome{Fatal: true, Reason: "结账响应超时,无法确认订单是否已创建(已暂停继续抢购以防重复下单): " + errMsg}
 		}
 
@@ -248,6 +254,7 @@ func purchaseVPSInternal(state *app.State, sub types.VPSSubscription, dcCode str
 	orderID := numconv.ToString(checkoutResult["orderId"])
 	orderURL, _ := checkoutResult["url"].(string)
 	success = true
+	ovh.ReleaseCart(cartID)
 	state.Logger.Info(fmt.Sprintf("[VPS下单] 成功: %s @ %s 订单 %s", sub.PlanCode, dcCode, orderID), "vps_purchase")
 	return Outcome{Success: true, OrderID: orderID, OrderURL: orderURL}
 }
@@ -338,9 +345,12 @@ func buildVPSConfig(required []requiredItem, dcCode, os string) []kv {
 	if r, ok := byLabel["vps_datacenter"]; ok {
 		v := dcCode
 		if len(r.AllowedValues) > 0 && !containsFold(r.AllowedValues, dcCode) {
-			// 购物车不认这个机房 —— 照样提交,让 OVH 给出准确的报错,
-			// 比我们自己编一句"机房不合法"更有用
-			v = dcCode
+			for _, allowed := range r.AllowedValues {
+				if datacenter.SameZoneOrAlias(allowed, dcCode) {
+					v = allowed
+					break
+				}
+			}
 		}
 		out = append(out, kv{"vps_datacenter", v})
 	} else if len(required) == 0 {
@@ -355,7 +365,11 @@ func buildVPSConfig(required []requiredItem, dcCode, os string) []kv {
 		case len(r.AllowedValues) == 1:
 			out = append(out, kv{"region", r.AllowedValues[0]})
 		case len(r.AllowedValues) > 1:
-			if want := dcRegion[strings.ToUpper(dcCode)]; want != "" && containsFold(r.AllowedValues, want) {
+			want := dcRegion[strings.ToUpper(dcCode)]
+			if want == "" {
+				want = dcRegion[datacenter.VPSShortCode(dcCode)]
+			}
+			if want != "" && containsFold(r.AllowedValues, want) {
 				out = append(out, kv{"region", want})
 			}
 			// 挑不出来就不提交:region 不是必填,让 OVH 用默认值,
@@ -464,6 +478,8 @@ func subscriptionCurrent(state *app.State, snapshot types.VPSSubscription) bool 
 	}
 	return live.AutoOrder && live.AutoOrderAccountID == snapshot.AutoOrderAccountID &&
 		live.PlanCode == snapshot.PlanCode && effectiveSubsidiary(state, *live) == effectiveSubsidiary(state, snapshot) &&
+		stringSliceEqual(live.Datacenters, snapshot.Datacenters) &&
+		live.MonitorLinux == snapshot.MonitorLinux && live.MonitorWindows == snapshot.MonitorWindows &&
 		live.OS == snapshot.OS && live.Quantity == snapshot.Quantity && live.AutoPay == snapshot.AutoPay
 }
 
@@ -496,20 +512,36 @@ func disableAutoOrder(state *app.State, sub types.VPSSubscription, reason string
 // 不先存的话:下单成功 → 进程在本轮末尾保存前崩溃 → 重启后基准还是"无货",
 // 同一次补货再被判成"无货→有货",又买一台。
 func saveObservation(state *app.State, sub *types.VPSSubscription) error {
+	return saveObservationWithBaseline(state, sub, nil)
+}
+
+func saveObservationWithBaseline(state *app.State, sub *types.VPSSubscription, base *vpsSubBaseline) error {
 	history := sub.History
 	if len(history) > 100 {
 		history = history[len(history)-100:]
 	}
+	var stale bool
 	_, found, err := state.MutateVPSSubscription(sub.ID, func(s *types.VPSSubscription) bool {
+		if base != nil && (base.Stale || !baselineMatchesLiveLocked(s, base)) {
+			markBaselineStaleLocked(s, base)
+			stale = true
+			return false
+		}
 		s.LastStatus = make(map[string]string, len(sub.LastStatus))
 		for k, v := range sub.LastStatus {
 			s.LastStatus[k] = v
 		}
 		s.History = append([]map[string]interface{}(nil), history...)
+		if base != nil {
+			base.ExpectedStatus = copyStringMap(s.LastStatus)
+		}
 		return true
 	})
 	if err != nil {
 		return err
+	}
+	if stale {
+		return errStaleSubscriptionRevision
 	}
 	if !found {
 		return fmt.Errorf("订阅已被删除")
@@ -625,5 +657,12 @@ func restockOrderDatacenter(dc map[string]interface{}) string {
 		return strings.TrimSpace(name)
 	}
 	code, _ := dc["code"].(string)
-	return strings.TrimSpace(code)
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return ""
+	}
+	if short := datacenter.VPSShortCode(code); short != "" {
+		return short
+	}
+	return code
 }

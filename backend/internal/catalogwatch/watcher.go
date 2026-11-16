@@ -7,12 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/catalog"
+	"github.com/ovh-webui/server/internal/domain/datacenter"
 	"github.com/ovh-webui/server/internal/ovh"
 	"github.com/ovh-webui/server/internal/purchase"
 	"github.com/ovh-webui/server/internal/types"
@@ -89,12 +89,6 @@ func New(s *app.State) *Watcher {
 	if w.data.Jobs == nil {
 		w.data.Jobs = map[string]*Job{}
 	}
-	// 结账凭据里记着的购物车要留给后续核对,遗留购物车清理不能删
-	for _, j := range w.data.Jobs {
-		if j.Checkout != nil {
-			ovh.TrackCart(j.Checkout.CartID)
-		}
-	}
 	for _, j := range w.data.Jobs {
 		if j.Status == "attempting" {
 			j.Status = "uncertain"
@@ -110,6 +104,12 @@ func New(s *app.State) *Watcher {
 					j.Reason = "已从购买历史确认建单成功"
 				}
 			}
+		}
+	}
+	// 仅对仍处于未决核对态的购物车登记保留，避免已完成/已取消历史任务在重启后永久泄漏注册表项
+	for _, j := range w.data.Jobs {
+		if j.Status == "uncertain" && j.Checkout != nil {
+			ovh.TrackCart(j.Checkout.CartID)
 		}
 	}
 	// Split old pending groups without replaying old successes or uncertain checkouts.
@@ -232,6 +232,9 @@ func (w *Watcher) SetEnabled(_ context.Context, enabled bool) error {
 			if j.Status == "pending" {
 				j.Status = "cancelled"
 				j.Reason = "用户关闭自动下单"
+				if j.Checkout != nil {
+					ovh.ReleaseCart(j.Checkout.CartID)
+				}
 			}
 		}
 	}
@@ -353,7 +356,9 @@ func (w *Watcher) Poll(ctx context.Context) error {
 			}
 			launches = append(launches, [2]string{c.PlanCode, dc})
 			id := locationKey(w.data.AccountID, c, dc)
-			if _, exists := w.data.Jobs[id]; !exists {
+			existing, exists := w.data.Jobs[id]
+			// 新一轮开启后允许覆盖旧轮次的 cancelled/failed 槽位；completed/uncertain/attempting 绝不重放
+			if !exists || (existing.Round < w.data.Round && (existing.Status == "cancelled" || existing.Status == "failed")) {
 				one := c
 				one.Datacenters = []string{dc}
 				w.data.Jobs[id] = &Job{Round: w.data.Round, Endpoint: w.data.Endpoint, PerDatacenter: true, Candidate: one, ID: id, AccountID: w.data.AccountID, Status: "pending", CreatedAt: time.Now().UTC().Format(time.RFC3339Nano)}
@@ -485,6 +490,9 @@ func (w *Watcher) Attempt(ctx context.Context) {
 			job.OrderID = h.OrderID
 		}
 	}
+	if job.Status != "uncertain" && job.Checkout != nil {
+		ovh.ReleaseCart(job.Checkout.CartID)
+	}
 	_ = w.save()
 }
 func (w *Watcher) runnableJobCount() int {
@@ -587,14 +595,17 @@ func (w *Watcher) Wait(timeout time.Duration) bool {
 	}
 }
 
-// queueCovers 队列里是否已有同账户、同型号、同机房的未结束任务(运行中 / 待执行 / 已暂停)。
+// queueCovers 队列里是否已有同账户、同型号、同机房的活跃抢购/预订任务(运行中 / 待执行 / 未决结账暂停)。
+// 普通暂停(Status=="paused" 且非 UncertainCheckout)不阻断目录上新；活跃任务的空机房("")视为全机房通配，绝不硬编码映射为 "gra"。
 func queueCovers(s *app.State, accountID, planCode, dc string) (string, bool) {
-	want := strings.ToLower(ovh.ConvertDisplayDCToAPIDC(dc))
+	want := datacenter.InventoryCode(dc)
 	for _, it := range s.QueueSnapshot() {
-		if it.Status != "running" && it.Status != "pending" && it.Status != "paused" {
+		active := it.Status == "running" || it.Status == "pending" || (it.Status == "paused" && it.UncertainCheckout)
+		if !active || it.PlanCode != planCode {
 			continue
 		}
-		if it.PlanCode != planCode || strings.ToLower(ovh.ConvertDisplayDCToAPIDC(it.Datacenter)) != want {
+		itemDC := datacenter.InventoryCode(it.Datacenter)
+		if itemDC != "" && !datacenter.SameZoneOrAlias(itemDC, want) {
 			continue
 		}
 		acc := it.AccountID

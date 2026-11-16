@@ -15,6 +15,7 @@ import (
 
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/catalog"
+	"github.com/ovh-webui/server/internal/domain/datacenter"
 	"github.com/ovh-webui/server/internal/notify"
 	"github.com/ovh-webui/server/internal/numconv"
 	"github.com/ovh-webui/server/internal/orderterm"
@@ -244,8 +245,11 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 				availStr, _ := dc["availability"].(string)
 				// 白名单判定：只有 \d+H 家族算有货。comingSoon 是"即将上线尚未开售"，
 				// 以前被当成有货，会为永远下不了单的机型跑完整个下单流程、白刷 OVH 限流额度。
-				if dcName == apiDC && catalog.IsAvailableForOrder(availStr) {
+				if (dcName == apiDC || datacenter.SameZoneOrAlias(dcName, item.Datacenter)) && catalog.IsAvailableForOrder(availStr) {
 					foundAvailable = true
+					if dcName != "" {
+						apiDC = dcName
+					}
 					if fqn, ok := av["fqn"].(string); ok {
 						availableFQN = fqn
 					}
@@ -774,10 +778,18 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 	// 而且方向上是可恢复的 —— 真需要弃权还有 POST /me/order/{id}/waiveRetraction
 	// 可以事后补;反过来结账时一旦 true,权利当场消失,没有任何接口能拿回来。
 
-	if err := saveCheckoutJournal(ctx, cartID); err != nil {
+	if err := saveCheckoutJournalForItem(ctx, item, cartID); err != nil {
 		return Outcome{PauseTask: true, Reason: "结账凭据保存失败，未提交订单：" + err.Error()}
 	}
-	if err := client.PostWithContext(context.WithoutCancel(ctx), "/order/cart/"+cartID+"/checkout", checkoutPayload, &checkoutResult); err != nil {
+	checkoutErr := client.PostWithContext(context.WithoutCancel(ctx), "/order/cart/"+cartID+"/checkout", checkoutPayload, &checkoutResult)
+	if checkoutErr != nil && prewarmed != nil && unassignedCartError(checkoutErr) {
+		state.Logger.Warn(fmt.Sprintf("预热购物车 %s 结账提示尚未绑定账户，自动补发 /assign 后重试结账", cartID), "purchase")
+		if assignRetryErr := client.PostWithContext(context.WithoutCancel(ctx), "/order/cart/"+cartID+"/assign", nil, nil); assignRetryErr == nil {
+			checkoutResult = nil
+			checkoutErr = client.PostWithContext(context.WithoutCancel(ctx), "/order/cart/"+cartID+"/checkout", checkoutPayload, &checkoutResult)
+		}
+	}
+	if err := checkoutErr; err != nil {
 		// POST /item/{id}/configuration 对取值不做任何校验 —— 实测在 EU 车上把
 		// dedicated_datacenter 设成 "hil"、region 设成 "usa" 都会 200 返回配置项 id,
 		// 直到 summary/checkout 才报 "<fqn> is not available in hil"。
@@ -797,11 +809,11 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 			errMsg += "；" + couponWarning
 		}
 
-		// 用的是预热车,而 OVH 明确说这辆车已经不存在 / 已过期:订单肯定没建(确定性的 4xx),
-		// 问题只在车本身。以前这里记一次失败、等下一轮(默认 60 秒)才重新装车 ——
-		// 补货窗口往往就这几十秒。现在本轮立即不用预热车重走一遍(只重走一次,不会循环)。
-		if prewarmed != nil && !strings.HasPrefix(item.ID, "catalog-watch-") && staleCartError(err) {
-			state.Logger.Warn(fmt.Sprintf("预热购物车 %s 在 OVH 侧已失效(%s),本轮立即重新装车下单", cartID, errMsg), "purchase")
+		// 用的是预热车,而 OVH 明确说这辆车已经不存在 / 已过期 / 未绑定:订单肯定没建(确定性的 4xx),
+		// 问题只在车本身。本轮立即不用预热车重走一遍(只重走一次,不会循环)。
+		if prewarmed != nil && !strings.HasPrefix(item.ID, "catalog-watch-") && (staleCartError(err) || unassignedCartError(err)) {
+			state.Logger.Warn(fmt.Sprintf("预热购物车 %s 在 OVH 侧不可用(%s),本轮立即重新装车下单", cartID, errMsg), "purchase")
+			ovh.ReleaseCart(cartID)
 			return PurchaseServer(context.WithValue(ctx, skipPrewarmKey{}, true), state, item)
 		}
 
@@ -824,6 +836,8 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 				state.Logger.Warn("checkout 对账查询失败(按未建单处理): "+recErr.Error(), "purchase")
 			} else if oid != "" {
 				state.Logger.Warn(fmt.Sprintf("checkout 报 transient 失败但对账发现订单已建(#%s),按成功处理,不再重试", oid), "purchase")
+				success = true
+				ovh.ReleaseCart(cartID)
 				return handleReconciledOrder(state, client, acc.Endpoint, item, oid, orderURL, tl, timingKey, couponWarning)
 			}
 			// 对账也未果(429/超时/明细读失败):OVH 侧订单状态未知。
@@ -835,7 +849,8 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 					"任务已暂停。请到 OVH 订单页查看是否已有一笔未付订单:\n"+
 					"- 有:等付款即可,任务不需要恢复\n"+
 					"- 没有:在队列页把任务恢复运行", item.PlanCode, item.Datacenter), nil)
-			success = true // 结账结果未决时保留原购物车供后续核对,禁止 defer 删车
+			success = true // 结账结果未决时禁止立即 DELETE 原购物车,释放进程内引用(cart_janitor 只删非只读车)
+			ovh.ReleaseCart(cartID)
 			return Outcome{Attempted: false, PauseTask: true, CheckoutUncertain: true, Reason: "结账超时且对账未能确认是否已建单"}
 		}
 		if item.Preorder && listingNotReady(err) {
@@ -858,13 +873,14 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 		return Outcome{PauseTask: true, CheckoutUncertain: true, Reason: "结账未返回有效订单编号，后台自动核对"}
 	}
 
-	// checkout 已返回订单 ID,cart 已成功转 order,标记成功阻止 defer 删除
+	// checkout 已返回订单 ID,cart 已成功转 order,标记成功阻止 defer 删除并立即释放活跃购物车注册表
 	success = true
+	ovh.ReleaseCart(cartID)
 	openPreorderGate(gateKey)
 
 	// Persist the returned identity before history/notifications; a restart can
 	// query this exact order without relying on cart retention upstream.
-	if err := saveCheckoutJournal(ctx, cartID, orderID); err != nil {
+	if err := saveCheckoutJournalForItem(ctx, item, cartID, orderID); err != nil {
 		state.Logger.Error("订单已创建但确认凭据保存失败: "+err.Error(), "purchase")
 	}
 	// 立刻记成功 —— 价格和过期时间空着,后台异步补。
@@ -940,6 +956,15 @@ func staleCartError(err error) bool {
 	msg := strings.ToLower(apiErr.Message)
 	return strings.Contains(msg, "cart") &&
 		(strings.Contains(msg, "expired") || strings.Contains(msg, "does not exist") || strings.Contains(msg, "not found"))
+}
+
+func unassignedCartError(err error) bool {
+	var apiErr *ovhsdk.APIError
+	if !errors.As(err, &apiErr) || (apiErr.Code != http.StatusBadRequest && apiErr.Code != http.StatusForbidden) {
+		return false
+	}
+	msg := strings.ToLower(apiErr.Message)
+	return strings.Contains(msg, "assign")
 }
 
 func orderSubsidiary(state *app.State, acc types.OVHAccount, logTag string) string {
@@ -1035,7 +1060,16 @@ func fqnSegmentMatchesOption(seg, opt string) bool {
 	if s == "" || o == "" {
 		return false
 	}
-	return s == o || strings.HasPrefix(o, s+"-") || strings.HasPrefix(s, o+"-")
+	if s == o {
+		return true
+	}
+	if strings.HasPrefix(o, s+"-") && catalog.IsAllowedOptionSuffix(strings.TrimPrefix(o, s+"-")) {
+		return true
+	}
+	if strings.HasPrefix(s, o+"-") && catalog.IsAllowedOptionSuffix(strings.TrimPrefix(s, o+"-")) {
+		return true
+	}
+	return false
 }
 
 // fqnRelevantOptions 从用户提交的 options 里挑出真正参与 FQN 库存判定的硬件项。

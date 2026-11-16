@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/ovh-webui/server/internal/app"
+	"github.com/ovh-webui/server/internal/domain/datacenter"
 )
 
 // NormalizeOrderAccounts preserves legacy single-account subscriptions. A nil
@@ -118,11 +119,34 @@ func monitorQueueScopes(planCode string, cfg subCheckConfig) []app.MonitorQueueS
 		// Preserve the legacy pause behavior for notify-only subscriptions.
 		ids = []string{""}
 	}
+	scopeDCs := expandScopeDatacenters(cfg.Datacenters)
 	scopes := make([]app.MonitorQueueScope, 0, len(ids))
 	for _, id := range ids {
-		scopes = append(scopes, app.MonitorQueueScope{PlanCode: planCode, AccountID: id, Datacenters: cfg.Datacenters, Options: cfg.Options})
+		scopes = append(scopes, app.MonitorQueueScope{PlanCode: planCode, AccountID: id, Datacenters: scopeDCs, Options: cfg.Options})
 	}
 	return scopes
+}
+
+func expandScopeDatacenters(dcs []string) []string {
+	if len(dcs) == 0 {
+		return dcs
+	}
+	out := make([]string, 0, len(dcs)*2)
+	seen := make(map[string]bool, len(dcs)*2)
+	add := func(v string) {
+		v = strings.ToLower(strings.TrimSpace(v))
+		if v != "" && !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	for _, dc := range dcs {
+		add(dc)
+		add(datacenter.InventoryCode(dc))
+		add(datacenter.DisplayCode(dc))
+		add(datacenter.OrderCode(dc))
+	}
+	return out
 }
 
 // CheckAvailabilityChange runs the existing stock/price/order state machine for

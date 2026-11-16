@@ -191,6 +191,20 @@ func (m *Monitor) isPlanInCooldown(accountID, subsidiary, planCode string) bool 
 	return active
 }
 
+func (m *Monitor) hasPendingUpstream504(accountID, subsidiary, planCode string) bool {
+	if m == nil {
+		return false
+	}
+	key, _, _, _ := m.resolvePlanCooldownKey(accountID, subsidiary, planCode)
+	m.planCooldownMu.Lock()
+	defer m.planCooldownMu.Unlock()
+	if m.planCooldowns == nil {
+		return false
+	}
+	entry, ok := m.planCooldowns[key]
+	return ok && entry != nil && entry.consecutive504 > 0
+}
+
 func (m *Monitor) isPlanInCooldownDetail(accountID, subsidiary, planCode string) (bool, *planCooldownEntry) {
 	if m == nil {
 		return false, nil

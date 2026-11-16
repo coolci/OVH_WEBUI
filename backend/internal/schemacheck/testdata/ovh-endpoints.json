@@ -2022,6 +2022,14 @@
         "path:orderDetailId:long:true",
         "path:orderId:long:true"
       ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "billing.OrderDetail",
+      "params": [
+        "path:detailId:long:true",
+        "path:orderId:long:true"
+      ]
     }
   },
   "GET /me/order/{orderId}/followUp": {
