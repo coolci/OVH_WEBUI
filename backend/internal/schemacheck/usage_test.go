@@ -73,6 +73,29 @@ func verbsToBraces(s string) string {
 	return b.String()
 }
 
+func buildSegments(args []ast.Expr, hasEllipsis bool) string {
+	if len(args) == 0 || hasEllipsis {
+		return "{}"
+	}
+	var b strings.Builder
+	hasLiteral := false
+	for _, arg := range args {
+		b.WriteByte('/')
+		if s, ok := unquote(arg); ok {
+			b.WriteString(s)
+			if s != "" {
+				hasLiteral = true
+			}
+		} else {
+			b.WriteString("{}")
+		}
+	}
+	if !hasLiteral {
+		return "{}"
+	}
+	return b.String()
+}
+
 // pathTemplate 还原路径表达式。字面量保留,其余一律 {}。
 func pathTemplate(e ast.Expr) string {
 	switch x := e.(type) {
@@ -101,18 +124,15 @@ func pathTemplate(e ast.Expr) string {
 					return verbsToBraces(s)
 				}
 			}
-		case "BuildPath":
-			if len(x.Args) > 0 {
-				var b strings.Builder
-				for _, arg := range x.Args {
-					b.WriteByte('/')
-					if s, ok := unquote(arg); ok {
-						b.WriteString(s)
-					} else {
-						b.WriteString("{}")
-					}
-				}
-				return b.String()
+		case "BuildPath", "buildOVHPath", "safePathFn":
+			return buildSegments(x.Args, x.Ellipsis.IsValid())
+		case "buildOVHPathQuery", "ovhPathOrAbort":
+			if len(x.Args) >= 2 {
+				return buildSegments(x.Args[1:], x.Ellipsis.IsValid())
+			}
+		case "ovhPathQueryOrAbort":
+			if len(x.Args) >= 3 {
+				return buildSegments(x.Args[2:], x.Ellipsis.IsValid())
 			}
 		case "WithQuery":
 			if len(x.Args) > 0 {
