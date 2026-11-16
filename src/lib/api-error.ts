@@ -36,21 +36,76 @@ function extractErrorPayload(e: unknown): ErrorPayload | undefined {
   return undefined;
 }
 
+/**
+ * 网关/上游动态透传类错误码：
+ * 后端在这些 code 下附带了 `ovh.Explain(err)` 生成的具体排障消息（含 HTTP 状态码、缺权限路径、QueryID 等），
+ * 必须保留并优先展示动态详情，禁止被静态泛化翻译短语吞没。
+ */
+const DYNAMIC_PASSTHROUGH_CODES = new Set([
+  "OVH_UPSTREAM_ERROR",
+  "OVH_AUTH_INVALID",
+  "E7480C06F",
+  "E5F67A422",
+  "E8B5F5226",
+  "INTERNAL_ERROR",
+]);
+
+const STATIC_GENERIC_LABELS = new Set([
+  "OVH 上游接口返回错误，请稍后重试",
+  "Upstream OVH API returned an error.",
+  "OVH 账户 API 凭据无效或已过期，请核对账户密钥设置",
+  "OVH API credentials for this account are invalid or expired.",
+  "查询可用性失败",
+  "Failed to query availability",
+  "planCode 不属于该账户所在站点",
+  "planCode does not belong to this account's subsidiary",
+  "该 plan 没有这套配置组合",
+  "This configuration combination does not exist for the selected plan",
+  "服务器内部处理错误",
+  "Internal server error.",
+]);
+
 export function apiMessage(e: unknown): string {
   const err = e as HybridError | undefined;
   const data = extractErrorPayload(e);
-  const code = data?.code || (typeof err?.code === "string" && !err.code.startsWith("ERR_") && err.code !== "ECONNABORTED" ? err.code : undefined);
+  const code =
+    data?.code ||
+    (typeof err?.code === "string" && !err.code.startsWith("ERR_") && err.code !== "ECONNABORTED"
+      ? err.code
+      : undefined);
   const raw = data?.error || data?.message || data?.detail || data?.title || err?.message || "";
 
   if (code) {
     const key = `api.${code}`;
-    if (i18n.exists(key)) {
-      // 结构化校验错误带 params:按当前语言插值出译文(值可能是数字)
-      const params = data?.params as Record<string, string | number> | undefined;
-      if (params && Object.keys(params).length > 0) {
-        return i18n.t(key, params) as string;
+    const hasTranslation = typeof i18n.exists === "function" && i18n.exists(key);
+    const params = data?.params as Record<string, string | number> | undefined;
+    const translated = hasTranslation
+      ? ((params && Object.keys(params).length > 0 ? i18n.t(key, params) : i18n.t(key)) as string)
+      : "";
+
+    if (DYNAMIC_PASSTHROUGH_CODES.has(code)) {
+      const genericSet = new Set(STATIC_GENERIC_LABELS);
+      if (translated) genericSet.add(translated.trim());
+      const details = [data?.detail, data?.message, data?.error]
+        .filter((s): s is string => typeof s === "string" && s.trim().length > 0)
+        .map((s) => s.trim())
+        .filter((s, idx, arr) => !genericSet.has(s) && arr.indexOf(s) === idx);
+
+      if (details.length > 0) {
+        const joined = details.join(": ");
+        if (code === "OVH_UPSTREAM_ERROR" || code === "INTERNAL_ERROR") {
+          return joined;
+        }
+        const prefix = (translated || data?.error || "").trim();
+        if (prefix && !joined.includes(prefix)) {
+          return `${prefix}: ${joined}`;
+        }
+        return joined;
       }
-      return i18n.t(key) as string;
+    }
+
+    if (hasTranslation) {
+      return translated;
     }
   }
   // 网络层错误(请求根本没到后端)原文是英文技术串,给可读的通用文案

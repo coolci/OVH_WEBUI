@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Helmet } from "react-helmet-async";
 import { useTranslation } from "react-i18next";
 import {
@@ -29,7 +29,8 @@ import { TelegramSection } from "@/components/settings/TelegramSection";
 import { NotifySection } from "@/components/settings/NotifySection";
 import { CacheSection } from "@/components/settings/CacheSection";
 import { AccountsSection } from "@/components/settings/AccountsSection";
-import { endpointForZone } from "@/lib/ovh-subsidiaries";
+import { resolveAccountEndpoint } from "@/lib/ovh-subsidiaries";
+import { useDefaultAccount } from "@/hooks/use-accounts";
 import {
   useSettings,
   useSaveSettings,
@@ -54,29 +55,25 @@ function SettingsPage() {
   const { t } = useTranslation();
   const cfg = useSettings();
   const save = useSaveSettings();
+  const defaultAcc = useDefaultAccount();
   const [active, setActive] = useState<typeof SECTIONS[number]["id"]>("password");
-  const [form, setForm] = useState<SettingsConfig>({});
+  // 仅记录用户在当前会话中实际编辑过的增量字段(patch)，其余字段（尤其是默认账户的 zone/endpoint/iam）
+  // 实时读取最新 cfg.data 与 defaultAcc，彻底防止脏表单旧快照冲掉新切换默认账户的区域或 kimsufi/soyoustart 品牌端点。
+  const [patch, setPatch] = useState<Partial<SettingsConfig>>({});
   const [apiKey, setApiKey] = useState("");
-  const [loaded, setLoaded] = useState(false);
+  const loaded = Boolean(cfg.data);
 
-  // 表单有未保存的改动时,后台重新拉到的设置不能覆盖它。
-  // 设置会被别处的操作失效重拉(比如在「账户」分区增删账户、改默认账户),
-  // 以前一重拉就把用户在别的分区填了一半、还没保存的内容整个冲掉。
-  const dirtyRef = useRef(false);
-  useEffect(() => {
-    if (cfg.data && !dirtyRef.current) {
-      setForm(cfg.data);
-      setLoaded(true);
-    }
-  }, [cfg.data]);
+  const form = useMemo<SettingsConfig>(
+    () => ({ ...(cfg.data || {}), ...patch }),
+    [cfg.data, patch]
+  );
 
   useEffect(() => {
     setApiKey(getApiSecretKey() || "");
   }, []);
 
   const set = <K extends keyof SettingsConfig>(k: K, v: SettingsConfig[K]) => {
-    dirtyRef.current = true;
-    setForm((prev) => ({ ...prev, [k]: v }));
+    setPatch((prev) => ({ ...prev, [k]: v }));
   };
 
   const isConfigSection =
@@ -91,17 +88,26 @@ function SettingsPage() {
       return;
     }
     if (!isConfigSection || !loaded) return;
-    const zone = form.zone || "IE";
-    const cleaned: SettingsConfig = { ...form, zone, endpoint: endpointForZone(zone) };
+    const base = cfg.data || {};
+    const liveZone = defaultAcc?.zone || base.zone || "IE";
+    const liveEndpoint = defaultAcc?.endpoint
+      ? resolveAccountEndpoint(liveZone, defaultAcc.endpoint)
+      : resolveAccountEndpoint(liveZone, base.endpoint);
+    const cleaned: SettingsConfig = {
+      ...base,
+      ...patch,
+      zone: liveZone,
+      endpoint: liveEndpoint,
+      iam: defaultAcc?.iam || base.iam,
+    };
     (Object.keys(cleaned) as (keyof SettingsConfig)[]).forEach((k) => {
       if (cleaned[k] === "***") {
         delete cleaned[k];
       }
     });
     save.mutate(cleaned, {
-      // 保存成功后才接受服务端的最新值(保存会触发重拉)
       onSuccess: () => {
-        dirtyRef.current = false;
+        setPatch({});
       },
     });
   };

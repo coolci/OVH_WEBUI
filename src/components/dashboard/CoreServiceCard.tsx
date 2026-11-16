@@ -1,6 +1,7 @@
 import { CheckCheck, Link2, Bot, Bell, Info, Sparkles } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusDot } from "@/components/common/StatusDot";
+import { safeHttpsUrl } from "@/lib/utils";
 import type { StatsResponse } from "@/hooks/use-stats";
 import type { UpdateCheckResult } from "@/hooks/use-system-metrics";
 
@@ -47,6 +48,7 @@ interface CoreServiceCardProps {
 }
 
 export function CoreServiceCard({ stats, version, update }: CoreServiceCardProps) {
+  const safeUpdateUrl = safeHttpsUrl(update?.url);
   return (
     <Card className="surface-card rounded-2xl overflow-hidden border-border/80 shadow-sm">
       <CardContent className="p-3.5 sm:p-5">
@@ -85,9 +87,9 @@ export function CoreServiceCard({ stats, version, update }: CoreServiceCardProps
             </div>
             <div className="inline-flex items-center gap-2">
               <span className="text-xs font-mono font-semibold">v{version || "—"}</span>
-              {update?.hasUpdate ? (
+              {update?.hasUpdate && safeUpdateUrl ? (
                 <a
-                  href={update.url}
+                  href={safeUpdateUrl}
                   target="_blank"
                   rel="noreferrer noopener"
                   className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-primary/15 text-primary hover:bg-primary/25 transition-colors"
@@ -96,6 +98,14 @@ export function CoreServiceCard({ stats, version, update }: CoreServiceCardProps
                   <Sparkles className="w-3 h-3" />
                   v{update.latest}
                 </a>
+              ) : update?.hasUpdate ? (
+                <span
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-primary/15 text-primary"
+                  title={`有新版本 v${update.latest} 可用`}
+                >
+                  <Sparkles className="w-3 h-3" />
+                  v{update.latest}
+                </span>
               ) : null}
             </div>
           </div>

@@ -21,15 +21,18 @@ import { useServers } from "@/hooks/use-servers";
 import { useUpdateQueueItem, type QueueItem } from "@/hooks/use-queue";
 import { useOrderDurations } from "@/hooks/use-order-durations";
 import { OrderDurationField } from "@/components/orders/OrderDurationField";
-import { DEFAULT_ORDER_DURATION, normalizeDuration } from "@/lib/order-duration";
+import { DEFAULT_ORDER_DURATION, normalizeDuration, supportsDuration } from "@/lib/order-duration";
 import {
   useAvailability,
   buildVariantIndex,
   hasStockWithOption,
 } from "@/hooks/use-availability";
 import { useAccounts, findAccountByID } from "@/hooks/use-accounts";
-import { OVH_DATACENTERS, apiDatacenterCode } from "@/lib/datacenters";
+import { OVH_DATACENTERS, apiDatacenterCode, displayDatacenterCode } from "@/lib/datacenters";
 import { describeOptionCode, groupOptions, type OptionGroupKey } from "@/lib/option-groups";
+import { parseOptionCodes } from "@/lib/order-inputs";
+import { mergeStockPlans } from "@/lib/stock-plans";
+import { preorderOptions, preorderVariantCoversAll } from "@/lib/preorder-options";
 import { AutoPayCheck } from "@/components/orders/AutoPayCheck";
 
 interface EditQueueDialogProps {
@@ -58,10 +61,17 @@ export function EditQueueDialog({ open, onOpenChange, item }: EditQueueDialogPro
   const [picked, setPicked] = useState<Partial<Record<OptionGroupKey, string>>>({});
   const [extraInput, setExtraInput] = useState("");
 
-  const matchedServer = useMemo(
-    () => (servers.data || []).find((s) => s.planCode === (item?.planCode || "").trim()),
-    [servers.data, item?.planCode]
+  const searchServers = useMemo(
+    () => mergeStockPlans(servers.data || [], availQ.data),
+    [servers.data, availQ.data]
   );
+
+  const matchedServer = useMemo(
+    () => searchServers.find((s) => s.planCode === (item?.planCode || "").trim()),
+    [searchServers, item?.planCode]
+  );
+
+  const preorder = Boolean(item?.preorder || matchedServer?.prerelease);
 
   const initKeyRef = useRef<string>("");
   useEffect(() => {
@@ -69,25 +79,30 @@ export function EditQueueDialog({ open, onOpenChange, item }: EditQueueDialogPro
       initKeyRef.current = "";
       return;
     }
-    const nextKey = `${item.id}:${matchedServer ? "matched" : "raw"}`;
+    const nextKey = `${item.id}:${matchedServer ? "matched" : "raw"}:${preorder ? "pre" : "std"}`;
     if (initKeyRef.current === nextKey) return;
     const isFirstInitForItem = !initKeyRef.current.startsWith(`${item.id}:`);
     initKeyRef.current = nextKey;
 
     if (isFirstInitForItem) {
-      setDatacenter(item.datacenter.toLowerCase());
+      // 将后端存储的 API 码（如 ynm、ca-east-tor-a、eu-west-par-a）还原为显示短码，避免下拉框空白
+      setDatacenter(displayDatacenterCode(item.datacenter));
       setRetryInterval(String(item.retryInterval || 60));
       setAutoPay(!!item.autoPay);
       setCoupon(item.coupon || "");
       setDuration(normalizeDuration(item.duration));
     }
 
-    const wantedList = item.options || [];
+    const groupedMap = matchedServer ? groupOptions(matchedServer.availableOptions) : null;
+    const rawWanted = item.options || [];
+    const wantedList = preorder
+      ? preorderOptions(rawWanted, groupedMap?.cpu?.map((o) => o.value))
+      : rawWanted;
     const consumed = new Set<string>();
     const next: Partial<Record<OptionGroupKey, string>> = {};
-    const groupedMap = matchedServer ? groupOptions(matchedServer.availableOptions) : null;
     if (groupedMap) {
       for (const g of Object.keys(groupedMap) as OptionGroupKey[]) {
+        if (preorder && g === "cpu") continue;
         const hit = groupedMap[g].find((o) => wantedList.includes(o.value));
         if (hit) {
           next[g] = hit.value;
@@ -98,7 +113,7 @@ export function EditQueueDialog({ open, onOpenChange, item }: EditQueueDialogPro
     setPicked(next);
     const leftover = wantedList.filter((v) => !consumed.has(v));
     setExtraInput(leftover.join(", "));
-  }, [open, item, matchedServer]);
+  }, [open, item, matchedServer, preorder]);
 
   const grouped = useMemo(
     () => (matchedServer ? groupOptions(matchedServer.availableOptions) : null),
@@ -110,16 +125,20 @@ export function EditQueueDialog({ open, onOpenChange, item }: EditQueueDialogPro
   );
 
   const parsedOptions = useMemo(() => {
-    if (matchedServer) {
-      return [...new Set([...(Object.values(picked).filter(Boolean) as string[]), ...extraInput.split(",").map((v) => v.trim()).filter(Boolean)])];
-    }
-    return extraInput
-      .split(",")
-      .map((v) => v.trim())
-      .filter(Boolean);
-  }, [matchedServer, picked, extraInput]);
+    const merged = matchedServer
+      ? [...new Set([...(Object.values(picked).filter(Boolean) as string[]), ...parseOptionCodes(extraInput)])]
+      : parseOptionCodes(extraInput);
+    return preorder ? preorderOptions(merged, grouped?.cpu?.map((o) => o.value)) : merged;
+  }, [matchedServer, picked, extraInput, preorder, grouped]);
 
   const variants = matchedServer ? variantIndex[matchedServer.planCode] : undefined;
+  const preorderMismatch =
+    preorder &&
+    parsedOptions.length > 0 &&
+    !!variants?.length &&
+    !variants.some((v) => preorderVariantCoversAll(v.fqn, parsedOptions));
+  const durationValid = supportsDuration(durations.data, duration);
+
   const optionHasStock = (groupKey: OptionGroupKey, value: string): boolean => {
     if (groupKey === "bandwidth" || groupKey === "vrack" || groupKey === "cpu" || groupKey === "other") {
       return true;
@@ -144,6 +163,14 @@ export function EditQueueDialog({ open, onOpenChange, item }: EditQueueDialogPro
       toast.error("请选择数据中心");
       return;
     }
+    if (preorderMismatch) {
+      toast.error("库存记录中没有这套配置组合，请重新选择内存或存储");
+      return;
+    }
+    if (!durationValid) {
+      toast.error(t("orderDuration.unsupported"));
+      return;
+    }
     const intervalNum = Number(retryInterval) || 60;
     try {
       await update.mutateAsync({
@@ -163,6 +190,9 @@ export function EditQueueDialog({ open, onOpenChange, item }: EditQueueDialogPro
 
   if (!item) return null;
 
+  const isCustomDatacenter =
+    Boolean(datacenter) && !OVH_DATACENTERS.some((dc) => dc.code === datacenter);
+
   return (
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="w-[95vw] sm:w-full sm:max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -179,7 +209,7 @@ export function EditQueueDialog({ open, onOpenChange, item }: EditQueueDialogPro
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-mono font-semibold text-sm text-foreground">{item.planCode}</span>
               <AccountChip accountId={item.accountId} />
-              {item.preorder && (
+              {preorder && (
                 <Chip tone="warning">预订抢购</Chip>
               )}
             </div>
@@ -204,6 +234,11 @@ export function EditQueueDialog({ open, onOpenChange, item }: EditQueueDialogPro
                     <span className="text-muted-foreground ml-2">({dc.name} · {dc.region})</span>
                   </SelectItem>
                 ))}
+                {isCustomDatacenter && (
+                  <SelectItem value={datacenter}>
+                    <span className="font-medium">{datacenter.toUpperCase()}</span>
+                  </SelectItem>
+                )}
               </SelectContent>
             </Select>
           </div>
@@ -241,7 +276,7 @@ export function EditQueueDialog({ open, onOpenChange, item }: EditQueueDialogPro
             {grouped ? (
               <div className="space-y-4">
                 {(["cpu", "memory", "systemStorage", "storage", "bandwidth", "vrack", "other"] as OptionGroupKey[])
-                  .filter((g) => grouped[g].length > 0)
+                  .filter((g) => grouped[g].length > 0 && !(preorder && g === "cpu"))
                   .map((g) => (
                     <OptionGroupSection
                       key={g}
@@ -259,12 +294,27 @@ export function EditQueueDialog({ open, onOpenChange, item }: EditQueueDialogPro
                     />
                   ))}
               </div>
-            ) : (
+            ) : null}
+
+            {/* 始终保留自定义选配输入框：确保不在当前标准目录中的存量自定义 addon 可见、可编辑、可清空 */}
+            <div className={grouped ? "mt-3" : ""}>
+              {grouped && (
+                <label htmlFor="edit-queue-custom-options" className="mb-1 block text-[11px] text-muted-foreground">
+                  自定义配置 planCode（可选）
+                </label>
+              )}
               <Input
+                id="edit-queue-custom-options"
                 placeholder={t("queue.extraOptionsPlaceholder")}
                 value={extraInput}
                 onChange={(e) => setExtraInput(e.target.value)}
               />
+            </div>
+
+            {preorderMismatch && (
+              <p role="alert" className="text-[11px] text-destructive mt-1.5">
+                库存记录中没有这套配置组合，请重新选择内存或存储。
+              </p>
             )}
 
             {parsedOptions.length > 0 && (
@@ -311,7 +361,10 @@ export function EditQueueDialog({ open, onOpenChange, item }: EditQueueDialogPro
           <Button variant="outline" onClick={handleClose} disabled={update.isPending}>
             {t("queue.cancel")}
           </Button>
-          <Button onClick={handleSubmit} disabled={update.isPending || !datacenter}>
+          <Button
+            onClick={handleSubmit}
+            disabled={update.isPending || !datacenter || preorderMismatch || !durationValid}
+          >
             {update.isPending ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />

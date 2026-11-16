@@ -4,7 +4,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Helmet } from "react-helmet-async";
 import { User, Mail, RefreshCw, FileText, Inbox, ShieldCheck, ShoppingCart, ExternalLink, CalendarClock, Undo2, type LucideIcon } from "lucide-react";
 import { formatDate, formatDateTime } from "@/lib/format-os";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { cn, safeHttpsUrl } from "@/lib/utils";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
@@ -141,8 +141,18 @@ function KpiCard({
 }
 
 function EmailsTab() {
+  const accountId = useAccountScope();
   const emails = useEmails();
   const [selected, setSelected] = useState<EmailHistoryEntry | null>(null);
+
+  useEffect(() => {
+    setSelected(null);
+  }, [accountId]);
+
+  const activeEmail =
+    selected && (emails.data?.items || []).some((item) => item.id === selected.id)
+      ? selected
+      : null;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -178,7 +188,7 @@ function EmailsTab() {
                 onClick={() => setSelected(e)}
                 className={
                   "w-full text-left px-4 py-3 hover:bg-muted/50 transition-colors " +
-                  (selected?.id === e.id ? "bg-muted border-l-2 border-primary" : "")
+                  (activeEmail?.id === e.id ? "bg-muted border-l-2 border-primary" : "")
                 }
               >
                 <div className="flex items-center gap-2 mb-1">
@@ -198,12 +208,12 @@ function EmailsTab() {
             <FileText className="w-4 h-4 text-muted-foreground" />
             <h3 className="text-sm font-semibold">邮件详情</h3>
           </div>
-          {selected ? (
+          {activeEmail ? (
             <>
-              <p className="text-[15px] font-semibold mb-1">{selected.subject}</p>
-              <p className="text-[12px] text-muted-foreground mb-4">{new Date(selected.date).toLocaleString("zh-CN")}</p>
+              <p className="text-[15px] font-semibold mb-1">{activeEmail.subject}</p>
+              <p className="text-[12px] text-muted-foreground mb-4">{new Date(activeEmail.date).toLocaleString("zh-CN")}</p>
               <pre className="text-[12px] font-mono whitespace-pre-wrap text-foreground bg-muted/40 border border-border/50 rounded-lg p-3.5 max-h-[400px] overflow-y-auto">
-                {selected.body}
+                {activeEmail.body}
               </pre>
             </>
           ) : (
@@ -257,12 +267,23 @@ function OrdersTab() {
           <div className="divide-y divide-border/40">
             {(orders.data?.items || []).map((o, idx) => {
               const id = o.orderId != null ? o.orderId : idx;
-              const priceObj = o.priceWithoutTax?.value != null ? o.priceWithoutTax : o.priceWithTax;
+              // 主显应付含税总价 priceWithTax，与快捷支付窗口实际扣款金额保持严格一致
+              const hasWithTax = o.priceWithTax?.value != null || Boolean(o.priceWithTax?.text);
+              const priceObj = hasWithTax ? o.priceWithTax : o.priceWithoutTax;
               const priceText =
                 priceObj?.text ||
                 (priceObj?.value != null
-                  ? `${priceObj.value} ${priceObj.currencyCode || ""}`
+                  ? `${priceObj.value} ${priceObj.currencyCode || ""}`.trim()
                   : "—");
+              const showExTaxNote =
+                hasWithTax &&
+                o.priceWithoutTax?.value != null &&
+                o.priceWithTax?.value != null &&
+                o.priceWithoutTax.value !== o.priceWithTax.value;
+              const exTaxText = showExTaxNote
+                ? o.priceWithoutTax?.text ||
+                  `${o.priceWithoutTax?.value} ${o.priceWithoutTax?.currencyCode || ""}`.trim()
+                : "";
               const dateStr = formatDateTime(o.date);
               return (
                 <div
@@ -288,7 +309,14 @@ function OrdersTab() {
                     <p className="text-[11px] text-muted-foreground font-mono">{dateStr}</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-3 sm:text-right flex-shrink-0">
-                    <p className="text-base sm:text-lg font-bold font-mono text-foreground">{priceText}</p>
+                    <div>
+                      <p className="text-base sm:text-lg font-bold font-mono text-foreground">{priceText}</p>
+                      {exTaxText && (
+                        <p className="text-[11px] font-mono text-muted-foreground">
+                          未税 {exTaxText}
+                        </p>
+                      )}
+                    </div>
                     {o.orderStatus === "notPaid" && typeof o.orderId === "number" && (
                       <OrderPaymentButton
                         accountId={o.accountId || accountId}
@@ -362,25 +390,32 @@ function RefundsTab() {
           <EmptyState icon={Inbox} title="暂无退款记录" />
         ) : (
           <div className="divide-y divide-border">
-            {(refunds.data?.items || []).map((r) => (
-              <div key={r.refundId} className="py-3 flex items-center justify-between gap-4">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-mono text-sm font-semibold">#{r.refundId}</span>
-                    <Chip tone="default">订单 {r.orderId}</Chip>
+            {(refunds.data?.items || []).map((r) => {
+              const refundPriceText =
+                r.priceWithTax?.text ||
+                (r.priceWithTax?.value != null
+                  ? `${r.priceWithTax.value} ${r.priceWithTax.currencyCode || ""}`.trim()
+                  : "—");
+              return (
+                <div key={r.refundId} className="py-3 flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-mono text-sm font-semibold">#{r.refundId}</span>
+                      <Chip tone="default">订单 {r.orderId}</Chip>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">{r.date ? new Date(r.date).toLocaleString("zh-CN") : "—"}</p>
                   </div>
-                  <p className="text-[11px] text-muted-foreground">{new Date(r.date).toLocaleString("zh-CN")}</p>
+                  <div className="text-right flex-shrink-0">
+                    <p className="text-lg font-bold text-success">{refundPriceText}</p>
+                    {safeHttpsUrl(r.pdfUrl) && (
+                      <a href={safeHttpsUrl(r.pdfUrl)} target="_blank" rel="noopener noreferrer" className="text-[11px] text-foreground hover:underline">
+                        下载 PDF
+                      </a>
+                    )}
+                  </div>
                 </div>
-                <div className="text-right flex-shrink-0">
-                  <p className="text-lg font-bold text-success">{r.priceWithTax.text}</p>
-                  {safeHttpsUrl(r.pdfUrl) && (
-                    <a href={safeHttpsUrl(r.pdfUrl)} target="_blank" rel="noopener noreferrer" className="text-[11px] text-foreground hover:underline">
-                      下载 PDF
-                    </a>
-                  )}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </CardContent>

@@ -1,6 +1,6 @@
 import { catalogRefresh } from "@/lib/catalog-refresh";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { isOrderable } from "@/lib/availability";
+import { isOrderable, expandDcAliases, pickBetterAvailability } from "@/lib/availability";
 import axios from "axios";
 import { api } from "@/lib/http";
 import { qk } from "@/lib/query";
@@ -127,13 +127,18 @@ export function hasStockWithOption(
   dcCodes?: string[]
 ): boolean {
   if (!variants || variants.length === 0) return true;
-  const filter = dcCodes && dcCodes.length > 0 ? new Set(dcCodes.map((c) => c.toLowerCase())) : null;
+  const expand =
+    typeof expandDcAliases === "function"
+      ? expandDcAliases
+      : (c: string) => [String(c || "").trim().toLowerCase()].filter(Boolean);
+  const filter =
+    dcCodes && dcCodes.length > 0 ? new Set(dcCodes.flatMap((c) => expand(c))) : null;
   for (const v of variants) {
     if (!fqnMatchesOption(v.fqn, candidate, v.planCode)) continue;
     for (const dc of v.datacenters || []) {
       const code = dc.datacenter?.toLowerCase();
       if (!code) continue;
-      if (filter && !filter.has(code)) continue;
+      if (filter && !expand(code).some((alias) => filter.has(alias))) continue;
       const s = dc.availability;
       if (isOrderable(s)) return true;
     }
@@ -149,16 +154,19 @@ export function variantDcStatus(
   const out: Record<string, string> = {};
   if (!variants) return out;
   const req = pickedAddons.filter(Boolean);
+  const pickBetter =
+    typeof pickBetterAvailability === "function"
+      ? pickBetterAvailability
+      : (existing: string | undefined, incoming: string | undefined) =>
+          isOrderable(existing) ? existing : incoming;
   for (const v of variants) {
     if (!variantCoversAll(v, req)) continue;
     for (const dc of v.datacenters || []) {
       const code = dc.datacenter?.toLowerCase();
       if (!code) continue;
       const incoming = dc.availability;
-      const existing = out[code];
-      const isAvail = (s: string | undefined) => isOrderable(s);
-      if (isAvail(existing)) continue;
-      out[code] = incoming;
+      const merged = pickBetter(out[code], incoming);
+      if (merged) out[code] = merged;
     }
   }
   return out;
@@ -174,6 +182,11 @@ export function buildAvailabilityMap(
 ): Record<string, Record<string, string>> {
   const out: Record<string, Record<string, string>> = {};
   if (!items) return out;
+  const pickBetter =
+    typeof pickBetterAvailability === "function"
+      ? pickBetterAvailability
+      : (existing: string | undefined, incoming: string | undefined) =>
+          isOrderable(existing) ? existing : incoming;
   for (const item of items) {
     const pc = item.planCode;
     if (!pc) continue;
@@ -181,12 +194,8 @@ export function buildAvailabilityMap(
     for (const dc of item.datacenters || []) {
       const code = dc.datacenter?.toLowerCase();
       if (!code) continue;
-      const existing = out[pc][code];
-      const incoming = dc.availability;
-      // 已经标记为可用就不被后续覆盖；否则用最新值
-      const isAvail = (v: string | undefined) => isOrderable(v);
-      if (isAvail(existing)) continue;
-      out[pc][code] = incoming;
+      const merged = pickBetter(out[pc][code], dc.availability);
+      if (merged) out[pc][code] = merged;
     }
   }
   return out;

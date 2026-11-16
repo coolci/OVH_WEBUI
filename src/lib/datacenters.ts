@@ -1,4 +1,4 @@
-import { isOrderable } from "@/lib/availability";
+import { isOrderable, availabilityRank, pickBetterAvailability } from "@/lib/availability";
 
 /**
  * OVH 标准数据中心列表（前端固定的 16 个 + 别名映射）
@@ -36,19 +36,37 @@ export const OVH_DATACENTERS: DataCenter[] = [
   { code: "syd", name: "悉尼", region: "澳大利亚" },
 ];
 
-/** 显示码与官方库存/配置 API 使用同一机房标识。 */
+/** 显示码转为官方库存/配置 API 使用的规范机房标识（幂等）。 */
 export function apiDatacenterCode(code: string): string {
-  const normalized = code.trim().toLowerCase();
-  return OVH_DATACENTERS.find((dc) => dc.code === normalized)?.apiCode || normalized;
+  const normalized = String(code || "").trim().toLowerCase();
+  if (!normalized) return "";
+  if (normalized === "ca-east-tor") return "ca-east-tor-a";
+  const matched = OVH_DATACENTERS.find(
+    (dc) => dc.code === normalized || dc.apiCode === normalized
+  );
+  return matched ? matched.apiCode || matched.code : normalized;
 }
 
-/** 从可用性 map（res.data.availability）里查某个 DC 的状态，自动处理 mum/ynm 别名 */
+/** 将 OVH 库存/API 机房码（如 ynm、ca-east-tor-a、eu-west-par-a）还原为前端显示短码（幂等）。 */
+export function displayDatacenterCode(code: string): string {
+  const normalized = String(code || "").trim().toLowerCase();
+  if (!normalized) return "";
+  if (normalized === "ca-east-tor") return "tor";
+  const matched = OVH_DATACENTERS.find(
+    (dc) => dc.code === normalized || dc.apiCode === normalized
+  );
+  return matched ? matched.code : normalized;
+}
+
+/** 从可用性 map（res.data.availability）里查某个 DC 的状态，自动处理 mum/ynm 别名并优先取有货状态 */
 export function lookupDcStatus(
   availMap: Record<string, string> | undefined,
   dc: DataCenter
 ): string | undefined {
   if (!availMap) return undefined;
-  return availMap[dc.code] || (dc.apiCode ? availMap[dc.apiCode] : undefined);
+  const byDisplay = availMap[dc.code];
+  const byApi = dc.apiCode ? availMap[dc.apiCode] : undefined;
+  return pickBetterAvailability(byDisplay, byApi);
 }
 
 /**
@@ -90,23 +108,38 @@ export function monitorDcAvailability(lastStatus?: Record<string, string>, accou
   return result;
 }
 
-/** 目录静态可用性 + 实时 availability 覆盖（实时优先） */
+/** 目录静态可用性（多变体按有货优先级单调合并） + 实时 availability 覆盖（实时优先） */
 export function mergeDcAvailability(
   catalog?: { datacenter?: string; availability?: string }[],
   realtime?: Record<string, string>
 ): Record<string, string> {
   const m: Record<string, string> = {};
   for (const d of catalog || []) {
-    const code = String(d.datacenter || "").toLowerCase();
-    if (code && d.availability) m[code] = d.availability;
+    const code = String(d.datacenter || "").trim().toLowerCase();
+    if (code && d.availability) {
+      m[code] = pickBetterAvailability(m[code], d.availability) || d.availability;
+    }
   }
   if (realtime) {
+    const rt: Record<string, string> = {};
     for (const [k, v] of Object.entries(realtime)) {
-      if (k && v) m[k.toLowerCase()] = v;
+      const code = k.trim().toLowerCase();
+      if (code && v) {
+        rt[code] = pickBetterAvailability(rt[code], v) || v;
+      }
+    }
+    for (const [code, v] of Object.entries(rt)) {
+      const disp = displayDatacenterCode(code);
+      const api = apiDatacenterCode(code);
+      if (disp !== code && !(disp in rt)) delete m[disp];
+      if (api !== code && !(api in rt)) delete m[api];
+      m[code] = v;
     }
   }
   return m;
 }
+
+export { availabilityRank };
 
 /**
  * 该机型在**当前账户所在站点**实际可选的机房。

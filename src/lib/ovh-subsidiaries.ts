@@ -61,6 +61,19 @@ export function endpointForZone(zone: string): string {
   return OVH_SUBSIDIARIES.find((s) => s.code === zone)?.endpoint || "ovh-eu";
 }
 
+/**
+ * 编辑账户或设置时解析 endpoint：
+ * 若原账户是 kimsufi-* / soyoustart-* 等同大区子品牌 endpoint，在未跨大区切换时原样保留，绝不强改回 ovh-*。
+ */
+export function resolveAccountEndpoint(zone: string, existingEndpoint?: string | null): string {
+  const targetDefault = endpointForZone(zone);
+  const existing = (existingEndpoint || "").trim().toLowerCase();
+  if (existing && endpointRegion(existing) === endpointRegion(targetDefault)) {
+    return existing;
+  }
+  return targetDefault;
+}
+
 export function subsidiaryLabel(code: string): string {
   const hit = OVH_SUBSIDIARIES.find((s) => s.code === code);
   if (!hit) return code;

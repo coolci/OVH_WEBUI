@@ -23,11 +23,12 @@ import { useCreateQueueItem } from "@/hooks/use-queue";
 import { useOrderDurations } from "@/hooks/use-order-durations";
 import { preorderOptions, preorderVariantCoversAll } from "@/lib/preorder-options";
 import { OrderDurationField } from "@/components/orders/OrderDurationField";
-import { DEFAULT_ORDER_DURATION } from "@/lib/order-duration";
+import { DEFAULT_ORDER_DURATION, supportsDuration } from "@/lib/order-duration";
 import { useSettings, RETRY_INTERVAL } from "@/hooks/use-settings";
 import { useAccounts, findAccountByID } from "@/hooks/use-accounts";
 import { useActiveServerControlAccount } from "@/hooks/use-active-account";
 import { mergeStockPlans } from "@/lib/stock-plans";
+import { selectionDcStatus } from "@/lib/variant-stock";
 import {
   useAvailability,
   buildAvailabilityMap,
@@ -44,6 +45,8 @@ interface CreateQueueDialogProps {
   initialPlanCode?: string;
   initialOptions?: string;
 }
+
+const NON_FQN_GROUPS = new Set<OptionGroupKey>(["bandwidth", "vrack", "cpu", "other"]);
 
 export function CreateQueueDialog({
   open,
@@ -172,7 +175,14 @@ export function CreateQueueDialog({
 
   const qty = Number(quantity) || 1;
   const totalTasks = datacenters.length * qty;
-  const canSubmit = !!accountId && planCode.trim().length > 0 && datacenters.length > 0 && qty > 0 && !preorderMismatch;
+  const durationValid = supportsDuration(durations.data, duration);
+  const canSubmit =
+    !!accountId &&
+    planCode.trim().length > 0 &&
+    datacenters.length > 0 &&
+    qty > 0 &&
+    !preorderMismatch &&
+    durationValid;
 
   const reset = () => {
     setPlanCode("");
@@ -202,7 +212,29 @@ export function CreateQueueDialog({
     [matchedServer, availMap]
   );
 
+  const stockPicks = useMemo(() => {
+    const chipPicks = (Object.entries(picked) as [OptionGroupKey, string | undefined][])
+      .filter(([g, v]) => !!v && !NON_FQN_GROUPS.has(g))
+      .map(([, v]) => v as string);
+    const customPicks = parseOptionCodes(extraInput).filter(
+      (code) => !/^(?:bandwidth|vrack|traffic|cpu|processor)(?:-|$)/i.test(code)
+    );
+    return [...new Set([...chipPicks, ...customPicks])];
+  }, [picked, extraInput]);
+
+  const selectionMap = useMemo(
+    () =>
+      variants && variants.length > 0 && !preorder
+        ? selectionDcStatus(dcAvailability, variants, stockPicks)
+        : dcAvailability,
+    [variants, preorder, dcAvailability, stockPicks]
+  );
+
   const handleSubmit = async () => {
+    if (!durationValid) {
+      toast.error("当前型号不支持所选购买时长，请重新选择");
+      return;
+    }
     if (!canSubmit) {
       toast.error("请填写计划代码并至少选择一个数据中心");
       return;
@@ -317,7 +349,7 @@ export function CreateQueueDialog({
           <DatacenterPicker
             value={datacenters}
             onChange={setDatacenters}
-            availability={dcAvailability}
+            availability={selectionMap}
           />
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

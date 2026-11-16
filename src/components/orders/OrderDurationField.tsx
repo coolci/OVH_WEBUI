@@ -54,7 +54,12 @@ export function OrderDurationField({
         {t("orderDuration.label")}
       </label>
       <Select value={current} onValueChange={onChange}>
-        <SelectTrigger id={id} aria-describedby={`${id}-hint`} aria-invalid={!valid} className="h-9">
+        <SelectTrigger
+          id={id}
+          aria-describedby={`${id}-hint`}
+          aria-invalid={!valid}
+          className={`h-9 ${!valid ? "border-destructive focus:ring-destructive" : ""}`}
+        >
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

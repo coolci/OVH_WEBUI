@@ -1,4 +1,3 @@
-import { useRef } from "react";
 import { catalogRefresh, type CatalogRefreshStatus } from "@/lib/catalog-refresh";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/http";
@@ -38,42 +37,59 @@ export interface ServerPlan {
   firstSeen?: number;
 }
 
+const MONITOR_DC_API_ALIASES: Record<string, string> = {
+  "par-a": "eu-west-par-a",
+  "par-b": "eu-west-par-b",
+  "par-c": "eu-west-par-c",
+  tor: "ca-east-tor-a",
+  "ca-east-tor": "ca-east-tor-a",
+  mum: "ynm",
+};
+
+/** 独立无闭包副作用的服务器目录请求函数，支持显式指定 forceRefresh */
+export async function fetchServers(opts: {
+  showApiServers?: boolean;
+  accountId?: string;
+  forceRefresh?: boolean;
+}): Promise<{ data: ServerPlan[]; updatedAt: number; failed: boolean }> {
+  const showApiServers = opts.showApiServers ?? true;
+  const params: Record<string, unknown> = { showApiServers };
+  if (opts.accountId) params.account = opts.accountId;
+  if (opts.forceRefresh) params.forceRefresh = true;
+  const res = await api.get("/servers", { params });
+  // 必须确保是数组:调用方直接 .find() / .map(),拿到对象就是整页白屏
+  const raw = res.data?.servers ?? res.data;
+  if (!Array.isArray(raw)) throw new Error("服务器目录响应格式异常");
+  const info = res.data?.cacheInfo;
+  return {
+    data: raw as ServerPlan[],
+    updatedAt: typeof info?.timestamp === "number" ? info.timestamp * 1000 : Date.now(),
+    failed: !!info?.usingExpiredCache || !!info?.refreshFailed,
+  };
+}
+
 /** 目录到期后在可见页面自动刷新；旧缓存回退和网络失败均自动退避重试。 */
 export function useServers(showApiServers: boolean = true, explicitAccountId?: string) {
   const qc = useQueryClient();
   // 目录跟着当前账户走:后端 /api/servers 支持 ?account=,按该账户的 zone(子公司)+ endpoint
-  // 取目录并单独分桶缓存。不传的话永远是默认账户的视角 —— 切到美区账户后,页面上的机型集合、
-  // 机房状态、价格分别来自三个不同的账户/站点,互相对不上。
-  // 只在这个 id 确实存在于账户列表里时才带上:后端对未知 account 直接 400,
-  // 而 localStorage 里可能留着已删账户的 id,那会让整页变成一条红错。
+  // 取目录并单独分桶缓存。只在这个 id 确实存在于账户列表里时才带上。
   const [activeId] = useActiveServerControlAccount();
   const { data: accounts, isPending: accountsPending } = useAccounts();
   const resolvedId = explicitAccountId || activeId;
   const accountId = findAccountByID(accounts, resolvedId) ? resolvedId : "";
   const key = qk.servers.list(showApiServers, accountId);
-  const force = useRef(false);
+  const statusKey = [...key, "refresh-status"];
+
   const refresh = catalogRefresh<ServerPlan[]>(qc, key, async () => {
-    const params: Record<string, unknown> = { showApiServers };
-    if (accountId) params.account = accountId;
-    if (force.current || qc.getQueryData<CatalogRefreshStatus>([...key, "refresh-status"])?.failures) params.forceRefresh = true;
-    force.current = false;
-    const res = await api.get("/servers", { params });
-    // 必须确保是数组:调用方直接 .find() / .map(),拿到对象就是整页白屏
-    // (「Something went wrong!」那种,比任何报错都难查)。
-    // 后端正常返回 { servers: [...] },这里防的是响应结构意外的情况 ——
-    // 反向代理插了一页、网关返回 200 带错误体、以后重构改了字段名。
-    const raw = res.data?.servers ?? res.data;
-    if (!Array.isArray(raw)) throw new Error("服务器目录响应格式异常");
-    const info = res.data?.cacheInfo;
-    return {
-      data: raw as ServerPlan[],
-      updatedAt: typeof info?.timestamp === "number" ? info.timestamp * 1000 : Date.now(),
-      failed: !!info?.usingExpiredCache || !!info?.refreshFailed,
-    };
+    const hasPriorFailure = Boolean(qc.getQueryData<CatalogRefreshStatus>(statusKey)?.failures);
+    return fetchServers({
+      showApiServers,
+      accountId,
+      forceRefresh: hasPriorFailure,
+    });
   });
-  // 只用来订阅 catalogRefresh 写进缓存的刷新状态,自己从不取数。仍要给 queryFn:
-  // 没有它时,任何按 ["servers", ...] 前缀触发的刷新都会让 react-query 报 "No queryFn"
-  // (控制台里刷屏),返回缓存里的现值即可,不会覆盖真实状态。
+
+  // 只用来订阅 catalogRefresh 写进缓存的刷新状态,自己从不取数。
   const status = useQuery<CatalogRefreshStatus>({
     queryKey: refresh.statusKey,
     queryFn: () => qc.getQueryData<CatalogRefreshStatus>(refresh.statusKey) ?? { failures: 0, attemptedAt: 0 },
@@ -85,9 +101,45 @@ export function useServers(showApiServers: boolean = true, explicitAccountId?: s
     enabled: !accountsPending,
   });
 
+  /**
+   * 显式发起带 forceRefresh=true 的请求并写回共享 QueryClient 缓存。
+   * 不再使用局部 useRef + q.refetch()，彻底消除多组件挂载同一 queryKey 时后挂载实例闭包吞掉 forceRefresh 的缺陷。
+   */
   const forceRefresh = async () => {
-    force.current = true;
-    await q.refetch();
+    const runForced = async () => {
+      const previous = qc.getQueryData<CatalogRefreshStatus>(refresh.statusKey);
+      try {
+        const result = await fetchServers({
+          showApiServers,
+          accountId,
+          forceRefresh: true,
+        });
+        qc.setQueryData<CatalogRefreshStatus>(refresh.statusKey, {
+          updatedAt: result.updatedAt,
+          expiresAt: result.updatedAt + 120_000,
+          failures: result.failed ? (previous?.failures ?? 0) + 1 : 0,
+          attemptedAt: Date.now(),
+        });
+        qc.setQueryData<ServerPlan[]>(key, result.data);
+        return result.data;
+      } catch (error) {
+        qc.setQueryData<CatalogRefreshStatus>(refresh.statusKey, {
+          ...previous,
+          failures: (previous?.failures ?? 0) + 1,
+          attemptedAt: Date.now(),
+        });
+        throw error;
+      }
+    };
+
+    if (typeof qc.fetchQuery === "function") {
+      return qc.fetchQuery({
+        queryKey: key,
+        staleTime: 0,
+        queryFn: runForced,
+      });
+    }
+    return runForced();
   };
 
   return Object.assign(q, {
@@ -108,8 +160,20 @@ export function useAddToMonitor() {
       /** 只盯这套配置(addon planCode)。空 = 该机型底下所有配置组合 */
       options?: string[];
       serverName?: string;
-    }) =>
-      (await api.post("/monitor/subscriptions", { ...payload, notifyAvailable: true, notifyUnavailable: false })).data,
+    }) => {
+      const normalizedDcs = (payload.datacenters || []).map((dc) => {
+        const c = dc.trim().toLowerCase();
+        return MONITOR_DC_API_ALIASES[c] || c;
+      });
+      return (
+        await api.post("/monitor/subscriptions", {
+          ...payload,
+          datacenters: normalizedDcs,
+          notifyAvailable: true,
+          notifyUnavailable: false,
+        })
+      ).data;
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.monitor.list() });
       toast.success(i18n.t("hooksMsg.servers.monitorAdded"));

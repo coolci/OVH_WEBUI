@@ -131,17 +131,18 @@ export function useTelegramPoller(enabled = true) {
       const hasToken = data.hasToken ?? (configured || !!botUsername);
       const lastError = data.lastError || snap.lastError || "";
       const offset = data.offset ?? snap.offset ?? 0;
-      const lastUpdateAt = data.lastUpdateAt || snap.lastUpdateAt || snap.lastPollAt;
+      const lastUpdateAt = data.lastUpdateAt || snap.lastUpdateAt || undefined;
+      const lastPollAt = data.lastPollAt || snap.lastPollAt || lastUpdateAt || undefined;
 
       const pollerObj: TelegramPollerStatus = {
-        lastRejected: snap.lastRejected ?? null,
+        lastRejected: data.lastRejected ?? snap.lastRejected ?? null,
         running,
         configured,
         botUsername,
         offset,
         lastError,
         lastUpdateAt,
-        lastPollAt: lastUpdateAt,
+        lastPollAt,
       };
 
       return {
@@ -153,7 +154,7 @@ export function useTelegramPoller(enabled = true) {
         offset,
         lastError,
         lastUpdateAt,
-        lastPollAt: lastUpdateAt,
+        lastPollAt,
         poller: pollerObj,
         polling: pollerObj,
       };

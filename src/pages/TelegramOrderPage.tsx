@@ -1,5 +1,6 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { Helmet } from "react-helmet-async";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   CloudLightning, Loader2, Wifi, WifiOff, RefreshCw, Settings2,
   Info, Copy, CheckCircle2, Send, Terminal, Play, Sparkles,
@@ -38,15 +39,34 @@ import { useAccounts } from "@/hooks/use-accounts";
 import { useAvailability, buildAvailabilityMap } from "@/hooks/use-availability";
 import { useTelegramPollerStatus } from "@/hooks/use-settings";
 import { mergeDcAvailability } from "@/lib/datacenters";
+import { mergeStockPlans } from "@/lib/stock-plans";
+import { qk } from "@/lib/query";
 import { cn } from "@/lib/utils";
 import { copyText } from "@/lib/clipboard";
 import { MAX_ORDER_QUANTITY } from "@/lib/order-limits";
 
+function readSavedCommandHistory(): CommandHistory[] {
+  try {
+    const saved = localStorage.getItem(HISTORY_STORAGE_KEY);
+    if (!saved) return [];
+    const parsed: unknown = JSON.parse(saved);
+    return Array.isArray(parsed) ? (parsed as CommandHistory[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistCommandHistory(history: CommandHistory[]): void {
+  try {
+    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history));
+  } catch {
+    // 隐私模式或存储配额已满时静默忽略，绝不影响已完成的下单结果
+  }
+}
+
 const TelegramOrderPage = () => {
-  const { data: servers } = useServers();
+  const qc = useQueryClient();
   const { data: accounts } = useAccounts();
-  const availQ = useAvailability();
-  const availMap = useMemo(() => buildAvailabilityMap(availQ.data), [availQ.data]);
 
   const [selectedMode, setSelectedMode] = useState<OrderMode['mode']>('buy');
   const [planCode, setPlanCode] = useState('');
@@ -54,6 +74,23 @@ const TelegramOrderPage = () => {
   const [quantity, setQuantity] = useState(1);
   const [accountRef, setAccountRef] = useState<string>('');
   const [coupon, setCoupon] = useState('');
+
+  const selectedAccount = useMemo(() => {
+    if (!accounts || !accountRef || accountRef === "all") return undefined;
+    const idx = Number(accountRef) - 1;
+    if (Number.isInteger(idx) && idx >= 0 && idx < accounts.length) {
+      return accounts[idx];
+    }
+    return accounts.find((a) => a.id === accountRef || a.name === accountRef);
+  }, [accounts, accountRef]);
+
+  const { data: rawServers } = useServers(true, selectedAccount?.id);
+  const availQ = useAvailability(selectedAccount?.endpoint || undefined);
+  const servers = useMemo(
+    () => mergeStockPlans(rawServers || [], availQ.data),
+    [rawServers, availQ.data]
+  );
+  const availMap = useMemo(() => buildAvailabilityMap(availQ.data), [availQ.data]);
 
   // 命令行直接输入
   const [rawInput, setRawInput] = useState<string>('');
@@ -82,15 +119,15 @@ const TelegramOrderPage = () => {
   const currentMode = ORDER_MODES.find(m => m.mode === selectedMode) || ORDER_MODES[0];
 
   useEffect(() => {
-    const saved = localStorage.getItem(HISTORY_STORAGE_KEY);
-    if (saved) {
-      try {
-        setCommandHistory(JSON.parse(saved));
-      } catch (e) {
-        console.error('Failed to parse command history:', e);
-      }
-    }
+    setCommandHistory(readSavedCommandHistory());
   }, []);
+
+  const invalidateAfterOrderAction = useCallback(() => {
+    void qc.invalidateQueries({ queryKey: ["queue"] });
+    void qc.invalidateQueries({ queryKey: ["history"] });
+    void qc.invalidateQueries({ queryKey: ["monitor"] });
+    void qc.invalidateQueries({ queryKey: qk.stats() });
+  }, [qc]);
 
   const handleRegisterCommands = async () => {
     try {
@@ -109,27 +146,26 @@ const TelegramOrderPage = () => {
     }
   };
 
-  const saveHistory = (history: CommandHistory[]) => {
-    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history));
-    setCommandHistory(history);
-  };
-
-  const addToHistory = (command: string, mode: string, planCode: string, datacenter: string | undefined, success: boolean) => {
+  const addToHistory = (command: string, mode: string, targetPlan: string, targetDc: string | undefined, success: boolean) => {
     const newItem: CommandHistory = {
       id: Date.now().toString(),
       command,
       mode,
-      planCode,
-      datacenter,
+      planCode: targetPlan,
+      datacenter: targetDc,
       timestamp: Date.now(),
       success,
     };
-    const newHistory = [newItem, ...commandHistory].slice(0, MAX_HISTORY_ITEMS);
-    saveHistory(newHistory);
+    setCommandHistory((prev) => {
+      const next = [newItem, ...prev].slice(0, MAX_HISTORY_ITEMS);
+      persistCommandHistory(next);
+      return next;
+    });
   };
 
   const clearHistory = () => {
-    saveHistory([]);
+    setCommandHistory([]);
+    persistCommandHistory([]);
     toast.success("历史记录已清空");
   };
 
@@ -183,25 +219,32 @@ const TelegramOrderPage = () => {
       return;
     }
     setIsExecutingRaw(true);
+    let result: TelegramActionResult | null = null;
     try {
-      const result = (
+      result = (
         await api.post<TelegramActionResult>("/telegram/quick-order", {
           rawCommand: targetCmd,
         })
       ).data;
-      setLastResult(result);
-      addToHistory(targetCmd, result.mode || 'cli', '', undefined, result.success);
-
-      if (result.success) {
-        toast.success(result.message?.split('\n')[0] || "指令执行成功");
-      } else {
-        toast.error(result.error || "指令执行失败");
-      }
     } catch (error) {
       const msg = apiMessage(error);
       toast.error(`请求失败: ${msg}`);
       setLastResult({ success: false, error: msg, command: targetCmd });
       addToHistory(targetCmd, 'cli', '', undefined, false);
+      setIsExecutingRaw(false);
+      return;
+    }
+
+    // 网络请求已 HTTP 200 成功返回：后续本地存储与提示严禁再落入网络失败 catch 分支
+    try {
+      setLastResult(result);
+      addToHistory(targetCmd, result.mode || 'cli', '', undefined, result.success);
+      if (result.success) {
+        invalidateAfterOrderAction();
+        toast.success(result.message?.split('\n')[0] || "指令执行成功");
+      } else {
+        toast.error(result.error || "指令执行失败");
+      }
     } finally {
       setIsExecutingRaw(false);
     }
@@ -222,8 +265,9 @@ const TelegramOrderPage = () => {
 
     const command = generateCommand();
     setIsSubmitting(true);
+    let result: TelegramActionResult | null = null;
     try {
-      const result = (
+      result = (
         await api.post<TelegramActionResult>("/telegram/quick-order", {
           mode: selectedMode,
           planCode: isGlobalQuery ? undefined : planCode,
@@ -233,20 +277,25 @@ const TelegramOrderPage = () => {
           coupon: (selectedMode === 'buy' || selectedMode === 'queue') && coupon.trim() ? coupon.trim() : undefined,
         })
       ).data;
-
-      setLastResult(result);
-      addToHistory(command, selectedMode, planCode, datacenter || undefined, result.success);
-
-      if (result.success) {
-        toast.success(result.message?.split('\n')[0] || "操作成功");
-      } else {
-        toast.error(result.error || "操作失败");
-      }
     } catch (error) {
       const msg = apiMessage(error);
       toast.error(`请求失败: ${msg}`);
       setLastResult({ success: false, error: msg, command });
       addToHistory(command, selectedMode, planCode, datacenter || undefined, false);
+      setIsSubmitting(false);
+      return;
+    }
+
+    // 网络请求已 HTTP 200 成功返回：隔离本地历史持久化异常，杜绝误报“请求失败”诱导重复下单
+    try {
+      setLastResult(result);
+      addToHistory(command, selectedMode, planCode, datacenter || undefined, result.success);
+      if (result.success) {
+        invalidateAfterOrderAction();
+        toast.success(result.message?.split('\n')[0] || "操作成功");
+      } else {
+        toast.error(result.error || "操作失败");
+      }
     } finally {
       setIsSubmitting(false);
     }

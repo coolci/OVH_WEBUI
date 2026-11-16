@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN" class="dark">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5" />
@@ -14,6 +14,33 @@
     <meta property="og:title" content="OVH 统御 | 服务器抢购与运维控制台" />
     <meta property="og:description" content="OVH 服务器抢购与运维控制台" />
     <meta property="og:type" content="website" />
+
+    <script>
+      (function () {
+        try {
+          var raw = localStorage.getItem("ovh-theme");
+          if (raw !== "light" && raw !== "dark" && raw !== "system") {
+            var legacy = localStorage.getItem("theme");
+            if (legacy === "light" || legacy === "dark" || legacy === "system") {
+              raw = legacy;
+              localStorage.setItem("ovh-theme", legacy);
+            } else {
+              raw = "system";
+            }
+          }
+          var isDark =
+            raw === "dark" ||
+            (raw !== "light" &&
+              window.matchMedia &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches);
+          var root = document.documentElement;
+          root.classList.toggle("dark", isDark);
+          root.style.colorScheme = isDark ? "dark" : "light";
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute("content", isDark ? "#080c14" : "#f8fafc");
+        } catch (e) {}
+      })();
+    </script>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

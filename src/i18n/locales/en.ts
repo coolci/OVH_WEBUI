@@ -6,7 +6,7 @@
  */
 import type { zh } from "./zh";
 import type { apiZh } from "./api-zh.generated";
-import { apiEn } from "./api-en.translated";
+import { apiEn } from "./api/en";
 import { snipePagesEn } from "./modules/snipe-pages.en";
 import { settingsPagesEn } from "./modules/settings-pages.en";
 import { ctrlDialogsEn } from "./modules/ctrl-dialogs.en";
@@ -17,9 +17,22 @@ import { commonLayerEn } from "./modules/common-layer.en";
 import { liveChatEn, liveChatApiEn } from "./modules/live-chat.en";
 import { serverSafetyApiEn } from "./modules/server-safety.en";
 
-export type LangPack = typeof zh;
+type WidenStringLeaves<T> = {
+  [K in keyof T]: T[K] extends string ? string : WidenStringLeaves<T[K]>;
+};
 
-const pack: LangPack = {
+export type LangPack = WidenStringLeaves<typeof zh>;
+
+const apiTranslations = {
+  ...(apiEn satisfies Record<keyof typeof apiZh, string>),
+  ...liveChatApiEn,
+  ...serverSafetyApiEn,
+  RENEWAL_INVALID_REQUEST: "Enter a valid renewal mode and period.",
+  RENEWAL_MODE_UNAVAILABLE: "OVH does not currently allow the selected renewal mode for this service. Refresh and retry.",
+  QUEUE_ALREADY_ORDERED: "This task has already been ordered and cannot be restarted. Create a new task to buy again.",
+} satisfies Record<keyof typeof zh.api, string>;
+
+const pack = {
   nav: {
     appName: "OVH Console",
     group: {
@@ -75,15 +88,8 @@ const pack: LangPack = {
     current: "Current: {{name}}. Click to switch to {{next}}",
     toggle: "Switch language, currently {{name}}",
   },
-  // Backend error codes → English (mirrors api.* keys in zh.ts)
-  api: {
-    ...(apiEn as unknown as typeof apiZh),
-    ...liveChatApiEn,
-    ...serverSafetyApiEn,
-    RENEWAL_INVALID_REQUEST: "Enter a valid renewal mode and period.",
-    RENEWAL_MODE_UNAVAILABLE: "OVH does not currently allow the selected renewal mode for this service. Refresh and retry.",
-    QUEUE_ALREADY_ORDERED: "This task has already been ordered and cannot be restarted. Create a new task to buy again.",
-  },
+  // Backend error codes → English (100% key parity with api.* keys in zh.ts)
+  api: apiTranslations,
   ...snipePagesEn,
   ...settingsPagesEn,
   ...ctrlDialogsEn,
@@ -92,6 +98,6 @@ const pack: LangPack = {
   ...vpsDialogsEn,
   ...commonLayerEn,
   ...liveChatEn,
-};
+} satisfies LangPack;
 
-export const en = pack;
+export const en: LangPack = pack;

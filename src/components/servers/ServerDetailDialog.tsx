@@ -14,18 +14,25 @@ import { StatusDot } from "@/components/common/StatusDot";
 import { OptionGroupSection } from "@/components/common/OptionGroupSection";
 import { type ServerPlan } from "@/hooks/use-servers";
 import { useCreateQueueItem } from "@/hooks/use-queue";
-import { useDefaultAccount } from "@/hooks/use-accounts";
+import { useAccounts, useDefaultAccount, findAccountByID } from "@/hooks/use-accounts";
 import { useActiveServerControlAccount } from "@/hooks/use-active-account";
 import { useSettings, RETRY_INTERVAL } from "@/hooks/use-settings";
 import { usePrewarmOrder } from "@/hooks/use-prewarm";
 import { useOrderDurations } from "@/hooks/use-order-durations";
 import { OrderDurationField } from "@/components/orders/OrderDurationField";
-import { DEFAULT_ORDER_DURATION } from "@/lib/order-duration";
+import { DEFAULT_ORDER_DURATION, supportsDuration } from "@/lib/order-duration";
 import { preorderOptions, preorderVariantCoversAll } from "@/lib/preorder-options";
+import { normalizeMonitorOptionsKey } from "@/lib/order-inputs";
+import { accountSubsidiary } from "@/lib/ovh-subsidiaries";
 import {
   type AvailabilityItem,
   type CatalogIndex,
   type PriceInfo,
+  useAvailability,
+  buildAvailabilityMap,
+  variantsForPlan,
+  useOvhCatalog,
+  buildCatalogIndex,
   computePriceFromOptions,
   formatPrice,
   hasStockWithOption,
@@ -35,6 +42,7 @@ import { selectionDcStatus, stockOnlyParts } from "@/lib/variant-stock";
 import { OVH_DATACENTERS, isDcInStock, lookupDcStatus, mergeDcAvailability } from "@/lib/datacenters";
 import { AutoPayCheck } from "@/components/orders/AutoPayCheck";
 import { OSAvailabilityList } from "@/components/servers/OSAvailabilityList";
+import type { MonitorSubscription } from "@/hooks/use-monitor";
 
 interface ServerDetailDialogProps {
   server: ServerPlan;
@@ -44,8 +52,9 @@ interface ServerDetailDialogProps {
   catalogIdx: CatalogIndex;
   subsidiary: string;
   isMonitored?: boolean;
+  subscriptions?: MonitorSubscription[];
   onClose: () => void;
-  onMonitor: (datacenters: string[]) => void;
+  onMonitor: (datacenters: string[], options: string[]) => void;
 }
 
 /** 不出现在库存 FQN 里的选项组:不参与"这个配置有没有货"的判断 */
@@ -59,10 +68,12 @@ export function ServerDetailDialog({
   catalogIdx,
   subsidiary,
   isMonitored,
+  subscriptions,
   onClose,
   onMonitor,
 }: ServerDetailDialogProps) {
   const create = useCreateQueueItem();
+  const { data: accounts } = useAccounts();
   const defaultAcc = useDefaultAccount();
   const [activeAccId] = useActiveServerControlAccount();
 
@@ -73,12 +84,50 @@ export function ServerDetailDialog({
     }
   }, [activeAccId, defaultAcc, accountId]);
 
+  const selectedAccount = useMemo(
+    () => findAccountByID(accounts, accountId),
+    [accounts, accountId]
+  );
+
+  // 弹窗内切换下单账户时，自动联动该账户所属子公司目录与区域实时可用性重算报价/库存
+  const effectiveSubsidiary = useMemo(() => {
+    if (selectedAccount && selectedAccount.id !== activeAccId) {
+      return accountSubsidiary(selectedAccount.zone, selectedAccount.endpoint);
+    }
+    if (subsidiary) return subsidiary;
+    if (selectedAccount) return accountSubsidiary(selectedAccount.zone, selectedAccount.endpoint);
+    return "IE";
+  }, [selectedAccount, activeAccId, subsidiary]);
+
+  const accountCatalogQ = useOvhCatalog(effectiveSubsidiary);
+  const effectiveCatalogIdx = useMemo(() => {
+    if (accountCatalogQ.data) return buildCatalogIndex(accountCatalogQ.data);
+    if (effectiveSubsidiary === subsidiary) return catalogIdx;
+    return buildCatalogIndex(undefined);
+  }, [accountCatalogQ.data, effectiveSubsidiary, subsidiary, catalogIdx]);
+
+  const accountAvailQ = useAvailability(selectedAccount?.endpoint || undefined);
+  const effectiveRealtimeDcMap = useMemo(() => {
+    if (selectedAccount && selectedAccount.id !== activeAccId && accountAvailQ.data) {
+      return buildAvailabilityMap(accountAvailQ.data)[server.planCode];
+    }
+    return realtimeDcMap;
+  }, [selectedAccount, activeAccId, accountAvailQ.data, server.planCode, realtimeDcMap]);
+
+  const effectiveVariants = useMemo(() => {
+    if (selectedAccount && selectedAccount.id !== activeAccId && accountAvailQ.data) {
+      return variantsForPlan(accountAvailQ.data, server.planCode);
+    }
+    return variants;
+  }, [selectedAccount, activeAccId, accountAvailQ.data, server.planCode, variants]);
+
   const [selectedDCs, setSelectedDCs] = useState<string[]>([]);
   const [quantity, setQuantity] = useState("1");
   const [coupon, setCoupon] = useState("");
   const [autoPay, setAutoPay] = useState(false);
   const [duration, setDuration] = useState(DEFAULT_ORDER_DURATION);
   const durations = useOrderDurations(accountId, server.planCode);
+  const durationValid = supportsDuration(durations.data, duration);
   const settingsQ = useSettings();
   const cfgDefault = settingsQ.data?.defaultRetryInterval || RETRY_INTERVAL.defaultTask;
   const [retryInterval, setRetryInterval] = useState("");
@@ -91,8 +140,8 @@ export function ServerDetailDialog({
   const qty = Math.max(1, Number(quantity) || 1);
   const totalTasks = selectedDCs.length * qty;
   const dcMap = useMemo(
-    () => mergeDcAvailability(server.datacenters, realtimeDcMap),
-    [server.datacenters, realtimeDcMap]
+    () => mergeDcAvailability(server.datacenters, effectiveRealtimeDcMap),
+    [server.datacenters, effectiveRealtimeDcMap]
   );
 
   const grouped = useMemo(() => groupOptions(server.availableOptions), [server.availableOptions]);
@@ -121,15 +170,14 @@ export function ServerDetailDialog({
     if (NON_FQN_GROUPS.has(groupKey)) {
       return true;
     }
-    return hasStockWithOption(variants, picked as Record<string, string>, groupKey, value);
+    return hasStockWithOption(effectiveVariants, picked as Record<string, string>, groupKey, value);
   };
 
   // 预订(只在库存出现、尚未进入销售目录):CPU 不参与匹配,不随任务提交
   const preorder = !!server.prerelease;
 
-  // 机房红绿按"当前所选配置"判断,不是型号级。以前用型号级状态:只要任一配置有货,
-  // 机房就显示有货 —— 选了一套全线缺货的配置,机房照样亮绿,用户以为马上能下单。
-  const hasVariants = !!variants && variants.length > 0;
+  // 机房红绿按"当前所选配置"判断,不是型号级。
+  const hasVariants = !!effectiveVariants && effectiveVariants.length > 0;
   const stockPicks = useMemo(
     () =>
       (Object.entries(picked) as [OptionGroupKey, string | undefined][])
@@ -138,32 +186,49 @@ export function ServerDetailDialog({
     [picked],
   );
   const selectionMap = useMemo(
-    () => (hasVariants && !preorder ? selectionDcStatus(dcMap, variants!, stockPicks) : dcMap),
-    [hasVariants, preorder, dcMap, variants, stockPicks],
+    () => (hasVariants && !preorder ? selectionDcStatus(dcMap, effectiveVariants!, stockPicks) : dcMap),
+    [hasVariants, preorder, dcMap, effectiveVariants, stockPicks],
   );
   const ok = OVH_DATACENTERS.filter((dc) => isDcInStock(lookupDcStatus(selectionMap, dc))).length;
   // 有货、但销售目录里选不到的配置段(如目录只卖 3×4T,有货的却是 2×4T)
   const offCatalog = useMemo(() => {
     if (!hasVariants || preorder) return [];
     const catalogValues = (server.availableOptions || []).map((o) => o.value);
-    return stockOnlyParts(variants!, catalogValues);
-  }, [hasVariants, preorder, variants, server.availableOptions]);
+    return stockOnlyParts(effectiveVariants!, catalogValues);
+  }, [hasVariants, preorder, effectiveVariants, server.availableOptions]);
   const selectedValues = useMemo(() => {
     const options = Object.values(picked).filter(Boolean) as string[];
     return preorder ? preorderOptions(options, grouped.cpu?.map((o) => o.value)) : options;
   }, [picked, preorder, grouped]);
-  const preorderMismatch = preorder && selectedValues.length > 0 && !!variants?.length &&
-    !variants.some((v) => preorderVariantCoversAll(v.fqn, selectedValues));
+  const preorderMismatch = preorder && selectedValues.length > 0 && !!effectiveVariants?.length &&
+    !effectiveVariants.some((v) => preorderVariantCoversAll(v.fqn, selectedValues));
 
   const price = useMemo(() => {
-    if (selectedValues.length === 0) return defaultPrice;
-    return computePriceFromOptions(server.planCode, selectedValues, catalogIdx) || defaultPrice;
-  }, [server.planCode, selectedValues, catalogIdx, defaultPrice]);
+    const defaults = (server.defaultOptions || []).map((o) => o.value).filter(Boolean);
+    const targetOpts = selectedValues.length > 0 ? selectedValues : defaults;
+    const computed = computePriceFromOptions(server.planCode, targetOpts, effectiveCatalogIdx);
+    if (computed) return computed;
+    if (effectiveSubsidiary === subsidiary && selectedValues.length === 0) return defaultPrice;
+    return null;
+  }, [server.planCode, server.defaultOptions, selectedValues, effectiveCatalogIdx, effectiveSubsidiary, subsidiary, defaultPrice]);
+
+  const currentOptionsKey = useMemo(
+    () => normalizeMonitorOptionsKey(selectedValues),
+    [selectedValues]
+  );
+  const isCurrentSelectionMonitored = useMemo(() => {
+    if (subscriptions) {
+      return subscriptions.some(
+        (s) => s.planCode === server.planCode && normalizeMonitorOptionsKey(s.options) === currentOptionsKey
+      );
+    }
+    return Boolean(isMonitored && !currentOptionsKey);
+  }, [subscriptions, server.planCode, currentOptionsKey, isMonitored]);
 
   const prewarm = usePrewarmOrder({
     account_id: accountId,
     planCode: server.planCode,
-    datacenter: selectedDCs[0],
+    datacenters: selectedDCs,
     options: selectedValues,
     coupon: coupon.trim() || undefined,
     duration,
@@ -214,13 +279,19 @@ export function ServerDetailDialog({
         <div className="border border-border rounded-2xl p-4 bg-secondary/30 flex items-end justify-between gap-3 flex-wrap">
           <div>
             <div className="text-[11px] text-muted-foreground">
-              月费 · {subsidiary}
+              月费 · {effectiveSubsidiary}
               <span className="ml-2 text-[10px]">
                 {selectedValues.length > 0 ? "（随当前选配）" : "（默认配置）"}
               </span>
             </div>
             <div className="text-2xl font-bold tabular-nums mt-0.5">
-              {price ? formatPrice(price) : <span className="text-muted-foreground font-normal text-base">— · 价格加载中</span>}
+              {price ? (
+                formatPrice(price)
+              ) : (
+                <span className="text-muted-foreground font-normal text-base">
+                  {accountCatalogQ.isPending ? "— · 价格加载中" : "—"}
+                </span>
+              )}
             </div>
           </div>
           {price && (
@@ -251,8 +322,8 @@ export function ServerDetailDialog({
               options={grouped[g]}
               picked={picked[g] || ""}
               defaultValueSet={defaultValueSet}
-              hasStock={variants && variants.length > 0 ? (value) => optionHasStock(g, value) : undefined}
-              onPick={(value) => setPicked((p) => ({ ...p, [g]: value }))}
+              hasStock={effectiveVariants && effectiveVariants.length > 0 ? (value) => optionHasStock(g, value) : undefined}
+              onPick={(value) => setPicked((p) => ({ ...p, [g]: p[g] === value ? "" : value }))}
             />
           ))}
 
@@ -371,15 +442,15 @@ export function ServerDetailDialog({
             variant="outline"
             size="sm"
             disabled={create.isPending}
-            onClick={() => onMonitor(selectedDCs)}
+            onClick={() => onMonitor(selectedDCs, selectedValues)}
             className="flex-1 sm:flex-none h-9 rounded-lg text-xs gap-1.5 border-border/80 hover:bg-secondary px-3"
           >
             <Bell className="w-3.5 h-3.5" />
-            {isMonitored ? "监控设置" : "加入监控"}
+            {isCurrentSelectionMonitored ? "监控设置" : "加入监控"}
           </Button>
           <Button
             size="sm"
-            disabled={selectedDCs.length === 0 || create.isPending || preorderMismatch}
+            disabled={selectedDCs.length === 0 || !accountId || create.isPending || preorderMismatch || !durationValid}
             className="flex-1 sm:flex-none h-9 rounded-lg text-xs font-medium gap-1.5 px-3.5"
             onClick={async () => {
               if (selectedDCs.length === 0) {
@@ -388,6 +459,10 @@ export function ServerDetailDialog({
               }
               if (!accountId) {
                 toast.error("请选择 OVH 账户");
+                return;
+              }
+              if (!durationValid) {
+                toast.error("当前型号不支持所选购买时长，请重新选择");
                 return;
               }
               try {
@@ -403,6 +478,7 @@ export function ServerDetailDialog({
                   duration,
                   preorder,
                 });
+                prewarm.reset();
                 if (result.success > 0) {
                   toast.success(`已创建 ${result.success}/${result.total} 个抢购任务`);
                   onClose();

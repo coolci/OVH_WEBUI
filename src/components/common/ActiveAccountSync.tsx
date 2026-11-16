@@ -1,6 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useAccounts } from "@/hooks/use-accounts";
+import { useAccounts, syncActiveAccountsWithList } from "@/hooks/use-accounts";
 import {
   getActiveServerControlAccount,
   setActiveServerControlAccount,
@@ -9,64 +9,42 @@ import {
 } from "@/lib/http";
 
 /**
- * 启动 / 账户列表变化时校正 localStorage 中的活跃账户 ID。
- * 避免账户被删后仍注入 ?account=旧ID → 401/400（未配置 OVH API）。
+ * 启动 / 账户列表变化 / 跨组件切换时幂等校正 localStorage 中的活跃账户 ID。
+ * 彻底移除易导致锁死的 lastFixedServer / lastFixedVps 引用守卫：
+ * 只要当前活跃账户不在存活账户列表中，立即回退至默认账户或首个存活账户；全删空时清空残留 ID。
  */
 export function ActiveAccountSync() {
   const { data: accounts, isSuccess } = useAccounts();
   const qc = useQueryClient();
-  const lastFixedServer = useRef<string>("");
-  const lastFixedVps = useRef<string>("");
 
   useEffect(() => {
     if (!isSuccess || !accounts) return;
 
-    const defaultAcc = accounts.find((a) => a.isDefault) || accounts[0];
+    const reconcile = () => {
+      const changed = syncActiveAccountsWithList(accounts, {
+        getServer: getActiveServerControlAccount,
+        setServer: setActiveServerControlAccount,
+        getVps: getActiveVpsControlAccount,
+        setVps: setActiveVpsControlAccount,
+      });
 
-    // 1. 同步 Server Control 活跃账户
-    const activeServer = getActiveServerControlAccount();
-    const serverExists = activeServer && accounts.some((a) => a.id === activeServer);
-
-    if (accounts.length === 0) {
-      if (activeServer) {
-        setActiveServerControlAccount("");
-        lastFixedServer.current = "";
+      if (changed) {
+        void qc.invalidateQueries({ queryKey: ["server-control"] });
+        void qc.invalidateQueries({ queryKey: ["account"] });
+        void qc.invalidateQueries({ queryKey: ["vps-control"] });
+        void qc.invalidateQueries({ queryKey: ["servers"] });
+        void qc.invalidateQueries({ queryKey: ["ovh"] });
+        void qc.invalidateQueries({ queryKey: ["support-tickets"] });
+        void qc.invalidateQueries({ queryKey: ["all-owned-servers"] });
+        void qc.invalidateQueries({ queryKey: ["all-owned-vps"] });
       }
-      if (getActiveVpsControlAccount()) {
-        setActiveVpsControlAccount("");
-        lastFixedVps.current = "";
-      }
-      return;
-    }
+    };
 
-    let shouldInvalidate = false;
-
-    if (!serverExists && defaultAcc && defaultAcc.id !== lastFixedServer.current) {
-      setActiveServerControlAccount(defaultAcc.id);
-      lastFixedServer.current = defaultAcc.id;
-      shouldInvalidate = true;
-    } else if (serverExists) {
-      lastFixedServer.current = activeServer;
-    }
-
-    // 2. 同步 VPS Control 活跃账户
-    const activeVps = getActiveVpsControlAccount();
-    const vpsExists = activeVps && accounts.some((a) => a.id === activeVps);
-
-    if (!vpsExists && defaultAcc && defaultAcc.id !== lastFixedVps.current) {
-      setActiveVpsControlAccount(defaultAcc.id);
-      lastFixedVps.current = defaultAcc.id;
-      shouldInvalidate = true;
-    } else if (vpsExists) {
-      lastFixedVps.current = activeVps;
-    }
-
-    if (shouldInvalidate) {
-      // 清掉带旧 account 的缓存结果
-      void qc.invalidateQueries({ queryKey: ["server-control"] });
-      void qc.invalidateQueries({ queryKey: ["account"] });
-      void qc.invalidateQueries({ queryKey: ["vps-control"] });
-    }
+    reconcile();
+    window.addEventListener("storage", reconcile);
+    return () => {
+      window.removeEventListener("storage", reconcile);
+    };
   }, [accounts, isSuccess, qc]);
 
   return null;
