@@ -32,7 +32,7 @@ import { useNotifyGate } from "@/hooks/ovh/use-notify-channels";
 import { AccountSelect } from "@/components/common/AccountSelect";
 import { useAccounts } from "@/hooks/use-accounts";
 import { MAX_ORDER_QUANTITY } from "@/lib/order-limits";
-import { SUBSIDIARIES } from "./types";
+import { SUBSIDIARIES, reconcileVpsOsSelection } from "./types";
 import { AutoPayCheck } from "@/components/orders/AutoPayCheck";
 
 interface AddVPSDialogProps {
@@ -67,6 +67,33 @@ export function AddVPSDialog({ open, onOpenChange, initial }: AddVPSDialogProps)
     () => models.find((m) => m.planCode === vpsModel.trim())?.osChoices || [],
     [models, vpsModel]
   );
+  const modelUnlistedInCatalog = useMemo(() => {
+    const trimmed = vpsModel.trim();
+    if (!trimmed || modelsQ.isPending || modelsQ.isError || models.length === 0) return false;
+    return !models.some((m) => m.planCode === trimmed);
+  }, [models, modelsQ.isError, modelsQ.isPending, vpsModel]);
+
+  const handleModelChange = (nextModel: string) => {
+    setVpsModel(nextModel);
+    const nextChoices = models.find((m) => m.planCode === nextModel.trim())?.osChoices;
+    setOs((prev) => reconcileVpsOsSelection(prev, nextChoices, nextModel.trim() !== vpsModel.trim()));
+  };
+
+  const handleSubsidiaryChange = (nextSub: string) => {
+    const changed = nextSub !== ovhSubsidiary;
+    setOvhSubsidiary(nextSub);
+    if (changed) {
+      // 子公司切换后各站点目录与可用镜像不同，立即重置跨站点残留 os
+      setOs("");
+    }
+  };
+
+  useEffect(() => {
+    if (modelsQ.isPending) return;
+    if (os && osChoices.length > 0 && !osChoices.includes(os)) {
+      setOs("");
+    }
+  }, [modelsQ.isPending, os, osChoices]);
 
   useEffect(() => {
     if (isEdit) return;
@@ -128,6 +155,7 @@ export function AddVPSDialog({ open, onOpenChange, initial }: AddVPSDialogProps)
       return;
     }
     const qty = Math.min(Math.max(Number(quantity) || 1, 1), MAX_ORDER_QUANTITY);
+    const safeOs = reconcileVpsOsSelection(os, osChoices, false);
     const payload = {
       ovhSubsidiary,
       datacenters: dcs,
@@ -135,7 +163,7 @@ export function AddVPSDialog({ open, onOpenChange, initial }: AddVPSDialogProps)
       monitorWindows,
       notifyAvailable,
       notifyUnavailable,
-      os: os.trim(),
+      os: safeOs,
       autoOrder,
       autoOrderAccountId: autoOrder ? autoOrderAccountId : "",
       quantity: autoOrder ? qty : 0,
@@ -198,7 +226,7 @@ export function AddVPSDialog({ open, onOpenChange, initial }: AddVPSDialogProps)
               </label>
               <PlanCodeCombobox
                 value={vpsModel}
-                onChange={setVpsModel}
+                onChange={handleModelChange}
                 servers={models}
                 disabled={isEdit}
                 placeholder="选择或输入自定义 VPS planCode"
@@ -206,12 +234,17 @@ export function AddVPSDialog({ open, onOpenChange, initial }: AddVPSDialogProps)
               {modelsQ.isError && (
                 <p className="text-[11px] text-destructive mt-1">实时目录拉取失败，请稍后重试</p>
               )}
+              {modelUnlistedInCatalog && (
+                <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">
+                  当前 {ovhSubsidiary} 站点目录中未找到该型号，可能已停售或不属于该子公司站点
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-1.5">
                 OVH 子公司
               </label>
-              <Select value={ovhSubsidiary} onValueChange={setOvhSubsidiary}>
+              <Select value={ovhSubsidiary} onValueChange={handleSubsidiaryChange}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>

@@ -12,8 +12,8 @@ import type {
 } from "./types";
 import { useServerAccount, withAccount } from "./account";
 
-export function useServerMonitoring(serviceName: string | null) {
-  const accountId = useServerAccount();
+export function useServerMonitoring(serviceName: string | null, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   return useQuery({
     queryKey: qk.serverControl.monitoring(serviceName || "", accountId),
     queryFn: async () => {
@@ -24,8 +24,8 @@ export function useServerMonitoring(serviceName: string | null) {
   });
 }
 
-export function useToggleMonitoring() {
-  const accountId = useServerAccount();
+export function useToggleMonitoring(overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ serviceName, enabled }: { serviceName: string; enabled: boolean }) => {
@@ -38,8 +38,8 @@ export function useToggleMonitoring() {
   });
 }
 
-export function useServerBurst(serviceName: string | null) {
-  const accountId = useServerAccount();
+export function useServerBurst(serviceName: string | null, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   return useQuery({
     queryKey: qk.serverControl.burst(serviceName || "", accountId),
     queryFn: async (): Promise<BurstResult> => {
@@ -58,8 +58,8 @@ export function useServerBurst(serviceName: string | null) {
   });
 }
 
-export function useSetBurst() {
-  const accountId = useServerAccount();
+export function useSetBurst(overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ serviceName, status }: { serviceName: string; status: string }) => {
@@ -72,8 +72,8 @@ export function useSetBurst() {
   });
 }
 
-export function useServerFirewall(serviceName: string | null) {
-  const accountId = useServerAccount();
+export function useServerFirewall(serviceName: string | null, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   return useQuery({
     queryKey: qk.serverControl.firewall(serviceName || "", accountId),
     queryFn: async (): Promise<FirewallResult> => {
@@ -92,8 +92,8 @@ export function useServerFirewall(serviceName: string | null) {
   });
 }
 
-export function useSetFirewall() {
-  const accountId = useServerAccount();
+export function useSetFirewall(overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ serviceName, enabled }: { serviceName: string; enabled: boolean }) => {
@@ -106,8 +106,8 @@ export function useSetFirewall() {
   });
 }
 
-export function useServerBackupFtp(serviceName: string | null) {
-  const accountId = useServerAccount();
+export function useServerBackupFtp(serviceName: string | null, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   return useQuery({
     queryKey: qk.serverControl.backupFtp(serviceName || "", accountId),
     queryFn: async (): Promise<BackupFtpResult> => {
@@ -147,8 +147,8 @@ export function useServerBackupFtp(serviceName: string | null) {
   });
 }
 
-export function useActivateBackupFtp() {
-  const accountId = useServerAccount();
+export function useActivateBackupFtp(overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (serviceName: string) => {
@@ -161,8 +161,8 @@ export function useActivateBackupFtp() {
   });
 }
 
-export function useDeleteBackupFtp() {
-  const accountId = useServerAccount();
+export function useDeleteBackupFtp(overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (serviceName: string) => {
@@ -175,8 +175,8 @@ export function useDeleteBackupFtp() {
   });
 }
 
-export function useResetBackupFtpPassword() {
-  const accountId = useServerAccount();
+export function useResetBackupFtpPassword(overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   return useMutation({
     mutationFn: async (serviceName: string) => {
       const res = await api.post(`/server-control/${encodeURIComponent(serviceName)}/backup-ftp/password`, undefined, withAccount(accountId));
@@ -185,8 +185,8 @@ export function useResetBackupFtpPassword() {
   });
 }
 
-export function useBackupFtpAuthorizableBlocks(serviceName: string | null, enabled = true) {
-  const accountId = useServerAccount();
+export function useBackupFtpAuthorizableBlocks(serviceName: string | null, enabled = true, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   return useQuery({
     queryKey: [...qk.serverControl.backupFtpAccess(serviceName || "", accountId), "authorizable"] as const,
     queryFn: async () => {
@@ -197,8 +197,8 @@ export function useBackupFtpAuthorizableBlocks(serviceName: string | null, enabl
   });
 }
 
-export function useAddBackupFtpAccess() {
-  const accountId = useServerAccount();
+export function useAddBackupFtpAccess(overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (vars: {
@@ -222,8 +222,8 @@ export function useAddBackupFtpAccess() {
   });
 }
 
-export function useDeleteBackupFtpAccess() {
-  const accountId = useServerAccount();
+export function useDeleteBackupFtpAccess(overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (vars: { serviceName: string; ipBlock: string }) => {
@@ -239,8 +239,8 @@ export function useDeleteBackupFtpAccess() {
   });
 }
 
-export function useServerBackupCloud(serviceName: string | null) {
-  const accountId = useServerAccount();
+export function useServerBackupCloud(serviceName: string | null, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   return useQuery({
     queryKey: qk.serverControl.backupCloud(serviceName || "", accountId),
     queryFn: async (): Promise<BackupCloudResult> => {
@@ -277,8 +277,8 @@ export function useServerBackupCloud(serviceName: string | null) {
   });
 }
 
-export function useActivateBackupCloud() {
-  const accountId = useServerAccount();
+export function useActivateBackupCloud(overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (vars: { serviceName: string; cloudProjectId?: string; projectDescription?: string }) => {
@@ -294,8 +294,8 @@ export function useActivateBackupCloud() {
   });
 }
 
-export function useDeleteBackupCloud() {
-  const accountId = useServerAccount();
+export function useDeleteBackupCloud(overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (serviceName: string) => {
@@ -308,8 +308,8 @@ export function useDeleteBackupCloud() {
   });
 }
 
-export function useChangeBackupCloudPassword() {
-  const accountId = useServerAccount();
+export function useChangeBackupCloudPassword(overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (serviceName: string) => {
@@ -322,8 +322,8 @@ export function useChangeBackupCloudPassword() {
   });
 }
 
-export function useBackupCloudOfferDetails(serviceName: string | null) {
-  const accountId = useServerAccount();
+export function useBackupCloudOfferDetails(serviceName: string | null, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   return useQuery({
     queryKey: qk.serverControl.backupCloudOffer(serviceName || "", accountId),
     queryFn: async () => {

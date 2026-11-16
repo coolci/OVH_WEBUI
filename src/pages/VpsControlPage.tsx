@@ -11,6 +11,7 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { LoadFailed, LoadFailedBanner } from "@/components/common/LoadFailed";
 import { DeviceSwitcherCard } from "@/components/common/DeviceSwitcherCard";
 import { VpsDetail } from "@/components/vps-control/VpsDetail";
+import { resolveControlDeepLink } from "@/components/server-control/server-scope";
 import { useOwnedVps, type OwnedVps } from "@/hooks/use-vps-control";
 import { useHideIp } from "@/hooks/use-hide-ip";
 import { useActiveVpsControlAccount } from "@/hooks/use-active-account";
@@ -26,21 +27,28 @@ function VpsControlPage() {
   const { hidden, toggle } = useHideIp();
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const [searchParams] = useSearchParams();
-  const wantedService = useRef<string | null>(searchParams.get("service"));
-  const wantedAccount = useRef<string | null>(searchParams.get("account"));
+  const urlService = searchParams.get("service");
+  const urlAccount = searchParams.get("account");
+  const wantedService = useRef<string | null>(urlService);
+  const wantedAccount = useRef<string | null>(urlAccount);
+  const lastSearchKey = useRef<string>(`${urlAccount ?? ""}|${urlService ?? ""}`);
   const [activeAccount, setActiveAccount] = useActiveVpsControlAccount();
   const { data: accounts } = useAccounts();
-  // ?account= 指定账户时先切过去(购买历史跳转用),只生效一次
+
   useEffect(() => {
-    const want = wantedAccount.current;
-    if (!want || !accounts) return;
-    wantedAccount.current = null;
-    if (accounts.some((a) => a.id === want)) setActiveAccount(want);
-  }, [accounts, setActiveAccount]);
+    const key = `${urlAccount ?? ""}|${urlService ?? ""}`;
+    if (key !== lastSearchKey.current) {
+      lastSearchKey.current = key;
+      if (urlAccount) wantedAccount.current = urlAccount;
+      if (urlService) wantedService.current = urlService;
+    }
+  }, [urlAccount, urlService]);
+
   const vpsList = q.data || EMPTY_VPS_LIST;
 
   useEffect(() => {
     if (!accounts || accounts.length === 0) return;
+    if (wantedAccount.current && accounts.some((a) => a.id === wantedAccount.current)) return;
     const exists = accounts.some((a) => a.id === activeAccount);
     if (!exists) {
       const def = accounts.find((a) => a.isDefault) || accounts[0];
@@ -50,31 +58,42 @@ function VpsControlPage() {
     }
   }, [accounts, activeAccount, setActiveAccount]);
 
+  const prevAccountRef = useRef<string>(activeAccount);
   useEffect(() => {
-    setSelectedName(null);
+    if (prevAccountRef.current !== activeAccount) {
+      prevAccountRef.current = activeAccount;
+      setSelectedName(null);
+    }
   }, [activeAccount]);
 
-  // 自动选第一台（首次加载或列表变更/当前选中失效后）
+  // 统一协调 ?account= 与 ?service= 深链及首台自动选中，防止列表未就绪前过早清空 wantedService
   useEffect(() => {
-    // 从购买历史"打开服务器控制"跳过来:?service= 指定要选中的服务
-    if (wantedService.current && vpsList.some((x) => x.serviceName === wantedService.current)) {
-      setSelectedName(wantedService.current);
-      wantedService.current = null;
+    const res = resolveControlDeepLink({
+      wantedAccount: wantedAccount.current,
+      wantedService: wantedService.current,
+      accounts,
+      activeAccount,
+      items: vpsList,
+      listPending: q.isPending,
+      listFetching: q.isFetching,
+      selectedName,
+    });
+    wantedAccount.current = res.nextWantedAccount;
+    wantedService.current = res.nextWantedService;
+    if (res.switchToAccount) {
+      setActiveAccount(res.switchToAccount);
       return;
     }
-    if (vpsList.length === 0) {
-      setSelectedName(null);
-      return;
+    if (res.nextSelectedName !== selectedName) {
+      setSelectedName(res.nextSelectedName);
     }
-    if (!selectedName || !vpsList.some((v) => v.serviceName === selectedName)) {
-      setSelectedName(vpsList[0].serviceName);
-    }
-  }, [vpsList, selectedName]);
+  }, [accounts, activeAccount, vpsList, q.isPending, q.isFetching, selectedName, setActiveAccount]);
 
   const selected = vpsList.find((v) => v.serviceName === selectedName) || null;
-  const aliases = useServerAliases(activeAccount || undefined);
+  const selectedAccountId = selected?.accountId || activeAccount || undefined;
+  const aliases = useServerAliases(selectedAccountId);
   const setAlias = useSetServerAlias();
-  const activeEndpoint = (accounts || []).find((a) => a.id === activeAccount)?.endpoint;
+  const activeEndpoint = (accounts || []).find((a) => a.id === (selectedAccountId || activeAccount))?.endpoint;
 
   return (
     <div className="space-y-4">
@@ -155,7 +174,7 @@ function VpsControlPage() {
             onSetAlias={setAlias}
             isUS={isUsEndpoint(activeEndpoint)}
             region={regionLabel(endpointRegion(activeEndpoint))}
-            activeAccount={activeAccount || undefined}
+            activeAccount={selectedAccountId}
           />
         </>
       ) : q.isPending ? (

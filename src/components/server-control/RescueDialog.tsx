@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { LoadFailed } from "@/components/common/LoadFailed";
 import { useRescueStatus, useEnterRescue, useExitRescue } from "@/hooks/use-server-control";
 import { Trans, useTranslation } from "react-i18next";
+import { useScopedServerAccountId } from "./server-scope";
 
 /**
  * 一键救援系统。
@@ -22,15 +23,18 @@ export function RescueDialog({
   displayName,
   open,
   onOpenChange,
+  accountId: propAccountId,
 }: {
   serviceName: string;
   displayName?: string;
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  accountId?: string;
 }) {
-  const status = useRescueStatus(serviceName, open);
-  const enter = useEnterRescue(serviceName);
-  const exit = useExitRescue(serviceName);
+  const accountId = useScopedServerAccountId(propAccountId);
+  const status = useRescueStatus(serviceName, open, accountId);
+  const enter = useEnterRescue(serviceName, accountId);
+  const exit = useExitRescue(serviceName, accountId);
   const { t } = useTranslation();
   const [email, setEmail] = useState("");
   const [confirming, setConfirming] = useState(false);

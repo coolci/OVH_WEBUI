@@ -38,6 +38,8 @@ import { RenewalDialog } from "@/components/server-control/RenewalDialog";
 import { ReinstallDialog } from "@/components/server-control/ReinstallDialog";
 import { RetractionDialog } from "@/components/server-control/RetractionDialog";
 import { EngagementDialog } from "@/components/server-control/EngagementDialog";
+import { ServerScopeProvider } from "@/components/server-control/ServerScopeContext";
+import { resolveControlDeepLink } from "@/components/server-control/server-scope";
 import { DeviceMetaCapsules } from "@/components/common/DeviceMetaCapsules";
 import { DeviceSwitcherCard } from "@/components/common/DeviceSwitcherCard";
 import { toast } from "sonner";
@@ -52,24 +54,32 @@ function ServerControlPage() {
   const { hidden, toggle } = useHideIp();
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const [searchParams] = useSearchParams();
-  const wantedService = useRef<string | null>(searchParams.get("service"));
-  const wantedAccount = useRef<string | null>(searchParams.get("account"));
+  const urlService = searchParams.get("service");
+  const urlAccount = searchParams.get("account");
+  const wantedService = useRef<string | null>(urlService);
+  const wantedAccount = useRef<string | null>(urlAccount);
+  const lastSearchKey = useRef<string>(`${urlAccount ?? ""}|${urlService ?? ""}`);
   const [renaming, setRenaming] = useState<null | OwnedServer>(null);
   const [activeAccount, setActiveAccount] = useActiveServerControlAccount();
   const { data: accounts } = useAccounts();
-  // ?account= 指定账户时先切过去(购买历史跳转用),只生效一次
+
+  // 当页面内通过路由导航改变 URL ?service= / ?account= 时同步更新待消费深链
   useEffect(() => {
-    const want = wantedAccount.current;
-    if (!want || !accounts) return;
-    wantedAccount.current = null;
-    if (accounts.some((a) => a.id === want)) setActiveAccount(want);
-  }, [accounts, setActiveAccount]);
-  const { data: aliases } = useServerAliases();
+    const key = `${urlAccount ?? ""}|${urlService ?? ""}`;
+    if (key !== lastSearchKey.current) {
+      lastSearchKey.current = key;
+      if (urlAccount) wantedAccount.current = urlAccount;
+      if (urlService) wantedService.current = urlService;
+    }
+  }, [urlAccount, urlService]);
+
+  const { data: aliases } = useServerAliases(activeAccount || undefined);
   const servers = q.data || EMPTY_SERVERS;
 
-  // 首次没选过账户或所存账户已失效 → 自动同步选默认账户
+  // 首次没选过账户或所存账户已失效 → 自动同步选默认账户（不抢占尚未生效的 ?account= 深链）
   useEffect(() => {
     if (!accounts || accounts.length === 0) return;
+    if (wantedAccount.current && accounts.some((a) => a.id === wantedAccount.current)) return;
     const exists = accounts.some((a) => a.id === activeAccount);
     if (!exists) {
       const def = accounts.find((a) => a.isDefault) || accounts[0];
@@ -79,27 +89,37 @@ function ServerControlPage() {
     }
   }, [accounts, activeAccount, setActiveAccount]);
 
-  // 切换账户时,选中的 service 也清空(不同账户的服务器不一样)
+  // 切换账户时清空上一账户选中项（若深链正在跳转，保留 wantedService 等新账户列表就绪后消费）
+  const prevAccountRef = useRef<string>(activeAccount);
   useEffect(() => {
-    setSelectedName(null);
+    if (prevAccountRef.current !== activeAccount) {
+      prevAccountRef.current = activeAccount;
+      setSelectedName(null);
+    }
   }, [activeAccount]);
 
-  // 自动选中第一台（首次加载或切换列表后）
+  // 统一协调 ?account= 与 ?service= 深链及首台自动选中，杜绝列表加载完成前过早清空 wantedService
   useEffect(() => {
-    // 从购买历史"打开服务器控制"跳过来:?service= 指定要选中的服务
-    if (wantedService.current && servers.some((x) => x.serviceName === wantedService.current)) {
-      setSelectedName(wantedService.current);
-      wantedService.current = null;
+    const res = resolveControlDeepLink({
+      wantedAccount: wantedAccount.current,
+      wantedService: wantedService.current,
+      accounts,
+      activeAccount,
+      items: servers,
+      listPending: q.isPending,
+      listFetching: q.isFetching,
+      selectedName,
+    });
+    wantedAccount.current = res.nextWantedAccount;
+    wantedService.current = res.nextWantedService;
+    if (res.switchToAccount) {
+      setActiveAccount(res.switchToAccount);
       return;
     }
-    if (servers.length === 0) {
-      setSelectedName(null);
-      return;
+    if (res.nextSelectedName !== selectedName) {
+      setSelectedName(res.nextSelectedName);
     }
-    if (!selectedName || !servers.some((s) => s.serviceName === selectedName)) {
-      setSelectedName(servers[0].serviceName);
-    }
-  }, [servers, selectedName]);
+  }, [accounts, activeAccount, servers, q.isPending, q.isFetching, selectedName, setActiveAccount]);
 
   const selected = servers.find((s) => s.serviceName === selectedName) || null;
   const activeAcc = accounts?.find((a) => a.id === activeAccount);
@@ -142,7 +162,11 @@ function ServerControlPage() {
           isDefault: a.isDefault,
         }))}
         activeAccount={activeAccount || ""}
-        onAccountChange={(v) => setActiveAccount(v || "")}
+        onAccountChange={(v) => {
+          wantedAccount.current = null;
+          wantedService.current = null;
+          setActiveAccount(v || "");
+        }}
         items={servers.map((s) => ({
           serviceName: s.serviceName,
           name: aliasOf(aliases, s.serviceName, s.name),
@@ -153,7 +177,10 @@ function ServerControlPage() {
           lottery: lotteries.get(s.serviceName) || (s.lottery?.won ? { checked: true, won: true, tier: s.lottery.tier, items: [] } : undefined),
         }))}
         selectedName={selectedName || undefined}
-        onSelectName={(name) => setSelectedName(name)}
+        onSelectName={(name) => {
+          wantedService.current = null;
+          setSelectedName(name);
+        }}
         isFetching={isFetching}
         hidden={hidden}
         onRename={(serviceName) => {
@@ -188,13 +215,13 @@ function ServerControlPage() {
           />
         </Card>
       ) : selected ? (
-        <ServerTabs server={selected} />
+        <ServerScopeProvider accountId={selected.accountId || activeAccount || undefined}>
+          <ServerTabs server={selected} fallbackAccountId={activeAccount || undefined} />
+        </ServerScopeProvider>
       ) : null}
     </div>
   );
 }
-
-
 
 /** 服务器别名编辑对话框。alias 留空 + 保存 = 删除别名,恢复显示原 service_name。 */
 function RenameDialog({
@@ -218,7 +245,6 @@ function RenameDialog({
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      // 显式带上本页账户:另一个标签页切账户后,别名仍写到这台机器所属的账户下
       await set.mutateAsync({
         serviceName: server.serviceName,
         alias: value,
@@ -264,18 +290,25 @@ function RenameDialog({
   );
 }
 
-function ServerTabs({ server }: { server: OwnedServer }) {
-  const info = useServerServiceInfo(server.serviceName);
-  const monitoring = useServerMonitoring(server.serviceName);
-  const toggleMon = useToggleMonitoring();
-  const retraction = useRetraction(server.serviceName);
+function ServerTabs({
+  server,
+  fallbackAccountId,
+}: {
+  server: OwnedServer;
+  fallbackAccountId?: string;
+}) {
+  const instanceAccountId = server.accountId || fallbackAccountId;
+  const info = useServerServiceInfo(server.serviceName, instanceAccountId);
+  const monitoring = useServerMonitoring(server.serviceName, instanceAccountId);
+  const toggleMon = useToggleMonitoring(instanceAccountId);
+  const retraction = useRetraction(server.serviceName, false, instanceAccountId);
   const [retractOpen, setRetractOpen] = useState(false);
   const [netSpecsOpen, setNetSpecsOpen] = useState(false);
   const [renewalOpen, setRenewalOpen] = useState(false);
   const [reinstallOpen, setReinstallOpen] = useState(false);
   const [engagementOpen, setEngagementOpen] = useState(false);
   const { hidden } = useHideIp();
-  const { data: aliases } = useServerAliases();
+  const { data: aliases } = useServerAliases(instanceAccountId);
 
   const srvLabel = aliasOf(aliases, server.serviceName, server.name || server.serviceName);
 
@@ -377,16 +410,16 @@ function ServerTabs({ server }: { server: OwnedServer }) {
         </TabsList>
 
         <TabsContent value="overview" className="mt-4">
-          <OverviewTab server={server} />
+          <OverviewTab server={server} accountId={instanceAccountId} />
         </TabsContent>
         <TabsContent value="power" className="mt-4">
-          <PowerTab server={server} accountId={server.accountId} />
+          <PowerTab server={server} accountId={instanceAccountId} />
         </TabsContent>
         <TabsContent value="maintenance" className="mt-4">
-          <MaintenanceTab server={server} />
+          <MaintenanceTab server={server} accountId={instanceAccountId} />
         </TabsContent>
         <TabsContent value="advanced" className="mt-4">
-          <AdvancedTab server={server} />
+          <AdvancedTab server={server} accountId={instanceAccountId} />
         </TabsContent>
       </Tabs>
 
@@ -394,6 +427,7 @@ function ServerTabs({ server }: { server: OwnedServer }) {
         serviceName={server.serviceName}
         open={netSpecsOpen}
         onOpenChange={setNetSpecsOpen}
+        accountId={instanceAccountId}
       />
 
       {info.data && (
@@ -402,6 +436,7 @@ function ServerTabs({ server }: { server: OwnedServer }) {
           info={info.data}
           open={renewalOpen}
           onOpenChange={setRenewalOpen}
+          accountId={instanceAccountId}
         />
       )}
 
@@ -409,7 +444,7 @@ function ServerTabs({ server }: { server: OwnedServer }) {
         serviceName={server.serviceName}
         open={reinstallOpen}
         onOpenChange={setReinstallOpen}
-        accountId={server.accountId}
+        accountId={instanceAccountId}
       />
 
       {retraction.data && (
@@ -419,6 +454,7 @@ function ServerTabs({ server }: { server: OwnedServer }) {
           info={retraction.data}
           open={retractOpen}
           onOpenChange={setRetractOpen}
+          accountId={instanceAccountId}
         />
       )}
 
@@ -426,6 +462,7 @@ function ServerTabs({ server }: { server: OwnedServer }) {
         serviceName={server.serviceName}
         open={engagementOpen}
         onOpenChange={setEngagementOpen}
+        accountId={instanceAccountId}
       />
     </div>
   );

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import { Wifi, ArrowDown, ArrowUp, RefreshCw } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -20,6 +20,7 @@ import { useMrtgTraffic, type MrtgPeriod, type MrtgInterface } from "@/hooks/use
 import { Trans, useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { fmtPattern } from "@/i18n/format";
+import { mergeMrtgInterfaces, mergeMrtgSeries } from "./mrtg-helpers";
 
 /** 周期选项表:存文案 key,渲染处 t() */
 const PERIOD_KEYS: Record<MrtgPeriod, string> = {
@@ -45,26 +46,18 @@ function formatBandwidth(bps: number): string {
 /**
  * MRTG 流量监控组件
  * - 选 period（hourly / daily / weekly / monthly / yearly）
- * - 每张网卡一张图（按 MAC 分组），同时画下载 + 上传双线
+ * - 每张网卡一张图（按 MAC 并集分组），同时画下载 + 上传双线（单向为空亦正常渲染）
  * - 图上方有"当前 / 平均 / 峰值"统计栏
  */
 export function MrtgTrafficChart({ serviceName }: { serviceName: string }) {
   const { t } = useTranslation();
   const [period, setPeriod] = useState<MrtgPeriod>("daily");
-  // isError / error 以前漏解构了,拉失败时 merged 是空数组,界面就一路滑到「暂无流量数据」
   const { download, upload, isPending, isFetching, isError, error, refetch } = useMrtgTraffic(serviceName, period);
 
-  // 把 download interfaces 与 upload interfaces 按 mac 合并
-  const merged = useMemo(() => {
-    if (!download?.interfaces || !upload?.interfaces) return [];
-    return download.interfaces
-      .map((d: MrtgInterface) => {
-        const u = upload.interfaces.find((x) => x.mac === d.mac);
-        if (!d.data?.length || !u?.data?.length) return null;
-        return { mac: d.mac, download: d, upload: u };
-      })
-      .filter((x): x is { mac: string; download: MrtgInterface; upload: MrtgInterface } => x !== null);
-  }, [download, upload]);
+  const merged = useMemo(
+    () => mergeMrtgInterfaces(download?.interfaces, upload?.interfaces),
+    [download, upload]
+  );
 
   return (
     <Card>
@@ -96,9 +89,7 @@ export function MrtgTrafficChart({ serviceName }: { serviceName: string }) {
 
         {isPending ? (
           <Skeleton className="h-[420px] rounded-2xl" />
-        ) : isError ? (
-          // 请求挂了 ≠ 机器没流量。空态那句「该服务器尚未上报 MRTG 数据,或周期内没有流量」
-          // 会被读成"这机器没在跑 / 网卡没通",足以让人去重启甚至重装一台其实好好的机器。
+        ) : isError && merged.length === 0 ? (
           <LoadFailed icon={Wifi} title={t("maint.mrtg.loadFailed")} error={error} onRetry={() => refetch()} />
         ) : merged.length === 0 ? (
           <EmptyState icon={Wifi} title={t("maint.mrtg.emptyTitle")} description={t("maint.mrtg.emptyDesc")} />
@@ -127,34 +118,32 @@ function InterfaceChart({
   period: MrtgPeriod;
 }) {
   const { t } = useTranslation();
-  // 合并双线：按下载的时间序列对齐
+
   const chartData = useMemo(
     () =>
-      download.data.map((dp, i) => {
-        const up = upload.data[i];
-        return {
-          time: fmtPattern(dp.timestamp * 1000, "MM/dd HH:mm"),
-          download: dp.value?.value || 0,
-          upload: up?.value?.value || 0,
-        };
-      }),
+      mergeMrtgSeries(download.data, upload.data).map((pt) => ({
+        timestamp: pt.timestamp,
+        time: fmtPattern(pt.timestamp * 1000, "MM/dd HH:mm"),
+        download: pt.download,
+        upload: pt.upload,
+      })),
     [download, upload]
   );
 
   // 当前 / 平均 / 峰值 统计
   const stats = useMemo(() => {
-    const dl = chartData.map((d) => d.download);
-    const ul = chartData.map((d) => d.upload);
-    const tot = chartData.map((d) => d.download + d.upload);
+    const dl = chartData.map((d) => d.download).filter((v): v is number => v !== null);
+    const ul = chartData.map((d) => d.upload).filter((v): v is number => v !== null);
+    const tot = chartData.map((d) => (d.download ?? 0) + (d.upload ?? 0));
     const avg = (arr: number[]) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0);
     return {
-      dlCur: dl[dl.length - 1] || 0,
+      dlCur: dl.length ? dl[dl.length - 1] : 0,
       dlAvg: avg(dl),
-      dlMax: Math.max(0, ...dl),
-      ulCur: ul[ul.length - 1] || 0,
+      dlMax: dl.length ? Math.max(0, ...dl) : 0,
+      ulCur: ul.length ? ul[ul.length - 1] : 0,
       ulAvg: avg(ul),
-      ulMax: Math.max(0, ...ul),
-      totMax: Math.max(0, ...tot),
+      ulMax: ul.length ? Math.max(0, ...ul) : 0,
+      totMax: tot.length ? Math.max(0, ...tot) : 0,
       points: chartData.length,
     };
   }, [chartData]);
@@ -214,7 +203,7 @@ function InterfaceChart({
                 fontSize: 12,
               }}
               formatter={(value, name) => [
-                formatBandwidth(Number(value)),
+                formatBandwidth(Number(value ?? 0)),
                 name === "download" ? t("maint.mrtg.tooltipDl") : t("maint.mrtg.tooltipUl"),
               ]}
             />
@@ -228,6 +217,7 @@ function InterfaceChart({
               stroke="hsl(var(--success))"
               strokeWidth={2}
               dot={false}
+              connectNulls
               name="download"
               animationDuration={600}
             />
@@ -237,6 +227,7 @@ function InterfaceChart({
               stroke="hsl(var(--warning))"
               strokeWidth={2}
               dot={false}
+              connectNulls
               name="upload"
               animationDuration={600}
             />

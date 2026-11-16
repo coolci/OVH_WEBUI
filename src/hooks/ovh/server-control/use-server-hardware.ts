@@ -74,7 +74,18 @@ export function useServerDiskInfo(serviceName: string | null, enabled = true, ov
     queryKey: qk.serverControl.diskInfo(serviceName || "", accountId),
     queryFn: async () => {
       const res = await api.get(`/server-control/${encodeURIComponent(serviceName || "")}/hardware-disk-info`, withAccount(accountId));
-      return (res.data?.diskGroups || {}) as Record<string, DiskGroup>;
+      const rawGroups = (res.data?.diskGroups || {}) as Record<string, DiskGroup>;
+      const rawDefaultId = Number(res.data?.hardware?.defaultDiskGroupId ?? res.data?.defaultDiskGroupId);
+      const hasDefaultId = Number.isInteger(rawDefaultId) && rawDefaultId > 0;
+      const normalized: Record<string, DiskGroup> = {};
+      for (const [k, g] of Object.entries(rawGroups)) {
+        const gid = Number(g?.id ?? k);
+        normalized[k] = {
+          ...g,
+          isDefault: hasDefaultId ? gid === rawDefaultId : Boolean(g?.isDefault),
+        };
+      }
+      return normalized;
     },
     enabled: !!serviceName && enabled,
     staleTime: 5 * 60_000,
@@ -126,6 +137,42 @@ export function useServerPartitionSchemes(
   });
 }
 
+export function unwrapBiosPayload(raw: unknown): Record<string, unknown> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const obj = raw as Record<string, unknown>;
+  if ("bios" in obj) {
+    const inner = obj.bios;
+    return inner && typeof inner === "object" && !Array.isArray(inner)
+      ? (inner as Record<string, unknown>)
+      : {};
+  }
+  const copy: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (k === "success") continue;
+    copy[k] = v;
+  }
+  return copy;
+}
+
+export function unwrapSgxPayload(raw: unknown): Record<string, unknown> | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const obj = raw as Record<string, unknown>;
+  if (obj.success === false) return null;
+  if ("sgx" in obj) {
+    const inner = obj.sgx;
+    return inner && typeof inner === "object" && !Array.isArray(inner)
+      ? (inner as Record<string, unknown>)
+      : null;
+  }
+  if ("data" in obj) {
+    const inner = obj.data;
+    return inner && typeof inner === "object" && !Array.isArray(inner)
+      ? (inner as Record<string, unknown>)
+      : null;
+  }
+  return obj;
+}
+
 export function useServerBiosSettings(serviceName: string | null, enabled = true, overrideAccountId?: string) {
   const accountId = useServerAccount(overrideAccountId);
   return useQuery({
@@ -135,8 +182,8 @@ export function useServerBiosSettings(serviceName: string | null, enabled = true
         const res = await api.get(`/server-control/${encodeURIComponent(serviceName || "")}/bios-settings`, withAccount(accountId));
         const sgxRes = await api.get(`/server-control/${encodeURIComponent(serviceName || "")}/bios-settings/sgx`, withAccount(accountId)).catch(() => null);
         return {
-          settings: (res.data || {}) as Record<string, unknown>,
-          sgx: sgxRes?.data?.sgx ?? sgxRes?.data?.data ?? sgxRes?.data ?? null,
+          settings: unwrapBiosPayload(res.data),
+          sgx: unwrapSgxPayload(sgxRes?.data),
         };
       } catch (e: unknown) {
         const status = errorStatus(e);
@@ -149,6 +196,8 @@ export function useServerBiosSettings(serviceName: string | null, enabled = true
     enabled: !!serviceName && enabled,
   });
 }
+
+export const useBiosSettings = useServerBiosSettings;
 
 export function useCreateIntervention(overrideAccountId?: string) {
   const accountId = useServerAccount(overrideAccountId);

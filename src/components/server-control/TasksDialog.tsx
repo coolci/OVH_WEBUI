@@ -10,18 +10,22 @@ import { PartialNotice, DetailErrorTag } from "@/components/common/PartialNotice
 import { TimeslotsDialog } from "./TimeslotsDialog";
 import { useTranslation } from "react-i18next";
 import { fmtDateTime } from "@/i18n/format";
+import { useScopedServerAccountId } from "./server-scope";
 
 /** 任务列表对话框：表格 + 每行"可用时间段"按钮 → 弹出 TimeslotsDialog */
 export function TasksDialog({
   serviceName,
   open,
   onOpenChange,
+  accountId: propAccountId,
 }: {
   serviceName: string;
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  accountId?: string;
 }) {
-  const q = useServerTasks(serviceName, open);
+  const accountId = useScopedServerAccountId(propAccountId);
+  const q = useServerTasks(serviceName, open, accountId);
   const { t } = useTranslation();
   const [tsTask, setTsTask] = useState<ServerTask | null>(null);
 
@@ -122,6 +126,7 @@ export function TasksDialog({
         task={tsTask}
         open={!!tsTask}
         onOpenChange={(v) => !v && setTsTask(null)}
+        accountId={accountId}
       />
     </>
   );

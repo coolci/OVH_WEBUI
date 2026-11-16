@@ -18,8 +18,8 @@ export interface PostInstallSectionProps {
   hostname: string;
   setHostname: (v: string) => void;
   customizeQuestions: CustomizeQuestion[];
-  customizationAnswers: Record<string, string | boolean>;
-  setCustomizationAnswers: React.Dispatch<React.SetStateAction<Record<string, string | boolean>>>;
+  customizationAnswers: Record<string, string | number | boolean>;
+  setCustomizationAnswers: React.Dispatch<React.SetStateAction<Record<string, string | number | boolean>>>;
 }
 
 export function PostInstallSection({
@@ -44,7 +44,7 @@ export function PostInstallSection({
       </div>
 
       {/* 官方 customizeQuestions: OS 特定定制(sshKey / 安装后脚本 / 语言 / 预装应用等),
-          键名与取值由 OVH 模板定义,这里动态渲染、原样回传 —— 与官方 Manager 同源 */}
+          键名与取值由 OVH 模板定义,这里动态渲染并按类型回传 */}
       {customizeQuestions.length > 0 && (
         <div className="space-y-3">
           <h4 className="text-[12px] font-semibold flex items-center gap-1.5">
@@ -53,13 +53,15 @@ export function PostInstallSection({
           </h4>
           {customizeQuestions.map((q) => {
             const isBool = q.type === "boolean";
+            const isNumber = q.type === "number" || q.type === "long" || q.type === "integer";
             const isEnum = q.type === "enum" || (Array.isArray(q.enum) && q.enum.length > 0);
+            const isMandatory = Boolean(q.required || q.mandatory);
             const val = customizationAnswers[q.name];
             return (
               <div key={q.name}>
                 <label className="block text-[12px] font-medium mb-1">
                   {q.description || q.name}
-                  {q.required && <span className="text-destructive ml-0.5">*</span>}
+                  {isMandatory && <span className="text-destructive ml-0.5">*</span>}
                 </label>
                 {isBool ? (
                   <label className="flex items-center gap-2 cursor-pointer text-[12px]">
@@ -92,7 +94,7 @@ export function PostInstallSection({
                       <SelectValue placeholder={t("ctrl.reinstall.customize.selectPlaceholder")} />
                     </SelectTrigger>
                     <SelectContent>
-                      {!q.required && (
+                      {!isMandatory && (
                         <SelectItem value="__clear__">
                           {t("ctrl.reinstall.customize.optionalNone")}
                         </SelectItem>
@@ -111,10 +113,30 @@ export function PostInstallSection({
                     placeholder={t("ctrl.reinstall.customize.scriptHint")}
                     className="font-mono text-[11px] min-h-[72px]"
                   />
+                ) : isNumber ? (
+                  <Input
+                    type="number"
+                    value={typeof val === "number" ? String(val) : typeof val === "string" ? val : ""}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      setCustomizationAnswers((a) => {
+                        const copy = { ...a };
+                        if (raw.trim() === "") {
+                          delete copy[q.name];
+                        } else if (/^-?\d+(\.\d+)?$/.test(raw.trim())) {
+                          copy[q.name] = Number(raw.trim());
+                        } else {
+                          copy[q.name] = raw;
+                        }
+                        return copy;
+                      });
+                    }}
+                    placeholder={q.type || "number"}
+                  />
                 ) : (
                   <Input
-                    type={q.type === "number" ? "number" : q.type === "email" ? "email" : "text"}
-                    value={typeof val === "string" ? val : ""}
+                    type={q.type === "email" ? "email" : "text"}
+                    value={typeof val === "string" ? val : typeof val === "number" ? String(val) : ""}
                     onChange={(e) => setCustomizationAnswers((a) => ({ ...a, [q.name]: e.target.value }))}
                     placeholder={q.name === "sshKey" ? t("ctrl.reinstall.customize.sshKeyHint") : q.type || ""}
                     className={q.name === "sshKey" ? "font-mono text-[11px]" : ""}

@@ -7,8 +7,8 @@ import { apiMessage, bodyMessage, type BodyMessage } from "@/lib/api-error";
 import type { BootMode, ServerTask, RescueStatus, TaskTimeslot } from "./types";
 import { useServerAccount, withAccount } from "./account";
 
-export function useServerBootModes(serviceName: string | null, enabled = true) {
-  const accountId = useServerAccount();
+export function useServerBootModes(serviceName: string | null, enabled = true, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   return useQuery({
     queryKey: qk.serverControl.bootModes(serviceName || "", accountId),
     queryFn: async () => {
@@ -19,8 +19,8 @@ export function useServerBootModes(serviceName: string | null, enabled = true) {
   });
 }
 
-export function useSetServerBootMode() {
-  const accountId = useServerAccount();
+export function useSetServerBootMode(overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ serviceName, bootId }: { serviceName: string; bootId: number }) => {
@@ -33,8 +33,8 @@ export function useSetServerBootMode() {
   });
 }
 
-export function useServerTasks(serviceName: string | null, enabled = true) {
-  const accountId = useServerAccount();
+export function useServerTasks(serviceName: string | null, enabled = true, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   return useQuery({
     queryKey: qk.serverControl.tasks(serviceName || "", accountId),
     queryFn: async () => {
@@ -45,8 +45,8 @@ export function useServerTasks(serviceName: string | null, enabled = true) {
   });
 }
 
-export function useRebootServer() {
-  const accountId = useServerAccount();
+export function useRebootServer(overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   return useMutation({
     mutationFn: async (serviceName: string) => {
       const res = await api.post(`/server-control/${encodeURIComponent(serviceName)}/reboot`, undefined, withAccount(accountId));
@@ -55,8 +55,8 @@ export function useRebootServer() {
   });
 }
 
-export function useRescueStatus(serviceName: string | null, enabled = true) {
-  const accountId = useServerAccount();
+export function useRescueStatus(serviceName: string | null, enabled = true, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   return useQuery({
     queryKey: qk.serverControl.rescue(serviceName || "", accountId),
     queryFn: async (): Promise<RescueStatus> => {
@@ -73,12 +73,10 @@ export function useRescueStatus(serviceName: string | null, enabled = true) {
   });
 }
 
-export function useEnterRescue(serviceName: string) {
-  const accountId = useServerAccount();
+export function useEnterRescue(serviceName: string, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   const qc = useQueryClient();
   return useMutation({
-    // expectedBoot = 打开窗口时看到的启动项;期间被别处改过的话后端返回 409,不会按过期页面重启。
-    // 邮箱留空时必须显式声明 useDefaultEmail,否则后端拒绝(省略 rescueMail 会沿用旧地址)。
     mutationFn: async (v: { email?: string; sshKey?: string; bootId?: number; expectedBoot?: number }) =>
       (
         await api.post(`/server-control/${encodeURIComponent(serviceName)}/rescue`, {
@@ -96,8 +94,8 @@ export function useEnterRescue(serviceName: string) {
   });
 }
 
-export function useExitRescue(serviceName: string) {
-  const accountId = useServerAccount();
+export function useExitRescue(serviceName: string, overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (expectedBoot?: number) =>
@@ -116,9 +114,10 @@ export function useTaskTimeslots(
   taskId: number | null,
   periodStart: string,
   periodEnd: string,
-  enabled = true
+  enabled = true,
+  overrideAccountId?: string,
 ) {
-  const accountId = useServerAccount();
+  const accountId = useServerAccount(overrideAccountId);
   return useQuery({
     queryKey: qk.serverControl.taskTimeslots(serviceName || "", accountId, taskId || 0, periodStart, periodEnd),
     queryFn: async () => {
@@ -135,8 +134,8 @@ export function useTaskTimeslots(
   });
 }
 
-export function useScheduleTask() {
-  const accountId = useServerAccount();
+export function useScheduleTask(overrideAccountId?: string) {
+  const accountId = useServerAccount(overrideAccountId);
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (args: {

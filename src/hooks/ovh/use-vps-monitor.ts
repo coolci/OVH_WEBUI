@@ -90,17 +90,45 @@ export function useVPSMonitorHistory(id: string | null) {
   });
 }
 
+export interface VPSSubscriptionMutationResult extends BodyMessage {
+  status?: string;
+  message?: string;
+  retiredWarning?: string;
+  subscription?: VPSSubscription;
+}
+
+/**
+ * 统一处理 VPS 订阅创建/更新后的提示反馈：
+ * 当后端返回 `retiredWarning`（如用户输入了已下架/目录外 planCode）时显式弹出告警，防止静默吞掉停售提示。
+ */
+export function notifyVpsSubscriptionResult(
+  data: VPSSubscriptionMutationResult | undefined,
+  fallbackMessage: string,
+  toastImpl: {
+    success: (msg: string) => unknown;
+    warning: (msg: string, opts?: { duration?: number; description?: string }) => unknown;
+  } = toast,
+): void {
+  const warning = typeof data?.retiredWarning === "string" ? data.retiredWarning.trim() : "";
+  const msg = bodyMessage(data) || fallbackMessage;
+  if (warning) {
+    toastImpl.warning(warning, { duration: 8000, description: msg });
+    return;
+  }
+  toastImpl.success(msg);
+}
+
 /** 添加 VPS 订阅 */
 export function useAddVPSSubscription() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (
       payload: Omit<VPSSubscription, "id" | "lastStatus" | "createdAt">
-    ) => (await api.post("/vps-monitor/subscriptions", payload)).data,
-    onSuccess: () => {
+    ) => (await api.post<VPSSubscriptionMutationResult>("/vps-monitor/subscriptions", payload)).data,
+    onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: qk.vpsMonitor.list() });
       qc.invalidateQueries({ queryKey: qk.vpsMonitor.status() });
-      toast.success(i18n.t("hooksMsg.vpsMonitor.subAdded"));
+      notifyVpsSubscriptionResult(data, i18n.t("hooksMsg.vpsMonitor.subAdded"));
     },
     onError: (e: unknown) => toast.error(apiMessage(e)),
   });
@@ -129,11 +157,11 @@ export function useUpdateVPSSubscription() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, ...patch }: Partial<VPSSubscription> & { id: string }) =>
-      (await api.put(`/vps-monitor/subscriptions/${encodeURIComponent(id)}`, patch)).data,
-    onSuccess: (data: BodyMessage) => {
+      (await api.put<VPSSubscriptionMutationResult>(`/vps-monitor/subscriptions/${encodeURIComponent(id)}`, patch)).data,
+    onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: qk.vpsMonitor.list() });
       qc.invalidateQueries({ queryKey: qk.vpsMonitor.status() });
-      toast.success(bodyMessage(data) || i18n.t("hooksMsg.vpsMonitor.subUpdated"));
+      notifyVpsSubscriptionResult(data, i18n.t("hooksMsg.vpsMonitor.subUpdated"));
     },
     onError: (e: unknown) =>
       toast.error(apiMessage(e)),

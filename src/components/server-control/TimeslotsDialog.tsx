@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { fmtDateTime } from "@/i18n/format";
 import { errorMessage } from "@/lib/api-error";
+import { useScopedServerAccountId } from "./server-scope";
 
 /** Date → YYYY-MM-DD（按本地时区取"那一天"，跟后端 normalizeAPIDate 的取法一致） */
 function toDateInput(d: Date): string {
@@ -29,12 +30,15 @@ export function TimeslotsDialog({
   task,
   open,
   onOpenChange,
+  accountId: propAccountId,
 }: {
   serviceName: string;
   task: ServerTask | null;
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  accountId?: string;
 }) {
+  const accountId = useScopedServerAccountId(propAccountId);
   const defaultRange = useMemo(() => {
     const now = new Date();
     const end = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
@@ -43,8 +47,8 @@ export function TimeslotsDialog({
 
   const [start, setStart] = useState(defaultRange.start);
   const [end, setEnd] = useState(defaultRange.end);
-  const q = useTaskTimeslots(serviceName, task?.taskId ?? null, start, end, open);
-  const schedule = useScheduleTask();
+  const q = useTaskTimeslots(serviceName, task?.taskId ?? null, start, end, open, accountId);
+  const schedule = useScheduleTask(accountId);
   const { t } = useTranslation();
 
   /** 选中的时段起始时间（RFC3339，直接取 OVH 给的原值） */

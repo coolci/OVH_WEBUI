@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import { Monitor, Loader2, ExternalLink, Download } from "lucide-react";
+import { Monitor, Loader2, ExternalLink, Download, Terminal, Copy, Check } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/http";
 import { useServerAccount, withAccount } from "@/hooks/ovh/server-control/account";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { errorMessage } from "@/lib/api-error";
-import { safeHttpsUrl } from "@/lib/utils";
+import { useScopedServerAccountId } from "./server-scope";
+import { validateSolSshPublicKey, classifyIpmiConsoleResult } from "./ipmi-helpers";
 
 /**
  * IPMI / KVM 控制台对话框：
@@ -15,10 +17,7 @@ import { safeHttpsUrl } from "@/lib/utils";
  * - 用户选一种(默认 HTML5),再点"打开控制台"申请会话(要轮询 OVH 任务,约 20s)
  * - kvmipHtml5URL / serialOverLanURL → 显示打开链接按钮
  * - kvmipJnlp(Java KVM) → 下载 .jnlp 文件
- *
- * 为什么要让用户选:HTML5 KVM 在部分机型上键盘映射/鼠标不同步,
- * 老运维就是要 Java KVM。以前后端按固定优先级自动挑、HTML5 排第一,
- * 同时支持两种的机器永远拿不到 JNLP。
+ * - serialOverLanSshKey → 输入校验 SSH 公钥并展示可复制终端登录命令
  */
 export function IpmiDialog({
   serviceName,
@@ -36,19 +35,18 @@ export function IpmiDialog({
   const [result, setResult] = useState<{ url?: string; accessType?: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const startedRef = useRef(false);
-  // 每次打开 / 关闭 / 换服务器都换一代:晚到的旧请求结果一律丢弃,
-  // 否则关掉再打开(或换到另一台)时会显示上一台的类型列表或控制台链接。
   const sessionRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // 支持的接入方式(打开对话框时查一次)
   const [types, setTypes] = useState<{ supportedTypes: string[]; typeLabels: Record<string, string>; activated: boolean } | null>(null);
   const [chosen, setChosen] = useState<string>("");
+  const [sshKey, setSshKey] = useState<string>("");
+  const [copied, setCopied] = useState(false);
   const [typesLoading, setTypesLoading] = useState(false);
   const { t } = useTranslation();
-  const accountId = useServerAccount(propAccountId);
+  const scopedAccount = useScopedServerAccountId(propAccountId);
+  const accountId = useServerAccount(scopedAccount);
 
-  // 打开对话框:先查支持哪几种(秒回),不自动申请会话
   useEffect(() => {
     const sid = ++sessionRef.current;
     abortRef.current?.abort();
@@ -65,15 +63,18 @@ export function IpmiDialog({
       setError(null);
       setTypes(null);
       setChosen("");
+      setSshKey("");
+      setCopied(false);
       startedRef.current = false;
       setTypesLoading(false);
       return;
     }
-    // 换服务器时清掉上一台的残留
     setResult(null);
     setError(null);
     setTypes(null);
     setChosen("");
+    setSshKey("");
+    setCopied(false);
     setLoading(false);
     setTypesLoading(true);
     (async () => {
@@ -95,7 +96,6 @@ export function IpmiDialog({
     })();
   }, [open, serviceName, accountId]);
 
-  // 卸载时中止在途请求、清掉倒计时
   useEffect(
     () => () => {
       sessionRef.current++;
@@ -105,15 +105,39 @@ export function IpmiDialog({
     [],
   );
 
-  // 申请控制台会话(要轮询 OVH 任务,约 20 秒)
+  const needsSshKey = chosen === "serialOverLanSshKey";
+  const sshKeyValidation = validateSolSshPublicKey(sshKey);
+
+  const handleCopy = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      toast.success(t("ctrl.ipmi.toast.sshCopied", { defaultValue: "SSH 连接命令已复制到剪贴板" }));
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error(t("ctrl.ipmi.toast.copyFailed", { defaultValue: "复制失败，请手动选中复制" }));
+    }
+  };
+
   const openConsole = () => {
     if (!chosen) {
       toast.error(t("ctrl.ipmi.toast.pickType"));
       return;
     }
+    if (needsSshKey) {
+      if (!sshKeyValidation.valid) {
+        toast.error(
+          sshKeyValidation.reason === "empty"
+            ? t("ctrl.ipmi.toast.sshKeyRequired", { defaultValue: "选择 SSH SOL 模式时必须填写有效的 SSH 公钥" })
+            : t("ctrl.ipmi.toast.sshKeyInvalid", { defaultValue: "SSH 公钥格式无效，请粘贴以 ssh-ed25519 / ssh-rsa / ecdsa-sha2-* 开头的完整公钥" })
+        );
+        return;
+      }
+    }
     startedRef.current = true;
     setError(null);
     setResult(null);
+    setCopied(false);
     setLoading(true);
     setCountdown(20);
     const sid = sessionRef.current;
@@ -130,9 +154,15 @@ export function IpmiDialog({
 
     (async () => {
       try {
-        const res = await api.get(`/server-control/${encodeURIComponent(serviceName)}/console`, withAccount(accountId, { params: { type: chosen }, signal }));
+        const queryParams: Record<string, string> = { type: chosen };
+        if (needsSshKey && sshKeyValidation.normalized) {
+          queryParams.sshKey = sshKeyValidation.normalized;
+        }
+        const res = await api.get(
+          `/server-control/${encodeURIComponent(serviceName)}/console`,
+          withAccount(accountId, { params: queryParams, signal }),
+        );
         stopCountdown();
-        // 对话框已关闭或换了服务器:这份结果不属于当前界面
         if (sid !== sessionRef.current) return;
         setLoading(false);
         const value = res.data?.console?.value;
@@ -142,7 +172,6 @@ export function IpmiDialog({
           return;
         }
         if (accessType === "kvmipJnlp") {
-          // Java KVM:OVH 返回的是 .jnlp 文件内容,存成文件交给 Java Web Start 打开
           const blob = new Blob([value], { type: "application/x-java-jnlp-file" });
           const url = window.URL.createObjectURL(blob);
           const a = document.createElement("a");
@@ -166,6 +195,8 @@ export function IpmiDialog({
     })();
   };
 
+  const display = result ? classifyIpmiConsoleResult(result.url, result.accessType) : null;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -179,9 +210,8 @@ export function IpmiDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {/* 接入方式选择：查得快，先让用户挑，别等 20 秒才发现没有 Java KVM */}
         {!loading && !result && (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {typesLoading ? (
               <p className="text-[13px] text-muted-foreground flex items-center gap-2">
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -221,6 +251,30 @@ export function IpmiDialog({
                     </label>
                   ))}
                 </div>
+
+                {needsSshKey && (
+                  <div className="space-y-1.5 pt-1">
+                    <label className="text-[12px] font-semibold block">
+                      {t("ctrl.ipmi.sshKeyLabel", { defaultValue: "SSH 公钥" })} <span className="text-destructive">*</span>
+                    </label>
+                    <Textarea
+                      value={sshKey}
+                      onChange={(e) => setSshKey(e.target.value)}
+                      placeholder={t("ctrl.ipmi.sshKeyPlaceholder", {
+                        defaultValue: "粘贴您的 OpenSSH 公钥（例如 ssh-ed25519 AAAAC3NzaC... user@host）",
+                      })}
+                      className="font-mono text-[11px] min-h-[76px]"
+                    />
+                    {sshKey.trim() !== "" && !sshKeyValidation.valid && (
+                      <p className="text-[11px] text-destructive">
+                        {t("ctrl.ipmi.sshKeyFormatError", {
+                          defaultValue: "公钥格式不正确，需以 ssh-ed25519 / ssh-rsa / ecdsa-sha2-* 开头",
+                        })}
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 {!types.activated && (
                   <p className="text-[11px] text-warning">
                     {t("ctrl.ipmi.notActivated")}
@@ -244,12 +298,12 @@ export function IpmiDialog({
             </>
           ) : error ? (
             <p className="text-[13px] text-destructive">{error}</p>
-          ) : result ? (
+          ) : result && display ? (
             <div className="w-full space-y-3">
               <p className="text-[13px] text-success font-semibold text-center">{t("ctrl.ipmi.ready")}</p>
-              {safeHttpsUrl(result.url) ? (
+              {display.kind === "https" ? (
                 <a
-                  href={safeHttpsUrl(result.url)}
+                  href={display.href}
                   target="_blank"
                   rel="noreferrer"
                   className="flex items-center justify-center gap-2 w-full px-4 py-3 border border-border rounded-2xl hover:bg-secondary/50 transition-colors text-[13px] font-semibold"
@@ -257,10 +311,65 @@ export function IpmiDialog({
                   <ExternalLink className="w-4 h-4" />
                   {t("ctrl.ipmi.openInNewTab")}
                 </a>
-              ) : (
+              ) : display.kind === "ssh" ? (
+                <div className="border border-border rounded-2xl p-3.5 bg-secondary/30 space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[12px] font-semibold flex items-center gap-1.5">
+                      <Terminal className="w-4 h-4 text-primary" />
+                      {t("ctrl.ipmi.sshTerminalTitle", { defaultValue: "在本地终端执行以下 SSH 命令接入串口控制台：" })}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs gap-1"
+                      onClick={() => void handleCopy(display.command)}
+                    >
+                      {copied ? <Check className="w-3.5 h-3.5 text-success" /> : <Copy className="w-3.5 h-3.5" />}
+                      {copied
+                        ? t("common.copied", { defaultValue: "已复制" })
+                        : t("common.copy", { defaultValue: "复制命令" })}
+                    </Button>
+                  </div>
+                  <code className="block font-mono text-[12px] bg-background border border-border rounded-xl px-3 py-2 break-all select-all">
+                    {display.command}
+                  </code>
+                  {display.uri && display.uri !== display.command && (
+                    <p className="text-[11px] text-muted-foreground font-mono break-all">
+                      URI: {display.uri}
+                    </p>
+                  )}
+                  <p className="text-[11px] text-muted-foreground">
+                    {t("ctrl.ipmi.sshGuide", {
+                      defaultValue: "请使用刚才提交公钥所对应的私钥连接；连接后按 Enter 唤醒串口，退出可按 ~. 断开会话。",
+                    })}
+                  </p>
+                </div>
+              ) : display.kind === "jnlp" ? (
                 <div className="flex items-center justify-center gap-2 w-full px-4 py-3 border border-border rounded-2xl text-[13px] text-muted-foreground">
                   <Download className="w-4 h-4" />
                   {t("ctrl.ipmi.jnlpOpenHint")}
+                </div>
+              ) : (
+                <div className="border border-border rounded-2xl p-3 bg-secondary/30 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[12px] font-medium text-muted-foreground">
+                      {t("ctrl.ipmi.rawAddressLabel", { defaultValue: "控制台接入地址：" })}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs gap-1"
+                      onClick={() => void handleCopy(display.value)}
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      {t("common.copy", { defaultValue: "复制" })}
+                    </Button>
+                  </div>
+                  <code className="block font-mono text-[12px] bg-background border border-border rounded-xl px-3 py-2 break-all select-all">
+                    {display.value}
+                  </code>
                 </div>
               )}
               <p className="text-[11px] text-muted-foreground text-center">
@@ -279,13 +388,17 @@ export function IpmiDialog({
               onClick={() => {
                 setResult(null);
                 setError(null);
+                setCopied(false);
               }}
               disabled={loading}
             >
               {t("ctrl.ipmi.retryOther")}
             </Button>
           ) : (
-            <Button onClick={openConsole} disabled={loading || typesLoading || !chosen}>
+            <Button
+              onClick={openConsole}
+              disabled={loading || typesLoading || !chosen || (needsSshKey && !sshKeyValidation.valid)}
+            >
               {loading ? t("ctrl.ipmi.requesting") : t("ctrl.ipmi.openConsole")}
             </Button>
           )}

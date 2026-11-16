@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { useTranslation, Trans } from "react-i18next";
 import { errorMessage } from "@/lib/api-error";
 import { fmtDate } from "@/i18n/format";
+import { useScopedServerAccountId } from "./server-scope";
 
 type RenewMode = "auto" | "manual" | "delete";
 
@@ -57,6 +58,7 @@ export function RenewalDialog({
   onOpenChange,
   mutation,
   termination,
+  accountId: propAccountId,
 }: {
   serviceName: string;
   info: ServiceInfo | (Omit<ServiceInfo, "possibleRenewPeriod"> & { possibleRenewPeriod?: number[] });
@@ -66,8 +68,10 @@ export function RenewalDialog({
   mutation?: RenewalMutation;
   /** 可选:不传则用 dedicated 的终止端点。VPS 必须传自己的 */
   termination?: TerminationMutations;
+  accountId?: string;
 }) {
   const { t } = useTranslation();
+  const accountId = useScopedServerAccountId(propAccountId);
   // 终止状态以 lifecycle.pendingActions 为准(文档指定的读回路径)。
   // term 还带着"是哪一种终止" —— 立即终止不能显示成到期终止
   const term = terminationLabel(info);
@@ -79,7 +83,7 @@ export function RenewalDialog({
       : "manual";
   const [mode, setMode] = useState<RenewMode>(currentMode);
   const [period, setPeriod] = useState<number>(info.renewalPeriod || 1);
-  const defaultUpdate = useUpdateRenewal(serviceName);
+  const defaultUpdate = useUpdateRenewal(serviceName, accountId);
   const update = mutation ?? defaultUpdate;
 
   // 展示用的终止状态文案:跟 terminationLabel 同一套分支,但走语言包
@@ -102,7 +106,7 @@ export function RenewalDialog({
   // 并邮件通知「5 天内不付款就彻底清除硬盘数据」。这个坑真实踩过一次。
   // OVH 的生命周期动作枚举里 terminate 与 terminateAtExpirationDate 是两个不同的动作,
   // /terminate 端点只对应前者,没有「到期」这个选项可选。
-  const defaultPolicy = useUpdateTerminationPolicy(serviceName);
+  const defaultPolicy = useUpdateTerminationPolicy(serviceName, accountId);
   const policyMut = termination?.policy ?? defaultPolicy;
 
   // 弹窗每次打开同步当前状态

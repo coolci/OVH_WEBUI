@@ -7,6 +7,7 @@ import { useCreateIntervention, type FaultyDisk } from "@/hooks/use-server-contr
 import { toast } from "sonner";
 import { useTranslation, Trans } from "react-i18next";
 import { errorMessage } from "@/lib/api-error";
+import { useScopedServerAccountId } from "./server-scope";
 
 type HardwareType = "hardDiskDrive" | "memory" | "cooling" | "";
 
@@ -15,13 +16,16 @@ export function HardwareReplaceDialog({
   serviceName,
   open,
   onOpenChange,
+  accountId: propAccountId,
 }: {
   serviceName: string;
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  accountId?: string;
 }) {
   const { t } = useTranslation();
-  const mut = useCreateIntervention();
+  const accountId = useScopedServerAccountId(propAccountId);
+  const mut = useCreateIntervention(accountId);
   const [type, setType] = useState<HardwareType>("");
   const [details, setDetails] = useState("");
   const [comment, setComment] = useState("");

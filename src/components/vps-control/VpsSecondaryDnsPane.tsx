@@ -19,10 +19,10 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 
-export function VpsSecondaryDnsPane({ serviceName }: { serviceName: string }) {
-  const q = useVpsSecondaryDns(serviceName);
-  const addMutation = useAddVpsSecondaryDns(serviceName);
-  const delMutation = useDeleteVpsSecondaryDns(serviceName);
+export function VpsSecondaryDnsPane({ serviceName, accountId }: { serviceName: string; accountId?: string }) {
+  const q = useVpsSecondaryDns(serviceName, accountId);
+  const addMutation = useAddVpsSecondaryDns(serviceName, accountId);
+  const delMutation = useDeleteVpsSecondaryDns(serviceName, accountId);
 
   const [addOpen, setAddOpen] = useState(false);
   const [domain, setDomain] = useState("");

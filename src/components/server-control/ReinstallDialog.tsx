@@ -9,6 +9,10 @@ import {
   useServerDiskInfo,
   useServerRaidProfiles,
   useServerPartitionSchemes,
+  diskCapacityToGB,
+  pickDefaultDiskGroup,
+  normalizeCustomizations,
+  buildInstallStorageConfig,
   type CustomPartition,
 } from "@/hooks/use-server-control";
 import { detectOsKind } from "@/lib/os-kind";
@@ -21,6 +25,8 @@ import { OsTemplateSection } from "./reinstall/OsTemplateSection";
 import { StoragePartitionSection } from "./reinstall/StoragePartitionSection";
 import { PostInstallSection } from "./reinstall/PostInstallSection";
 import { SmartPlanDialog } from "./reinstall/SmartPlanDialog";
+import { buildReinstallConfirmFingerprint } from "./reinstall/reinstall-helpers";
+import { useScopedServerAccountId } from "./server-scope";
 
 /**
  * 重装系统对话框（协调器组件）：
@@ -33,13 +39,14 @@ export function ReinstallDialog({
   serviceName,
   open,
   onOpenChange,
-  accountId,
+  accountId: propAccountId,
 }: {
   serviceName: string;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   accountId?: string;
 }) {
+  const accountId = useScopedServerAccountId(propAccountId);
   const tpl = useServerTemplates(serviceName, open, accountId);
   const disk = useServerDiskInfo(serviceName, open, accountId);
   const raid = useServerRaidProfiles(serviceName, open, accountId);
@@ -58,15 +65,15 @@ export function ReinstallDialog({
   const [zfsRaidLevel, setZfsRaidLevel] = useState<0 | 1>(1);
   const [zfsVzSize, setZfsVzSize] = useState(100 * 1024); // MB
 
-  // 高级存储
+  // 高级存储（按 diskGroupId 独立隔离维护硬件 RAID 级别、阵列数与热备盘数）
   const [hardwareRaid, setHardwareRaid] = useState<Record<number, string>>({});
   const [useSoftwareRaid, setUseSoftwareRaid] = useState(false);
   const [softwareRaidLevel, setSoftwareRaidLevel] = useState("raid1");
   const [softwareRaidDisks, setSoftwareRaidDisks] = useState("");
-  const [hwRaidArrays, setHwRaidArrays] = useState("");
-  const [hwRaidSpares, setHwRaidSpares] = useState("");
+  const [hwRaidArrays, setHwRaidArrays] = useState<Record<number, string>>({});
+  const [hwRaidSpares, setHwRaidSpares] = useState<Record<number, string>>({});
   const [keepDiskGroups, setKeepDiskGroups] = useState<Set<number>>(new Set());
-  const [customizationAnswers, setCustomizationAnswers] = useState<Record<string, string | boolean>>({});
+  const [customizationAnswers, setCustomizationAnswers] = useState<Record<string, string | number | boolean>>({});
   const [customPartitions, setCustomPartitions] = useState<CustomPartition[]>([]);
   const [showSmart, setShowSmart] = useState(false);
 
@@ -86,9 +93,10 @@ export function ReinstallDialog({
   // 确认
   const [confirming, setConfirming] = useState(false);
 
-  // 重置 selectedScheme 当模板变化时
+  // 切换 OS 模板时立即重置分区方案与 customizationAnswers，彻底防止跨模板参数污染
   useEffect(() => {
     setPartitionSchemeName("");
+    setCustomizationAnswers({});
   }, [templateName]);
 
   // 换模板时收敛存储模式
@@ -173,19 +181,58 @@ export function ReinstallDialog({
     if (blocked) setConfirming(false);
   }, [blocked]);
 
-  // 重装会清盘:已进入二次确认后又改了系统模板或存储方案,必须重新确认,
-  // 否则下一次点击会直接按用户没确认过的新配置提交
+  // 重装会清盘:已进入二次确认后，任何模板、保留数据盘、软/硬 RAID、热备盘、阵列数或分区表改动
+  // 都必须立即复位 confirming，强制用户对修改后的真实配置重新完成二次确认！
+  const confirmFingerprint = useMemo(
+    () =>
+      buildReinstallConfirmFingerprint({
+        templateName,
+        storageMode,
+        partitionSchemeName,
+        zfsRaidLevel,
+        zfsVzSize,
+        keepDiskGroups,
+        hardwareRaid,
+        hwRaidArrays,
+        hwRaidSpares,
+        useSoftwareRaid,
+        softwareRaidLevel,
+        softwareRaidDisks,
+        customPartitions,
+        hostname,
+        customizationAnswers,
+      }),
+    [
+      templateName,
+      storageMode,
+      partitionSchemeName,
+      zfsRaidLevel,
+      zfsVzSize,
+      keepDiskGroups,
+      hardwareRaid,
+      hwRaidArrays,
+      hwRaidSpares,
+      useSoftwareRaid,
+      softwareRaidLevel,
+      softwareRaidDisks,
+      customPartitions,
+      hostname,
+      customizationAnswers,
+    ]
+  );
+
   useEffect(() => {
     setConfirming(false);
-  }, [templateName, storageMode, partitionSchemeName]);
+  }, [confirmFingerprint]);
+
+  const defaultDiskGroup = useMemo(() => pickDefaultDiskGroup(disk.data), [disk.data]);
 
   const zfsCap = useMemo(() => {
-    const groups = disk.data || {};
-    const first = Object.values(groups)[0];
-    if (!first?.disks?.length) return { singleDiskGB: 0, diskCount: 0, usableMB: 0, maxVzGB: 0 };
-    const d = first.disks[0];
-    const singleDiskGB = d.unit?.toLowerCase().startsWith("t") ? d.capacity * 1024 : d.capacity;
-    const diskCount = first.disks.length;
+    const targetGroup = defaultDiskGroup?.group;
+    if (!targetGroup?.disks?.length) return { singleDiskGB: 0, diskCount: 0, usableMB: 0, maxVzGB: 0 };
+    const d = targetGroup.disks[0];
+    const singleDiskGB = diskCapacityToGB(d.capacity, d.unit);
+    const diskCount = targetGroup.disks.length;
     const totalGB = zfsRaidLevel === 0 ? singleDiskGB * diskCount : singleDiskGB;
     const usableMB = Math.floor(totalGB * 1024 * 0.92);
     const BOOT_MB = 1024;
@@ -193,7 +240,7 @@ export function ReinstallDialog({
     const ROOT_RESERVE_MB = 20 * 1024;
     const maxVzGB = Math.max(10, Math.floor((usableMB - BOOT_MB - SWAP_MB - ROOT_RESERVE_MB) / 1024));
     return { singleDiskGB, diskCount, usableMB, maxVzGB };
-  }, [disk.data, zfsRaidLevel]);
+  }, [defaultDiskGroup, zfsRaidLevel]);
 
   const zfsRaid1Impossible = zfsRaidLevel !== 0 && zfsCap.diskCount > 0 && zfsCap.diskCount < 2;
   const vzMaxKnown = zfsCap.maxVzGB > 0 && zfsCap.diskCount > 0;
@@ -223,37 +270,72 @@ export function ReinstallDialog({
       toast.error(t("ctrl.reinstall.toast.zfsRaid1Impossible"));
       return;
     }
+
+    // 校验当前模板的必填问答与数值类型转换
+    const normalizedCust = normalizeCustomizations(customizeQuestions, customizationAnswers);
+    if (normalizedCust.missingMandatory.length > 0) {
+      setConfirming(false);
+      toast.error(
+        t("ctrl.reinstall.toast.mandatoryMissing", {
+          defaultValue: `请填写必填模板参数：${normalizedCust.missingMandatory.join("、")}`,
+        })
+      );
+      return;
+    }
+    if (normalizedCust.invalidNumbers.length > 0) {
+      setConfirming(false);
+      toast.error(
+        t("ctrl.reinstall.toast.invalidNumber", {
+          defaultValue: `以下模板参数必须为有效数字：${normalizedCust.invalidNumbers.join("、")}`,
+        })
+      );
+      return;
+    }
+
+    const parsedArrays = parsePositiveIntMap(hwRaidArrays);
+    const parsedSpares = parseNonNegativeIntMap(hwRaidSpares);
+    const reinstallPayload = {
+      serviceName,
+      templateName,
+      customHostname: hn || undefined,
+      customizations: normalizedCust.value,
+      useProxmox9Zfs,
+      zfsRaidLevel: useProxmox9Zfs ? zfsRaidLevel : undefined,
+      zfsVzSize: useProxmox9Zfs ? zfsVzSize : undefined,
+      partitionSchemeName:
+        storageMode === "scheme" && partitionSchemeName && partitionSchemeName.trim() && partitionSchemeName !== "__default__"
+          ? partitionSchemeName.trim()
+          : undefined,
+      hardwareRaid: useCustomStorage ? hardwareRaid : undefined,
+      useSoftwareRaid: useCustomStorage && useSoftwareRaid,
+      softwareRaidLevel: useCustomStorage && useSoftwareRaid ? softwareRaidLevel : undefined,
+      softwareRaidDisks:
+        useCustomStorage && useSoftwareRaid ? positiveInt(softwareRaidDisks) : undefined,
+      hwRaidArrays: useCustomStorage && Object.keys(parsedArrays).length > 0 ? parsedArrays : undefined,
+      hwRaidSpares: useCustomStorage && Object.keys(parsedSpares).length > 0 ? parsedSpares : undefined,
+      defaultDiskGroupId: defaultDiskGroup?.id,
+      keepDiskGroups:
+        useCustomStorage && keepDiskGroups.size > 0 ? Array.from(keepDiskGroups) : undefined,
+      customPartitions: useCustomStorage ? customPartitions : undefined,
+      diskGroups: useCustomStorage ? disk.data : undefined,
+      accountId,
+    };
+
+    // 首次点击进入二次确认前即校验存储与 RAID/热备盘/保留盘约束
+    try {
+      buildInstallStorageConfig(reinstallPayload);
+    } catch (e: unknown) {
+      setConfirming(false);
+      toast.error(errorMessage(e));
+      return;
+    }
+
     if (!confirming) {
       setConfirming(true);
       return;
     }
     try {
-      const res = await mut.mutateAsync({
-        serviceName,
-        templateName,
-        customHostname: hostname.trim() || undefined,
-        customizations: Object.keys(customizationAnswers).length > 0 ? customizationAnswers : undefined,
-        useProxmox9Zfs,
-        zfsRaidLevel: useProxmox9Zfs ? zfsRaidLevel : undefined,
-        zfsVzSize: useProxmox9Zfs ? zfsVzSize : undefined,
-        partitionSchemeName:
-          storageMode === "scheme" && partitionSchemeName && partitionSchemeName.trim() && partitionSchemeName !== "__default__"
-            ? partitionSchemeName.trim()
-            : undefined,
-        hardwareRaid: useCustomStorage ? hardwareRaid : undefined,
-        useSoftwareRaid: useCustomStorage && useSoftwareRaid,
-        softwareRaidLevel: useCustomStorage && useSoftwareRaid ? softwareRaidLevel : undefined,
-        // 非法输入(空 / 负数 / 非数字)不提交:parseInt 失败得到 NaN,JSON 序列化成 null,
-        // 后端会把它当成"没填"而用默认值,用户却以为按自己填的盘数重装了
-        softwareRaidDisks:
-          useCustomStorage && useSoftwareRaid ? positiveInt(softwareRaidDisks) : undefined,
-        hwRaidArrays: useCustomStorage ? positiveInt(hwRaidArrays) : undefined,
-        hwRaidSpares: useCustomStorage ? nonNegativeInt(hwRaidSpares) : undefined,
-        keepDiskGroups:
-          useCustomStorage && keepDiskGroups.size > 0 ? Array.from(keepDiskGroups) : undefined,
-        customPartitions: useCustomStorage ? customPartitions : undefined,
-        diskGroups: useCustomStorage ? disk.data : undefined,
-      });
+      const res = await mut.mutateAsync(reinstallPayload);
       toast.success(t("ctrl.reinstall.toast.submitted"));
       (res?.warnings || []).forEach((w) => toast.warning(w, { duration: 6000 }));
       onOpenChange(false);
@@ -275,8 +357,8 @@ export function ReinstallDialog({
     setUseSoftwareRaid(false);
     setSoftwareRaidLevel("raid1");
     setSoftwareRaidDisks("");
-    setHwRaidArrays("");
-    setHwRaidSpares("");
+    setHwRaidArrays({});
+    setHwRaidSpares({});
     setKeepDiskGroups(new Set());
     setCustomizationAnswers({});
     setCustomPartitions([]);
@@ -379,6 +461,7 @@ export function ReinstallDialog({
             vzMaxGB={vzMaxGB}
             zfsCap={zfsCap}
             disk={disk}
+            defaultDiskGroupId={defaultDiskGroup?.id}
             raid={raid}
             ps={ps}
             partitionSchemeName={partitionSchemeName}
@@ -474,4 +557,28 @@ function nonNegativeInt(v: string): number | undefined {
   if (!v.trim()) return undefined;
   const n = parseInt(v.trim(), 10);
   return Number.isFinite(n) && n >= 0 ? n : undefined;
+}
+
+function parsePositiveIntMap(raw: Record<number, string>): Record<number, number> {
+  const out: Record<number, number> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    const gid = parseInt(k, 10);
+    const parsed = positiveInt(v || "");
+    if (Number.isInteger(gid) && gid > 0 && parsed !== undefined) {
+      out[gid] = parsed;
+    }
+  }
+  return out;
+}
+
+function parseNonNegativeIntMap(raw: Record<number, string>): Record<number, number> {
+  const out: Record<number, number> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    const gid = parseInt(k, 10);
+    const parsed = nonNegativeInt(v || "");
+    if (Number.isInteger(gid) && gid > 0 && parsed !== undefined) {
+      out[gid] = parsed;
+    }
+  }
+  return out;
 }
