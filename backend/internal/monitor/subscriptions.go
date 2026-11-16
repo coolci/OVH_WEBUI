@@ -4,11 +4,39 @@ import (
 	"errors"
 	"fmt"
 	"github.com/ovh-webui/server/internal/app"
+	"github.com/ovh-webui/server/internal/domain/datacenter"
 	"github.com/ovh-webui/server/internal/orderterm"
 	"sort"
 	"strings"
 	"time"
 )
+
+// normalizeMonitoredDCs idempotently cleans and deduplicates monitored datacenter codes
+// across display/short/inventory aliases (e.g. ["mum", "ynm"] -> ["mum"], ["PAR-A"] -> ["par-a"])
+// while preserving the caller's canonical lowercase token for UI/Telegram display compatibility.
+func normalizeMonitoredDCs(dcs []string) []string {
+	if len(dcs) == 0 {
+		return []string{}
+	}
+	out := make([]string, 0, len(dcs))
+	seen := make(map[string]bool, len(dcs))
+	for _, dc := range dcs {
+		trimmed := strings.ToLower(strings.TrimSpace(dc))
+		if trimmed == "" {
+			continue
+		}
+		dedupKey := datacenter.InventoryCode(trimmed)
+		if dedupKey == "" {
+			dedupKey = trimmed
+		}
+		if seen[dedupKey] {
+			continue
+		}
+		seen[dedupKey] = true
+		out = append(out, trimmed)
+	}
+	return out
+}
 
 // autoOrderAccountID:auto_order 触发时用哪个账户下单;空 = 只通知不下单
 // options 为空 = 盯这个 planCode 的全部配置(老行为)。
@@ -20,6 +48,7 @@ func (m *Monitor) AddSubscription(planCode string, datacenters []string, notifyA
 	if ids != nil {
 		autoOrderAccountID = firstOrderAccount(ids)
 	}
+	datacenters = normalizeMonitoredDCs(datacenters)
 
 	m.subsMu.Lock()
 	defer m.subsMu.Unlock()
@@ -30,9 +59,6 @@ func (m *Monitor) AddSubscription(planCode string, datacenters []string, notifyA
 		// 就是两条。只有 planCode+配置组合都相同才算"已存在",就地更新。
 		if s.PlanCode == planCode && OptionsKey(s.Options) == OptionsKey(options) {
 			m.state.Logger.Warn(fmt.Sprintf("订阅已存在: %s(%s)，将更新配置（不会重置状态，避免重复通知）", planCode, OptionsKey(options)), "monitor")
-			if datacenters == nil {
-				datacenters = []string{}
-			}
 			// 必须持订阅自己的锁改:subsMu 只保护切片,而这条订阅此刻很可能
 			// 正被检查 goroutine 读着(它拿的是同一个指针)。
 			s.mu.Lock()
@@ -168,7 +194,7 @@ func (m *Monitor) UpdateSubscriptionFields(planCode string, originalKey *string,
 		}
 		s.mu.Lock()
 		s.revision++
-		s.Datacenters = append([]string(nil), datacenters...)
+		s.Datacenters = normalizeMonitoredDCs(datacenters)
 		s.NotifyAvailable = notifyAvailable
 		s.NotifyUnavailable = notifyUnavailable
 		s.AutoOrder = autoOrder

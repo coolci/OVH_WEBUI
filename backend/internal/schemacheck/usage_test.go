@@ -87,10 +87,36 @@ func pathTemplate(e ast.Expr) string {
 	case *ast.ParenExpr:
 		return pathTemplate(x.X)
 	case *ast.CallExpr:
-		if sel, ok := x.Fun.(*ast.SelectorExpr); ok &&
-			sel.Sel.Name == "Sprintf" && len(x.Args) > 0 {
-			if s, ok := unquote(x.Args[0]); ok {
-				return verbsToBraces(s)
+		var fnName string
+		switch fn := x.Fun.(type) {
+		case *ast.SelectorExpr:
+			fnName = fn.Sel.Name
+		case *ast.Ident:
+			fnName = fn.Name
+		}
+		switch fnName {
+		case "Sprintf":
+			if len(x.Args) > 0 {
+				if s, ok := unquote(x.Args[0]); ok {
+					return verbsToBraces(s)
+				}
+			}
+		case "BuildPath":
+			if len(x.Args) > 0 {
+				var b strings.Builder
+				for _, arg := range x.Args {
+					b.WriteByte('/')
+					if s, ok := unquote(arg); ok {
+						b.WriteString(s)
+					} else {
+						b.WriteString("{}")
+					}
+				}
+				return b.String()
+			}
+		case "WithQuery":
+			if len(x.Args) > 0 {
+				return pathTemplate(x.Args[0])
 			}
 		}
 	}

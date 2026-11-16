@@ -1,26 +1,23 @@
 package ovh
 
-import "regexp"
+import (
+	"regexp"
+	"strings"
 
-import "strings"
+	"github.com/ovh-webui/server/internal/domain/datacenter"
+)
 
 // ConvertDisplayDCToAPIDC 将前端显示的数据中心代码转换为 OVH API 代码
-func ConvertDisplayDCToAPIDC(datacenter string) string {
-	lower := strings.ToLower(strings.TrimSpace(datacenter))
-	if lower == "" {
-		return "gra"
+func ConvertDisplayDCToAPIDC(dc string) string {
+	if code := datacenter.InventoryCode(dc); code != "" {
+		return code
 	}
-	dcMap := map[string]string{
-		"mum":   "ynm", // 孟买：前端 mum，OVH API 用 ynm
-		"tor":   "ca-east-tor-a",
-		"par-a": "eu-west-par-a",
-		"par-b": "eu-west-par-b",
-		"par-c": "eu-west-par-c",
-	}
-	if v, ok := dcMap[lower]; ok {
-		return v
-	}
-	return lower
+	return "gra"
+}
+
+// NormalizeDatacenter 归一化机房码到 OVH 库存 API 码；空串原样保留为空串（不硬编码默认 gra）。
+func NormalizeDatacenter(dc string) string {
+	return datacenter.InventoryCode(dc)
 }
 
 // RegionForDCInSubsidiary 静态兜底:目录拉不到时用它猜 region。
@@ -39,8 +36,16 @@ func RegionForDCInSubsidiary(dc, subsidiary string) string {
 	if strings.EqualFold(strings.TrimSpace(subsidiary), "US") {
 		return "united_states"
 	}
-	d := strings.ToLower(dc)
-	canada := []string{"bhs", "yyz", "sgp", "syd", "ynm", "mum"}
+	switch datacenter.CanonicalFamily(dc) {
+	case "bhs", "tor", "sgp", "syd", "ynm":
+		return "canada"
+	case "gra", "rbx", "sbg", "par", "waw", "de", "uk", "mil":
+		return "europe"
+	case "vin", "hil":
+		return ""
+	}
+	d := strings.ToLower(strings.TrimSpace(dc))
+	canada := []string{"bhs", "yyz", "tor", "ca-", "ap-", "sgp", "syd", "ynm", "mum"}
 	for _, p := range canada {
 		if strings.HasPrefix(d, p) {
 			return "canada"
@@ -52,7 +57,7 @@ func RegionForDCInSubsidiary(dc, subsidiary string) string {
 			return "europe"
 		}
 	}
-	if strings.HasPrefix(d, "vin") || strings.HasPrefix(d, "hil") {
+	if strings.HasPrefix(d, "vin") || strings.HasPrefix(d, "hil") || strings.HasPrefix(d, "us-") {
 		// 美国机房但账户不在 US 子公司:目录里不会有这种组合,给空让调用方跳过 region
 		return ""
 	}

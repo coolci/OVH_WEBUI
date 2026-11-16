@@ -84,6 +84,7 @@ func Expand(raw Catalog) (map[string]Candidate, error) {
 		}
 		combos := [][]string{{}}
 		names := map[string]bool{}
+		skipPlan := false
 		for _, f := range p.Families {
 			if f.Name == "" || names[f.Name] {
 				return nil, fmt.Errorf("配置分组异常")
@@ -91,9 +92,11 @@ func Expand(raw Catalog) (map[string]Candidate, error) {
 			names[f.Name] = true
 			// Optional software licensing is not a server hardware configuration.
 			// Enumerating license subsets creates billions of nonsensical duplicate machines.
+			// When a single plan mandates a software license, skip only that plan rather than aborting the entire catalog.
 			if f.Name == "application-license" || f.Name == "distribution-license" {
 				if f.Mandatory != nil && *f.Mandatory {
-					return nil, fmt.Errorf("%s 要求选择软件许可证，自动下单暂不支持", p.PlanCode)
+					skipPlan = true
+					break
 				}
 				continue
 			}
@@ -136,6 +139,9 @@ func Expand(raw Catalog) (map[string]Candidate, error) {
 				}
 			}
 			combos = next
+		}
+		if skipPlan {
+			continue
 		}
 		for _, v := range combos {
 			c := Candidate{p.PlanCode, unique(v), dcs}

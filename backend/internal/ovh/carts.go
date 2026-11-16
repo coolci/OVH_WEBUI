@@ -1,11 +1,17 @@
 package ovh
 
-import "sync"
+import (
+	"sync"
+	"time"
+)
 
 // CartMarker 本程序建的每一辆 OVH 购物车都带这个 description。
 // 清理遗留购物车时只认这个标记:用户在 OVH 网站上自己建的车、
 // 以及加标记之前本程序建的老车,一律不动。
 const CartMarker = "ovh-webui"
+
+// cartTrackTTL 购物车注册表兜底过期时长（OVH 购物车生命周期约 2 小时）。
+const cartTrackTTL = 2 * time.Hour
 
 // CartCreateBody POST /order/cart 的请求体(带标记)
 func CartCreateBody(subsidiary string) map[string]interface{} {
@@ -19,11 +25,11 @@ var inUseCarts sync.Map
 // TrackCart 登记一辆本进程在用/需保留的购物车
 func TrackCart(id string) {
 	if id != "" {
-		inUseCarts.Store(id, struct{}{})
+		inUseCarts.Store(id, time.Now())
 	}
 }
 
-// ReleaseCart 撤销登记:车已删除、删除失败或被丢弃时调用。
+// ReleaseCart 撤销登记:车已删除、删除失败、结账成单或被丢弃时调用。
 // 不撤销的话登记表只增不减,而且本次运行里被丢弃(删除失败 / 被覆盖 / 过期)的车
 // 永远不会被遗留车清理删掉,只能等进程重启。
 func ReleaseCart(id string) {
@@ -32,8 +38,18 @@ func ReleaseCart(id string) {
 	}
 }
 
-// CartInUse 这辆车是否被本进程登记为在用
+// CartInUse 这辆车是否被本进程登记为在用（超时超过 cartTrackTTL 自动过期回收）
 func CartInUse(id string) bool {
-	_, ok := inUseCarts.Load(id)
-	return ok
+	if id == "" {
+		return false
+	}
+	v, ok := inUseCarts.Load(id)
+	if !ok {
+		return false
+	}
+	if trackedAt, ok := v.(time.Time); ok && time.Since(trackedAt) > cartTrackTTL {
+		inUseCarts.Delete(id)
+		return false
+	}
+	return true
 }

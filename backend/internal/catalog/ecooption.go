@@ -25,7 +25,7 @@ func MatchPreorderEcoOption(opts []map[string]interface{}, wanted string) (map[s
 		code, _ := opt["planCode"].(string)
 		c := strings.ToLower(code)
 		suffix := strings.TrimPrefix(c, w+"-")
-		if c == w || (suffix != c && (ecoStockPlanCode.MatchString(suffix) || suffix == "rise" || suffix == "sys" || suffix == "sk")) {
+		if c == w || (suffix != c && (ecoStockPlanCode.MatchString(suffix) || suffix == "rise" || suffix == "sys" || suffix == "sk" || suffix == "adv" || suffix == "ks")) {
 			filtered = append(filtered, opt)
 		}
 	}
@@ -38,15 +38,8 @@ func MatchPreorderEcoOption(opts []map[string]interface{}, wanted string) (map[s
 // **这个函数直接决定账单**:选错 addon 就是下单到别的配置、付另一个价钱
 // (实测 26sk50a-v1 上,纯 2x960NVMe 是 €0/月,而多编了一套混合盘的那条是 €24/月)。
 //
-// 以前询价(price)和抢购(purchase)各存一份逐字复制的实现,两处一旦分裂就会出现
-// "询价报 €70、实际扣 €94"这种最难查的问题 —— 所以收敛到这里一份。
-//
-// 分四档、同档取最优,而不是"第一个匹配就用":
-//   - 同一个 plan 里存在互为前缀的存储配置(softraid-2x960nvme 与
-//     softraid-2x960nvme-2x6000sa),先撞上哪条取决于 OVH 返回顺序;
-//   - 原始码档必须排在标准化档前面:StandardizeConfig 会把机型后缀吃成粘连残渣
-//     (…-26sk50a-v1 → …nvmea),正确项因此丢掉分隔符、反而落到比错误项更低的档。
-
+// 严禁任何反向前缀降配匹配（如双盘组误命中单盘组），正向前缀强制 "-" 边界且后缀只允许为机型/版本/区域标识，
+// 存储介质（nvme/ssd/hdd/sas/sa）全程保留不擦除。
 func MatchEcoOption(opts []map[string]interface{}, wanted string) (map[string]interface{}, string, string) {
 	w := strings.ToLower(strings.TrimSpace(wanted))
 	if w == "" {
@@ -74,16 +67,12 @@ func MatchEcoOption(opts []map[string]interface{}, wanted string) (map[string]in
 		switch {
 		case c == w:
 			tier, strength = 0, len(c)
-		case strings.HasPrefix(c, w+"-"):
+		case strings.HasPrefix(c, w+"-") && IsAllowedOptionSuffix(strings.TrimPrefix(c, w+"-")):
 			tier, strength = 1, len(w)
-		case strings.HasPrefix(w, c+"-"):
-			tier, strength = 1, len(c)
 		case cStd != "" && cStd == wStd:
 			tier, strength = 2, len(cStd)
-		case cStd != "" && wStd != "" && strings.HasPrefix(cStd, wStd):
+		case cStd != "" && wStd != "" && strings.HasPrefix(cStd, wStd+"-") && IsAllowedOptionSuffix(strings.TrimPrefix(cStd, wStd+"-")):
 			tier, strength = 3, len(wStd)
-		case cStd != "" && wStd != "" && strings.HasPrefix(wStd, cStd):
-			tier, strength = 3, len(cStd)
 		}
 		if tier < 0 {
 			continue

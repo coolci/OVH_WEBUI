@@ -2,6 +2,7 @@ package ovh
 
 import (
 	"net/http"
+	"time"
 
 	ovhsdk "github.com/ovh/go-ovh/ovh"
 )
@@ -23,8 +24,21 @@ func IsolateClient(base *ovhsdk.Client) (*ovhsdk.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	client.Timeout, client.UserAgent, client.Logger = base.Timeout, base.UserAgent, base.Logger
+	timeout := base.Timeout
+	if base.Client != nil && base.Client.Timeout > 0 && (timeout <= 0 || timeout == 180*time.Second) {
+		timeout = base.Client.Timeout
+	}
+	if timeout <= 0 || timeout == 180*time.Second {
+		timeout = DefaultSDKTimeout
+	}
+	client.Timeout = timeout
+	client.UserAgent, client.Logger = base.UserAgent, base.Logger
 	// /auth/time 走时差缓存:省掉新 client 首个签名请求前的那次串行校时(见 authtime.go)
-	client.Client = &http.Client{Transport: wrapAuthTime(base.Client.Transport), CheckRedirect: base.Client.CheckRedirect, Jar: base.Client.Jar}
+	client.Client = &http.Client{
+		Timeout:       timeout,
+		Transport:     wrapAuthTime(base.Client.Transport),
+		CheckRedirect: base.Client.CheckRedirect,
+		Jar:           base.Client.Jar,
+	}
 	return client, nil
 }

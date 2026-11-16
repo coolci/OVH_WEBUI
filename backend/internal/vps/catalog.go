@@ -12,9 +12,37 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ovh-webui/server/internal/domain/datacenter"
 	"github.com/ovh-webui/server/internal/netfp"
 	"github.com/ovh-webui/server/internal/ovh"
 )
+
+// CanonicalVPSDatacenter normalizes any VPS datacenter code (e.g. "eu-west-lim", "lim", "DE",
+// "eu-west-eri", "UK", "ap-south-mum", "YNM", "EU-WEST-LZ-AMS") into the canonical VPS short code.
+func CanonicalVPSDatacenter(raw string) string {
+	return datacenter.VPSShortCode(raw)
+}
+
+// MatchVPSDatacenter reports whether a monitored datacenter token matches an availability rule entry's
+// code (e.g. "eu-west-lim") or datacenter short name (e.g. "DE").
+func MatchVPSDatacenter(monitored, code, name string) bool {
+	m := strings.TrimSpace(monitored)
+	if m == "" {
+		return false
+	}
+	c := strings.TrimSpace(code)
+	n := strings.TrimSpace(name)
+	if (c != "" && strings.EqualFold(m, c)) || (n != "" && strings.EqualFold(m, n)) {
+		return true
+	}
+	if c != "" && datacenter.SameZoneOrAlias(m, c) {
+		return true
+	}
+	if n != "" && datacenter.SameZoneOrAlias(m, n) {
+		return true
+	}
+	return false
+}
 
 // VPS 型号列表。
 //
@@ -174,7 +202,7 @@ func fetchModels(subsidiary string) ([]Model, error) {
 			Generation:  p.Blobs.Commercial.Line,
 			Price:       monthlyPrice(p),
 			Location:    locationOf(p.PlanCode),
-			Datacenters: configValues(p, "vps_datacenter"),
+			Datacenters: dedupVPSDatacenters(configValues(p, "vps_datacenter")),
 			OSChoices:   configValues(p, "vps_os"),
 		})
 	}
@@ -193,6 +221,31 @@ func configValues(p catalogPlan, name string) []string {
 		}
 	}
 	return nil
+}
+
+func dedupVPSDatacenters(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(values))
+	seen := make(map[string]bool, len(values))
+	for _, v := range values {
+		trimmed := strings.TrimSpace(v)
+		if trimmed == "" {
+			continue
+		}
+		canon := CanonicalVPSDatacenter(trimmed)
+		key := strings.ToUpper(canon)
+		if key == "" {
+			key = strings.ToUpper(trimmed)
+		}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, trimmed)
+	}
+	return out
 }
 
 func hasTag(tags []string, want string) bool {

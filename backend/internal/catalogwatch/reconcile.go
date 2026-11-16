@@ -5,8 +5,14 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ovh-webui/server/internal/ovh"
 	"github.com/ovh-webui/server/internal/purchase"
 	"github.com/ovh-webui/server/internal/types"
+)
+
+const (
+	maxReconcileAttempts = 60
+	maxReconcileWindow   = 24 * time.Hour
 )
 
 // Reconcile keeps running while ordering is switched off. It never submits a
@@ -30,6 +36,9 @@ func (w *Watcher) Reconcile(ctx context.Context) {
 	for _, h := range w.state.HistorySnapshot() {
 		if h.TaskID == job.TaskID && job.TaskID != "" && h.Status == "success" && h.OrderID != "" {
 			job.Status, job.OrderID, job.Reason = "completed", h.OrderID, "已从成功历史确认建单，不再重试"
+			if job.Checkout != nil {
+				ovh.ReleaseCart(job.Checkout.CartID)
+			}
 			_ = w.save()
 			w.mu.Unlock()
 			return
@@ -41,11 +50,24 @@ func (w *Watcher) Reconcile(ctx context.Context) {
 	job.CheckDue = time.Now().Add(time.Minute).UnixMilli()
 	account, exists := w.state.FindAccount(job.AccountID)
 	accountOK := exists && (job.Endpoint == "" || job.Endpoint == account.Endpoint)
+
+	var journalArg *purchase.CheckoutJournal
+	if job.Checkout != nil {
+		cp := *job.Checkout
+		if cp.PlanCode == "" {
+			cp.PlanCode = job.PlanCode
+		}
+		if cp.Datacenter == "" && len(job.Datacenters) == 1 {
+			cp.Datacenter = job.Datacenters[0]
+		}
+		journalArg = &cp
+	}
 	w.mu.Unlock()
+
 	var result purchase.CheckoutCheck
 	var err error
 	if accountOK {
-		result, err = w.check(checkCtx, w.state, job.AccountID, job.Checkout)
+		result, err = w.check(checkCtx, w.state, job.AccountID, journalArg)
 	} else {
 		err = fmt.Errorf("原账户已删除或接口地区变更")
 	}
@@ -62,6 +84,14 @@ func (w *Watcher) Reconcile(ctx context.Context) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	delete(w.active, job.ID)
+
+	exceededMaxWindow := false
+	if journalArg != nil && journalArg.StartedAt != "" {
+		if t, errParse := time.Parse(time.RFC3339Nano, journalArg.StartedAt); errParse == nil && time.Since(t) >= maxReconcileWindow && job.CheckAttempts >= 5 {
+			exceededMaxWindow = true
+		}
+	}
+
 	switch {
 	case err == nil && result.OrderID != "":
 		job.Status, job.OrderID, job.Reason = "completed", result.OrderID, "后台查单确认成功，仅停止此组合（自动付款关闭）"
@@ -71,12 +101,39 @@ func (w *Watcher) Reconcile(ctx context.Context) {
 			job.Status, job.Reason = "pending", "确认未提交结账，自动恢复尝试"
 			job.Due = time.Now().Add(5 * time.Second).UnixMilli()
 		}
+	case err == nil && result.CartExpired:
+		job.Status, job.Reason = "failed", "原购物车已过期或已超核对窗口且官方订单列表无成交记录，终止自动核对（不重复建单）"
+	case !accountOK:
+		job.Status, job.Reason = "failed", "原账户已删除或接口地区变更，终止后台核对（不重复建单）"
+	case job.CheckAttempts >= maxReconcileAttempts || exceededMaxWindow:
+		job.Status = "failed"
+		job.Reason = "超过最大后台核对时长/次数上限仍未查到订单，已安全终止核对（不重复建单）"
+		if err != nil {
+			job.Reason += "：" + err.Error()
+		}
 	default:
 		job.Reason = "正在自动核对；尚不能确认结果，不重复建单"
 		if err != nil {
 			job.Reason += "：" + err.Error()
 		}
 	}
-	job.CheckDue = time.Now().Add(15 * time.Second).UnixMilli()
+
+	if job.Status != "uncertain" && job.Checkout != nil {
+		ovh.ReleaseCart(job.Checkout.CartID)
+	}
+	if job.Status == "uncertain" {
+		shift := job.CheckAttempts - 1
+		if shift < 0 {
+			shift = 0
+		}
+		if shift > 6 {
+			shift = 6
+		}
+		backoff := time.Duration(15*(1<<shift)) * time.Second
+		if backoff > 15*time.Minute {
+			backoff = 15 * time.Minute
+		}
+		job.CheckDue = time.Now().Add(backoff).UnixMilli()
+	}
 	_ = w.save()
 }

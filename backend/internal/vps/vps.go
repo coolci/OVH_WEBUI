@@ -42,7 +42,205 @@ const tgRecheckInterval = 5 * time.Minute
 var (
 	lastCheckErrMu sync.Mutex
 	lastCheckErr   = map[string]string{}
+
+	vpsSubRevMu          sync.Mutex
+	vpsSubRevisions      = map[string]uint64{}
+	lastObservedSubState = map[string]vpsSubConfigSig{}
 )
+
+var errStaleSubscriptionRevision = errors.New("VPS 订阅配置已在巡检期间更新(代次已失效)")
+
+type vpsSubConfigSig struct {
+	PlanCode           string
+	RawSubsidiary      string
+	AutoOrderAccountID string
+	Datacenters        []string
+	MonitorLinux       bool
+	MonitorWindows     bool
+	OS                 string
+}
+
+type vpsSubBaseline struct {
+	Revision           uint64
+	ID                 string
+	PlanCode           string
+	RawSubsidiary      string
+	AutoOrderAccountID string
+	Datacenters        []string
+	MonitorLinux       bool
+	MonitorWindows     bool
+	OS                 string
+	ExpectedStatus     map[string]string
+	Stale              bool
+}
+
+func makeSubConfigSig(s types.VPSSubscription) vpsSubConfigSig {
+	dcs := make([]string, len(s.Datacenters))
+	copy(dcs, s.Datacenters)
+	return vpsSubConfigSig{
+		PlanCode:           strings.TrimSpace(s.PlanCode),
+		RawSubsidiary:      NormalizeSubsidiary(s.OvhSubsidiary),
+		AutoOrderAccountID: strings.TrimSpace(s.AutoOrderAccountID),
+		Datacenters:        dcs,
+		MonitorLinux:       s.MonitorLinux,
+		MonitorWindows:     s.MonitorWindows,
+		OS:                 strings.TrimSpace(s.OS),
+	}
+}
+
+func subConfigSigEqual(a, b vpsSubConfigSig) bool {
+	if a.PlanCode != b.PlanCode ||
+		a.RawSubsidiary != b.RawSubsidiary ||
+		(a.RawSubsidiary == "" && a.AutoOrderAccountID != b.AutoOrderAccountID) ||
+		a.MonitorLinux != b.MonitorLinux ||
+		a.MonitorWindows != b.MonitorWindows ||
+		a.OS != b.OS {
+		return false
+	}
+	return stringSliceEqual(a.Datacenters, b.Datacenters)
+}
+
+func copyStringMap(in map[string]string) map[string]string {
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func stringMapEqual(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if bv, ok := b[k]; !ok || bv != v {
+			return false
+		}
+	}
+	return true
+}
+
+func stringSliceEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// BumpSubscriptionRevision explicitly increments the generation counter for a VPS subscription,
+// invalidating any in-flight background check round for that subscription.
+func BumpSubscriptionRevision(subID string) uint64 {
+	vpsSubRevMu.Lock()
+	defer vpsSubRevMu.Unlock()
+	vpsSubRevisions[subID]++
+	return vpsSubRevisions[subID]
+}
+
+// SubscriptionRevision returns the current generation counter for a VPS subscription.
+func SubscriptionRevision(subID string) uint64 {
+	vpsSubRevMu.Lock()
+	defer vpsSubRevMu.Unlock()
+	return vpsSubRevisions[subID]
+}
+
+func captureSubBaselinesLocked(subs []types.VPSSubscription) map[string]*vpsSubBaseline {
+	vpsSubRevMu.Lock()
+	defer vpsSubRevMu.Unlock()
+	out := make(map[string]*vpsSubBaseline, len(subs))
+	for _, s := range subs {
+		sig := makeSubConfigSig(s)
+		if prev, ok := lastObservedSubState[s.ID]; ok && !subConfigSigEqual(prev, sig) {
+			vpsSubRevisions[s.ID]++
+		}
+		lastObservedSubState[s.ID] = sig
+		rev := vpsSubRevisions[s.ID]
+		dcs := make([]string, len(s.Datacenters))
+		copy(dcs, s.Datacenters)
+		out[s.ID] = &vpsSubBaseline{
+			Revision:           rev,
+			ID:                 s.ID,
+			PlanCode:           sig.PlanCode,
+			RawSubsidiary:      sig.RawSubsidiary,
+			AutoOrderAccountID: sig.AutoOrderAccountID,
+			Datacenters:        dcs,
+			MonitorLinux:       sig.MonitorLinux,
+			MonitorWindows:     sig.MonitorWindows,
+			OS:                 sig.OS,
+			ExpectedStatus:     copyStringMap(s.LastStatus),
+		}
+	}
+	return out
+}
+
+func baselineMatchesLiveLocked(live *types.VPSSubscription, base *vpsSubBaseline) bool {
+	if live == nil || base == nil {
+		return false
+	}
+	vpsSubRevMu.Lock()
+	curRev := vpsSubRevisions[base.ID]
+	vpsSubRevMu.Unlock()
+	if curRev != base.Revision {
+		return false
+	}
+	sig := makeSubConfigSig(*live)
+	baseSig := vpsSubConfigSig{
+		PlanCode:           base.PlanCode,
+		RawSubsidiary:      base.RawSubsidiary,
+		AutoOrderAccountID: base.AutoOrderAccountID,
+		Datacenters:        base.Datacenters,
+		MonitorLinux:       base.MonitorLinux,
+		MonitorWindows:     base.MonitorWindows,
+		OS:                 base.OS,
+	}
+	if !subConfigSigEqual(sig, baseSig) {
+		return false
+	}
+	return stringMapEqual(live.LastStatus, base.ExpectedStatus)
+}
+
+func markBaselineStaleLocked(live *types.VPSSubscription, base *vpsSubBaseline) {
+	if base == nil {
+		return
+	}
+	base.Stale = true
+	vpsSubRevMu.Lock()
+	if vpsSubRevisions[base.ID] == base.Revision {
+		vpsSubRevisions[base.ID]++
+	}
+	if live != nil {
+		lastObservedSubState[base.ID] = makeSubConfigSig(*live)
+	} else {
+		delete(lastObservedSubState, base.ID)
+	}
+	vpsSubRevMu.Unlock()
+}
+
+func isBaselineCurrent(state *app.State, base *vpsSubBaseline) bool {
+	if base == nil {
+		return true
+	}
+	if base.Stale {
+		return false
+	}
+	state.VPSSubsMu.Lock()
+	defer state.VPSSubsMu.Unlock()
+	for i := range state.VPSSubscriptions {
+		if state.VPSSubscriptions[i].ID == base.ID {
+			if baselineMatchesLiveLocked(&state.VPSSubscriptions[i], base) {
+				return true
+			}
+			markBaselineStaleLocked(&state.VPSSubscriptions[i], base)
+			return false
+		}
+	}
+	markBaselineStaleLocked(nil, base)
+	return false
+}
 
 // logCheckFailure 记录一次可用性检查失败,并做同因去重。
 func logCheckFailure(state *app.State, subID, planCode, subsidiary string, err error) {
@@ -481,6 +679,7 @@ func monitorLoopGen(state *app.State, gen int64) {
 
 		state.VPSSubsMu.Lock()
 		subs := cloneSubs(state.VPSSubscriptions)
+		baselines := captureSubBaselinesLocked(subs)
 		interval := state.VPSCheckInterval
 		state.VPSSubsMu.Unlock()
 
@@ -493,6 +692,11 @@ func monitorLoopGen(state *app.State, gen int64) {
 					break
 				}
 				sub := &subs[idx]
+				base := baselines[sub.ID]
+				if !isBaselineCurrent(state, base) {
+					state.Logger.Info(fmt.Sprintf("VPS 订阅 %s (%s) 在巡检期间已变更或删除(代次已推进),丢弃旧代次巡检任务", sub.ID, sub.PlanCode), "vps_monitor")
+					continue
+				}
 				// 老订阅可能没存子公司(或存了小写)。跟着自动下单账户所在站点走,
 				// 不再一律回落 IE —— 美区账户拿 IE 查的是欧洲库存,永远等不到自己能买的货。
 				ovhSub := NormalizeSubsidiary(sub.OvhSubsidiary)
@@ -507,6 +711,10 @@ func monitorLoopGen(state *app.State, gen int64) {
 						logCheckFailure(state, sub.ID, sub.PlanCode, ovhSub, err)
 						continue
 					}
+				}
+				if !isBaselineCurrent(state, base) {
+					state.Logger.Info(fmt.Sprintf("VPS 订阅 %s (%s) 在等待库存响应期间已变更(代次已推进),丢弃过时巡检结果", sub.ID, sub.PlanCode), "vps_monitor")
+					continue
 				}
 				clearCheckFailure(sub.ID)
 				dcsRaw, _ := currentData["datacenters"].([]interface{})
@@ -544,14 +752,9 @@ func monitorLoopGen(state *app.State, gen int64) {
 					if len(monitoredDCs) > 0 {
 						found := false
 						for _, m := range monitoredDCs {
-							// 必须不分大小写。这一边是 OVH 返回的 code
-							// (可用性接口给的是 GRA / BHS / US-EAST-VA 这种大写,
-							// 见 purchase.go 的 dcRegion 表),另一边是用户在输入框里
-							// **手打**的一串文本,中间没有任何一层做过归一。
-							// 用 == 的话大小写一对不上就全部 continue 掉:
-							// 订阅恒定 0 状态更新、不发通知、不下单,而界面上它
-							// 显示得完全正常 —— 这是最难被发现的那种坏法。
-							if strings.EqualFold(strings.TrimSpace(m), code) {
+							// 统一归一比对可用性接口返回的 code(如 eu-west-lim / ap-south-mum)与
+							// datacenter 短码(如 DE / UK / YNM),解决批量订阅与目录机房订阅失配漏检。
+							if MatchVPSDatacenter(m, code, name) {
 								found = true
 								break
 							}
@@ -561,7 +764,17 @@ func monitorLoopGen(state *app.State, gen int64) {
 						}
 					}
 					matchedDC = true
-					oldStatus, hasOld := lastStatus[code]
+					stateKey := code
+					if stateKey == "" {
+						stateKey = name
+					}
+					oldStatus, hasOld := lastStatus[stateKey]
+					if !hasOld && code != "" && name != "" {
+						if alt, ok := lastStatus[name]; ok {
+							oldStatus, hasOld = alt, true
+							delete(lastStatus, name)
+						}
+					}
 					if !hasOld {
 						item := map[string]interface{}{
 							"name":   name,
@@ -621,7 +834,7 @@ func monitorLoopGen(state *app.State, gen int64) {
 							})
 						}
 					}
-					lastStatus[code] = currentStatus
+					lastStatus[stateKey] = currentStatus
 				}
 
 				if len(monitoredDCs) > 0 && !matchedDC {
@@ -631,14 +844,25 @@ func monitorLoopGen(state *app.State, gen int64) {
 					avail := make([]string, 0, len(dcsRaw))
 					for _, dcRaw := range dcsRaw {
 						if dc, ok := dcRaw.(map[string]interface{}); ok {
-							if c, _ := dc["code"].(string); c != "" {
+							c, _ := dc["code"].(string)
+							n, _ := dc["datacenter"].(string)
+							if n != "" && c != "" && !strings.EqualFold(n, c) {
+								avail = append(avail, fmt.Sprintf("%s(%s)", n, c))
+							} else if c != "" {
 								avail = append(avail, c)
+							} else if n != "" {
+								avail = append(avail, n)
 							}
 						}
 					}
 					state.Logger.Warn(fmt.Sprintf(
 						"VPS 订阅 %s 指定的机房 %v 一个都不在 OVH 返回的列表里,这条订阅不会有任何通知。OVH 当前返回:%v",
 						sub.PlanCode, monitoredDCs, avail), "vps_monitor")
+				}
+
+				if !isBaselineCurrent(state, base) {
+					state.Logger.Info(fmt.Sprintf("VPS 订阅 %s (%s) 在通知/下单前已变更(代次已推进),丢弃过时巡检结果", sub.ID, sub.PlanCode), "vps_monitor")
+					continue
 				}
 
 				if isFirstCheckOverall && len(initialAvailable) > 0 && sub.NotifyAvailable {
@@ -654,7 +878,7 @@ func monitorLoopGen(state *app.State, gen int64) {
 					// 下单前先把本轮库存观察落库,否则下单后崩溃重启会把同一次补货再判一次跳变。
 					if len(newAvailable) > 0 && sub.AutoOrder && strings.TrimSpace(sub.AutoOrderAccountID) != "" && stillMine(gen) {
 						sub.LastStatus = lastStatus
-						if err := saveObservation(state, sub); err != nil {
+						if err := saveObservationWithBaseline(state, sub, base); err != nil {
 							state.Logger.Error("保存 VPS 库存状态失败,跳过本次自动下单: "+err.Error(), "vps_monitor")
 						} else {
 							toOrder := *sub
@@ -677,17 +901,25 @@ func monitorLoopGen(state *app.State, gen int64) {
 					time.Sleep(time.Second)
 				}
 			}
-			// 按 ID 合并写回：保留循环中对 LastStatus/History 的更新，不覆盖循环期间用户新增/删除的订阅
+			// 按 ID + 代次基线合并写回：仅写回巡检期间未被修改/重置的当前代次订阅，防止后台旧轮次覆盖新子公司/新配置
 			state.VPSSubsMu.Lock()
 			byID := map[string]*types.VPSSubscription{}
 			for i := range subs {
 				byID[subs[i].ID] = &subs[i]
 			}
 			for i := range state.VPSSubscriptions {
-				if updated, ok := byID[state.VPSSubscriptions[i].ID]; ok {
-					state.VPSSubscriptions[i].LastStatus = updated.LastStatus
-					state.VPSSubscriptions[i].History = updated.History
+				id := state.VPSSubscriptions[i].ID
+				updated, ok := byID[id]
+				if !ok {
+					continue
 				}
+				base := baselines[id]
+				if base != nil && (base.Stale || !baselineMatchesLiveLocked(&state.VPSSubscriptions[i], base)) {
+					markBaselineStaleLocked(&state.VPSSubscriptions[i], base)
+					continue
+				}
+				state.VPSSubscriptions[i].LastStatus = updated.LastStatus
+				state.VPSSubscriptions[i].History = updated.History
 			}
 			state.VPSSubsMu.Unlock()
 			_ = SaveSubscriptions(state)

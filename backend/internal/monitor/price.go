@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -238,11 +239,11 @@ func (m *Monitor) verifyPriceAvailable(planCode, datacenter string, configInfo m
 		m.state.Logger.Debug(fmt.Sprintf("价格校验失败: %s@%s - %s", planCode, datacenter, errMsg), "monitor")
 		return false, errMsg
 	}
-	if v, ok := numconv.ToFloat64(priceVal); ok {
-		if v == 0 {
-			m.state.Logger.Debug(fmt.Sprintf("价格校验失败: %s@%s - 价格无效(0)", planCode, datacenter), "monitor")
-			return false, "价格无效(0)"
-		}
+	v, ok := numconv.ToFloat64(priceVal)
+	if !ok || math.IsNaN(v) || math.IsInf(v, 0) || !(v > 0) {
+		errMsg := fmt.Sprintf("价格无效(%v)", priceVal)
+		m.state.Logger.Debug(fmt.Sprintf("价格校验失败: %s@%s - %s", planCode, datacenter, errMsg), "monitor")
+		return false, errMsg
 	}
 	m.state.Logger.Debug(fmt.Sprintf("价格校验通过: %s@%s - 价格(未税优先): %v", planCode, datacenter, priceVal), "monitor")
 	return true, ""
@@ -431,7 +432,7 @@ func (m *Monitor) GetPriceInfoText(planCode, datacenter string, configInfo map[s
 				planCode, datacenter, strings.ToUpper(currency), subsidiary, want), "monitor")
 		}
 	}
-	if v, ok := numconv.ToFloat64(priceRaw); ok {
+	if v, ok := numconv.ToFloat64(priceRaw); ok && !math.IsNaN(v) && !math.IsInf(v, 0) && v > 0 {
 		// 若能拿到目录中的安装费，且购物车总额包含了安装费，则月费应扣除安装费（避免安装费重复计算）
 		if p, err := catalog.PriceForOptions(m.state, accountID, planCode, options); err == nil && p.Install > 0 && v > p.Install {
 			v -= p.Install
