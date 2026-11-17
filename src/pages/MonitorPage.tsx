@@ -41,6 +41,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { BulkCleanupBar, BulkCleanupDialog } from "@/components/common/BulkCleanup";
 import { useBulkCleanup } from "@/hooks/use-bulk-cleanup";
 import { monitorCleanupTarget } from "@/lib/bulk-cleanup";
+import { DragSelectArea } from "@/components/common/DragSelectArea";
 import {
   useMonitorList,
   useMonitorStatus,
@@ -86,7 +87,8 @@ function MonitorPage() {
   const cleanup = useBulkCleanup(subs, monitorCleanupTarget, "monitor");
 
   return (
-    <div className="space-y-6">
+    <DragSelectArea className="space-y-6" selectedKeys={cleanup.selectedKeys} onSelectionChange={cleanup.selectKeys}
+      onDeleteSelected={cleanup.requestCleanup} disabled={cleanup.locked || list.isError || clear.isPending}>
       <PageHeader
         icon={Activity}
         title="服务器监控"
@@ -302,7 +304,7 @@ function MonitorPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </DragSelectArea>
   );
 }
 
@@ -331,7 +333,7 @@ function SubRow({
 }) {
   const orderAccountIds = monitorAccountIds(sub);
   return (
-    <Card className={cn("surface-card rounded-xl border-border hover:border-border/80 transition-all duration-200 shadow-sm", sub.paused && "opacity-60")}>
+    <Card data-selection-key={monitorCleanupTarget(sub).key} className={cn("surface-card rounded-xl border-border hover:border-border/80 transition-all duration-200 shadow-sm", selected && "border-primary bg-primary/5", sub.paused && "opacity-60")}>
       <CardContent className="p-4 sm:p-5">
         <div className="flex flex-col sm:flex-row sm:items-center gap-3">
           <div className="flex-1 min-w-0">

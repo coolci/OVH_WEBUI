@@ -18,6 +18,7 @@ export function BulkCleanupBar({ totalCount, selectedCount, allSelected, someSel
     <Button size="sm" variant="soft-destructive" className="h-8 gap-1.5 text-xs sm:ml-auto" disabled={disabled || selectedCount === 0} onClick={onCleanup}>
       <Trash2 className="h-3.5 w-3.5" />清理选中（{selectedCount}）
     </Button>
+    <span className="w-full text-muted-foreground">鼠标左键拖动框选多条，按 Delete 或点击“清理选中”删除；Ctrl / Shift 可追加选择。</span>
   </div>;
 }
 

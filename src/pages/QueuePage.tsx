@@ -35,6 +35,7 @@ import { cn } from "@/lib/utils";
 import { BulkCleanupBar, BulkCleanupDialog } from "@/components/common/BulkCleanup";
 import { useBulkCleanup } from "@/hooks/use-bulk-cleanup";
 import { queueCleanupTarget } from "@/lib/bulk-cleanup";
+import { DragSelectArea } from "@/components/common/DragSelectArea";
 
 function QueuePage() {
   const queue = useQueueList();
@@ -123,7 +124,8 @@ function QueuePage() {
   const cleanup = useBulkCleanup(filteredItems, queueCleanupTarget, "queue");
 
   return (
-    <div className="space-y-6">
+    <DragSelectArea className="space-y-6" selectedKeys={cleanup.selectedKeys} onSelectionChange={cleanup.selectKeys}
+      onDeleteSelected={cleanup.requestCleanup} disabled={cleanup.locked || queue.isError || clear.isPending}>
       <PageHeader
         icon={ListOrdered}
         title="抢购队列"
@@ -315,7 +317,7 @@ function QueuePage() {
         onOpenChange={(v) => !v && setEditingItem(null)}
         item={editingItem}
       />
-    </div>
+    </DragSelectArea>
   );
 }
 

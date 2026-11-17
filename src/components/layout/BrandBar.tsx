@@ -18,18 +18,18 @@ export function BrandBar({ onQuickOrder }: { onQuickOrder: () => void }) {
           <Zap className="w-4 h-4 fill-primary/20" strokeWidth={2.2} />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5 leading-none">
-            <span className="font-mono text-sm font-bold tracking-tight text-foreground">
+          <div className="flex min-w-0 items-center gap-1.5 leading-none">
+            <span className="shrink-0 whitespace-nowrap font-mono text-sm font-bold tracking-tight text-foreground">
               OVH
             </span>
-            <span className="text-sm font-semibold text-primary">统御</span>
+            <span className="shrink-0 whitespace-nowrap text-sm font-semibold text-primary">统御</span>
             {ver && (
-              <span className="ml-auto shrink-0 rounded border border-border/60 bg-muted/50 px-1 py-0.5 font-mono text-[9px] tabular-nums text-muted-foreground leading-none">
+              <span title={`v${ver}`} className="ml-auto min-w-0 truncate rounded border border-border/60 bg-muted/50 px-1 py-0.5 font-mono text-[9px] tabular-nums text-muted-foreground leading-none">
                 v{ver}
               </span>
             )}
           </div>
-          <div className="mt-1 text-[10.5px] leading-none text-muted-foreground/75 font-medium">
+          <div className="mt-1 truncate text-[10.5px] leading-none text-muted-foreground/75 font-medium">
             基础设施运维中枢
           </div>
         </div>

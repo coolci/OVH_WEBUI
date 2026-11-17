@@ -54,7 +54,7 @@ export function QueueRow({ item, onToggle, onDelete, onEdit, selected, selection
   })();
 
   return (
-    <Card className="surface-card rounded-xl border-border hover:border-border/80 transition-all duration-200 shadow-sm">
+    <Card data-selection-key={item.id} className={`surface-card rounded-xl border-border hover:border-border/80 transition-all duration-200 shadow-sm ${selected ? "border-primary bg-primary/5" : ""}`}>
       <CardContent className="p-3.5 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1.5 flex-wrap">

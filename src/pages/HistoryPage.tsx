@@ -39,6 +39,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { BulkCleanupBar, BulkCleanupDialog } from "@/components/common/BulkCleanup";
 import { useBulkCleanup } from "@/hooks/use-bulk-cleanup";
 import { historyCleanupTarget } from "@/lib/bulk-cleanup";
+import { DragSelectArea } from "@/components/common/DragSelectArea";
+import { normalizeHistorySort, sortHistory } from "@/lib/history-sort";
 
 /**
  * 订单支付状态 → 标签。取值是 OVH 的 billing.order.OrderStatusEnum,三区一致。
@@ -211,6 +213,10 @@ function HistoryPage() {
   const refreshStatus = useRefreshOrderStatus();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "success" | "failed">("all");
+  const [sort, setSort] = useState(() => {
+    try { return normalizeHistorySort(localStorage.getItem("ovh_history_sort")); }
+    catch { return normalizeHistorySort(null); }
+  });
   const [confirmClear, setConfirmClear] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
@@ -224,16 +230,17 @@ function HistoryPage() {
   const items = useMemo(() => rawItems || [], [rawItems]);
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
-    return items.filter((i) => {
+    return sortHistory(items.filter((i) => {
       if (statusFilter !== "all" && i.status !== statusFilter) return false;
       if (s && !`${i.planCode} ${i.datacenter} ${i.orderId || ""}`.toLowerCase().includes(s)) return false;
       return true;
-    });
-  }, [items, search, statusFilter]);
+    }), sort);
+  }, [items, search, statusFilter, sort]);
   const cleanup = useBulkCleanup(filtered, historyCleanupTarget, "history");
 
   return (
-    <div className="space-y-6">
+    <DragSelectArea className="space-y-6" selectedKeys={cleanup.selectedKeys} onSelectionChange={cleanup.selectKeys}
+      onDeleteSelected={cleanup.requestCleanup} disabled={cleanup.locked || list.isError || clear.isPending}>
       <PageHeader
         icon={History}
         title="抢购历史"
@@ -272,7 +279,7 @@ function HistoryPage() {
 
       <Card className="surface-card rounded-xl border-border">
         <CardContent className="p-3.5 sm:p-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="relative">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
               <Input
@@ -292,7 +299,24 @@ function HistoryPage() {
                 <SelectItem value="failed">失败</SelectItem>
               </SelectContent>
             </Select>
+            <Select value={sort} onValueChange={(value) => {
+              const next = normalizeHistorySort(value);
+              setSort(next);
+              try { localStorage.setItem("ovh_history_sort", next); } catch { /* private mode */ }
+            }}>
+              <SelectTrigger aria-label="排序方式" className="rounded-lg h-8 text-xs bg-background/50 border-border/80">
+                <SelectValue placeholder="排序方式" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="paid-first">已付款优先</SelectItem>
+                <SelectItem value="newest">下单时间：最新在前</SelectItem>
+                <SelectItem value="oldest">下单时间：最早在前</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
+          {sort === "paid-first" && <p className="mt-2 text-[11px] text-muted-foreground">
+            已付款·交付中、已付款·已交付的订单置顶，同组按下单时间从新到旧排列。
+          </p>}
         </CardContent>
       </Card>
 
@@ -388,7 +412,7 @@ function HistoryPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </DragSelectArea>
   );
 }
 
@@ -402,7 +426,7 @@ function HistoryRow({ item, now, selected, selectionDisabled, onSelect }: Histor
   const { showCountdown, isExpired } = w;
 
   return (
-    <tr className={`text-[13px] hover:bg-muted ${selected ? "bg-primary/5" : ""} ${isExpired ? "opacity-60" : ""}`}>
+    <tr data-selection-key={item.id} className={`text-[13px] hover:bg-muted ${selected ? "bg-primary/5" : ""} ${isExpired ? "opacity-60" : ""}`}>
       <td className="pl-4 py-3"><Checkbox checked={selected} disabled={selectionDisabled} onCheckedChange={onSelect}
         aria-label={`选择历史记录 ${item.planCode} ${item.orderId || item.id}`} /></td>
       <td className={`px-4 py-3 font-mono font-semibold ${isExpired ? "line-through" : ""}`}>
@@ -494,7 +518,7 @@ function HistoryCard({ item, now, selected, selectionDisabled, onSelect }: Histo
   const { showCountdown, isExpired } = w;
 
   return (
-    <Card className={cn("surface-card rounded-xl border-border hover:border-border/80 transition-all duration-200 shadow-sm", isExpired && "opacity-60")}>
+    <Card data-selection-key={item.id} className={cn("surface-card rounded-xl border-border hover:border-border/80 transition-all duration-200 shadow-sm", selected && "border-primary bg-primary/5", isExpired && "opacity-60")}>
       <CardContent className="p-3.5 sm:p-4 space-y-2.5">
         <label className="flex items-center gap-2 text-xs text-muted-foreground">
           <Checkbox checked={selected} disabled={selectionDisabled} onCheckedChange={onSelect}

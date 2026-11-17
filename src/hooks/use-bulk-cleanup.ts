@@ -44,6 +44,10 @@ export function useBulkCleanup<T>(items: T[], getTarget: (item: T) => CleanupTar
     totalCount: targets.length,
     allSelected,
     someSelected: selectedTargets.length > 0 && !allSelected,
+    selectedKeys: selectedTargets.map((target) => target.key),
+    selectKeys: (keys: string[]) => {
+      if (!locked) setSelected(retainVisibleSelection(new Set(keys), targets));
+    },
     isSelected: (item: T) => selected.has(getTarget(item).key),
     toggle: (item: T) => {
       if (locked) return;
