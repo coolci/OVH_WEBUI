@@ -1,4 +1,5 @@
-import { CatalogWatchPanel } from "@/components/servers/CatalogWatchPanel";
+// 新增机型 / 配置自动下单已停用，保留组件代码和原入口。
+// import { CatalogWatchPanel } from "@/components/servers/CatalogWatchPanel";
 import { useMemo, useState } from "react";
 import { Server, RefreshCw } from "lucide-react";
 import { Helmet } from "react-helmet-async";
@@ -200,7 +201,9 @@ function ServersPage() {
         }
       />
 
+      {/* 新增机型 / 配置自动下单已停用，保留原入口：
       <CatalogWatchPanel />
+      */}
 
       <ServerFilterBar
         search={search}

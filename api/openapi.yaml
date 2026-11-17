@@ -6746,6 +6746,7 @@ paths:
   /catalog-watch:
     get:
       summary: Get catalog watch configuration and jobs
+      description: Automatic ordering for new models/configurations is retired. Runtime state is always disabled; historical jobs and read-only reconciliation are retained.
       operationId: GetCatalogWatch
       tags:
         - F03
@@ -6760,6 +6761,7 @@ paths:
                 type: object
     put:
       summary: Update catalog watch configuration
+      description: Compatibility endpoint. Only enabled=false is accepted; enabling the retired feature returns 409.
       operationId: UpdateCatalogWatch
       tags:
         - F03
@@ -6778,6 +6780,8 @@ paths:
             application/json:
               schema:
                 type: object
+        '409':
+          description: Automatic ordering for new models/configurations is disabled
 
   /order/durations:
     get:

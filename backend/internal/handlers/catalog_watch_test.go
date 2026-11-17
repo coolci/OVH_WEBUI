@@ -15,7 +15,7 @@ func TestCatalogWatchAPIRequiresExplicitBooleanAndPersistsOff(t *testing.T) {
 	r.PUT("/watch", SetCatalogWatch(s))
 	get := httptest.NewRecorder()
 	r.ServeHTTP(get, httptest.NewRequest(http.MethodGet, "/watch", nil))
-	if get.Code != 200 || !strings.Contains(get.Body.String(), `"enabled":true`) || !strings.Contains(get.Body.String(), `"autoPay":false`) {
+	if get.Code != 200 || !strings.Contains(get.Body.String(), `"enabled":false`) || !strings.Contains(get.Body.String(), `"autoPay":false`) {
 		t.Fatal(get.Body.String())
 	}
 	for _, body := range []string{`{}`, `{"enabled":null}`, `{"enabled":"false"}`} {
@@ -33,5 +33,18 @@ func TestCatalogWatchAPIRequiresExplicitBooleanAndPersistsOff(t *testing.T) {
 	r.ServeHTTP(w, req)
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"enabled":false`) || !strings.Contains(w.Body.String(), `"autoPay":false`) {
 		t.Fatal(w.Body.String())
+	}
+	// 旧客户端无法恢复已取消的功能。
+	req = httptest.NewRequest(http.MethodPut, "/watch", strings.NewReader(`{"enabled":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "已停用") {
+		t.Fatalf("retired feature could be enabled: %d %s", w.Code, w.Body.String())
+	}
+	get = httptest.NewRecorder()
+	r.ServeHTTP(get, httptest.NewRequest(http.MethodGet, "/watch", nil))
+	if !strings.Contains(get.Body.String(), `"enabled":false`) {
+		t.Fatal("rejected request changed persisted state: " + get.Body.String())
 	}
 }

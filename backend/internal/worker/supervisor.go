@@ -87,7 +87,7 @@ func (s *Supervisor) Start() {
 		handlers.ProcessTelegramUpdate(state, mon, u)
 	})
 
-	// Independent catalog watcher: browser lifecycle never controls this worker.
+	// 新增机型 / 配置自动下单已停用；Run 仅核对历史未决订单，不再发现或下单。
 	catalogwatch.For(state).Run(s.ctx)
 
 	// 5. 自动启动监控（按需）

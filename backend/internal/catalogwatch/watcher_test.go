@@ -27,7 +27,10 @@ func fixture(t *testing.T) (*Watcher, *app.State) {
 	t.Cleanup(func() { database.Close() })
 	s := app.NewState(storage.Paths{DataDir: dir}, config.New(database), logger.New(filepath.Join(dir, "test.log"), nil), database)
 	s.Accounts = []types.OVHAccount{{ID: "a", Name: "Default A", Endpoint: "ovh-eu", Zone: "IE", IsDefault: true}, {ID: "b", Name: "B", Endpoint: "ovh-us", Zone: "US"}}
-	return New(s), s
+	w := New(s)
+	// 离线测试显式启用保留的旧算法；生产实例由 For 强制关闭且不运行发现/下单循环。
+	w.data.Enabled = true
+	return w, s
 }
 func snapshot(codes ...string) map[string]Candidate {
 	m := map[string]Candidate{}
@@ -60,10 +63,10 @@ func sole(t *testing.T, w *Watcher) *Job {
 	}
 	return nil
 }
-func TestDefaultEnabledBaselineAndDefaultAccountPinning(t *testing.T) {
+func TestLegacyBaselineAndDefaultAccountPinning(t *testing.T) {
 	w, s := fixture(t)
 	if !w.data.Enabled {
-		t.Fatal("must default on")
+		t.Fatal("legacy fixture must opt in explicitly")
 	}
 	w.fetch = func(context.Context, *app.State, string) (map[string]Candidate, error) { return snapshot("old"), nil }
 	if err := w.Poll(context.Background()); err != nil {

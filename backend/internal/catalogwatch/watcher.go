@@ -68,11 +68,21 @@ type Watcher struct {
 }
 
 func For(s *app.State) *Watcher {
-	s.CatalogWatchOnce.Do(func() { s.CatalogWatch = New(s) })
+	// 新增机型 / 配置自动下单已停用，保留原初始化代码：
+	// s.CatalogWatchOnce.Do(func() { s.CatalogWatch = New(s) })
+	s.CatalogWatchOnce.Do(func() {
+		w := New(s)
+		// 无论新安装还是旧库 enabled=true，运行实例都先持久化关闭。
+		// 保存失败也会由 save() 关闭内存状态，不允许恢复购买。
+		_ = w.SetEnabled(context.Background(), false)
+		s.CatalogWatch = w
+	})
 	return s.CatalogWatch.(*Watcher)
 }
 func New(s *app.State) *Watcher {
-	w := &Watcher{state: s, active: map[string]context.CancelFunc{}, fetch: fetch, buy: purchase.PurchaseServer, check: purchase.CheckCheckout, data: Data{Enabled: true, Baseline: map[string]Candidate{}, Jobs: map[string]*Job{}}}
+	// 原默认开启的初始化保留：
+	// w := &Watcher{state: s, active: map[string]context.CancelFunc{}, fetch: fetch, buy: purchase.PurchaseServer, check: purchase.CheckCheckout, data: Data{Enabled: true, Baseline: map[string]Candidate{}, Jobs: map[string]*Job{}}}
+	w := &Watcher{state: s, active: map[string]context.CancelFunc{}, fetch: fetch, buy: purchase.PurchaseServer, check: purchase.CheckCheckout, data: Data{Enabled: false, Baseline: map[string]Candidate{}, Jobs: map[string]*Job{}}}
 	var raw string
 	err := s.DB.Get(&raw, "SELECT data FROM catalog_watch WHERE id=1")
 	if err == nil {
@@ -517,7 +527,9 @@ func (w *Watcher) runnableJobCount() int {
 
 func (w *Watcher) Run(ctx context.Context) {
 	w.once.Do(func() {
-		w.loops.Add(3)
+		// 新增机型 / 配置自动下单已停用。仅保留已提交订单的只读核对。
+		// w.loops.Add(3)
+		w.loops.Add(1)
 		go func() {
 			defer w.loops.Done()
 			ticker := time.NewTicker(2 * time.Second)
@@ -531,6 +543,7 @@ func (w *Watcher) Run(ctx context.Context) {
 				}
 			}
 		}()
+		/* 新增目录发现和下单循环已停用，保留原代码以便日后恢复。
 		go func() {
 			defer w.loops.Done()
 			delay := time.Duration(0)
@@ -576,6 +589,7 @@ func (w *Watcher) Run(ctx context.Context) {
 				}
 			}
 		}()
+		*/
 	})
 }
 

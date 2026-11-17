@@ -20,6 +20,12 @@ func SetCatalogWatch(s *app.State) gin.HandlerFunc {
 			return
 		}
 		w := catalogwatch.For(s)
+		// 功能已停用；旧网页、旧客户端和直接调用接口均不能重新开启。
+		if *body.Enabled {
+			c.JSON(http.StatusConflict, gin.H{"error": "新增机型 / 配置自动下单功能已停用"})
+			return
+		}
+		// 原设置代码保留，仅允许关闭：
 		if err := w.SetEnabled(c.Request.Context(), *body.Enabled); err != nil {
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 			return

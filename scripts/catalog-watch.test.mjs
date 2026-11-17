@@ -12,6 +12,16 @@ function load(file, imports) {
   vm.runInNewContext(js, {exports, require:id=>{if (!(id in imports)) throw Error(id);return imports[id];}}, {filename:file});
   return exports;
 }
+
+test('retired catalog ordering panel is kept as comments and absent from the compiled server page', () => {
+  const source = fs.readFileSync('src/pages/ServersPage.tsx', 'utf8');
+  const compiled = ts.transpileModule(source, { compilerOptions: {
+    module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, removeComments: true,
+  } }).outputText;
+  assert.match(source, /\/\/ import \{ CatalogWatchPanel \}/);
+  assert.match(source, /<CatalogWatchPanel \/>/);
+  assert.doesNotMatch(compiled, /CatalogWatchPanel|useCatalogWatch|useSetCatalogWatch/);
+});
 test('catalog watch mounting and polling never change the backend switch', async () => {
   const calls=[];
   const hooks=load('src/hooks/use-catalog-watch.ts',{
