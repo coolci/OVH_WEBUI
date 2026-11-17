@@ -564,6 +564,90 @@ paths:
                   success:
                     type: boolean
 
+  /purchase-history/{id}/cancellation:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: account
+        in: query
+        required: true
+        description: Must match the history entry account; no default-account fallback.
+        schema:
+          type: string
+    get:
+      summary: Check live OVH order status and cancellation eligibility without submitting
+      operationId: GetHistoryCancellation
+      tags: [F04]
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: Unpaid orders can only be abandoned locally; paid orders require a valid retraction date and supported region.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HistoryCancellationInfo'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          description: Live order verification failed; no operation submitted.
+    post:
+      summary: Abandon or restore an unpaid order locally, or request retraction of a paid order
+      operationId: CancelHistoryOrder
+      tags: [F04]
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirm, mode]
+              properties:
+                confirm:
+                  type: boolean
+                  const: true
+                mode:
+                  type: string
+                  enum: [abandon, restore, retract]
+                reason:
+                  type: string
+                  description: Required for retract.
+                  enum: [expensive, performance, reliability, difficulty, competitor, unused, other]
+                comment:
+                  type: string
+                  maxLength: 1000
+                amount:
+                  type: number
+                  description: Required for retract; must exactly match the current OVH tax-inclusive price.
+                currency:
+                  type: string
+                  description: Required for retract; must match the current OVH currency.
+      responses:
+        '200':
+          description: Local abandonment/restoration saved, or retraction submitted. Final cancellation and refunds are determined by OVH.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Order changed, payment or retraction already pending, or operation no longer available.
+        '500':
+          description: Persistence failed; verify OVH before another attempt.
+        '502':
+          description: OVH verification/retraction failed. Ambiguous submissions remain durably blocked from retry.
+
   /purchase-history/refresh-status:
     post:
       summary: Sync and refresh real billing order statuses from OVHcloud
@@ -6141,6 +6225,11 @@ paths:
           required: true
           schema:
             type: string
+        - name: account
+          in: query
+          description: Ordering account ID; the payment dialog always pins it explicitly.
+          schema:
+            type: string
       responses:
         '200':
           description: Order payment metadata
@@ -6148,6 +6237,41 @@ paths:
             application/json:
               schema:
                 type: object
+                properties:
+                  accountId:
+                    type: string
+                  accountName:
+                    type: string
+                  orderId:
+                    type: integer
+                    format: int64
+                  status:
+                    type: string
+                  amount:
+                    type: [number, 'null']
+                  currency:
+                    type: string
+                  priceText:
+                    type: string
+                  expirationDate:
+                    type: string
+                  managerUrl:
+                    type: string
+                  attempted:
+                    type: boolean
+                  methods:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        type:
+                          type: string
+                        label:
+                          type: string
+                        default:
+                          type: boolean
 
   /ovh/account/orders/{order_id}/pay:
     post:
@@ -7182,6 +7306,41 @@ components:
         durationMs:
           type: integer
 
+    HistoryCancellationInfo:
+      type: object
+      properties:
+        accountId:
+          type: string
+        orderId:
+          type: integer
+          format: int64
+        status:
+          type: string
+        mode:
+          type: string
+          enum: [abandon, retract, unavailable]
+        message:
+          type: string
+        canRestore:
+          type: boolean
+        amount:
+          type: [number, 'null']
+        currency:
+          type: string
+        expirationDate:
+          type: string
+        retractionDate:
+          type: string
+        reasons:
+          type: array
+          items:
+            type: object
+            properties:
+              value:
+                type: string
+              label:
+                type: string
+
     PurchaseHistoryEntry:
       type: object
       required:
@@ -7225,6 +7384,15 @@ components:
           type: string
         orderStatusAt:
           type: string
+        abandonedAt:
+          type: string
+          description: Local abandonment timestamp; does not mean OVH cancelled the order.
+        retractionState:
+          type: string
+          enum: [sending, submitted, uncertain, failed]
+        updatedAt:
+          type: string
+          description: Last update of the durable local cancellation record.
 
     ServerCacheInfo:
       type: object

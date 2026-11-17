@@ -33,6 +33,8 @@ import {
 import { cn, safeHttpsUrl } from "@/lib/utils";
 import { OrderDurationBadge } from "@/components/orders/OrderDurationField";
 import { OrderProgressButton } from "@/components/history/OrderProgressButton";
+import { CancelOrderButton } from "@/components/history/CancelOrderButton";
+import { HistoryPaymentButton } from "@/components/history/HistoryPaymentButton";
 
 /**
  * 订单支付状态 → 标签。取值是 OVH 的 billing.order.OrderStatusEnum,三区一致。
@@ -45,6 +47,12 @@ function orderStatusView(item: PurchaseHistory): {
   closed: boolean;
   title: string;
 } {
+  if (item.abandonedAt && !["checking", "delivering", "delivered", "documentsRequested", "cancelling", "cancelled"].includes(item.orderStatus || "")) {
+    return { label: "已放弃·待作废", tone: "default", paid: false, closed: true, title: "本系统已放弃订单，等待 OVH 到期作废；付款期限内可撤销放弃" };
+  }
+  if (item.retractionState && item.retractionState !== "failed" && !["cancelling", "cancelled"].includes(item.orderStatus || "")) {
+    return { label: item.retractionState === "submitted" ? "撤单已申请" : "撤单待核对", tone: "warning", paid: true, closed: true, title: "请在 OVH 核对撤单及退款结果，不要重复提交" };
+  }
   switch (item.orderStatus) {
     case "notPaid":
       return {
@@ -429,6 +437,8 @@ function HistoryRow({ item, now }: { item: PurchaseHistory; now: number }) {
       <td className="px-4 py-3">
         <div className="flex items-center gap-2">
           {item.status === "success" && item.orderId && <OrderProgressButton accountId={item.accountId} orderId={item.orderId} />}
+          <HistoryPaymentButton item={item} />
+          <CancelOrderButton item={item} />
           {item.status === "success" && safeHttpsUrl(item.orderUrl) ? (
             <a
               href={safeHttpsUrl(item.orderUrl)}
@@ -518,6 +528,8 @@ function HistoryCard({ item, now }: { item: PurchaseHistory; now: number }) {
           )}
           <div className="flex items-center gap-2">
             {item.status === "success" && item.orderId && <OrderProgressButton accountId={item.accountId} orderId={item.orderId} />}
+            <HistoryPaymentButton item={item} />
+            <CancelOrderButton item={item} />
             {item.status === "success" && safeHttpsUrl(item.orderUrl) ? (
               <a
                 href={safeHttpsUrl(item.orderUrl)}

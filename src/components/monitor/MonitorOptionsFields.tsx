@@ -3,7 +3,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { MAX_ORDER_QUANTITY } from "@/lib/order-limits";
-import { AutoPayCheck } from "@/components/orders/AutoPayCheck";
+// 自动付款已停用，保留原控件。
+// import { AutoPayCheck } from "@/components/orders/AutoPayCheck";
 
 import type { MonitorNotifyOptions } from "@/lib/monitor-options";
 
@@ -74,7 +75,8 @@ export function MonitorOptionsFields({
           onChange={(v) =>
             set({
               autoOrder: v,
-              autoPay: v ? value.autoPay : false,
+              // autoPay: v ? value.autoPay : false,
+              autoPay: false,
             })
           }
           label="有货时自动下单"
@@ -94,6 +96,7 @@ export function MonitorOptionsFields({
             />
             <p className="mt-1 text-[11px] text-muted-foreground">新订阅默认选中全部现有账户，可取消不需要的账户。每个账户独立下单。</p>
           </div>
+          {/* 自动付款已停用，原控件保留。
           <OptionCheck
             checked={value.autoPay}
             onChange={(v) => set({ autoPay: v })}
@@ -101,6 +104,8 @@ export function MonitorOptionsFields({
             hint="默认关闭。开启后分别使用各下单账户的默认支付方式扣款"
           />
           <AutoPayCheck accountIds={value.autoOrderAccountIds} enabled={value.autoOrder && value.autoPay} />
+          */}
+          <p className="text-xs text-muted-foreground">下单后请手动付款。</p>
           <div>
             <label className="mb-1.5 block text-xs font-medium text-muted-foreground">每账户、每配置、每机房下单数量</label>
             <Input

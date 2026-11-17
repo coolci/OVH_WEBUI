@@ -14,6 +14,7 @@ import (
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/db"
 	"github.com/ovh-webui/server/internal/ovh"
+	"github.com/ovh-webui/server/internal/types"
 	ovhsdk "github.com/ovh/go-ovh/ovh"
 )
 
@@ -32,6 +33,7 @@ type orderPaymentInfo struct {
 	Currency       string               `json:"currency"`
 	PriceText      string               `json:"priceText"`
 	ExpirationDate string               `json:"expirationDate"`
+	ManagerURL     string               `json:"managerUrl"`
 	Attempted      bool                 `json:"attempted"`
 	Methods        []orderPaymentMethod `json:"methods"`
 }
@@ -90,6 +92,7 @@ func loadOrderPayment(ctx context.Context, state *app.State, accountID string, o
 		return info, fmt.Errorf("下单账户不存在")
 	}
 	info.AccountID, info.AccountName = acc.ID, acc.Name
+	info.ManagerURL = ovh.ManagerOrderURL(acc.Endpoint, strconv.FormatInt(orderID, 10))
 	client, err := state.OVH.IsolatedClientFor(acc.ID)
 	if err != nil {
 		return info, err
@@ -121,9 +124,17 @@ func loadOrderPayment(ctx context.Context, state *app.State, accountID string, o
 	if err = client.GetWithContext(ctx, statusPath, &info.Status); err != nil {
 		return info, err
 	}
+	rememberPaymentOrderStatus(state, acc.ID, orderIDStr, info.Status)
 	info.Amount, info.Currency, info.PriceText, info.ExpirationDate = order.Price.Value, order.Price.Currency, order.Price.Text, order.ExpirationDate
 	if !state.HasDB() {
 		return info, fmt.Errorf("数据库不可用,不能安全确认付款状态")
+	}
+	action, err := state.DB.GetOrderCancellation(acc.ID, orderID)
+	if err != nil {
+		return info, err
+	}
+	if action.AbandonedAt != "" || (action.RetractionState != "" && action.RetractionState != "failed") {
+		return info, fmt.Errorf("订单已放弃或已有撤单请求，不能付款")
 	}
 	info.Attempted, err = state.GetKV(db.OrderPaymentKey(acc.ID, orderID), &struct {
 		State string `json:"state"`
@@ -207,6 +218,31 @@ func loadOrderPayment(ctx context.Context, state *app.State, accountID string, o
 		info.Methods = append(info.Methods, orderPaymentMethod{ID: method.ID, Type: method.Type, Label: label, Default: method.Default})
 	}
 	return info, nil
+}
+
+// 把实时支付状态同步至购买历史，不能在发送付款请求后直接写成“已付款”。
+func rememberPaymentOrderStatus(state *app.State, accountID, orderID, status string) {
+	if status == "" {
+		return
+	}
+	changed := false
+	state.HistoryMu.Lock()
+	for i := range state.History {
+		h := &state.History[i]
+		if h.AccountID != accountID || h.OrderID != orderID || h.Status != "success" {
+			continue
+		}
+		if h.OrderStatus != status {
+			changed = true
+		}
+		h.OrderStatus, h.OrderStatusAt = status, types.NowISO()
+	}
+	state.HistoryMu.Unlock()
+	if changed {
+		if err := state.SaveHistory(); err != nil {
+			state.Logger.Warn("保存实时付款状态失败: "+err.Error(), "payment")
+		}
+	}
 }
 
 // GetOrderPaymentOptions 返回可确认的金额、账户及此订单允许的绑定支付方式。

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 
@@ -40,14 +41,21 @@ func GetQueue(state *app.State) gin.HandlerFunc {
 // GetPurchaseHistory GET /api/purchase-history
 func GetPurchaseHistory(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if state.OrderService != nil {
-			c.JSON(http.StatusOK, state.OrderService.ListHistory())
-			return
+		items := state.HistorySnapshot()
+		view := make([]historyOrderView, len(items))
+		for i, item := range items {
+			view[i].PurchaseHistoryEntry = item
+			id, err := strconv.ParseInt(item.OrderID, 10, 64)
+			if err != nil || id <= 0 || !state.HasDB() {
+				continue
+			}
+			action, err := state.DB.GetOrderCancellation(item.AccountID, id)
+			if err != nil {
+				c.JSON(500, gin.H{"error": "读取订单操作记录失败"})
+				return
+			}
+			view[i].OrderCancellation = action
 		}
-		state.HistoryMu.Lock()
-		cp := make([]types.PurchaseHistoryEntry, len(state.History))
-		copy(cp, state.History)
-		state.HistoryMu.Unlock()
-		c.JSON(http.StatusOK, cp)
+		c.JSON(http.StatusOK, view)
 	}
 }

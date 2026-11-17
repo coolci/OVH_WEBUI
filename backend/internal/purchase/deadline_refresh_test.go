@@ -4,11 +4,46 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/ovh-webui/server/internal/types"
 )
+
+func TestDeliveredOrderStillRefreshesAfterRetraction(t *testing.T) {
+	var statusCalls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/auth/time":
+			fmt.Fprint(w, time.Now().Unix())
+		case "/me/order/1001/status":
+			statusCalls.Add(1)
+			fmt.Fprint(w, `"cancelled"`)
+		default:
+			t.Errorf("unexpected offline request: %s", r.URL.Path)
+			w.WriteHeader(404)
+		}
+	}))
+	defer srv.Close()
+	swapEndpoint(t, "ovh-eu", srv.URL)
+	s := quickOrderTestState(t)
+	s.Accounts = []types.OVHAccount{{ID: "acc", Endpoint: "ovh-eu", Zone: "FI", AppKey: "test", AppSecret: "test", ConsumerKey: "test"}}
+	s.History = []types.PurchaseHistoryEntry{{ID: "retraction-1001", AccountID: "acc", Status: "success", PlanCode: "【模拟】plan", OrderID: "1001", OrderStatus: "delivered", ExpirationTime: "2099-01-01T00:00:00Z", PurchaseTime: types.NowISO()}}
+	if n := RefreshOrderStatuses(s, true); n != 0 || statusCalls.Load() != 0 {
+		t.Fatal("ordinary delivered orders should remain terminal")
+	}
+	if err := s.DB.ChangeOrderCancellation("acc", 1001, "retract"); err != nil {
+		t.Fatal(err)
+	}
+	if n := RefreshOrderStatuses(s, true); n != 1 || statusCalls.Load() != 1 {
+		t.Fatalf("retracted delivered order skipped: updated=%d calls=%d", n, statusCalls.Load())
+	}
+	if got := s.HistorySnapshot()[0].OrderStatus; got != "cancelled" {
+		t.Fatalf("status=%s", got)
+	}
+}
 
 // 下单时没补到付款截止时间的订单,状态刷新时再补。截止时间完全取 OVH 的
 // billing.Order.expirationDate:促销单 15 分钟、普通单 15 天,本地不做任何假设。

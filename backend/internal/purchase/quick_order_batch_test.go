@@ -27,7 +27,7 @@ func TestMonitorQuickOrderBatchIsAccountScopedAndAtomic(t *testing.T) {
 	counts, ids := map[string]int{}, map[string]bool{}
 	for _, item := range queue {
 		counts[item.AccountID]++
-		if ids[item.ID] || !item.Force || !item.AutoPay || item.PlanCode != params.PlanCode || item.Datacenter != "gra" {
+		if ids[item.ID] || !item.Force || item.AutoPay || item.PlanCode != params.PlanCode || item.Datacenter != "gra" {
 			t.Fatalf("invalid batch task: %+v", item)
 		}
 		ids[item.ID] = true

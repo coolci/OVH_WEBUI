@@ -321,9 +321,10 @@ func EnqueueQuickOrder(state *app.State, params QuickOrderParams) *QuickOrderRes
 		Options:    options,
 		Status:     "running",
 		RetryCount: 0,
-		AutoPay:    params.AutoPay,
-		Force:      params.Force,
-		Coupon:     strings.TrimSpace(params.Coupon),
+		// AutoPay: params.AutoPay, // 自动付款已停用，原参数保留兼容旧客户端。
+		AutoPay: false,
+		Force:   params.Force,
+		Coupon:  strings.TrimSpace(params.Coupon),
 		// MaxRetries 封顶的是**真正提交并失败的次数**(FailureCount),无货轮次不计。
 		MaxRetries:    20,
 		RetryInterval: state.Config.QuickOrderRetryInterval(),

@@ -204,7 +204,7 @@ func TestPurchaseCouponBeforeCheckout(t *testing.T) {
 	}
 }
 
-func TestPurchaseCoupon_RejectedWithAutoPay_PausesTask(t *testing.T) {
+func TestPurchaseCoupon_RejectedWithLegacyAutoPayContinuesUnpaid(t *testing.T) {
 	original := http.DefaultTransport
 	t.Cleanup(func() { http.DefaultTransport = original })
 
@@ -244,6 +244,13 @@ func TestPurchaseCoupon_RejectedWithAutoPay_PausesTask(t *testing.T) {
 			body = `{"message":"coupon is invalid or expired"}`
 		case strings.HasSuffix(path, "/coupon-cart/checkout") && r.Method == "POST":
 			checkoutCalled = true
+			var payload map[string]interface{}
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil || payload["autoPayWithPreferredPaymentMethod"] != false {
+				t.Errorf("legacy autoPay enabled checkout payment: %+v %v", payload, err)
+			}
+			body = `{"orderId":1001,"url":"https://fixture.invalid/order"}`
+		case strings.HasSuffix(path, "/me/order/1001"):
+			body = `{"orderId":1001,"expirationDate":"2099-01-01T00:00:00Z"}`
 		case strings.HasSuffix(path, "/order/cart/coupon-cart") && r.Method == "DELETE":
 		default:
 			return nil, fmt.Errorf("unexpected fixture request: %s %s", r.Method, r.URL)
@@ -271,11 +278,11 @@ func TestPurchaseCoupon_RejectedWithAutoPay_PausesTask(t *testing.T) {
 	if !couponCalled {
 		t.Fatal("expected coupon to be called")
 	}
-	if checkoutCalled {
-		t.Fatal("checkout should NOT be called when coupon is rejected and autoPay is true")
+	if !checkoutCalled || item.AutoPay {
+		t.Fatal("legacy autoPay must be ignored and checkout must stay unpaid")
 	}
-	if !outcome.PauseTask {
-		t.Fatalf("expected outcome.PauseTask=true, got %+v", outcome)
+	if outcome.PauseTask || !outcome.Success {
+		t.Fatalf("expected unpaid success with coupon warning, got %+v", outcome)
 	}
 	if outcome.Attempted {
 		t.Fatalf("expected outcome.Attempted=false, got %+v", outcome)

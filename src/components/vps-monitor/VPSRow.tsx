@@ -63,7 +63,7 @@ export function VPSRow({
               {sub.notifyUnavailable && <Chip tone="warning">无货提醒</Chip>}
               {sub.autoOrder && sub.autoOrderAccountId && (
                 <Chip tone="solid" title="补货时按 1 个月自动下单;抢到一次后自动关闭">
-                  自动下单 ×{sub.quantity || 1}{sub.autoPay ? " · 自动付款" : ""}
+                  自动下单 ×{sub.quantity || 1}{/* {sub.autoPay ? " · 自动付款" : ""} 自动付款已停用 */}
                 </Chip>
               )}
               {sub.autoOrder && sub.autoOrderAccountId && <AccountChip accountId={sub.autoOrderAccountId} />}

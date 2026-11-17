@@ -128,20 +128,30 @@ export interface OrderPaymentInfo {
   amount: number | null;
   currency: string;
   priceText: string;
+  expirationDate: string;
+  managerUrl: string;
   attempted: boolean;
   methods: { id: number; type: string; label: string; default: boolean }[];
 }
 
 /** 打开付款窗口时只读取可用方式,不产生付款请求。 */
 export function useOrderPaymentInfo(accountId: string, orderId: number, open: boolean) {
+  const qc = useQueryClient();
   return useQuery({
     queryKey: qk.account.orderPayment(accountId, orderId),
-    queryFn: async () =>
-      (await api.get<OrderPaymentInfo>(`/ovh/account/orders/${orderId}/payment`, { params: { account: accountId } })).data,
+    queryFn: async () => {
+      const data = (await api.get<OrderPaymentInfo>(`/ovh/account/orders/${orderId}/payment`, { params: { account: accountId } })).data;
+      // 后端将这次实时查询结果同步到购买历史，再让页面读取新状态。
+      void qc.invalidateQueries({ queryKey: qk.history() });
+      return data;
+    },
     enabled: open && !!accountId,
     staleTime: 0,
     retry: false,
     refetchOnWindowFocus: false,
+    refetchInterval: (query) => query.state.status !== "error" && query.state.data?.attempted &&
+      ["notPaid", "unknown"].includes(query.state.data.status) ? 5_000 : false,
+    refetchIntervalInBackground: false,
   });
 }
 
@@ -164,6 +174,8 @@ export function usePayAccountOrder(orderId: number) {
     onSettled: () => {
       // 订单列表的 key 用的是"选中账户"(可能为空=默认),这里直接刷新整个 account 域
       qc.invalidateQueries({ queryKey: ["account"] });
+      qc.invalidateQueries({ queryKey: qk.history() });
+      qc.invalidateQueries({ queryKey: ["history-cancellation"] });
     },
   });
 }

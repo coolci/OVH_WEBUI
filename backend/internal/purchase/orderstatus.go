@@ -3,6 +3,7 @@ package purchase
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,8 +15,8 @@ import (
 
 // 订单支付状态。
 //
-// "下单成功"≠"已付款":checkout 是 autoPayWithPreferredPaymentMethod:false(除非开了
-// 自动付款开关),订单创建后要用户自己付,逾期作废。历史里以前只有"success",
+// "下单成功"≠"已付款":自动付款已停用，checkout 始终不扣款。
+// 订单创建后要用户自己付,逾期作废。历史里以前只有"success",
 // 用户永远不知道这单到底付了没、有没有过期。
 //
 // 状态来自 GET /me/order/{orderId}/status,三区都有,返回 billing.order.OrderStatusEnum:
@@ -53,15 +54,29 @@ func FetchOrderStatus(client *ovhsdk.Client, orderID string) (string, error) {
 // force=true 忽略节流(手动刷新用),返回更新了几条。
 func RefreshOrderStatuses(state *app.State, force bool) int {
 	// 先拍快照,网络请求不能拿着 HistoryMu
-	state.HistoryMu.Lock()
+	history := state.HistorySnapshot()
 	type target struct {
 		entryID, orderID, accountID, statusAt, status, purchaseTime string
 		needDeadline                                                bool
 	}
 	var targets []target
-	for _, h := range state.History {
-		if h.Status != "success" || h.OrderID == "" || orderStatusTerminal[h.OrderStatus] {
+	for _, h := range history {
+		if h.Status != "success" || h.OrderID == "" {
 			continue
+		}
+		if orderStatusTerminal[h.OrderStatus] {
+			// 已交付订单也可能仍有撤回权。提交撤单后继续跟踪，直到 OVH 确认取消。
+			if h.OrderStatus != "delivered" || !state.HasDB() {
+				continue
+			}
+			id, err := strconv.ParseInt(h.OrderID, 10, 64)
+			if err != nil {
+				continue
+			}
+			action, err := state.DB.GetOrderCancellation(h.AccountID, id)
+			if err != nil || action.RetractionState == "" || action.RetractionState == "failed" {
+				continue
+			}
 		}
 		// 按历史条目自己的 ID 定位,不能按 TaskID。
 		// VPS 那边一条订阅下的每一单 TaskID 都是 "vps:"+sub.ID,同一个值;
@@ -69,7 +84,6 @@ func RefreshOrderStatuses(state *app.State, force bool) int {
 		// 而第二单自己永远拿不到状态 → 每一轮都重新去查,直到 30 天上限。
 		targets = append(targets, target{h.ID, h.OrderID, h.AccountID, h.OrderStatusAt, h.OrderStatus, h.PurchaseTime, h.ExpirationTime == ""})
 	}
-	state.HistoryMu.Unlock()
 
 	now := time.Now()
 	updated := 0

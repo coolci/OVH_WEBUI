@@ -9,10 +9,25 @@ func OrderPaymentKey(accountID string, orderID int64) string {
 
 // ClaimOrderPayment 必须在发出付款请求前落库;同一订单只能有一个请求持有记录。
 func (db *DB) ClaimOrderPayment(accountID string, orderID int64) (bool, error) {
-	result, err := db.Exec(`INSERT OR IGNORE INTO kv(key,value) VALUES(?,?)`, OrderPaymentKey(accountID, orderID), `{"state":"pending"}`)
+	tx, err := db.Beginx()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	action, err := cancellationInTx(tx, OrderCancellationKey(accountID, orderID))
+	if err != nil {
+		return false, err
+	}
+	if action.AbandonedAt != "" || (action.RetractionState != "" && action.RetractionState != "failed") {
+		return false, nil
+	}
+	result, err := tx.Exec(`INSERT OR IGNORE INTO kv(key,value) VALUES(?,?)`, OrderPaymentKey(accountID, orderID), `{"state":"pending"}`)
 	if err != nil {
 		return false, err
 	}
 	n, err := result.RowsAffected()
-	return n == 1, err
+	if err != nil {
+		return false, err
+	}
+	return n == 1, tx.Commit()
 }

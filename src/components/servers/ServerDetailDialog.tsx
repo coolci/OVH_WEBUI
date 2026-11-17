@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
+// import { Checkbox } from "@/components/ui/checkbox";
 import { AccountSelect } from "@/components/common/AccountSelect";
 import { Chip } from "@/components/common/Chip";
 import { DatacenterPicker } from "@/components/common/DatacenterPicker";
@@ -40,7 +40,8 @@ import {
 import { groupOptions, describeOptionCodes, type OptionGroupKey } from "@/lib/option-groups";
 import { selectionDcStatus, stockOnlyParts } from "@/lib/variant-stock";
 import { OVH_DATACENTERS, isDcInStock, lookupDcStatus, mergeDcAvailability } from "@/lib/datacenters";
-import { AutoPayCheck } from "@/components/orders/AutoPayCheck";
+// 自动付款已停用，保留原实现。
+// import { AutoPayCheck } from "@/components/orders/AutoPayCheck";
 import { OSAvailabilityList } from "@/components/servers/OSAvailabilityList";
 import type { MonitorSubscription } from "@/hooks/use-monitor";
 
@@ -124,7 +125,7 @@ export function ServerDetailDialog({
   const [selectedDCs, setSelectedDCs] = useState<string[]>([]);
   const [quantity, setQuantity] = useState("1");
   const [coupon, setCoupon] = useState("");
-  const [autoPay, setAutoPay] = useState(false);
+  // const [autoPay, setAutoPay] = useState(false); // 自动付款已停用，保留原状态。
   const [duration, setDuration] = useState(DEFAULT_ORDER_DURATION);
   const durations = useOrderDurations(accountId, server.planCode);
   const durationValid = supportsDuration(durations.data, duration);
@@ -399,11 +400,14 @@ export function ServerDetailDialog({
                 />
               </div>
             </div>
+            {/* 自动付款已停用，原控件保留。
             <label className="flex items-center gap-2 pt-1 cursor-pointer text-xs">
               <Checkbox checked={autoPay} onCheckedChange={(v) => setAutoPay(!!v)} />
               <span className="text-muted-foreground">抢到后自动付款（默认关闭；开启后使用 OVH 账户默认支付方式自动结算）</span>
             </label>
             <AutoPayCheck accountIds={[accountId]} enabled={autoPay} />
+            */}
+            <p className="text-xs text-muted-foreground">下单后请手动付款。</p>
           </div>
         </div>
       </div>
@@ -473,7 +477,8 @@ export function ServerDetailDialog({
                   quantity: qty,
                   retryInterval: Number(retryInterval) || cfgDefault,
                   options: selectedValues,
-                  autoPay,
+                  // autoPay, // 原自动付款设置已停用。
+                  autoPay: false,
                   coupon: coupon.trim() || undefined,
                   duration,
                   preorder,
@@ -494,7 +499,8 @@ export function ServerDetailDialog({
                       quantity: qty,
                       retryInterval: Number(retryInterval) || cfgDefault,
                       options: selectedValues,
-                      autoPay,
+                      // autoPay, // 原自动付款设置已停用。
+                      autoPay: false,
                       coupon: coupon.trim() || undefined,
                       duration,
                       preorder,

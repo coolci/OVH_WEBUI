@@ -353,7 +353,7 @@ function SubRow({
               ) : sub.autoOrder ? (
                 <Chip tone="warning">已勾自动下单但未选账户(只通知)</Chip>
               ) : null}
-              {sub.autoPay && <Chip tone="success">自动付款</Chip>}
+              {/* {sub.autoPay && <Chip tone="success">自动付款</Chip>} 自动付款已停用 */}
               {!sub.notifyAvailable && !sub.notifyUnavailable && !sub.autoOrder && !sub.paused && (
                 <Chip tone="default">仅跟踪库存</Chip>
               )}

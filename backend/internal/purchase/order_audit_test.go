@@ -71,8 +71,8 @@ func TestAuditPauseBeforeCheckout(t *testing.T) {
 			checkout.Add(1)
 			var payload map[string]any
 			_ = json.NewDecoder(r.Body).Decode(&payload)
-			if payload["autoPayWithPreferredPaymentMethod"] != true {
-				t.Errorf("autoPay missing")
+			if payload["autoPayWithPreferredPaymentMethod"] != false {
+				t.Errorf("automatic payment must remain disabled")
 			}
 			w.WriteHeader(400)
 			fmt.Fprint(w, `{"message":"audit checkout rejected; no real order"}`)

@@ -2,6 +2,7 @@ package purchase
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/netfp"
@@ -59,6 +60,10 @@ func auditOrderFixture(t *testing.T, plan, optionResponse string) (*app.State, *
 			w.WriteHeader(400)
 			io.WriteString(w, `{"message":"Coupon is not valid"}`)
 		case strings.HasSuffix(r.URL.Path, "/checkout"):
+			var payload map[string]interface{}
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil || payload["autoPayWithPreferredPaymentMethod"] != false {
+				t.Errorf("checkout must not pay, including legacy AutoPay=true: %+v %v", payload, err)
+			}
 			checkout.Add(1)
 			io.WriteString(w, `{"orderId":12345,"url":"https://audit.invalid/order"}`)
 		case r.Method == http.MethodDelete:
@@ -112,7 +117,7 @@ func TestPrewarmMissingOptionsBlocksCheckout(t *testing.T) {
 		})
 	}
 }
-func TestPrewarmRejectedCouponBlocksAutoPay(t *testing.T) {
+func TestPrewarmRejectedCouponLegacyAutoPayStaysUnpaid(t *testing.T) {
 	s, item, checkout, _ := auditOrderFixture(t, "audit-coupon", `[{"planCode":"ram-64g","prices":[]}]`)
 	item.Coupon = "INVALID"
 	item.AutoPay = true
@@ -122,7 +127,7 @@ func TestPrewarmRejectedCouponBlocksAutoPay(t *testing.T) {
 		t.Fatal("rejected coupon published")
 	}
 	out := PurchaseServer(context.Background(), s, item)
-	if out.Success || !out.PauseTask || checkout.Load() != 0 {
+	if !out.Success || out.PauseTask || checkout.Load() != 1 || item.AutoPay {
 		t.Fatalf("%+v checkout=%d", out, checkout.Load())
 	}
 }

@@ -70,9 +70,12 @@ func cancelledOutcome(state *app.State, item *types.QueueItem, stage string) Out
 // ctx 由队列处理器给,用户删任务时会被取消(app.State.MarkTaskDeleted)。
 // 结账之前的每一次 OVH 调用都挂在它上面,取消即中断;结账本身例外,见那里的注释。
 func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem) Outcome {
-	if strings.HasPrefix(item.ID, "catalog-watch-") {
-		item.AutoPay = false
-	}
+	// 原先只对目录监控关闭自动付款，保留原代码：
+	// if strings.HasPrefix(item.ID, "catalog-watch-") {
+	//     item.AutoPay = false
+	// }
+	// 自动付款已停用，包括旧库及旧客户端传入的 AutoPay=true。
+	item.AutoPay = false
 	attemptStart := time.Now() // checkout 对账用:transient 失败后按此时间查 /me/order
 	// 购买时长:空值(旧任务)按 P1M;非法值是确定性失败,重试也不会变
 	selectedDuration, termErr := orderterm.Normalize(item.Duration)
@@ -764,7 +767,9 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 		// 用户在任务上显式打开了"自动付款"才为 true(schema 描述:
 		// "order will be automatically paid with preferred payment method",
 		// 需要 OVH 账户已设置默认支付方式)。默认 false:不替用户扣钱。
-		"autoPayWithPreferredPaymentMethod": item.AutoPay,
+		// 自动付款已停用，保留原设置：
+		// "autoPayWithPreferredPaymentMethod": item.AutoPay,
+		"autoPayWithPreferredPaymentMethod": false,
 	}
 	// 不发 waiveRetractationPeriod。
 	//
@@ -1520,14 +1525,14 @@ func backfillOrderDetail(state *app.State, client *ovhsdk.Client, taskID, orderI
 // 用户看到 🎉 就睡了,第二天机器没了还以为是我们没抢到。
 func BuildOrderSuccessMessage(item *types.QueueItem, orderID, managerURL string, tls ...*timeline) string {
 	payNote := "⚠️ 订单尚未付款：请尽快打开订单链接完成付款，逾期未付订单会自动作废。\n" +
-		"（订单未付款前处于 14 天撤销期内，可在 OVH 订单页撤回）"
-	if item.AutoPay {
-		// 只承诺我们真正知道的:已请求自动付款 ≠ 扣款一定成功
-		// (默认支付方式失效/余额不足时 OVH 不会扣成),让用户去核对
-		// 结账 payload 不传 waiveRetractationPeriod，自动付款也不会替用户弃权。
-		payNote = "💳 已请求用账户默认支付方式自动付款，请打开订单链接核对扣款是否成功。\n" +
-			"（本次结账未放弃 14 天撤销期，可在 OVH 订单页撤回）"
-	}
+		"（未付款订单不支持直接撤回，可在购买历史中放弃并等待到期作废）"
+		// if item.AutoPay {
+		// // 只承诺我们真正知道的:已请求自动付款 ≠ 扣款一定成功
+		// // (默认支付方式失效/余额不足时 OVH 不会扣成),让用户去核对
+		// // 结账 payload 不传 waiveRetractationPeriod，自动付款也不会替用户弃权。
+		// payNote = "💳 已请求用账户默认支付方式自动付款，请打开订单链接核对扣款是否成功。\n" +
+		// "（本次结账未放弃 14 天撤销期，可在 OVH 订单页撤回）"
+		// }
 	// 发控制面板深链,不发 checkout 返回的那个 url ——
 	// 后者是带凭证的下载链接(OVH 的 billing.Order 里 url 旁边就是 password),
 	// 而这条消息会进 Telegram 群和用户配的任意 webhook。

@@ -56,6 +56,8 @@ func registerAPIRoutes(api *gin.RouterGroup, cfg Config) {
 	api.GET("/purchase-history", handlers.GetPurchaseHistory(state))
 	api.DELETE("/purchase-history", handlers.ClearPurchaseHistory(state))
 	api.POST("/purchase-history/refresh-status", handlers.RefreshOrderStatuses(state))
+	api.GET("/purchase-history/:id/cancellation", handlers.GetHistoryCancellation(state))
+	api.POST("/purchase-history/:id/cancellation", handlers.CancelHistoryOrder(state))
 
 	// Monitor
 	api.GET("/monitor/subscriptions", handlers.GetSubscriptions(state, mon))

@@ -33,7 +33,8 @@ import { AccountSelect } from "@/components/common/AccountSelect";
 import { useAccounts } from "@/hooks/use-accounts";
 import { MAX_ORDER_QUANTITY } from "@/lib/order-limits";
 import { SUBSIDIARIES, reconcileVpsOsSelection } from "./types";
-import { AutoPayCheck } from "@/components/orders/AutoPayCheck";
+// 自动付款已停用，保留原实现。
+// import { AutoPayCheck } from "@/components/orders/AutoPayCheck";
 
 interface AddVPSDialogProps {
   open: boolean;
@@ -61,7 +62,7 @@ export function AddVPSDialog({ open, onOpenChange, initial }: AddVPSDialogProps)
   const [autoOrderAccountId, setAutoOrderAccountId] = useState("");
   const [quantity, setQuantity] = useState("1");
   const [os, setOs] = useState("");
-  const [autoPay, setAutoPay] = useState(false);
+  // const [autoPay, setAutoPay] = useState(false); // 自动付款已停用，保留原状态。
   const accountsQ = useAccounts();
   const osChoices = useMemo(
     () => models.find((m) => m.planCode === vpsModel.trim())?.osChoices || [],
@@ -115,7 +116,7 @@ export function AddVPSDialog({ open, onOpenChange, initial }: AddVPSDialogProps)
     setAutoOrderAccountId("");
     setQuantity("1");
     setOs("");
-    setAutoPay(false);
+    // setAutoPay(false);
   };
 
   useEffect(() => {
@@ -132,7 +133,7 @@ export function AddVPSDialog({ open, onOpenChange, initial }: AddVPSDialogProps)
       setAutoOrderAccountId(initial.autoOrderAccountId || "");
       setQuantity(String(initial.quantity && initial.quantity > 0 ? initial.quantity : 1));
       setOs(initial.os || "");
-      setAutoPay(!!initial.autoPay);
+      // setAutoPay(false) // 自动付款已停用；忽略旧订阅设置。;
       return;
     }
     reset();
@@ -167,7 +168,8 @@ export function AddVPSDialog({ open, onOpenChange, initial }: AddVPSDialogProps)
       autoOrder,
       autoOrderAccountId: autoOrder ? autoOrderAccountId : "",
       quantity: autoOrder ? qty : 0,
-      autoPay: autoOrder && autoPay,
+      // autoPay: autoOrder && autoPay,
+      autoPay: false,
     };
     const onSuccess = () => {
       reset();
@@ -362,6 +364,7 @@ export function AddVPSDialog({ open, onOpenChange, initial }: AddVPSDialogProps)
                     )}
                   </div>
                 </div>
+                {/* 自动付款已停用，原控件保留。
                 <label className="flex items-center gap-2.5 cursor-pointer">
                   <Checkbox checked={autoPay} onCheckedChange={(v) => setAutoPay(!!v)} />
                   <div>
@@ -370,6 +373,8 @@ export function AddVPSDialog({ open, onOpenChange, initial }: AddVPSDialogProps)
                   </div>
                 </label>
                 <AutoPayCheck accountIds={[autoOrderAccountId]} enabled={autoOrder && autoPay} />
+                */}
+                <p className="text-xs text-muted-foreground">下单后请手动付款。</p>
               </div>
             )}
           </div>

@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
+// import { Checkbox } from "@/components/ui/checkbox";
 import { Chip } from "@/components/common/Chip";
 import { AccountSelect } from "@/components/common/AccountSelect";
 import { DatacenterPicker } from "@/components/common/DatacenterPicker";
@@ -37,7 +37,8 @@ import {
 } from "@/hooks/use-availability";
 import { mergeDcAvailability } from "@/lib/datacenters";
 import { describeOptionCode, describeOptionCodes, groupOptions, type OptionGroupKey } from "@/lib/option-groups";
-import { AutoPayCheck } from "@/components/orders/AutoPayCheck";
+// 自动付款已停用，保留原实现。
+// import { AutoPayCheck } from "@/components/orders/AutoPayCheck";
 
 interface CreateQueueDialogProps {
   open: boolean;
@@ -87,7 +88,7 @@ export function CreateQueueDialog({
 
   const [picked, setPicked] = useState<Partial<Record<OptionGroupKey, string>>>({});
   const [extraInput, setExtraInput] = useState("");
-  const [autoPay, setAutoPay] = useState(false);
+  // const [autoPay, setAutoPay] = useState(false); // 自动付款已停用，保留原状态。
   const [duration, setDuration] = useState(DEFAULT_ORDER_DURATION);
   const durations = useOrderDurations(accountId, planCode, open);
   // 换了型号就回到 1 个月:上一个型号选的周期不一定适用于这个型号,不能悄悄带过去
@@ -192,7 +193,7 @@ export function CreateQueueDialog({
     setRetryInterval(String(cfgDefault));
     setPicked({});
     setExtraInput("");
-    setAutoPay(false);
+    // setAutoPay(false);
     setCoupon("");
     setDuration(DEFAULT_ORDER_DURATION);
     prevPlanCodeRef.current = "";
@@ -249,7 +250,8 @@ export function CreateQueueDialog({
       quantity: qty,
       retryInterval: Number(retryInterval) || cfgDefault,
       options: parsedOptions,
-      autoPay,
+      // autoPay, // 原自动付款设置已停用。
+      autoPay: false,
       coupon: coupon.trim() || undefined,
       duration,
       preorder,
@@ -271,7 +273,8 @@ export function CreateQueueDialog({
           quantity: qty,
           retryInterval: Number(retryInterval) || cfgDefault,
           options: parsedOptions,
-          autoPay,
+          // autoPay, // 原自动付款设置已停用。
+          autoPay: false,
           coupon: coupon.trim() || undefined,
           duration,
           preorder,
@@ -449,6 +452,7 @@ export function CreateQueueDialog({
             </p>
           </div>
 
+          {/* 自动付款已停用，原控件保留。
           <label className="flex items-center gap-2.5 cursor-pointer rounded-xl border border-border px-3.5 py-2.5 hover:bg-muted/40 transition-colors">
             <Checkbox checked={autoPay} onCheckedChange={(v) => setAutoPay(!!v)} />
             <div>
@@ -457,6 +461,8 @@ export function CreateQueueDialog({
             </div>
           </label>
           <AutoPayCheck accountIds={[accountId]} enabled={autoPay} />
+          */}
+          <p className="text-xs text-muted-foreground">下单后请手动付款。</p>
 
           {datacenters.length > 0 && (
             <div className="border border-border rounded-2xl p-3 text-[12px] text-muted-foreground">

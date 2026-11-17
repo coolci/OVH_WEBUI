@@ -29,10 +29,14 @@ export function OrderPaymentButton({
   accountId,
   orderId,
   managerUrl,
+  showButton = true,
+  className,
 }: {
   accountId: string;
   orderId: number;
   managerUrl?: string;
+  showButton?: boolean;
+  className?: string;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -63,13 +67,18 @@ export function OrderPaymentButton({
     data?.amount != null && data.currency
       ? fmtMoney(data.amount, data.currency)
       : data?.priceText || "—";
+  const paymentUrl = safeHttpsUrl(managerUrl) || (data?.accountId === accountId ? safeHttpsUrl(data.managerUrl) : "");
   const ready =
     !!data &&
+    !info.isError &&
     data.status === "notPaid" &&
     !data.attempted &&
     !!method &&
     data.amount != null &&
     Number.isFinite(data.amount) &&
+    data.amount >= 0 &&
+    !!data.currency &&
+    data.accountId === accountId &&
     data.orderId === orderId &&
     !info.isFetching &&
     !pay.isPending &&
@@ -96,15 +105,19 @@ export function OrderPaymentButton({
         confirm: true,
       });
     } catch {
-      /* Inline error retains the order context. */
+      setConfirmedQuote("");
     }
   };
+  // 已付款时隐藏历史行上的按钮，但保留正在打开的结果窗口。
+  if (!showButton && !open) return null;
   return (
     <>
-      <Button variant="outline" size="sm" onClick={() => changeOpen(true)}>
-        <CreditCard className="w-3.5 h-3.5" />
-        {t("account.payment.open")}
-      </Button>
+      {showButton && (
+        <Button variant="outline" size="sm" className={className} onClick={() => changeOpen(true)}>
+          <CreditCard className="w-3.5 h-3.5" />
+          {t("account.payment.open")}
+        </Button>
+      )}
       <Dialog open={open} onOpenChange={changeOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -151,7 +164,7 @@ export function OrderPaymentButton({
                   className="h-11"
                   variant="outline"
                   onClick={() => info.refetch()}
-                  disabled={info.isFetching || pay.isPending || pay.isSuccess}
+                  disabled={info.isFetching || pay.isPending}
                 >
                   <RefreshCw
                     aria-hidden="true"
@@ -165,7 +178,7 @@ export function OrderPaymentButton({
                 </Button>
                 {data.status !== "notPaid" ? (
                   <p role="status" className="text-sm">
-                    {t("account.payment.notPayable")}
+                    {t(`account.payment.status.${data.status}`, { defaultValue: t("account.payment.notPayable") })}
                   </p>
                 ) : data.attempted ? (
                   <p role="status" className="text-sm text-warning">
@@ -228,20 +241,17 @@ export function OrderPaymentButton({
               {errorMessage(pay.error)}
             </p>
           )}
-          {pay.isSuccess && (
+          {pay.isSuccess && (!data || data.status === "notPaid" || data.status === "unknown") && (
             <p role="status" className="text-sm text-success">
               {t("account.payment.submitted")}
             </p>
           )}
-          {safeHttpsUrl(managerUrl) && (
-            <a
-              href={safeHttpsUrl(managerUrl)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm underline underline-offset-4"
-            >
-              {t("account.orderOpenManager")}
-            </a>
+          {paymentUrl && (
+            <Button asChild variant="outline" className="h-11">
+              <a href={paymentUrl} target="_blank" rel="noopener noreferrer">
+                {t("account.payment.payOnOvh")}
+              </a>
+            </Button>
           )}
           <DialogFooter>
             <Button

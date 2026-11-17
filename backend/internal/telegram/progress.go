@@ -151,11 +151,13 @@ func FormatTaskProgress(item *types.QueueItem, phase string, extra map[string]st
 			b.WriteString("\n" + timing + "\n")
 		}
 		b.WriteString("\n")
-		if item.AutoPay {
-			b.WriteString("💳 已请求默认支付方式自动扣款，请点击下方按钮核对支付状态。\n")
-		} else {
-			b.WriteString("⚠️ 订单尚未付款，请点击下方按钮完成支付，逾期将自动作废。\n")
-		}
+		// if item.AutoPay {
+		// b.WriteString("💳 已请求默认支付方式自动扣款，请点击下方按钮核对支付状态。\n")
+		// } else {
+		// b.WriteString("⚠️ 订单尚未付款，请点击下方按钮完成支付，逾期将自动作废。\n")
+		// }
+		b.WriteString("⚠️ 订单尚未付款，请点击下方按钮完成支付，逾期将自动作废。\n")
+
 		b.WriteString("💡 点击下方按钮直达 OVH 支付账单：")
 		return b.String()
 	case "failed":

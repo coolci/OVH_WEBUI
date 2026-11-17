@@ -57,7 +57,8 @@ function optionsFromSub(sub?: Partial<MonitorSubscription> | null): MonitorNotif
     notifyAvailable: sub?.notifyAvailable ?? true,
     notifyUnavailable: sub?.notifyUnavailable ?? false,
     autoOrder: !!sub?.autoOrder,
-    autoPay: !!sub?.autoPay,
+    // autoPay: !!sub?.autoPay,
+    autoPay: false,
     quantity: sub?.quantity && sub.quantity > 0 ? sub.quantity : 1,
     autoOrderAccountIds: monitorAccountIds(sub),
   };
@@ -194,7 +195,8 @@ export function MonitorSubscribeDialog({
       quantity: opts.autoOrder ? opts.quantity : undefined,
       autoOrderAccountIds: opts.autoOrder ? opts.autoOrderAccountIds : [],
       autoOrderAccountId: opts.autoOrder ? opts.autoOrderAccountIds[0] || "" : "",
-      autoPay: opts.autoOrder ? opts.autoPay : false,
+      // autoPay: opts.autoOrder ? opts.autoPay : false,
+      autoPay: false,
       // 只在自动下单时提交;关掉自动下单不冲掉已保存的时长
       duration: opts.autoOrder ? duration : undefined,
     };

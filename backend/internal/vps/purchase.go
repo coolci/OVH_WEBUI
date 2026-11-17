@@ -67,6 +67,8 @@ func PurchaseVPS(state *app.State, sub types.VPSSubscription, dcCode string) Out
 }
 
 func purchaseVPSInternal(state *app.State, sub types.VPSSubscription, dcCode string) Outcome {
+	// 自动付款已停用，旧订阅也不能扣款。
+	sub.AutoPay = false
 	if strings.TrimSpace(sub.AutoOrderAccountID) == "" {
 		return Outcome{Fatal: true, Reason: "没有指定下单账户"}
 	}
@@ -213,7 +215,9 @@ func purchaseVPSInternal(state *app.State, sub types.VPSSubscription, dcCode str
 	attemptStart := time.Now()
 	if err := client.Post("/order/cart/"+cartID+"/checkout", map[string]interface{}{
 		// 订阅上显式打开"自动付款"才为 true;默认不替用户扣钱
-		"autoPayWithPreferredPaymentMethod": sub.AutoPay,
+		// 自动付款已停用，保留原设置：
+		// "autoPayWithPreferredPaymentMethod": sub.AutoPay,
+		"autoPayWithPreferredPaymentMethod": false,
 	}, &checkoutResult); err != nil {
 		// 配置接口对取值几乎不校验,真正的"这个机房没货"往往到 checkout 才报出来
 		errMsg := ovh.Explain(err)
@@ -613,11 +617,11 @@ func autoOrderOnRestock(state *app.State, sub types.VPSSubscription, dcs []map[s
 			// 同独服:checkout 默认 autoPayWithPreferredPaymentMethod:false,
 			// "成功"= 订单已创建、未付款、逾期作废。通知里必须说清楚。
 			payNote := "⚠️ 订单尚未付款：请尽快打开订单链接完成付款,逾期未付订单会自动作废。\n" +
-				"(订单未付款前处于 14 天撤销期内,可在 OVH 订单页撤回)"
-			if sub.AutoPay {
-				payNote = "💳 已请求用账户默认支付方式自动付款,请打开订单链接核对扣款是否成功。\n" +
-					"(订单未付款前处于 14 天撤销期内,可在 OVH 订单页撤回)"
-			}
+				"(未付款订单可在购买历史中放弃，等待到期作废)"
+				// if sub.AutoPay {
+				// payNote = "💳 已请求用账户默认支付方式自动付款,请打开订单链接核对扣款是否成功。\n" +
+				// "(未付款订单可在购买历史中放弃，等待到期作废)"
+				// }
 			// 同独服:通知里发需要登录的控制面板深链,不发 checkout 那个带凭证的 url。
 			// 带凭证那份存在本地历史里,界面上照样一键可付。
 			linkURL := "请在 OVH 控制台 → 账单 → 订单 中查看"

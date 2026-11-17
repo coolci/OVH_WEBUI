@@ -32,6 +32,10 @@ export interface PurchaseHistory {
    *  没有它,"下单成功"到底付没付永远不知道。空 = 还没查到 */
   orderStatus?: string;
   orderStatusAt?: string;
+  /** 本地放弃未付款订单，不等同于 OVH 已取消。 */
+  abandonedAt?: string;
+  retractionState?: "sending" | "submitted" | "uncertain" | "failed";
+  retractionTime?: string;
   price?: {
     withTax?: number;
     withoutTax?: number;

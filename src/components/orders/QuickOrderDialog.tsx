@@ -46,8 +46,9 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
-import { AutoPayCheck } from "@/components/orders/AutoPayCheck";
+// import { Checkbox } from "@/components/ui/checkbox";
+// 自动付款已停用，保留原实现。
+// import { AutoPayCheck } from "@/components/orders/AutoPayCheck";
 
 type QuickOrderDialogProps = {
   open: boolean;
@@ -91,7 +92,7 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
   }, [cfgDefault]);
   const [picked, setPicked] = useState<Partial<Record<OptionGroupKey, string>>>({});
   const [extraInput, setExtraInput] = useState("");
-  const [autoPay, setAutoPay] = useState(false);
+  // const [autoPay, setAutoPay] = useState(false); // 自动付款已停用，保留原状态。
   const [coupon, setCoupon] = useState("");
   const [duration, setDuration] = useState(DEFAULT_ORDER_DURATION);
   // 换了型号就回到 1 个月:上一个型号选的周期不一定适用于这个型号,不能悄悄带过去
@@ -193,7 +194,7 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
     setRetryInterval(String(cfgDefault));
     setPicked({});
     setExtraInput("");
-    setAutoPay(false);
+    // setAutoPay(false);
     setCoupon("");
     setDuration(DEFAULT_ORDER_DURATION);
     setAccountId(defaultAcc?.id || "");
@@ -277,7 +278,8 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
       quantity: qty,
       retryInterval: Number(retryInterval) || cfgDefault,
       options: selectedValues,
-      autoPay,
+      // autoPay, // 原自动付款设置已停用。
+      autoPay: false,
       force: isCustomPlan,
       coupon: coupon.trim() || undefined,
       duration,
@@ -299,7 +301,8 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
           quantity: qty,
           retryInterval: Number(retryInterval) || cfgDefault,
           options: selectedValues,
-          autoPay,
+          // autoPay, // 原自动付款设置已停用。
+          autoPay: false,
           force: true,
           coupon: coupon.trim() || undefined,
           duration,
@@ -503,6 +506,7 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
               </p>
             </div>
 
+            {/* 自动付款已停用，原控件保留。
             <label className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-border px-3.5 py-2.5 transition-colors hover:bg-muted/40">
               <Checkbox checked={autoPay} onCheckedChange={(v) => setAutoPay(!!v)} />
               <div>
@@ -511,6 +515,8 @@ export function QuickOrderDialog({ open, onOpenChange, initialPlanCode }: QuickO
               </div>
             </label>
             <AutoPayCheck accountIds={[targetAccountId]} enabled={autoPay} />
+            */}
+            <p className="text-xs text-muted-foreground">下单后请手动付款。</p>
           </div>
 
           <div className="relative z-10 shrink-0 space-y-2 border-t border-border/60 bg-card px-4 py-3 sm:px-6">

@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
+// import { Checkbox } from "@/components/ui/checkbox";
 import { Chip } from "@/components/common/Chip";
 import { AccountChip } from "@/components/common/AccountChip";
 import { OptionGroupSection } from "@/components/common/OptionGroupSection";
@@ -33,7 +33,8 @@ import { describeOptionCode, groupOptions, type OptionGroupKey } from "@/lib/opt
 import { parseOptionCodes } from "@/lib/order-inputs";
 import { mergeStockPlans } from "@/lib/stock-plans";
 import { preorderOptions, preorderVariantCoversAll } from "@/lib/preorder-options";
-import { AutoPayCheck } from "@/components/orders/AutoPayCheck";
+// 自动付款已停用，保留原实现。
+// import { AutoPayCheck } from "@/components/orders/AutoPayCheck";
 
 interface EditQueueDialogProps {
   open: boolean;
@@ -54,7 +55,7 @@ export function EditQueueDialog({ open, onOpenChange, item }: EditQueueDialogPro
 
   const [datacenter, setDatacenter] = useState("");
   const [retryInterval, setRetryInterval] = useState("");
-  const [autoPay, setAutoPay] = useState(false);
+  // const [autoPay, setAutoPay] = useState(false); // 自动付款已停用，保留原状态。
   const [coupon, setCoupon] = useState("");
   const [duration, setDuration] = useState(DEFAULT_ORDER_DURATION);
   const durations = useOrderDurations(accountId, item?.planCode, open);
@@ -88,7 +89,7 @@ export function EditQueueDialog({ open, onOpenChange, item }: EditQueueDialogPro
       // 将后端存储的 API 码（如 ynm、ca-east-tor-a、eu-west-par-a）还原为显示短码，避免下拉框空白
       setDatacenter(displayDatacenterCode(item.datacenter));
       setRetryInterval(String(item.retryInterval || 60));
-      setAutoPay(!!item.autoPay);
+      // setAutoPay(false) // 自动付款已停用；忽略旧任务设置。;
       setCoupon(item.coupon || "");
       setDuration(normalizeDuration(item.duration));
     }
@@ -178,7 +179,8 @@ export function EditQueueDialog({ open, onOpenChange, item }: EditQueueDialogPro
         datacenter: apiDatacenterCode(datacenter),
         options: parsedOptions,
         retryInterval: intervalNum,
-        autoPay,
+        // autoPay, // 原自动付款设置已停用。
+        autoPay: false,
         coupon: coupon.trim(),
         duration,
       });
@@ -345,6 +347,7 @@ export function EditQueueDialog({ open, onOpenChange, item }: EditQueueDialogPro
           </div>
 
           {/* AutoPay */}
+          {/* 自动付款已停用，原控件保留。
           <label className="flex items-center gap-2.5 cursor-pointer rounded-xl border border-border px-3.5 py-2.5 hover:bg-muted/40 transition-colors">
             <Checkbox checked={autoPay} onCheckedChange={(v) => setAutoPay(!!v)} />
             <div>
@@ -355,6 +358,8 @@ export function EditQueueDialog({ open, onOpenChange, item }: EditQueueDialogPro
             </div>
           </label>
           <AutoPayCheck accountIds={[item?.accountId]} enabled={autoPay} />
+          */}
+          <p className="text-xs text-muted-foreground">下单后请手动付款。</p>
         </div>
 
         <DialogFooter>

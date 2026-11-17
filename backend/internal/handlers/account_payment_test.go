@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -164,6 +165,90 @@ func TestOrderPaymentDefiniteRejectionAllowsFreshConfirmation(t *testing.T) {
 	}
 	if calls.Load() != 2 {
 		t.Fatal("definite rejection retained ambiguous payment claim")
+	}
+}
+
+func TestPaymentConfirmationUpdatesOnlyTheOrderingAccountHistory(t *testing.T) {
+	st, r, calls, _ := paymentFixture(t, "EU", "notPaid", "2099-01-01T00:00:00Z", 200)
+	st.History = []types.PurchaseHistoryEntry{
+		{ID: "payment-1001", AccountID: "pay", OrderID: "123", PlanCode: "【模拟】plan", Status: "success"},
+		{ID: "other-1001", AccountID: "other", OrderID: "123", PlanCode: "【模拟】other", Status: "success", OrderStatus: "notPaid"},
+	}
+	var status atomic.Value
+	status.Store("notPaid")
+	client, _ := st.OVH.ClientFor("pay")
+	original := client.Client.Transport
+	client.Client.Transport = queuePreorderTransport(func(req *http.Request) (*http.Response, error) {
+		if strings.HasSuffix(req.URL.Path, "/order/123/status") {
+			b, _ := json.Marshal(status.Load().(string))
+			return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(string(b))), Request: req}, nil
+		}
+		return original.RoundTrip(req)
+	})
+	w := payRequest(r, "POST", "/orders/123/pay?account=pay", validPayment)
+	if w.Code != 200 || calls.Load() != 1 {
+		t.Fatalf("submit: %d %s", w.Code, w.Body)
+	}
+	if st.HistorySnapshot()[0].OrderStatus != "notPaid" {
+		t.Fatal("request accepted must not be reported as payment confirmed")
+	}
+	status.Store("checking")
+	w = payRequest(r, "GET", "/orders/123/payment?account=pay", "")
+	var info orderPaymentInfo
+	if err := json.Unmarshal(w.Body.Bytes(), &info); err != nil || w.Code != 200 || info.Status != "checking" || !info.Attempted || info.ManagerURL == "" {
+		t.Fatalf("verification: %d %s %v", w.Code, w.Body, err)
+	}
+	history := st.HistorySnapshot()
+	if history[0].OrderStatus != "checking" || history[1].OrderStatus != "notPaid" {
+		t.Fatalf("wrong account updated: %+v", history)
+	}
+	persisted, err := st.DB.ListHistory()
+	if err != nil || len(persisted) != 2 {
+		t.Fatalf("status not persisted: %+v %v", persisted, err)
+	}
+	w = payRequest(r, "POST", "/orders/123/pay?account=pay", validPayment)
+	if w.Code != 409 || calls.Load() != 1 {
+		t.Fatal("confirmed payment was sent again")
+	}
+}
+
+func TestPaymentRegisteredIDLookupAndMissingMethods(t *testing.T) {
+	for _, available := range []bool{true, false} {
+		t.Run(fmt.Sprint(available), func(t *testing.T) {
+			st, r, calls, _ := paymentFixture(t, "EU", "notPaid", "2099-01-01T00:00:00Z", 200)
+			client, _ := st.OVH.ClientFor("pay")
+			original := client.Client.Transport
+			client.Client.Transport = queuePreorderTransport(func(req *http.Request) (*http.Response, error) {
+				body := ""
+				if strings.HasSuffix(req.URL.Path, "/order/123/paymentMethods") {
+					body = `{"registered":[],"paymentMethods":[]}`
+					if available {
+						body = `{"registered":[7],"paymentMethods":[]}`
+					}
+				} else if strings.HasSuffix(req.URL.Path, "/payment/method/7") {
+					body = `{"paymentMethodId":7,"paymentType":"CREDIT_CARD","status":"VALID","default":true,"expirationDate":"2099-01-01T00:00:00Z"}`
+				} else {
+					return original.RoundTrip(req)
+				}
+				return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body)), Request: req}, nil
+			})
+			w := payRequest(r, "GET", "/orders/123/payment?account=pay", "")
+			var info orderPaymentInfo
+			if err := json.Unmarshal(w.Body.Bytes(), &info); err != nil || w.Code != 200 || info.ManagerURL == "" {
+				t.Fatalf("preview: %d %s %v", w.Code, w.Body, err)
+			}
+			if available != (len(info.Methods) == 1) || calls.Load() != 0 {
+				t.Fatalf("methods: %+v calls=%d", info, calls.Load())
+			}
+			w = payRequest(r, "POST", "/orders/123/pay?account=pay", validPayment)
+			if available {
+				if w.Code != 200 || calls.Load() != 1 {
+					t.Fatalf("ID lookup cannot pay: %d %s", w.Code, w.Body)
+				}
+			} else if w.Code != 409 || calls.Load() != 0 {
+				t.Fatalf("missing method charged: %d %s", w.Code, w.Body)
+			}
+		})
 	}
 }
 
