@@ -376,6 +376,23 @@ func RefreshOrderStatuses(state *app.State) gin.HandlerFunc {
 	}
 }
 
+// RemovePurchaseHistory DELETE /api/purchase-history/:id (local record only).
+func RemovePurchaseHistory(state *app.State) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id := c.Param("id")
+		if strings.TrimSpace(id) == "" {
+			httperr.BadRequest(c, "必须指定历史记录 ID", "ERR_HISTORY_ID")
+			return
+		}
+		removed, err := state.RemoveHistoryEntry(id)
+		if err != nil {
+			httperr.InternalError(c, "历史记录未被清理："+err.Error(), "ERR_DB_SAVE")
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "success", "removed": removed})
+	}
+}
+
 // ClearPurchaseHistory DELETE /api/purchase-history
 func ClearPurchaseHistory(state *app.State) gin.HandlerFunc {
 	return func(c *gin.Context) {

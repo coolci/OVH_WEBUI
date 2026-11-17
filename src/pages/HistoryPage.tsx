@@ -35,6 +35,10 @@ import { OrderDurationBadge } from "@/components/orders/OrderDurationField";
 import { OrderProgressButton } from "@/components/history/OrderProgressButton";
 import { CancelOrderButton } from "@/components/history/CancelOrderButton";
 import { HistoryPaymentButton } from "@/components/history/HistoryPaymentButton";
+import { Checkbox } from "@/components/ui/checkbox";
+import { BulkCleanupBar, BulkCleanupDialog } from "@/components/common/BulkCleanup";
+import { useBulkCleanup } from "@/hooks/use-bulk-cleanup";
+import { historyCleanupTarget } from "@/lib/bulk-cleanup";
 
 /**
  * 订单支付状态 → 标签。取值是 OVH 的 billing.order.OrderStatusEnum,三区一致。
@@ -226,6 +230,7 @@ function HistoryPage() {
       return true;
     });
   }, [items, search, statusFilter]);
+  const cleanup = useBulkCleanup(filtered, historyCleanupTarget, "history");
 
   return (
     <div className="space-y-6">
@@ -255,11 +260,11 @@ function HistoryPage() {
               size="sm"
               className="h-8 gap-1.5 text-xs font-medium rounded-lg px-3"
               onClick={() => setConfirmClear(true)}
-              disabled={items.length === 0}
+              disabled={items.length === 0 || cleanup.locked || list.isError || clear.isPending}
               title="清空所有历史"
             >
               <Trash2 className="w-3.5 h-3.5" />
-              <span>清空</span>
+              <span>清空全部</span>
             </Button>
           </div>
         }
@@ -290,6 +295,9 @@ function HistoryPage() {
           </div>
         </CardContent>
       </Card>
+
+      <BulkCleanupBar {...cleanup} disabled={cleanup.locked || list.isError || list.isPending || clear.isPending}
+        onToggleAll={cleanup.toggleAll} onClearSelection={cleanup.clearSelection} onCleanup={cleanup.requestCleanup} />
 
       {list.isPending ? (
         <Card className="surface-card rounded-xl border-border">
@@ -324,6 +332,7 @@ function HistoryPage() {
               <table className="w-full min-w-[760px]">
                 <thead>
                   <tr className="text-left text-[11px] font-medium text-muted-foreground/80 border-b border-border/60 bg-muted/30">
+                    <th className="pl-4 py-3 w-10"><span className="sr-only">选择记录</span></th>
                     <th className="px-4 py-3">型号</th>
                     <th className="px-4 py-3">机房</th>
                     <th className="px-4 py-3">配置</th>
@@ -338,7 +347,8 @@ function HistoryPage() {
                 </thead>
                 <tbody className="divide-y divide-border/40">
                   {filtered.map((item) => (
-                    <HistoryRow key={item.id} item={item} now={now} />
+                    <HistoryRow key={item.id} item={item} now={now} selected={cleanup.isSelected(item)}
+                      onSelect={() => cleanup.toggle(item)} selectionDisabled={cleanup.locked} />
                   ))}
                 </tbody>
               </table>
@@ -348,12 +358,14 @@ function HistoryPage() {
           {/* 手机:卡片堆叠,每条订单一张卡 */}
           <div className="md:hidden space-y-3">
             {filtered.map((item) => (
-              <HistoryCard key={item.id} item={item} now={now} />
+              <HistoryCard key={item.id} item={item} now={now} selected={cleanup.isSelected(item)}
+                onSelect={() => cleanup.toggle(item)} selectionDisabled={cleanup.locked} />
             ))}
           </div>
         </>
       )}
 
+      <BulkCleanupDialog {...cleanup.dialogProps} />
       <Dialog open={confirmClear} onOpenChange={setConfirmClear}>
         <DialogContent>
           <DialogHeader>
@@ -380,13 +392,19 @@ function HistoryPage() {
   );
 }
 
-function HistoryRow({ item, now }: { item: PurchaseHistory; now: number }) {
+interface HistorySelectionProps {
+  item: PurchaseHistory; now: number; selected: boolean; selectionDisabled: boolean; onSelect: () => void;
+}
+
+function HistoryRow({ item, now, selected, selectionDisabled, onSelect }: HistorySelectionProps) {
   const st = orderStatusView(item);
   const w = paymentWindow(item, st, now);
   const { showCountdown, isExpired } = w;
 
   return (
-    <tr className={`text-[13px] hover:bg-muted ${isExpired ? "opacity-60" : ""}`}>
+    <tr className={`text-[13px] hover:bg-muted ${selected ? "bg-primary/5" : ""} ${isExpired ? "opacity-60" : ""}`}>
+      <td className="pl-4 py-3"><Checkbox checked={selected} disabled={selectionDisabled} onCheckedChange={onSelect}
+        aria-label={`选择历史记录 ${item.planCode} ${item.orderId || item.id}`} /></td>
       <td className={`px-4 py-3 font-mono font-semibold ${isExpired ? "line-through" : ""}`}>
         <div className="flex items-center gap-2 flex-wrap">
           {item.planCode}
@@ -470,7 +488,7 @@ function HistoryRow({ item, now }: { item: PurchaseHistory; now: number }) {
 }
 
 /** 手机端的订单卡片渲染。跟 HistoryRow 字段一一对应,但堆叠成卡片。 */
-function HistoryCard({ item, now }: { item: PurchaseHistory; now: number }) {
+function HistoryCard({ item, now, selected, selectionDisabled, onSelect }: HistorySelectionProps) {
   const st = orderStatusView(item);
   const w = paymentWindow(item, st, now);
   const { showCountdown, isExpired } = w;
@@ -478,6 +496,10 @@ function HistoryCard({ item, now }: { item: PurchaseHistory; now: number }) {
   return (
     <Card className={cn("surface-card rounded-xl border-border hover:border-border/80 transition-all duration-200 shadow-sm", isExpired && "opacity-60")}>
       <CardContent className="p-3.5 sm:p-4 space-y-2.5">
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Checkbox checked={selected} disabled={selectionDisabled} onCheckedChange={onSelect}
+            aria-label={`选择历史记录 ${item.planCode} ${item.orderId || item.id}`} />选择此记录
+        </label>
         <div className="flex items-start justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2 flex-wrap min-w-0">
             <span className={`font-mono font-semibold text-[13px] ${isExpired ? "line-through" : ""}`}>

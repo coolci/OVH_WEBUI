@@ -1,7 +1,7 @@
 {
-  "backendRouteCount": 266,
-  "backendUniqueMethodPathCount": 266,
-  "openapiRouteCount": 266,
+  "backendRouteCount": 267,
+  "backendUniqueMethodPathCount": 267,
+  "openapiRouteCount": 267,
   "openapiHasApiPrefix": false,
   "feExtractedCallCount": 316,
   "feFetchCalls": [

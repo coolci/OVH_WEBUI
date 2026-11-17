@@ -32,6 +32,9 @@ import {
   type QueueItem,
 } from "@/hooks/use-queue";
 import { cn } from "@/lib/utils";
+import { BulkCleanupBar, BulkCleanupDialog } from "@/components/common/BulkCleanup";
+import { useBulkCleanup } from "@/hooks/use-bulk-cleanup";
+import { queueCleanupTarget } from "@/lib/bulk-cleanup";
 
 function QueuePage() {
   const queue = useQueueList();
@@ -117,6 +120,7 @@ function QueuePage() {
     }
     return out;
   }, [items, search, statusFilter]);
+  const cleanup = useBulkCleanup(filteredItems, queueCleanupTarget, "queue");
 
   return (
     <div className="space-y-6">
@@ -202,6 +206,7 @@ function QueuePage() {
               size="sm"
               className="h-7 text-xs gap-1 px-2.5 rounded-lg"
               onClick={() => setShowClearDialog(true)}
+              disabled={cleanup.locked || clear.isPending || queue.isError}
               title="清空所有队列任务"
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -210,6 +215,9 @@ function QueuePage() {
           </div>
         </div>
       )}
+
+      <BulkCleanupBar {...cleanup} disabled={cleanup.locked || queue.isError || queue.isPending || clear.isPending}
+        onToggleAll={cleanup.toggleAll} onClearSelection={cleanup.clearSelection} onCleanup={cleanup.requestCleanup} />
 
       {queue.isPending ? (
         <div className="space-y-3">
@@ -248,19 +256,23 @@ function QueuePage() {
             <QueueRow
               key={q.id}
               item={q}
+              selected={cleanup.isSelected(q)}
+              onSelect={() => cleanup.toggle(q)}
+              selectionDisabled={cleanup.locked}
               onToggle={() =>
                 toggle.mutate({
                   id: q.id,
                   action: q.status === "running" ? "pause" : "resume",
                 })
               }
-              onDelete={() => remove.mutate(q.id)}
+              onDelete={() => { if (!cleanup.locked) remove.mutate(q.id); }}
               onEdit={() => setEditingItem(q)}
             />
           ))}
         </div>
       )}
 
+      <BulkCleanupDialog {...cleanup.dialogProps} />
       <Dialog open={showClearDialog} onOpenChange={setShowClearDialog}>
         <DialogContent>
           <DialogHeader>

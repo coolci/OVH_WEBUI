@@ -564,6 +564,26 @@ paths:
                   success:
                     type: boolean
 
+  /purchase-history/{id}:
+    delete:
+      summary: Delete one local purchase history record
+      description: Removes only the exact local history ID. Does not cancel an OVH order or modify its payment/cancellation journals. Repeated deletion is idempotent.
+      operationId: RemovePurchaseHistory
+      tags: [F04]
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Local history removed or already absent
+        '500':
+          description: Persistence failed; local history is unchanged
+
   /purchase-history/{id}/cancellation:
     parameters:
       - name: id

@@ -8,15 +8,19 @@ import { IntervalEditor } from "./IntervalEditor";
 import { describeOptionCodes } from "@/lib/option-groups";
 import type { QueueItem } from "@/hooks/use-queue";
 import { OrderDurationBadge } from "@/components/orders/OrderDurationField";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface QueueRowProps {
   item: QueueItem;
   onToggle: () => void;
   onDelete: () => void;
   onEdit?: () => void;
+  selected?: boolean;
+  selectionDisabled?: boolean;
+  onSelect?: () => void;
 }
 
-export function QueueRow({ item, onToggle, onDelete, onEdit }: QueueRowProps) {
+export function QueueRow({ item, onToggle, onDelete, onEdit, selected, selectionDisabled, onSelect }: QueueRowProps) {
   const chip = (() => {
     if (item.status === "running")
       return (
@@ -54,6 +58,8 @@ export function QueueRow({ item, onToggle, onDelete, onEdit }: QueueRowProps) {
       <CardContent className="p-3.5 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+            {onSelect && <Checkbox checked={selected} disabled={selectionDisabled} onCheckedChange={onSelect}
+              aria-label={`选择队列任务 ${item.planCode} ${item.id}`} />}
             <span className="font-mono font-semibold text-sm text-foreground tracking-tight">{item.planCode}</span>
             <AccountChip accountId={item.accountId} />
             {item.uncertainCheckout && (
@@ -145,6 +151,7 @@ export function QueueRow({ item, onToggle, onDelete, onEdit }: QueueRowProps) {
               size="icon"
               className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg"
               onClick={onDelete}
+              disabled={selectionDisabled}
               aria-label="删除"
             >
               <X className="w-4 h-4" />

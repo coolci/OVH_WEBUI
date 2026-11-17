@@ -226,6 +226,36 @@ func (s *State) HistorySnapshot() []types.PurchaseHistoryEntry {
 	return cp
 }
 
+// RemoveHistoryEntry removes only a local history row. It never modifies the
+// OVH order, queue, payment journal or cancellation journal. Serialize with
+// SaveHistory so a previously captured snapshot cannot resurrect the row.
+func (s *State) RemoveHistoryEntry(id string) (bool, error) {
+	if err := s.SaveBlocked("history"); err != nil {
+		return false, err
+	}
+	if s.DB == nil {
+		return false, errors.New("数据库不可用，无法清理历史记录")
+	}
+	s.saveHistoryMu.Lock()
+	defer s.saveHistoryMu.Unlock()
+	s.HistoryMu.Lock()
+	defer s.HistoryMu.Unlock()
+	if _, err := s.DB.Exec("DELETE FROM history WHERE id = ?", id); err != nil {
+		return false, err
+	}
+	kept := make([]types.PurchaseHistoryEntry, 0, len(s.History))
+	removed := false
+	for _, entry := range s.History {
+		if entry.ID == id {
+			removed = true
+		} else {
+			kept = append(kept, entry)
+		}
+	}
+	s.History = kept
+	return removed, nil
+}
+
 // ClearHistoryEntries 清空购买历史并落库;落库失败时回滚内存。
 //
 // 回滚是拼接而不是覆盖:清空到回滚之间下单完成会 append 新记录,不能丢。

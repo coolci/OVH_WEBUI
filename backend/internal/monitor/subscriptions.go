@@ -6,6 +6,7 @@ import (
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/domain/datacenter"
 	"github.com/ovh-webui/server/internal/orderterm"
+	"github.com/ovh-webui/server/internal/types"
 	"sort"
 	"strings"
 	"time"
@@ -279,6 +280,41 @@ func (m *Monitor) RemoveSubscriptionExact(planCode string, optionsKeys ...string
 		m.state.Logger.Info(fmt.Sprintf("已移除订阅: %s(%v)", planCode, optionsKeys), "monitor")
 	}
 	return len(m.subscriptions) < original
+}
+
+// RemoveSubscriptionPersisted commits an exact removal before changing the
+// running subscriptions. Concurrent batch deletions share SaveToDB's lock.
+func (m *Monitor) RemoveSubscriptionPersisted(planCode string, optionsKeys ...string) (bool, error) {
+	if err := m.state.SaveBlocked("monitor_subscriptions"); err != nil {
+		return false, err
+	}
+	if m.state.DB == nil {
+		return false, errors.New("数据库不可用，无法删除订阅")
+	}
+	m.saveMu.Lock()
+	defer m.saveMu.Unlock()
+	m.subsMu.Lock()
+	defer m.subsMu.Unlock()
+	kept := make([]*Subscription, 0, len(m.subscriptions))
+	rows := make([]types.Subscription, 0, len(m.subscriptions))
+	removed := false
+	for _, sub := range m.subscriptions {
+		if !removed && sub.PlanCode == planCode && (len(optionsKeys) == 0 || OptionsKey(sub.Options) == optionsKeys[0]) {
+			removed = true
+			continue
+		}
+		kept = append(kept, sub)
+		rows = append(rows, toDBSub(sub))
+	}
+	if !removed {
+		return false, nil
+	}
+	if err := m.state.DB.ReplaceMonitorSubscriptions(rows); err != nil {
+		return false, err
+	}
+	m.subscriptions = kept
+	m.publishPausedQueueScopesLocked()
+	return true, nil
 }
 
 func (m *Monitor) RemoveSubscription(planCode string) bool {

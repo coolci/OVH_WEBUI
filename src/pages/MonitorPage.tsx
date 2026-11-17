@@ -37,6 +37,10 @@ import {
 import { describeOptionCodes } from "@/lib/option-groups";
 import { toast } from "sonner";
 import { OrderDurationBadge } from "@/components/orders/OrderDurationField";
+import { Checkbox } from "@/components/ui/checkbox";
+import { BulkCleanupBar, BulkCleanupDialog } from "@/components/common/BulkCleanup";
+import { useBulkCleanup } from "@/hooks/use-bulk-cleanup";
+import { monitorCleanupTarget } from "@/lib/bulk-cleanup";
 import {
   useMonitorList,
   useMonitorStatus,
@@ -79,6 +83,7 @@ function MonitorPage() {
     () => (Array.isArray(list.data) ? list.data : []),
     [list.data]
   );
+  const cleanup = useBulkCleanup(subs, monitorCleanupTarget, "monitor");
 
   return (
     <div className="space-y-6">
@@ -157,6 +162,9 @@ function MonitorPage() {
         </div>
       )}
 
+      <BulkCleanupBar {...cleanup} disabled={cleanup.locked || list.isError || list.isPending || clear.isPending}
+        onToggleAll={cleanup.toggleAll} onClearSelection={cleanup.clearSelection} onCleanup={cleanup.requestCleanup} />
+
       {/* 订阅列表 */}
       {list.isPending ? (
         <div className="space-y-3">
@@ -196,6 +204,7 @@ function MonitorPage() {
               size="sm"
               className="h-7 text-xs gap-1 px-2.5 rounded-lg"
               onClick={() => setConfirmClear(true)}
+              disabled={cleanup.locked || clear.isPending}
               title="清空所有服务器订阅"
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -210,6 +219,9 @@ function MonitorPage() {
               <SubRow
                 key={subKey}
                 sub={s}
+                selected={cleanup.isSelected(s)}
+                onSelect={() => cleanup.toggle(s)}
+                selectionDisabled={cleanup.locked}
                 expanded={expanded === subKey}
                 onToggleExpand={() =>
                   setExpanded((curr) => (curr === subKey ? null : subKey))
@@ -222,13 +234,14 @@ function MonitorPage() {
                   })
                 }
                 onEdit={() => setEditSub(s)}
-                onDelete={() => setConfirmRemove({ planCode: s.planCode, optionsKey })}
+                onDelete={() => { if (!cleanup.locked) setConfirmRemove({ planCode: s.planCode, optionsKey }); }}
               />
             );
           })}
         </div>
       )}
 
+      <BulkCleanupDialog {...cleanup.dialogProps} />
       <MonitorSubscribeDialog open={openAdd} onOpenChange={setOpenAdd} mode="create" />
       <MonitorSubscribeDialog
         open={!!editSub}
@@ -302,6 +315,9 @@ function SubRow({
   onTogglePause,
   onEdit,
   onDelete,
+  selected,
+  onSelect,
+  selectionDisabled,
 }: {
   sub: MonitorSubscription;
   expanded: boolean;
@@ -309,6 +325,9 @@ function SubRow({
   onTogglePause: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  selected: boolean;
+  onSelect: () => void;
+  selectionDisabled: boolean;
 }) {
   const orderAccountIds = monitorAccountIds(sub);
   return (
@@ -317,6 +336,8 @@ function SubRow({
         <div className="flex flex-col sm:flex-row sm:items-center gap-3">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1 flex-wrap">
+              <Checkbox checked={selected} disabled={selectionDisabled} onCheckedChange={onSelect}
+                aria-label={`选择监控订阅 ${sub.planCode} ${(sub.options || []).join(",") || "全部配置"}`} />
               <span className="font-mono font-semibold text-sm">{sub.planCode}</span>
               {sub.serverName && (
                 <span className="text-xs text-muted-foreground">| {sub.serverName}</span>
@@ -399,6 +420,7 @@ function SubRow({
               size="icon"
               className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
               onClick={onDelete}
+              disabled={selectionDisabled}
               aria-label="删除"
             >
               <Trash2 className="w-4 h-4" />

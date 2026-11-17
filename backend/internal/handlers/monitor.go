@@ -292,8 +292,12 @@ func RemoveSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc 
 		if optionsKey, present := c.GetQuery("optionsKey"); present {
 			keys = []string{optionsKey}
 		}
-		if mon.RemoveSubscriptionExact(planCode, keys...) {
-			mon.SaveToDB()
+		removed, err := mon.RemoveSubscriptionPersisted(planCode, keys...)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "message": "订阅未被删除：" + err.Error(), "code": "ERR_DB_SAVE"})
+			return
+		}
+		if removed {
 			state.Logger.Info("删除服务器订阅: "+planCode, "")
 			c.JSON(http.StatusOK, gin.H{"status": "success", "message": "已取消订阅 " + planCode})
 			return
