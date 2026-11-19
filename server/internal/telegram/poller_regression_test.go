@@ -2,12 +2,6 @@ package telegram
 
 import (
 	"fmt"
-	"github.com/ovh-webui/server/internal/app"
-	"github.com/ovh-webui/server/internal/config"
-	"github.com/ovh-webui/server/internal/db"
-	"github.com/ovh-webui/server/internal/logger"
-	"github.com/ovh-webui/server/internal/netfp"
-	"github.com/ovh-webui/server/internal/storage"
 	"io"
 	"log/slog"
 	"net/http"
@@ -16,6 +10,13 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/ovh-webui/server/internal/app"
+	"github.com/ovh-webui/server/internal/config"
+	"github.com/ovh-webui/server/internal/db"
+	"github.com/ovh-webui/server/internal/logger"
+	"github.com/ovh-webui/server/internal/netfp"
+	"github.com/ovh-webui/server/internal/storage"
 )
 
 type auditPollTransport func(*http.Request) (*http.Response, error)

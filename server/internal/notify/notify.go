@@ -94,10 +94,7 @@ func isPrivateOrLocalAddr(addr netip.Addr) bool {
 	}
 	// IANA 公网全局单播 IPv6 仅分配在 2000::/3 空间内，拒绝其余保留地址块
 	b := addr.As16()
-	if (b[0] & 0xe0) != 0x20 {
-		return true
-	}
-	return false
+	return (b[0] & 0xe0) != 0x20
 }
 
 func isTestingLoopbackExempt(addr netip.Addr) bool {

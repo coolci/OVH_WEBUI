@@ -16,7 +16,8 @@ func TestOwnedServerListHidesOnlyConfirmedExpiry(t *testing.T) {
 	client, _ := st.OVH.ClientFor("eu")
 	client.Client.Transport = queuePreorderTransport(func(r *http.Request) (*http.Response, error) {
 		p := r.URL.Path
-		body, code := `{}`, 200
+		var body string
+		code := 200
 		switch {
 		case strings.HasSuffix(p, "/auth/time"):
 			body = fmt.Sprint(time.Now().Unix())

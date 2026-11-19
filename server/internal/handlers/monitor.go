@@ -224,7 +224,9 @@ func BatchAddAll(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 			added++
 			state.Logger.Debug("批量添加订阅: "+pc+" ("+server.Name+")", "monitor")
 		}
-		mon.SaveToDB()
+		if err := mon.SaveToDB(); err != nil {
+			state.Logger.Error("保存监控订阅失败: "+err.Error(), "monitor")
+		}
 		if !mon.Running() {
 			mon.Start()
 			state.Logger.Info("批量添加订阅后自动启动监控", "monitor")
@@ -314,7 +316,9 @@ func RemoveSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc 
 func ClearSubscriptions(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		count := mon.ClearSubscriptions()
-		mon.SaveToDB()
+		if err := mon.SaveToDB(); err != nil {
+			state.Logger.Error("保存监控订阅失败: "+err.Error(), "monitor")
+		}
 		state.Logger.Info("清空所有订阅 ("+strconv.Itoa(count)+" 项)", "")
 		c.JSON(http.StatusOK, gin.H{"status": "success", "count": count, "message": "已清空 " + strconv.Itoa(count) + " 个订阅"})
 	}
@@ -434,7 +438,9 @@ func SetMonitorInterval(state *app.State, mon *monitor.Monitor) gin.HandlerFunc 
 			return
 		}
 		applied := mon.SetCheckInterval(*v)
-		mon.SaveToDB()
+		if err := mon.SaveToDB(); err != nil {
+			state.Logger.Error("保存监控订阅失败: "+err.Error(), "monitor")
+		}
 		msg := fmt.Sprintf("检查间隔已设置为 %d 秒", applied)
 		if applied != *v {
 			msg = fmt.Sprintf("检查间隔已调整为 %d 秒(合法范围 %d-%d 秒)", applied, monitor.MinCheckInterval, monitor.MaxCheckInterval)

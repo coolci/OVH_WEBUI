@@ -4,11 +4,12 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/config"
 	"github.com/ovh-webui/server/internal/db"
 	"github.com/ovh-webui/server/internal/router"
-	"os"
 )
 
 func main() {

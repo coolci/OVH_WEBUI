@@ -1,10 +1,12 @@
 package handlers
 
 import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
+
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/catalogwatch"
-	"net/http"
 )
 
 func GetCatalogWatch(s *app.State) gin.HandlerFunc {

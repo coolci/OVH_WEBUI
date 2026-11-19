@@ -2,11 +2,6 @@ package server
 
 import (
 	"context"
-	"github.com/ovh-webui/server/internal/app"
-	"github.com/ovh-webui/server/internal/config"
-	"github.com/ovh-webui/server/internal/db"
-	"github.com/ovh-webui/server/internal/logger"
-	"github.com/ovh-webui/server/internal/storage"
 	"io"
 	"log/slog"
 	"net"
@@ -14,6 +9,12 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/ovh-webui/server/internal/app"
+	"github.com/ovh-webui/server/internal/config"
+	"github.com/ovh-webui/server/internal/db"
+	"github.com/ovh-webui/server/internal/logger"
+	"github.com/ovh-webui/server/internal/storage"
 )
 
 func lifecycleTestState(t *testing.T) *app.State {

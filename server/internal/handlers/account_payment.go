@@ -11,11 +11,12 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	ovhsdk "github.com/ovh/go-ovh/ovh"
+
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/db"
 	"github.com/ovh-webui/server/internal/ovh"
 	"github.com/ovh-webui/server/internal/types"
-	ovhsdk "github.com/ovh/go-ovh/ovh"
 )
 
 type orderPaymentMethod struct {

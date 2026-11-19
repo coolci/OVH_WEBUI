@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/ovh-webui/server/internal/auth"
 	"github.com/ovh-webui/server/internal/handlers"
 )

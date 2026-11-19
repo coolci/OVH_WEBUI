@@ -11,6 +11,7 @@ import (
 	ovhsdk "github.com/ovh/go-ovh/ovh"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/numconv"
 	"github.com/ovh-webui/server/internal/ovh"

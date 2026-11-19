@@ -275,12 +275,12 @@ func Prepare(rel *Release, onProgress func(pct int)) (tmpPath, exePath string, e
 	// 先探一下目录可写:不可写的话(比如装在 /usr/local/bin 而当前不是 root)
 	// 早点报错比下完 16MB 再失败体验好得多
 	probe := filepath.Join(dir, ".ovh-server-update-probe")
-	if f, perr := os.OpenFile(probe, os.O_CREATE|os.O_WRONLY, 0o644); perr != nil {
+	f, perr := os.OpenFile(probe, os.O_CREATE|os.O_WRONLY, 0o644)
+	if perr != nil {
 		return "", "", fmt.Errorf("程序所在目录不可写(%s),无法自更新。请用有写权限的账户运行,或手动替换二进制", dir)
-	} else {
-		f.Close()
-		os.Remove(probe)
 	}
+	f.Close()
+	os.Remove(probe)
 
 	name := AssetName()
 	asset := findAsset(rel, name)

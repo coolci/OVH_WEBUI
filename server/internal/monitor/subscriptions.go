@@ -3,13 +3,14 @@ package monitor
 import (
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
+	"time"
+
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/domain/datacenter"
 	"github.com/ovh-webui/server/internal/orderterm"
 	"github.com/ovh-webui/server/internal/types"
-	"sort"
-	"strings"
-	"time"
 )
 
 // normalizeMonitoredDCs idempotently cleans and deduplicates monitored datacenter codes
@@ -667,7 +668,9 @@ func (m *Monitor) ClearAccountRefs(accountID string) int {
 func (m *Monitor) DisableAutoOrderForAccount(accountID string) int {
 	n := m.ClearAccountRefs(accountID)
 	if n > 0 {
-		m.SaveToDB()
+		if err := m.SaveToDB(); err != nil {
+			m.state.Logger.Error("保存监控订阅变更失败: "+err.Error(), "monitor")
+		}
 	}
 	return n
 }

@@ -171,7 +171,9 @@ func (m *Monitor) monitorLoopGen(gen int64) {
 			// 下一轮就把"现在有货"误判成首次检查的初始存量 —— 不通知,也不自动下单。
 			// 用户重启一次,就正好错过一次补货。
 			if m.dirty.Swap(false) {
-				m.SaveToDB()
+				if err := m.SaveToDB(); err != nil {
+					m.state.Logger.Error("保存监控状态失败: "+err.Error(), "monitor")
+				}
 			}
 		} else {
 			m.state.Logger.Info("当前无订阅，跳过检查", "monitor")

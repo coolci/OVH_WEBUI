@@ -1,8 +1,9 @@
 package app
 
 import (
-	"github.com/ovh-webui/server/internal/types"
 	"testing"
+
+	"github.com/ovh-webui/server/internal/types"
 )
 
 // TestAutomaticOrderStopPersistsAfterTaskDeletion 覆盖任务已被删掉且重启后仍会再补货的情况。

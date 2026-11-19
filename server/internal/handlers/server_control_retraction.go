@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"fmt"
-	ovhsdk "github.com/ovh/go-ovh/ovh"
 	"math"
 	"net/http"
 	"net/url"
@@ -12,7 +11,10 @@ import (
 	"sync"
 	"time"
 
+	ovhsdk "github.com/ovh/go-ovh/ovh"
+
 	"github.com/gin-gonic/gin"
+
 	"github.com/ovh-webui/server/internal/app"
 	"github.com/ovh-webui/server/internal/ovh"
 )

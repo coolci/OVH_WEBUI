@@ -513,7 +513,7 @@ func verifyAccountCreds(state *app.State, accountID string) CredentialVerificati
 		detail := ovh.Explain(err)
 		state.Logger.Warn("verify account "+accountID+": "+detail, "accounts")
 
-		credState := "invalid"
+		var credState string
 		var remediations []string
 		var queryID string
 

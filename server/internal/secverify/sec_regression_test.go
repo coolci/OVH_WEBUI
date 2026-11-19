@@ -114,7 +114,11 @@ func TestSEC01_EnvExampleClearedInitScriptsAnchoredAndWeakKeyBlocked(t *testing.
 //  2. On Windows, compile a real running binary that invokes updater.RollbackIfStale on ITSELF while mapped & running,
 //     proving the two-step rename (exe -> exe.failed, backup -> exe) succeeds without Access is denied!
 func TestSEC02_WindowsRollbackRunningExeSucceedsAndLinuxStdlibCheck(t *testing.T) {
-	procfsPath := filepath.Join(runtime.GOROOT(), "src", "os", "executable_procfs.go")
+	gorootOut, err := exec.Command("go", "env", "GOROOT").Output()
+	if err != nil {
+		t.Fatalf("go env GOROOT: %v", err)
+	}
+	procfsPath := filepath.Join(strings.TrimSpace(string(gorootOut)), "src", "os", "executable_procfs.go")
 	procfsBytes, err := os.ReadFile(procfsPath)
 	if err != nil {
 		t.Fatalf("read %s: %v", procfsPath, err)

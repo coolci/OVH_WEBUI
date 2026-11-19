@@ -1,8 +1,9 @@
 package db
 
 import (
-	"github.com/ovh-webui/server/internal/types"
 	"testing"
+
+	"github.com/ovh-webui/server/internal/types"
 )
 
 func TestQueuePreorderSurvivesRestart(t *testing.T) {

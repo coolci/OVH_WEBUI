@@ -109,12 +109,9 @@ func cmdStock(state *app.State, args []string, monOpt ...*monitor.Monitor) strin
 	}
 
 	inStock := []string{}
-	outStock := []string{}
 	for dc, st := range dcStatus {
 		if st != "" && st != "unavailable" && st != "unknown" {
 			inStock = append(inStock, telegram.DisplayDCFull(dc)+" ("+st+")")
-		} else {
-			outStock = append(outStock, telegram.DisplayDC(dc))
 		}
 	}
 
@@ -265,7 +262,9 @@ func cmdMonitor(state *app.State, mon *monitor.Monitor, args []string) string {
 	state.ServerPlansMu.RUnlock()
 
 	mon.AddSubscription(planCode, dcs, true, false, serverName, nil, nil, false, 0, "", false, nil)
-	mon.SaveToDB()
+	if err := mon.SaveToDB(); err != nil {
+		state.Logger.Error("保存监控订阅失败: "+err.Error(), "telegram")
+	}
 	if !mon.Running() {
 		mon.Start()
 		state.Logger.Info("Telegram /monitor 添加订阅后自动启动监控", "telegram")

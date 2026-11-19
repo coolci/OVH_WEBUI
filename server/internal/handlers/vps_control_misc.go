@@ -7,8 +7,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/ovh-webui/server/internal/app"
 	"strings"
+
+	"github.com/ovh-webui/server/internal/app"
 )
 
 // ChangeVpsContact POST /api/vps-control/:service_name/change-contact

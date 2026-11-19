@@ -3,14 +3,16 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/gin-gonic/gin"
-	"github.com/ovh-webui/server/internal/types"
-	ovhsdk "github.com/ovh/go-ovh/ovh"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gin-gonic/gin"
+	ovhsdk "github.com/ovh/go-ovh/ovh"
+
+	"github.com/ovh-webui/server/internal/types"
 )
 
 func TestReinstallPreservationUpstreamContract(t *testing.T) {

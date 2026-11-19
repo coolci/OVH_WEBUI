@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+
 	"github.com/ovh-webui/server/internal/notify"
 	"github.com/ovh-webui/server/internal/types"
 )

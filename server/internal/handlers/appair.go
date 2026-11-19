@@ -27,9 +27,9 @@ import (
 //   4. 全字段控制字符清洗，防止换行日志注入（CRLF Log Injection）。
 
 var (
-	pairFailureLimiter = &ipFailureWindow{max: 5, window: time.Minute, lockMs: 5 * time.Minute}
-	pairSubnetLimiter  = &ipFailureWindow{max: 20, window: time.Minute, lockMs: time.Minute}
-	pairGlobalLimiter  = &globalFailureWindow{max: 600, window: time.Minute, lockMs: time.Minute}
+	pairFailureLimiter = &ipFailureWindow{max: 5, window: time.Minute, lockDuration: 5 * time.Minute}
+	pairSubnetLimiter  = &ipFailureWindow{max: 20, window: time.Minute, lockDuration: time.Minute}
+	pairGlobalLimiter  = &globalFailureWindow{max: 600, window: time.Minute, lockDuration: time.Minute}
 )
 
 // ResetPairLimiters 清空配对限流器状态（仅供测试隔离使用）
@@ -91,13 +91,13 @@ func pairSubnetKey(ip string) string {
 
 // globalFailureWindow 全局(跨来源)原子失败预占 + 锁定
 type globalFailureWindow struct {
-	max      int
-	window   time.Duration
-	lockMs   time.Duration
-	mu       sync.Mutex
-	fails    []time.Time
-	inflight int
-	blocked  time.Time
+	max          int
+	window       time.Duration
+	lockDuration time.Duration
+	mu           sync.Mutex
+	fails        []time.Time
+	inflight     int
+	blocked      time.Time
 }
 
 func (w *globalFailureWindow) reset() {
@@ -112,7 +112,7 @@ func (w *globalFailureWindow) reserve() bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	now := time.Now()
-	if !w.blocked.IsZero() && now.Sub(w.blocked) < w.lockMs {
+	if !w.blocked.IsZero() && now.Sub(w.blocked) < w.lockDuration {
 		return false
 	}
 	keep := w.fails[:0]
@@ -150,13 +150,13 @@ const maxTrackedPairIPs = 4096
 
 // ipFailureWindow 原子预占式按 IP/网段失败计数（消除 allow + fail 分离的 TOCTOU 并发穿透）
 type ipFailureWindow struct {
-	max      int
-	window   time.Duration
-	lockMs   time.Duration
-	mu       sync.Mutex
-	fails    map[string][]time.Time
-	inflight map[string]int
-	blocked  map[string]time.Time
+	max          int
+	window       time.Duration
+	lockDuration time.Duration
+	mu           sync.Mutex
+	fails        map[string][]time.Time
+	inflight     map[string]int
+	blocked      map[string]time.Time
 }
 
 func (w *ipFailureWindow) reset() {
@@ -180,7 +180,7 @@ func (w *ipFailureWindow) evictIfNeededLocked(now time.Time) {
 		return
 	}
 	for k, until := range w.blocked {
-		if now.Sub(until) >= w.lockMs {
+		if now.Sub(until) >= w.lockDuration {
 			delete(w.blocked, k)
 		}
 	}
@@ -221,7 +221,7 @@ func (w *ipFailureWindow) reserve(key string) bool {
 
 	now := time.Now()
 	if until, ok := w.blocked[key]; ok {
-		if now.Sub(until) < w.lockMs {
+		if now.Sub(until) < w.lockDuration {
 			return false
 		}
 		delete(w.blocked, key)

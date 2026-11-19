@@ -1,15 +1,16 @@
 package monitor
 
 import (
-	"github.com/ovh-webui/server/internal/app"
-	"github.com/ovh-webui/server/internal/logger"
-	"github.com/ovh-webui/server/internal/storage"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/ovh-webui/server/internal/app"
+	"github.com/ovh-webui/server/internal/logger"
+	"github.com/ovh-webui/server/internal/storage"
 )
 
 func TestPauseAndEditInvalidateInFlightCheck(t *testing.T) {

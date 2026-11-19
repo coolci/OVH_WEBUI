@@ -79,15 +79,15 @@ func TestResponseFieldChains(t *testing.T) {
 		var lastErr error
 		for _, cand := range cands {
 			rt := respType[cand]
-			if err := walkChain(rt, ch.field, nsOf(cand), modelsByNS); err == nil {
+			err := walkChain(rt, ch.field, nsOf(cand), modelsByNS)
+			if err == nil {
 				checked++
 				matched = true
 				break
-			} else {
-				lastCand = cand
-				lastRT = rt
-				lastErr = err
 			}
+			lastCand = cand
+			lastRT = rt
+			lastErr = err
 		}
 		if !matched && lastErr != nil {
 			broken = append(broken, ch.method+" "+lastCand+" | 链 "+ch.field+" (响应 "+lastRT+") → "+lastErr.Error())

@@ -129,7 +129,11 @@ func RefreshOrderStatuses(state *app.State, force bool) int {
 		}
 	}
 	if updated > 0 {
-		go state.SaveHistory()
+		go func() {
+			if err := state.SaveHistory(); err != nil {
+				state.Logger.Warn("保存订单状态历史失败: "+err.Error(), "purchase")
+			}
+		}()
 	}
 	return updated
 }

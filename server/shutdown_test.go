@@ -10,8 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ovh-webui/server/internal/logger"
 	"time"
+
+	"github.com/ovh-webui/server/internal/logger"
 )
 
 // closeSpy 记录 Close 有没有被调用

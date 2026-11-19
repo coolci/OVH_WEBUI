@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -100,8 +101,9 @@ func (s *Server) GracefulRestart(exe string) {
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := s.httpServer.Shutdown(ctx); err != nil && s.console != nil {
+	err := s.httpServer.Shutdown(ctx)
+	cancel()
+	if err != nil && s.console != nil {
 		s.console.Warn("shutdown", "err", err)
 	}
 	if s.sqlDB != nil {
@@ -234,7 +236,7 @@ func (s *Server) Run() error {
 			s.state.Logger.Error("[更新] 等了 60 秒仍未完成重启,放弃并退出。请手动启动程序", "version")
 			s.state.Logger.Flush()
 		}
-		os.Exit(1)
+		return errors.New("restart did not complete within 60s")
 	}
 
 	return nil

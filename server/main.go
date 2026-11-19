@@ -27,6 +27,12 @@ import (
 )
 
 func main() {
+	if code := run(); code != 0 {
+		os.Exit(code)
+	}
+}
+
+func run() int {
 	envPath := envFilePath()
 	clearEmptyEnv(
 		"OVH_DB_KEY", "API_SECRET_KEY", "TG_ALLOWED_USER_IDS",
@@ -44,95 +50,25 @@ func main() {
 	paths := storage.DefaultPaths()
 	if err := paths.EnsureDirs(); err != nil {
 		console.Error("create dirs", "err", err)
-		os.Exit(1)
+		return 1
 	}
 
-	// 凭据落盘加密初始化
-	if err := secret.Init(paths.DataDir, envPath); err != nil {
-		console.Warn("凭据加密未启用，数据库里的 OVH 密钥与 Telegram Token 将以明文存储", "err", err)
-	} else if secret.KeyWasGenerated() {
-		console.Info("已自动生成数据库加密密钥并写入 " + secret.KeySource())
-		console.Info("请把它连同配置文件一起备份 —— 丢了这把钥匙，已保存的 OVH 凭据和 Telegram Token 就再也解不开了")
-	} else {
-		console.Info("凭据加密已启用（密钥来自 " + secret.KeySource() + "）")
-	}
-
-	sqliteDB, err := db.Open(paths.DataDir)
-	if err != nil {
-		console.Error("open sqlite", "err", err)
-		os.Exit(1)
-	}
-
-	if secret.KeyWasGenerated() && !isTrue(os.Getenv("OVH_DB_KEY_RESET")) {
-		if has, herr := sqliteDB.HasEncryptedSecrets(); herr == nil && has {
-			console.Error("数据库里有加密过的凭据，但找不到对应的密钥，已停止启动")
-			console.Error("这通常是配置文件被覆盖/重置了，或者换机器时只拷了数据库没拷配置")
-			console.Error("怎么办：把原来的 " + secret.KeyEnv + " 那一行放回 " + envPath +
-				"（或用环境变量传进来）；确实找不回来就设 OVH_DB_KEY_RESET=1 启动，" +
-				"那些账户需要重新录入 OVH 凭据")
-			sqliteDB.Close()
-			os.Exit(1)
-		}
+	sqliteDB, ok := openSecuredDB(paths, envPath, console)
+	if !ok {
+		return 1
 	}
 	defer sqliteDB.Close()
-
-	if n, merr := sqliteDB.EncryptExistingSecrets(); merr != nil {
-		console.Warn("迁移明文凭据时出错（不影响启动）", "err", merr)
-	} else if n > 0 {
-		console.Info("已把数据库里的明文凭据加密", "账户数", n)
-	}
 
 	lg := logger.New(paths.LogFile("app.log.json"), console)
 	cfgStore := config.New(sqliteDB)
 	state := app.NewState(paths, cfgStore, lg, sqliteDB)
-	// 没配置 API_SECRET_KEY 时生成随机密钥并持久化到数据目录(.api-secret,0600),
-	// 不再退回固定的 123456 —— 那等于任何能访问端口的人都能用你的 OVH 账户下单、重装。
-	// 密钥文件读写失败时停止启动,绝不退回弱密钥。
-	enableAuth := !strings.EqualFold(os.Getenv("ENABLE_API_KEY_AUTH"), "false")
-	apiKey, generatedAPIKey, err := auth.ResolveAPIKey(paths.DataDir, os.Getenv("API_SECRET_KEY"))
-	if err != nil {
-		console.Error("无法安全初始化 API 密钥,已停止启动", "err", err)
-		_ = sqliteDB.Close()
-		os.Exit(1)
-	}
-	if enableAuth {
-		if err := auth.ValidateStartupAPIKey(apiKey); err != nil {
-			console.Error("API_SECRET_KEY 安全性校验未通过，拒绝在开启鉴权模式下带弱口令启动", "err", err)
-			_ = sqliteDB.Close()
-			os.Exit(1)
-		}
-	}
-	state.APIKey = apiKey
-	if generatedAPIKey {
-		console.Info("已生成随机 API 密钥,请从数据目录的 .api-secret 文件读取后登录", "dataDir", paths.DataDir)
-	}
-	// 显式配置成 123456 仍然告警
-	usingDefaultAPIKey := apiKey == "123456"
-	state.Port = os.Getenv("PORT")
-	if state.Port == "" {
-		state.Port = "19998"
-	}
-	state.LoadAll()
-
-	if n := secret.DecryptFailures(); n > 0 {
-		console.Error("有 " + fmt.Sprintf("%d", n) + " 个加密字段解不开 —— 密钥与数据库对不上。" +
-			"常见原因:只恢复了 sniper.db 却没恢复 .dbkey,或换过 " + secret.KeyEnv + "。" +
-			"把原来的密钥放回去即可;找不回来的话需要在设置页重新录入 OVH 凭据。")
-		state.Logger.Error(fmt.Sprintf("[加密] %d 个字段解密失败:密钥与数据库不匹配", n), "system")
-	} else if secret.KeyWasGenerated() && len(state.Accounts) > 0 {
-		console.Warn("新生成了加密密钥,但库里已有账户 —— 如果这些账户的凭据是空的,说明原密钥丢了")
+	enableAuth, usingDefaultAPIKey, ok := initStateAuth(state, paths, console)
+	if !ok {
+		return 1
 	}
 
-	updater.CleanupStale()
-	if updater.RollbackIfStale(state) {
-		if exe, err := os.Executable(); err == nil {
-			console.Warn("已回滚到更新前的版本，正在用它重启")
-			_ = sqliteDB.Close()
-			if err := updater.Restart(exe); err != nil {
-				console.Error("回滚后重启失败", "err", err)
-				os.Exit(1)
-			}
-		}
+	if !rollbackStaleUpdateIfNeeded(state, sqliteDB, console) {
+		return 1
 	}
 
 	// 监控引擎与服务依赖装配
@@ -176,8 +112,105 @@ func main() {
 
 	console.Info("Listening", "addr", addr, "auth", enableAuth, "ui", hasUI(), "dataDir", paths.DataDir)
 	if err := srv.Run(); err != nil {
-		os.Exit(1)
+		return 1
 	}
+	return 0
+}
+
+// rollbackStaleUpdateIfNeeded 清理残留更新文件并在检测到失败升级时自动回滚重启。
+func rollbackStaleUpdateIfNeeded(state *app.State, sqliteDB *db.DB, console *slog.Logger) bool {
+	updater.CleanupStale()
+	if !updater.RollbackIfStale(state) {
+		return true
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return true
+	}
+	console.Warn("已回滚到更新前的版本，正在用它重启")
+	_ = sqliteDB.Close()
+	if err := updater.Restart(exe); err != nil {
+		console.Error("回滚后重启失败", "err", err)
+		return false
+	}
+	return true
+}
+
+// initStateAuth 解析启动 API 密钥、加载状态并输出加密一致性诊断。
+func initStateAuth(state *app.State, paths storage.Paths, console *slog.Logger) (enableAuth, usingDefaultAPIKey, ok bool) {
+	// 没配置 API_SECRET_KEY 时生成随机密钥并持久化到数据目录(.api-secret,0600),
+	// 不再退回固定的 123456 —— 那等于任何能访问端口的人都能用你的 OVH 账户下单、重装。
+	// 密钥文件读写失败时停止启动,绝不退回弱密钥。
+	enableAuth = !strings.EqualFold(os.Getenv("ENABLE_API_KEY_AUTH"), "false")
+	apiKey, generatedAPIKey, err := auth.ResolveAPIKey(paths.DataDir, os.Getenv("API_SECRET_KEY"))
+	if err != nil {
+		console.Error("无法安全初始化 API 密钥,已停止启动", "err", err)
+		return false, false, false
+	}
+	if enableAuth {
+		if err := auth.ValidateStartupAPIKey(apiKey); err != nil {
+			console.Error("API_SECRET_KEY 安全性校验未通过，拒绝在开启鉴权模式下带弱口令启动", "err", err)
+			return false, false, false
+		}
+	}
+	state.APIKey = apiKey
+	if generatedAPIKey {
+		console.Info("已生成随机 API 密钥,请从数据目录的 .api-secret 文件读取后登录", "dataDir", paths.DataDir)
+	}
+	// 显式配置成 123456 仍然告警
+	usingDefaultAPIKey = apiKey == "123456"
+	state.Port = os.Getenv("PORT")
+	if state.Port == "" {
+		state.Port = "19998"
+	}
+	state.LoadAll()
+
+	if n := secret.DecryptFailures(); n > 0 {
+		console.Error("有 " + fmt.Sprintf("%d", n) + " 个加密字段解不开 —— 密钥与数据库对不上。" +
+			"常见原因:只恢复了 sniper.db 却没恢复 .dbkey,或换过 " + secret.KeyEnv + "。" +
+			"把原来的密钥放回去即可;找不回来的话需要在设置页重新录入 OVH 凭据。")
+		state.Logger.Error(fmt.Sprintf("[加密] %d 个字段解密失败:密钥与数据库不匹配", n), "system")
+	} else if secret.KeyWasGenerated() && len(state.Accounts) > 0 {
+		console.Warn("新生成了加密密钥,但库里已有账户 —— 如果这些账户的凭据是空的,说明原密钥丢了")
+	}
+	return enableAuth, usingDefaultAPIKey, true
+}
+
+// openSecuredDB 初始化凭据加密、打开 SQLite 并校验密钥与密文一致性。
+func openSecuredDB(paths storage.Paths, envPath string, console *slog.Logger) (*db.DB, bool) {
+	if err := secret.Init(paths.DataDir, envPath); err != nil {
+		console.Warn("凭据加密未启用，数据库里的 OVH 密钥与 Telegram Token 将以明文存储", "err", err)
+	} else if secret.KeyWasGenerated() {
+		console.Info("已自动生成数据库加密密钥并写入 " + secret.KeySource())
+		console.Info("请把它连同配置文件一起备份 —— 丢了这把钥匙，已保存的 OVH 凭据和 Telegram Token 就再也解不开了")
+	} else {
+		console.Info("凭据加密已启用（密钥来自 " + secret.KeySource() + "）")
+	}
+
+	sqliteDB, err := db.Open(paths.DataDir)
+	if err != nil {
+		console.Error("open sqlite", "err", err)
+		return nil, false
+	}
+
+	if secret.KeyWasGenerated() && !isTrue(os.Getenv("OVH_DB_KEY_RESET")) {
+		if has, herr := sqliteDB.HasEncryptedSecrets(); herr == nil && has {
+			console.Error("数据库里有加密过的凭据，但找不到对应的密钥，已停止启动")
+			console.Error("这通常是配置文件被覆盖/重置了，或者换机器时只拷了数据库没拷配置")
+			console.Error("怎么办：把原来的 " + secret.KeyEnv + " 那一行放回 " + envPath +
+				"（或用环境变量传进来）；确实找不回来就设 OVH_DB_KEY_RESET=1 启动，" +
+				"那些账户需要重新录入 OVH 凭据")
+			_ = sqliteDB.Close()
+			return nil, false
+		}
+	}
+
+	if n, merr := sqliteDB.EncryptExistingSecrets(); merr != nil {
+		console.Warn("迁移明文凭据时出错（不影响启动）", "err", merr)
+	} else if n > 0 {
+		console.Info("已把数据库里的明文凭据加密", "账户数", n)
+	}
+	return sqliteDB, true
 }
 
 // gracefulShutdown 兼容保留函数（供 package main 的单元测试调用）

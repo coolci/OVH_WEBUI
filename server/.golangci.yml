@@ -20,6 +20,23 @@ linters:
     errcheck:
       check-type-assertions: false
       check-blank: false
+      exclude-functions:
+        - (*database/sql.Tx).Rollback
+    staticcheck:
+      checks:
+        - all
+        - -QF*
+        - -ST1000
+        - -ST1003
+        - -ST1005
+        - -ST1016
+        - -ST1020
+        - -ST1021
+        - -ST1022
+        - -ST1023
+    gocritic:
+      disabled-checks:
+        - ifElseChain
     govet:
       enable-all: false
     gocyclo:

@@ -8,11 +8,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/ovh-webui/server/internal/app"
-	"github.com/ovh-webui/server/internal/config"
-	"github.com/ovh-webui/server/internal/db"
-	"github.com/ovh-webui/server/internal/logger"
-	"github.com/ovh-webui/server/internal/storage"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -20,6 +15,12 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/ovh-webui/server/internal/app"
+	"github.com/ovh-webui/server/internal/config"
+	"github.com/ovh-webui/server/internal/db"
+	"github.com/ovh-webui/server/internal/logger"
+	"github.com/ovh-webui/server/internal/storage"
 )
 
 // 造一个假的 Release 服务:一个二进制附件 + 一份 checksums.txt

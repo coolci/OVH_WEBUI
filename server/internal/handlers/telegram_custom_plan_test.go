@@ -12,9 +12,10 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	ovhsdk "github.com/ovh/go-ovh/ovh"
+
 	"github.com/ovh-webui/server/internal/netfp"
 	"github.com/ovh-webui/server/internal/types"
-	ovhsdk "github.com/ovh/go-ovh/ovh"
 )
 
 func TestTelegramQuickOrderCustomPlanAndAddonsWithoutCatalog(t *testing.T) {

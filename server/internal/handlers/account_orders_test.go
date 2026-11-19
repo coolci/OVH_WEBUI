@@ -8,8 +8,9 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/ovh-webui/server/internal/types"
 	ovhsdk "github.com/ovh/go-ovh/ovh"
+
+	"github.com/ovh-webui/server/internal/types"
 )
 
 func TestGetAccountOrders(t *testing.T) {

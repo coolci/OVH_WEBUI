@@ -12,12 +12,12 @@ import (
 // ResolveRegion 给下单/询价用的统一入口:先查目录,失败退回静态兜底。
 // 返回 (region, 来源说明),region 为空表示不需要发 region 配置项。
 func ResolveRegion(state *app.State, accountID, planCode, apiDC string) (string, string) {
-	if r, err := RegionForPlan(state, accountID, planCode, apiDC); err == nil {
+	r, err := RegionForPlan(state, accountID, planCode, apiDC)
+	if err == nil {
 		return r, "catalog"
-	} else {
-		state.Logger.Warn(fmt.Sprintf("[region] 从目录解析 %s@%s 的区域失败(%s),退回静态兜底",
-			planCode, apiDC, err.Error()), "purchase")
 	}
+	state.Logger.Warn(fmt.Sprintf("[region] 从目录解析 %s@%s 的区域失败(%s),退回静态兜底",
+		planCode, apiDC, err.Error()), "purchase")
 	acc, _ := state.FindAccount(accountID)
 	// 兜底也必须用归一化后的子公司:acc.Zone 原样传下去时,zone 为空的美区账户
 	// (建号不填 zone 很常见)会被当成非 US 子公司,gra/fra 这些美区也在卖的机房

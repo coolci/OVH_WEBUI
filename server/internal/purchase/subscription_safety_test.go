@@ -4,9 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/ovh-webui/server/internal/app"
-	"github.com/ovh-webui/server/internal/netfp"
-	"github.com/ovh-webui/server/internal/types"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +11,10 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/ovh-webui/server/internal/app"
+	"github.com/ovh-webui/server/internal/netfp"
+	"github.com/ovh-webui/server/internal/types"
 )
 
 func auditOrderFixture(t *testing.T, plan, optionResponse string) (*app.State, *types.QueueItem, *atomic.Int32, *atomic.Int32) {

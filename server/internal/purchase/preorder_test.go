@@ -57,7 +57,8 @@ func TestPreorderTriesLiveCartWithoutWaitingForCatalog(t *testing.T) {
 			st.Accounts = []types.OVHAccount{{ID: "eu", Endpoint: "ovh-eu", Zone: tc.sub, AppKey: "test", AppSecret: "test", ConsumerKey: "test"}}
 			carts, checkouts := 0, 0
 			transport := preorderTransport(func(r *http.Request) (*http.Response, error) {
-				body, status := "{}", http.StatusOK
+				var body string
+				status := http.StatusOK
 				switch {
 				case strings.Contains(r.URL.Path, "/order/catalog/public/eco"):
 					body = `{"plans":[]}`

@@ -132,7 +132,7 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 			accID := tgEffectiveAccountID(state)
 			if len(offer.TargetDCs) == 1 {
 				res := telegram.ProcessOrder(state, accID, offer.PlanCode, offer.TargetDCs[0], qty, opts)
-				text := res.Message
+				var text string
 				if res.Success {
 					text = fmt.Sprintf("✅ 已加入抢购队列\n\n📦 型号: %s\n📍 机房: %s\n⚙️ 配置: %s\n⏱ 重试间隔: %d 秒\n\n已创建 %d 个任务，按「设置 → 抢购参数」的间隔重试。",
 						offer.PlanCode, telegram.DisplayDCFull(offer.TargetDCs[0]), label, state.Config.RetryInterval(), res.CreatedOrders)
@@ -295,7 +295,9 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 						}
 					}
 					mon.AddSubscription(plan, selectedDCs, true, false, serverName, nil, nil, false, 0, "", false, pickedOpts)
-					mon.SaveToDB()
+					if err := mon.SaveToDB(); err != nil {
+						state.Logger.Error("保存监控订阅失败: "+err.Error(), "telegram")
+					}
 					if !mon.Running() {
 						mon.Start()
 					}
@@ -394,7 +396,9 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 							}
 						}
 						mon.AddSubscription(plan, dcs, true, false, serverName, nil, nil, false, 0, "", false, nil)
-						mon.SaveToDB()
+						if err := mon.SaveToDB(); err != nil {
+							state.Logger.Error("保存监控订阅失败: "+err.Error(), "telegram")
+						}
 						if !mon.Running() {
 							mon.Start()
 						}
@@ -470,7 +474,9 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 				}
 			}
 			mon.AddSubscription(plan, nil, true, false, serverName, nil, nil, false, 0, "", false, nil)
-			mon.SaveToDB()
+			if err := mon.SaveToDB(); err != nil {
+				state.Logger.Error("保存监控订阅失败: "+err.Error(), "telegram")
+			}
 			if !mon.Running() {
 				mon.Start()
 			}
@@ -695,7 +701,9 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 				telegram.SendReply(state, chatID, "这条订阅已经被删掉了，发 /monitor "+offer.PlanCode+" 重新开始。", messageID)
 				return true
 			}
-			mon.SaveToDB()
+			if err := mon.SaveToDB(); err != nil {
+				state.Logger.Error("保存监控订阅失败: "+err.Error(), "telegram")
+			}
 			telegram.AnswerCallback(state, cbID, "好", false)
 			if len(opts) == 0 {
 				telegram.SendReply(state, chatID,
@@ -715,7 +723,9 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 			planToDel := resolvePlanCallbackRef(state, parts[3])
 			if mon != nil {
 				mon.RemoveSubscription(planToDel)
-				mon.SaveToDB()
+				if err := mon.SaveToDB(); err != nil {
+					state.Logger.Error("保存监控订阅失败: "+err.Error(), "telegram")
+				}
 			}
 			telegram.AnswerCallback(state, cbID, "已移除 "+planToDel, false)
 			showMonitorManager(state, mon, chatID, messageID, true)
@@ -728,7 +738,9 @@ func handleInlineCallback(state *app.State, mon *monitor.Monitor, cbID string, c
 						mon.RemoveSubscription(s.PlanCode)
 					}
 				}
-				mon.SaveToDB()
+				if err := mon.SaveToDB(); err != nil {
+					state.Logger.Error("保存监控订阅失败: "+err.Error(), "telegram")
+				}
 			}
 			telegram.AnswerCallback(state, cbID, "已清空全部监控", false)
 			showMonitorManager(state, mon, chatID, messageID, true)
