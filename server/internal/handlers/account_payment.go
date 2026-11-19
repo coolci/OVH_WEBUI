@@ -188,7 +188,7 @@ func loadOrderPayment(ctx context.Context, state *app.State, accountID string, o
 	if !state.HasDB() {
 		return info, fmt.Errorf("数据库不可用,不能安全确认付款状态")
 	}
-	action, err := state.DB.GetOrderCancellation(acc.ID, orderID)
+	action, err := state.GetOrderCancellation(acc.ID, orderID)
 	if err != nil {
 		return info, err
 	}

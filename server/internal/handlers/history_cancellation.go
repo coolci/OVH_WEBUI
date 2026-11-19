@@ -90,7 +90,7 @@ func loadCancellation(ctx context.Context, state *app.State, h types.PurchaseHis
 	}
 	info.Amount, info.Currency = order.Price.Value, order.Price.Currency
 	info.ExpirationDate, info.RetractionDate = order.ExpirationDate, order.RetractionDate
-	action, err := state.DB.GetOrderCancellation(h.AccountID, id)
+	action, err := state.GetOrderCancellation(h.AccountID, id)
 	if err != nil {
 		return info, err
 	}
@@ -217,7 +217,7 @@ func CancelHistoryOrder(state *app.State) gin.HandlerFunc {
 				return
 			}
 		}
-		if err := state.DB.ChangeOrderCancellation(h.AccountID, id, operation); err != nil {
+		if err := state.ChangeOrderCancellation(h.AccountID, id, operation); err != nil {
 			code := 500
 			if errors.Is(err, db.ErrOrderActionConflict) {
 				code = 409
@@ -236,7 +236,7 @@ func CancelHistoryOrder(state *app.State) gin.HandlerFunc {
 		}
 		client, err := state.OVH.IsolatedClientFor(h.AccountID)
 		if err != nil {
-			_ = state.DB.SetOrderRetractionState(h.AccountID, id, "failed")
+			_ = state.SetOrderRetractionState(h.AccountID, id, "failed")
 			c.JSON(500, gin.H{"error": "账户不可用，撤单未发送"})
 			return
 		}
@@ -256,7 +256,7 @@ func CancelHistoryOrder(state *app.State) gin.HandlerFunc {
 				status = "failed"
 			}
 		}
-		if saveErr := state.DB.SetOrderRetractionState(h.AccountID, id, status); saveErr != nil {
+		if saveErr := state.SetOrderRetractionState(h.AccountID, id, status); saveErr != nil {
 			c.JSON(500, gin.H{"error": "撤单结果未能保存，请先在 OVH 核对，不要重复提交"})
 			return
 		}

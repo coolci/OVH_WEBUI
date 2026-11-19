@@ -89,7 +89,7 @@ func GetPurchaseHistory(state *app.State) gin.HandlerFunc {
 		var cancellations map[string]db.OrderCancellation
 		if len(items) > 0 && state.HasDB() {
 			var err error
-			cancellations, err = state.DB.ListOrderCancellations()
+			cancellations, err = state.ListOrderCancellations()
 			if err != nil {
 				c.JSON(500, gin.H{"error": "读取订单操作记录失败"})
 				return

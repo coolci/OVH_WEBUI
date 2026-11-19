@@ -232,6 +232,38 @@ func (s *State) ClaimOrderPayment(accountID string, orderID int64) (bool, error)
 	return s.DB.ClaimOrderPayment(accountID, orderID)
 }
 
+// GetOrderCancellation 查询某账户某订单的放弃/撤单状态。
+func (s *State) GetOrderCancellation(accountID string, orderID int64) (db.OrderCancellation, error) {
+	if s == nil || s.DB == nil {
+		return db.OrderCancellation{}, errors.New("database not initialized")
+	}
+	return s.DB.GetOrderCancellation(accountID, orderID)
+}
+
+// ListOrderCancellations 读取全部订单放弃/撤单记录映射。
+func (s *State) ListOrderCancellations() (map[string]db.OrderCancellation, error) {
+	if s == nil || s.DB == nil {
+		return nil, errors.New("database not initialized")
+	}
+	return s.DB.ListOrderCancellations()
+}
+
+// ChangeOrderCancellation 原子切换某订单的放弃/恢复/撤单申请状态。
+func (s *State) ChangeOrderCancellation(accountID string, orderID int64, operation string) error {
+	if s == nil || s.DB == nil {
+		return errors.New("database not initialized")
+	}
+	return s.DB.ChangeOrderCancellation(accountID, orderID, operation)
+}
+
+// SetOrderRetractionState 记录 OVH 撤单调用后的最终状态（submitted / failed / uncertain）。
+func (s *State) SetOrderRetractionState(accountID string, orderID int64, state string) error {
+	if s == nil || s.DB == nil {
+		return errors.New("database not initialized")
+	}
+	return s.DB.SetOrderRetractionState(accountID, orderID, state)
+}
+
 // HasAnyAccount 是否至少有一个 OVH 账户。
 // 多账户场景下,旧的 state.Config.HasCredentials() 不再可靠(新用户的 kv['config'] 可能为空),
 // 凡是判断"系统能不能调 OVH"都应该走这个。
