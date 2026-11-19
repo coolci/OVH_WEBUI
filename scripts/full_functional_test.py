@@ -9,7 +9,7 @@ OVH_WEBUI 全功能测试（从零）
   - 重点：服务器列表 + 服务器控制（只读）
 
 用法：
-  set API_SECRET_KEY=<与 backend/.env 一致>
+  set API_SECRET_KEY=<与 server/.env 一致>
   set SMOKE_ALLOWED_SERVER=<可选，只读目标机>
   python scripts/full_functional_test.py
 """
@@ -133,7 +133,7 @@ def section(title: str) -> None:
 
 def main() -> int:
     if not API_KEY:
-        print("ERROR: 设置环境变量 API_SECRET_KEY（与 backend/.env 一致）")
+        print("ERROR: 设置环境变量 API_SECRET_KEY（与 server/.env 一致）")
         return 2
     suite = Suite()
     print(f"BASE={BASE}  ALLOWED={ALLOWED or '(未设置 SMOKE_ALLOWED_SERVER，将跳过目标机详情)'}")

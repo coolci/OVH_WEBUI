@@ -5,20 +5,20 @@
 # 前置：域名 A → 本机；放行 80/443；.env 含 DOMAIN / ACME_EMAIL / API_SECRET_KEY / OVH_DB_KEY
 #
 #   ./scripts/linux-oneclick-deploy.sh
-#   docker compose -f docker-compose.https.yml up -d --build
+#   docker compose -f deploy/docker-compose.https.yml up -d --build
 #
 # 公网仅暴露 Caddy 80/443；backend/frontend 仅 Docker 内网。
 
 services:
   backend:
     build:
-      context: .
-      dockerfile: Dockerfile.backend
+      context: ..
+      dockerfile: deploy/Dockerfile.backend
     image: ovh-webui-backend:latest
     container_name: ovh-webui-backend
     restart: unless-stopped
     env_file:
-      - path: .env
+      - path: ../.env
         required: false
     environment:
       PORT: "19998"
@@ -61,8 +61,8 @@ services:
 
   frontend:
     build:
-      context: .
-      dockerfile: Dockerfile.frontend
+      context: ..
+      dockerfile: deploy/Dockerfile.frontend
     image: ovh-webui-frontend:latest
     container_name: ovh-webui-frontend
     restart: unless-stopped
@@ -110,7 +110,7 @@ services:
       DOMAIN: ${DOMAIN:?Set DOMAIN in .env}
       ACME_EMAIL: ${ACME_EMAIL:-admin@example.com}
     volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     security_opt:

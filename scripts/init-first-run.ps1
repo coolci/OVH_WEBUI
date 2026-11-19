@@ -4,10 +4,10 @@
   OVH_WEBUI first-run / re-init
 
 .PARAMETER Fresh
-  Wipe backend/data (backed up with timestamp)
+  Wipe server/data (backed up with timestamp)
 
 .PARAMETER ForceEnv
-  Regenerate backend/.env even if it exists
+  Regenerate server/.env even if it exists
 #>
 param(
   [switch]$Fresh,
@@ -16,7 +16,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
-$Backend = Join-Path $Root "backend"
+$Backend = Join-Path $Root "server"
 $EnvExample = Join-Path $Backend ".env.example"
 $EnvFile = Join-Path $Backend ".env"
 $DataDir = Join-Path $Backend "data"
@@ -69,11 +69,11 @@ if (-not (Test-Path $EnvExample)) {
   throw "Missing $EnvExample"
 }
 
-Write-Step "backend/.env"
+Write-Step "server/.env"
 $apiKey = $null
 
 if ((Test-Path $EnvFile) -and (-not $ForceEnv)) {
-  Write-Host "  keep existing backend/.env (use -ForceEnv to regenerate)"
+  Write-Host "  keep existing server/.env (use -ForceEnv to regenerate)"
   foreach ($line in Get-Content $EnvFile -Encoding UTF8) {
     if ($line -match '^\s*API_SECRET_KEY\s*=\s*(.*)\s*$') {
       $apiKey = $Matches[1].Trim().Trim('"').Trim("'")
@@ -112,11 +112,11 @@ if ((Test-Path $EnvFile) -and (-not $ForceEnv)) {
   $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
   [System.IO.File]::WriteAllLines($EnvFile, $out, $utf8NoBom)
   Assert-EnvApiKeyWritten -Path $EnvFile -ExpectedKey $apiKey
-  Write-Host "  wrote backend/.env with random API_SECRET_KEY"
+  Write-Host "  wrote server/.env with random API_SECRET_KEY"
 }
 
 if (-not $apiKey) {
-  $apiKey = "(see backend/.env API_SECRET_KEY)"
+  $apiKey = "(see server/.env API_SECRET_KEY)"
 }
 
 Write-Step "root .env (docker optional)"
@@ -154,7 +154,7 @@ if ((Test-Path $RootEnvExample) -and ((-not (Test-Path $RootEnv)) -or $ForceEnv)
   Write-Host "  skip root .env"
 }
 
-Write-Step "backend/data"
+Write-Step "server/data"
 if ($Fresh) {
   if (Test-Path $DataDir) {
     $bakDir = Join-Path $Backend ("data.bak-" + (Get-Date -Format "yyyyMMdd-HHmmss"))
@@ -178,7 +178,7 @@ Write-Step "security checklist"
 $giPath = Join-Path $Root ".gitignore"
 if (Test-Path $giPath) {
   $giText = Get-Content $giPath -Raw -Encoding UTF8
-  foreach ($pat in @("backend/.env", ".env", "backend/data/")) {
+  foreach ($pat in @("server/.env", ".env", "server/data/")) {
     if ($giText.Contains($pat)) {
       Write-Host "  [ok] gitignore has $pat" -ForegroundColor DarkGreen
     } else {
@@ -186,14 +186,14 @@ if (Test-Path $giPath) {
     }
   }
 }
-Write-Host "  Never commit: backend/.env, backend/data/, OVH keys, Telegram tokens"
+Write-Host "  Never commit: server/.env, server/data/, OVH keys, Telegram tokens"
 
 Write-Host ""
 Write-Host "----------------------------------------" -ForegroundColor Green
 Write-Host " Next steps" -ForegroundColor Green
 Write-Host "----------------------------------------" -ForegroundColor Green
-Write-Host "1. Backend:  cd backend ; go run ."
-Write-Host "2. Frontend: npm install ; npm run dev"
+Write-Host "1. Backend:  cd server ; go run ."
+Write-Host "2. Frontend: cd web ; npm install ; npm run dev"
 Write-Host "3. Open http://127.0.0.1:8080 and login with:"
 Write-Host "   $apiKey" -ForegroundColor Yellow
 Write-Host "4. Add first OVH account in UI (keys stay in local SQLite only)"

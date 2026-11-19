@@ -6,7 +6,7 @@
   "feExtractedCallCount": 322,
   "feFetchCalls": [
     {
-      "file": "src/hooks/use-backend-connection.ts",
+      "file": "web/src/hooks/use-backend-connection.ts",
       "line": 40,
       "kind": "fetch",
       "method": "FETCH",
@@ -14,7 +14,7 @@
       "fullPath": "/health"
     },
     {
-      "file": "src/lib/catalog-refresh.ts",
+      "file": "web/src/lib/catalog-refresh.ts",
       "line": 23,
       "kind": "fetch",
       "method": "FETCH",
@@ -23,7 +23,7 @@
   ],
   "feMissingInBackend": [
     {
-      "file": "src/hooks/ovh/server-control/use-server-engagement.ts",
+      "file": "web/src/hooks/ovh/server-control/use-server-engagement.ts",
       "line": 185,
       "kind": "api.post",
       "method": "POST",
@@ -32,7 +32,7 @@
       "normKey": "POST /api/ovh/contact-change-requests/{*}/{*}"
     },
     {
-      "file": "src/hooks/ovh/server-control/use-server-engagement.ts",
+      "file": "web/src/hooks/ovh/server-control/use-server-engagement.ts",
       "line": 203,
       "kind": "api.get",
       "method": "GET",
@@ -41,7 +41,7 @@
       "normKey": "GET /api/{*}/{*}/retraction"
     },
     {
-      "file": "src/hooks/ovh/server-control/use-server-engagement.ts",
+      "file": "web/src/hooks/ovh/server-control/use-server-engagement.ts",
       "line": 219,
       "kind": "api.post",
       "method": "POST",
@@ -50,7 +50,7 @@
       "normKey": "POST /api/{*}/{*}/retraction"
     },
     {
-      "file": "src/hooks/ovh/use-account.ts",
+      "file": "web/src/hooks/ovh/use-account.ts",
       "line": 290,
       "kind": "api.post",
       "method": "POST",
@@ -59,7 +59,7 @@
       "normKey": "POST /api/ovh/account/orders/{*}/{*}"
     },
     {
-      "file": "src/hooks/ovh/use-vps-monitor.ts",
+      "file": "web/src/hooks/ovh/use-vps-monitor.ts",
       "line": 72,
       "kind": "api.post",
       "method": "POST",

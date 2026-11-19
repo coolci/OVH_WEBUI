@@ -63,7 +63,7 @@ compose() {
 
 # 当前使用的 compose 文件
 COMPOSE_HTTP=( -f docker-compose.yml )
-COMPOSE_HTTPS=( -f docker-compose.https.yml )
+COMPOSE_HTTPS=( -f deploy/docker-compose.https.yml )
 
 using_https() {
   [[ -f .env ]] && grep -qE '^DOMAIN=.+' .env && [[ "${NO_SSL}" -eq 0 ]]

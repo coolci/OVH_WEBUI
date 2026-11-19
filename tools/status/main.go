@@ -38,7 +38,7 @@ type Row struct {
 func main() {
 	defaultLedger := "docs/prd-v2/progress/ledger.csv"
 	if _, err := os.Stat(defaultLedger); os.IsNotExist(err) {
-		defaultLedger = "progress/ledger.csv"
+		defaultLedger = "docs/archive/progress/ledger.csv"
 	}
 
 	ledgerPath := flag.String("ledger", defaultLedger, "path to ledger.csv")
@@ -219,7 +219,7 @@ func loadLedger(path string) ([]Row, error) {
 var (
 	paramSegmentRe    = regexp.MustCompile(`:[A-Za-z0-9_]+|\{[^}]+\}`)
 	wildcardSegmentRe = regexp.MustCompile(`\*[A-Za-z0-9_]+`)
-	pkgPathRe         = regexp.MustCompile(`^\./backend/internal/[a-zA-Z0-9_/-]+$`)
+	pkgPathRe         = regexp.MustCompile(`^\./server/internal/[a-zA-Z0-9_/-]+$`)
 	testNameRe        = regexp.MustCompile(`^Test[A-Za-z0-9_]+$`)
 
 	cachedContractContent string
@@ -235,7 +235,7 @@ func routeKey(method, path string) string {
 	return strings.ToUpper(method) + " " + path
 }
 func loadRoutes() error {
-	cmd := exec.Command("go", "run", "./backend/cmd/routes")
+	cmd := exec.Command("go", "run", "./server/cmd/routes")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	data, err := cmd.Output()

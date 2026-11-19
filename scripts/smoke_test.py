@@ -9,7 +9,7 @@ OVH_WEBUI 烟测脚本（与 ADR：巡检 / Config Sniper 已下线对齐）
 - 可选：SMOKE_ALLOWED_SERVER 存在时做 list + hardware 只读
 
 用法（勿把真实密钥写进仓库）:
-  set API_SECRET_KEY=<与 backend/.env 一致>
+  set API_SECRET_KEY=<与 server/.env 一致>
   set OVH_APP_KEY=...
   set OVH_APP_SECRET=...
   set OVH_CONSUMER_KEY=...
@@ -39,7 +39,7 @@ class Fail(Exception):
 
 def req(method: str, path: str, body: dict | None = None) -> dict | list | None:
     if not API_KEY:
-        raise Fail("请设置环境变量 API_SECRET_KEY（与 backend/.env 一致）")
+        raise Fail("请设置环境变量 API_SECRET_KEY（与 server/.env 一致）")
     data = None
     headers = {
         "Content-Type": "application/json",

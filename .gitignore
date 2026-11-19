@@ -1,35 +1,46 @@
 # deps
 node_modules/
-backend/vendor/
+web/node_modules/
+server/vendor/
 
 # build
 dist/
-backend/dist/
-backend/web/
-backend/ovh-webui
+web/dist/
+server/dist/
+server/web/
+server/ovh-webui
 *.exe
+*.exe~
 *.test
 *.out
+*.tsbuildinfo
 
 # runtime data
-backend/data/
+server/data/
 data/
 *.db
 *.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-wal
+*.sqlite3-shm
 
-# env / secrets（切勿提交真实密钥 / 数据）
+# env / secrets (never commit real keys or data)
 .env
 .env.local
 .env.*.local
 .env.development.local
 .env.production.local
-backend/.env
-backend/.env.bak*
-backend/data.bak*
+server/.env
+server/.env.bak*
+server/data.bak*
 secrets/
 *.pem
 *.key
-# 可能含账户/密钥的本地导出
 **/credentials*.json
 **/secrets*.json
 
@@ -44,12 +55,6 @@ Thumbs.db
 coverage/
 *.coverprofile
 
-# 编译产物(曾误提交,约 57 MB)
-*.exe~
-scratch/ovh-webui
-scratch/deploy-payload/ovh-webui
-*.tsbuildinfo
-
 # Independent catalog watcher runtime state
 tools/catalog_watch/*.db*
 tools/catalog_watch/*.lock
@@ -58,24 +63,13 @@ tools/catalog_watch/__pycache__/
 # Local release bundles and operational working files (keep on disk)
 /artifacts/
 /deploy_package.tar.gz
-/scratch/
 
 # Python caches
 __pycache__/
 *.py[cod]
 .pytest_cache/
 
-# SQLite sidecar files and alternate database extensions
-*.db-wal
-*.db-shm
-*.sqlite
-*.sqlite3
-*.sqlite-wal
-*.sqlite-shm
-*.sqlite3-wal
-*.sqlite3-shm
-
 # Account-specific live test harness and private operational reports
-/backend/internal/catalogwatch/live_authorized_test.go
+/server/internal/catalogwatch/live_authorized_test.go
 /docs/live-stock-order-2026-11-07.md
 /docs/live-verification-2026-11-07.md

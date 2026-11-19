@@ -6,19 +6,19 @@ OVH 独立服务器 / VPS / Eco 系列**抢购 + 监控 + 管理**控制台。
 
 实时检测 OVH 各数据中心库存,发现可购买的服务器时按用户配置(机房、内存、存储、带宽、vRack)自动下单。后台同时管理已购买服务器的全生命周期(重启 / 重装 / IPMI / BIOS / 启动模式 / 维护工单 / 联系人变更 / 带宽 / 防火墙 / FTP 备份 / vRack / Secondary DNS 等)。支持**多 OVH 账户**同时管理,抢购 / 监控按账户隔离。
 
-> Go (Gin) + SQLite 后端、Vite/React + TanStack + shadcn-ui 前端、`//go:embed` 单二进制部署(自带 SQLite, 跨平台无依赖)、
+> Go (Gin) + SQLite 后端、Vite/React + React Router + TanStack Query + shadcn-ui 前端、`//go:embed` 单二进制部署(自带 SQLite, 跨平台无依赖)、
 > 强制 OvhCredsGate、多账户支持、双 SQLite driver(`modernc.org/sqlite` 纯 Go / `mattn/go-sqlite3` cgo, build tag 自动选)、
 > **中英双语界面(跟随浏览器,可手动固定)**、自动检测 GitHub Releases 更新。
 
 ## 下载
 
-去 [Releases](https://github.com/gokele/ovh/releases) 拿对应平台的二进制,解压即用,**不需要装 Go、Node 或 SQLite**:
+去 [Releases](https://github.com/coolci/OVH_WEBUI/releases) 拿对应平台的二进制,解压即用,**不需要装 Go、Node 或 SQLite**:
 
 | 平台 | 文件 |
 |---|---|
-| Windows x64 | `ovh-server-windows-amd64.exe` |
-| Linux x64 | `ovh-server-linux-amd64` |
-| Linux ARM64(树莓派 / ARM 云主机) | `ovh-server-linux-arm64` |
+| Windows x64 | `ovh-webui-windows-amd64.exe` |
+| Linux x64 | `ovh-webui-linux-amd64` |
+| Linux ARM64(树莓派 / ARM 云主机) | `ovh-webui-linux-arm64` |
 
 前端已经用 `//go:embed` 嵌进二进制,跑起来直接开 `http://localhost:19998` 就是完整界面。
 Linux 上记得 `chmod +x`。想自己编译见[部署方式](#部署方式)。
@@ -26,74 +26,86 @@ Linux 上记得 `chmod +x`。想自己编译见[部署方式](#部署方式)。
 也提供 Docker 镜像(`linux/amd64` + `linux/arm64`):
 
 ```bash
-docker pull ghcr.io/gokele/ovh:latest
+docker pull ghcr.io/coolci/ovh_webui:latest
 ```
 
 ## 技术栈
 
 | 层 | 技术 |
 |---|---|
-| 前端 | Vite 5 + React 18 + TypeScript + TanStack Router + TanStack Query + shadcn-ui + Tailwind + recharts + **react-i18next(中/英)** |
-| 后端 | Go 1.21+ + Gin + 官方 [go-ovh](https://github.com/ovh/go-ovh) SDK |
+| 前端 | Vite 5 + React 18 + TypeScript + React Router v6 + TanStack Query + shadcn-ui + Tailwind + recharts + **react-i18next(中/英)** |
+| 后端 | Go 1.26 + Gin + 官方 [go-ovh](https://github.com/ovh/go-ovh) SDK |
 | 持久化 | SQLite(`modernc.org/sqlite` 纯 Go / `mattn/go-sqlite3` cgo 双 driver, build tag 自动选),凭据字段 AES-256-GCM 加密落盘 |
 | 通知 | Telegram Bot(长轮询,无需公网地址)+ 自定义 Webhook(钉钉 / 飞书 / Bark / 自建),多通道冗余 |
-| 部署 | 单二进制(前端 //go:embed 进 Go 二进制) 或前后端分开跑 |
+| 部署 | 单二进制(前端 `//go:embed` 进 Go 二进制)、Docker 单镜像或前后端 Compose 分离部署 |
 
 ## 项目结构
 
-```
+```text
 .
-├── backend/          # Go 模块 (Gin, Clean Architecture, 默认 :19998)
+├── .github/workflows/# CI 与发版流水线 (ci.yml / release.yml)
+├── server/           # Go 后端模块 (Gin, 默认 :19998, 数据库 data/sniper.db)
 │   ├── main.go
-│   ├── internal/
-│   │   ├── domain/   # 纯 DDD 领域实体 (Account/Order/Server/Monitor/VPS/Telegram/System)
-│   │   ├── service/  # 业务编排与用例服务
-│   │   ├── repository/ # 持久化抽象接口
-│   │   ├── handlers/ # HTTP 控制器 (仅依赖 Service/Repository)
-│   │   ├── router/   # Gin 路由注册与 CORS
-│   │   ├── monitor/  # 服务器补货监控
-│   │   ├── purchase/ # 下单流程与抢购队列
-│   │   ├── ovh/      # 按 account_id 路由的多账户 client 工厂
-│   │   ├── notify/   # 多通道通知(Telegram / 自定义 Webhook)
-│   │   ├── secret/   # 凭据落盘加密(AES-256-GCM)
-│   │   └── updater/  # 在线更新:下载 / 校验 / 自替换 / 回滚
-│   └── ...
-├── src/              # 前端工程 (Vite + React + TanStack Router + Tailwind)
-│   ├── components/   # 共享组件 + 模态框
-│   ├── hooks/        # 数据获取与操作 Hooks
-│   ├── routes/       # 文件路由
-│   ├── i18n/         # 多语言系统
-│   └── lib/          # API 客户端与工具库
+│   ├── cmd/routes/   # 路由表导出工具
+│   └── internal/
+│       ├── app/      # 全局状态与应用编排
+│       ├── db/       # SQLite 持久化层 (schema.sql + 表级 CRUD)
+│       ├── handlers/ # HTTP 控制器
+│       ├── router/   # Gin 路由注册与 CORS
+│       ├── monitor/  # 服务器补货监控
+│       ├── vps/      # VPS 补货监控与控制
+│       ├── purchase/ # 下单流程与抢购队列
+│       ├── price/    # OVH 购物车询价
+│       ├── catalog/  # 公开目录缓存与区域解析
+│       ├── ovh/      # 按 account_id 路由的多账户 client 工厂
+│       ├── notify/   # 多通道通知 (Telegram / 自定义 Webhook)
+│       ├── secret/   # 凭据落盘加密 (AES-256-GCM)
+│       ├── updater/  # 在线更新：下载 / 校验 / 自替换 / 回滚
+│       └── ...
+├── web/              # 前端工程 (Vite + React + React Router v6 + TanStack Query, 开发 :8080)
+│   ├── src/
+│   │   ├── pages/    # 页面视图
+│   │   ├── components/ # 业务组件与 shadcn/ui
+│   │   ├── hooks/    # TanStack Query 数据 Hooks
+│   │   ├── i18n/     # 中英双语语言包与错误码翻译层
+│   │   └── lib/      # HTTP 客户端、子公司/机房常量与工具库
+│   └── scripts/      # 前端回归单元测试
 ├── api/              # OpenAPI 3.1 接口契约规范 (openapi.yaml)
-└── progress/         # 进度与双向对账台账 (ledger.csv)
+├── deploy/           # Dockerfile、HTTPS Compose、Nginx 与 Caddy 配置
+├── docs/             # 文档与历史审计归档 (docs/archive/)
+├── scripts/          # 本地初始化、启动与一键部署脚本
+└── tools/            # 路由台账校验 (tools/status) 与错误码生成工具
 ```
 
-后端架构分层详见 `backend/` 与 `docs/prd-v2/`。
+后端架构文档详见 [server/README.md](server/README.md) 与 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 部署方式
 
 ### 方式 A:Docker(推荐)
 
 ```bash
-# 拿一份 docker-compose.yml,改掉里面的 API_SECRET_KEY,然后:
-docker compose up -d
+# 1) 准备配置（设置强随机 API_SECRET_KEY 与 OVH_DB_KEY）
+cp .env.example .env
 
-# 更新
-docker compose pull && docker compose up -d
+# 2) 前后端分离部署（Web UI :8080，后端 API 仅本机 127.0.0.1:19998）
+docker compose up -d --build
+
+# 公网 HTTPS + Caddy 自动证书生产部署：
+docker compose -f deploy/docker-compose.https.yml up -d --build
 ```
 
-或者直接 run:
+或直接运行嵌入前端的单容器镜像：
 
 ```bash
-docker run -d --name ovh-console \
-  -p 127.0.0.1:20000:20000 \
+docker run -d --name ovh-webui \
+  -p 127.0.0.1:19998:19998 \
   -v "$PWD/data:/data" \
-  -e API_SECRET_KEY=换成你自己的随机串 \
+  -e API_SECRET_KEY=换成你自己的强随机串 \
   --restart unless-stopped \
-  ghcr.io/gokele/ovh:latest
+  ghcr.io/coolci/ovh_webui:latest
 ```
 
-镜像由打 tag 时的 GitHub Action 构建并推到 `ghcr.io/gokele/ovh`,提供 `linux/amd64` 与 `linux/arm64`。
+镜像由打 tag 时的 GitHub Action 构建并推到 `ghcr.io/coolci/ovh_webui`,提供 `linux/amd64` 与 `linux/arm64`。
 
 **数据全在 `/data` 这一个目录下**:SQLite 数据库、缓存、日志。
 使用 Docker Compose 或一键脚本部署时，**数据库解密密钥（`OVH_DB_KEY`）保存在宿主机根目录的 `.env` 中**。
@@ -118,23 +130,23 @@ bind mount 进来的宿主目录归属是宿主机那边的 uid,不处理的话�
 
 ### 方式 B:单二进制
 
-前端 build → Vite 输出到 `dist/` → Go `-tags ui` 触发 `//go:embed` 把整目录嵌入二进制 → 单文件部署、双击即用。
+前端 build → Vite 输出到 `web/dist/` → 拷贝到 `server/web/` → Go `-tags ui` 触发 `//go:embed` 把整目录嵌入二进制 → 单文件部署、双击即用。
 
 ```bash
-# 1) 前端构建
-npm ci
-npm run build
+# 1) 前端构建并复制到 server/web/
+cd web && npm ci && npm run build && cd ..
+rm -rf server/web && cp -r web/dist server/web
 
 # 2) 编译带前端的单二进制(CGO_ENABLED=0 走纯 Go SQLite,交叉编译不需要 gcc)
-cd backend
+cd server
 CGO_ENABLED=0 go build -tags ui -trimpath \
   -ldflags "-s -w -X github.com/ovh-webui/server/internal/handlers.Version=$(cat ../VERSION)" \
-  -o ../ovh-webui.exe .
+  -o ../ovh-webui .
 ```
 
 Windows 把产物名改成 `ovh-webui.exe` 即可;交叉编译加 `GOOS=linux GOARCH=arm64` 这类前缀。
 **不需要外部 SQLite 库,二进制自带。** 默认监听 `:19998`,浏览器打开 `http://localhost:19998` 即用,
-数据库自动建在 `./data/ovh.db`。
+数据库自动建在 `./data/sniper.db`。
 
 > Release 页提供 Windows amd64 / Linux amd64 / Linux arm64 三个预编译产物,不想自己编译可以直接下。
 
@@ -142,10 +154,11 @@ Windows 把产物名改成 `ovh-webui.exe` 即可;交叉编译加 `GOOS=linux GO
 
 ```bash
 # 后端 (终端 1)
-cd backend
+cd server
 go run .                # 默认 :19998
 
 # 前端 (终端 2)
+cd web
 npm install
 npm run dev             # 默认 :8080, /api/* 自动反代到 19998
 ```
@@ -520,8 +533,7 @@ SSH 登录后挂载硬盘修东西。救援系统是网络启动的独立临时 
 从 v0.1.32 起,同一来源连续 10 次密钥错误会被暂时拒绝 5 分钟 ——
 这是为了挡住爆破(这个服务能用你的 OVH 账户下单,不设阻力的话端口可达就能一秒试几千次)。
 
-密钥就是后端 `.env` 里的 `API_SECRET_KEY`;从没设置过的话默认是 `123456`
-(强烈建议改掉,启动日志里也会红字提醒)。
+密钥就是后端 `server/.env` 里的 `API_SECRET_KEY`（首次初始化由 `./scripts/init-first-run.sh` 或 `.ps1` 自动生成强随机密钥；弱口令会在启动阶段被拦截）。
 等冷却结束再输一次正确的即可,**输对之后计数立刻清零**。
 限流按来源 IP 分开算,不会因为别人试错把你挡在外面。
 
@@ -533,8 +545,12 @@ Go 收到 SIGTERM 默认当场终止,内存里还没落盘的日志会**整段�
 
 ### 数据库 / 配置放在哪、怎么备份
 
-- SQLite:工作目录下的 `sniper.db`(Docker 里是挂载卷)
+- SQLite:工作目录下的 `data/sniper.db`(Docker 里是 `/data/sniper.db` 挂载卷)
 - 加密密钥:`.env` 里的 `OVH_DB_KEY`
 
 **两个必须一起备份**。只备份 `sniper.db` 而丢了 `OVH_DB_KEY`,已存的 OVH 凭据和 Telegram token
 就再也解不开了,只能去 OVH 控制台吊销后重新录入。
+
+## 许可证与致谢
+
+本项目基于 [gokele/ovh](https://github.com/gokele/ovh) 派生开发，遵循 **GNU Affero General Public License v3.0 (AGPL-3.0)** 开源协议，详见 [LICENSE](LICENSE) 与 [NOTICE](NOTICE)。

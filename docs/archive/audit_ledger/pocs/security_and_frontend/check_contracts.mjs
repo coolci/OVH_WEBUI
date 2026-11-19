@@ -6,12 +6,12 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = process.cwd();
-const require = createRequire(path.join(repoRoot, "package.json"));
+const require = createRequire(path.join(repoRoot, "web", "package.json"));
 const ts = require("typescript");
 
 // 1. Export live backend routes via `go run ./cmd/routes`
 const rawBackend = execFileSync("go", ["run", "./cmd/routes"], {
-  cwd: path.join(repoRoot, "backend"),
+  cwd: path.join(repoRoot, "server"),
   encoding: "utf8",
 }).replace(/^\uFEFF/, "");
 const backendRoutes = JSON.parse(rawBackend);
@@ -131,7 +131,7 @@ function exprToTemplatePath(node, sf) {
 }
 
 const feCalls = [];
-for (const file of walkFiles(path.join(repoRoot, "src"))) {
+for (const file of walkFiles(path.join(repoRoot, "web", "src"))) {
   const code = fs.readFileSync(file, "utf8");
   const sf = ts.createSourceFile(file, code, ts.ScriptTarget.Latest, true, file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
   const rel = path.relative(repoRoot, file).replace(/\\/g, "/");

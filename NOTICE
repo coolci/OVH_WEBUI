@@ -1,0 +1,14 @@
+OVH_WEBUI
+Copyright (c) 2026 coolci and contributors
+
+This project is a derivative work based on:
+  gokele/ovh (https://github.com/gokele/ovh)
+  Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
+
+In accordance with Section 5 of the GNU Affero General Public License v3.0:
+- The original AGPL-3.0 license text is preserved verbatim in the root LICENSE file.
+- Substantial modifications and additions have been made in this repository
+  (https://github.com/coolci/OVH_WEBUI), including multi-account OVH server/VPS
+  control workflows, security hardening, OpenAPI contract governance, and frontend
+  UI/UX refinements.
+- All modifications are distributed under the same GNU AGPL v3.0 license.

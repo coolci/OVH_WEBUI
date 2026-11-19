@@ -6,6 +6,7 @@ import vm from "node:vm";
 import { createRequire } from "node:module";
 
 const repoRoot = process.cwd();
+const workspaceRoot = path.basename(repoRoot) === "web" ? path.resolve(repoRoot, "..") : repoRoot;
 const require = createRequire(path.join(repoRoot, "package.json"));
 const ts = require("typescript");
 
@@ -76,7 +77,7 @@ function reactQueryStub(qc = { invalidateQueries() {}, removeQueries() {} }) {
 
 /** Parse `METHOD /api/path` keys from api/openapi.yaml (server base url is /api). */
 function openapiRouteKeys() {
-  const lines = fs.readFileSync(path.join(repoRoot, "api/openapi.yaml"), "utf8").split(/\r?\n/);
+  const lines = fs.readFileSync(path.join(workspaceRoot, "api/openapi.yaml"), "utf8").split(/\r?\n/);
   const keys = [];
   let inPaths = false;
   let current = null;
@@ -363,7 +364,7 @@ test("AUDIT-79 [FE-CTRL-06 & FE-CORE-16]: VPS SUBSIDIARIES covers all 24 zones a
 
 test("AUDIT-79 [CONTRACT-01..05, SEC-12 & MANIFEST]: OpenAPI 0 mismatch, api.ts aligned, Nginx /assets/ & /api/internal hardened, and 79/79 bugs FIXED_VERIFIED", () => {
   const diff = JSON.parse(
-    fs.readFileSync(path.join(repoRoot, "audit_ledger/pocs/security_and_frontend/contract_diff.json"), "utf8")
+    fs.readFileSync(path.join(workspaceRoot, "docs/archive/audit_ledger/pocs/security_and_frontend/contract_diff.json"), "utf8")
   );
   assert.equal(diff.backendMissingInOpenapi.length, 0, "backendMissingInOpenapi must be 0");
   assert.equal(diff.openapiMissingInBackend.length, 0, "openapiMissingInBackend must be 0");
@@ -394,21 +395,21 @@ test("AUDIT-79 [CONTRACT-01..05, SEC-12 & MANIFEST]: OpenAPI 0 mismatch, api.ts 
   assert.equal(moveIpBlock.includes("to: targetService"), false, "moveIp must not rely on the ignored body.to");
   assert.ok(apiTs.includes("serialOverLanSshKey"));
 
-  const nginxConf = fs.readFileSync(path.join(repoRoot, "nginx/default.conf"), "utf8");
+  const nginxConf = fs.readFileSync(path.join(workspaceRoot, "deploy/nginx/default.conf"), "utf8");
   const assetsMatch = /location\s+\/assets\/\s*\{([\s\S]*?)\}/.exec(nginxConf);
   assert.ok(assetsMatch && assetsMatch[1].includes("Cache-Control"), "location /assets/ must retain Cache-Control");
   // A child `add_header` drops every inherited server-level header, so each one must be re-declared here.
   for (const header of ["X-Content-Type-Options", "X-Frame-Options", "Referrer-Policy", "X-Robots-Tag"]) {
     assert.ok(assetsMatch[1].includes(header), `location /assets/ must re-declare ${header}`);
   }
-  assert.equal(nginxConf.includes("/api/internal"), true, "nginx/default.conf must block /api/internal");
+  assert.equal(nginxConf.includes("/api/internal"), true, "deploy/nginx/default.conf must block /api/internal");
   assert.match(nginxConf, /location\s+\^~\s+\/api\/internal[\s\S]*?return\s+403/);
 
   const viteCfg = fs.readFileSync(path.join(repoRoot, "vite.config.ts"), "utf8");
   assert.equal(viteCfg.includes('host: "0.0.0.0"'), false, "vite.config.ts must default to 127.0.0.1 instead of 0.0.0.0");
 
   const manifest = JSON.parse(
-    fs.readFileSync(path.join(repoRoot, "audit_ledger/verified_bugs_manifest.json"), "utf8")
+    fs.readFileSync(path.join(workspaceRoot, "docs/archive/audit_ledger/verified_bugs_manifest.json"), "utf8")
   );
   assert.equal(manifest.sourceCodeModified, true);
   assert.equal(manifest.totalVerifiedBugs, 79);

@@ -6,92 +6,102 @@ A **sniping + monitoring + management** console for OVH bare-metal servers / VPS
 
 Watches stock across OVH datacenters in real time and auto-orders purchasable servers per your configuration (datacenter, RAM, storage, bandwidth, vRack). It also manages the full lifecycle of purchased servers (reboot / reinstall / IPMI / BIOS / netboot mode / maintenance tickets / contact changes / bandwidth / firewall / FTP backup / vRack / secondary DNS, and more). Multiple OVH accounts are supported at once, with sniping and monitoring isolated per account.
 
-> Go (Gin) + SQLite backend, Vite/React + TanStack + shadcn-ui frontend, `//go:embed` single-binary deployment (SQLite embedded, cross-platform with zero dependencies), mandatory OvhCredsGate, multi-account support, dual SQLite drivers (`modernc.org/sqlite` pure-Go / `mattn/go-sqlite3` cgo, auto-selected via build tags), **bilingual UI (Chinese/English, follows the browser, can be pinned manually)**, and automatic GitHub Releases update checks.
+> Go (Gin) + SQLite backend, Vite/React + React Router v6 + TanStack Query + shadcn-ui frontend, `//go:embed` single-binary deployment (SQLite embedded, cross-platform with zero dependencies), mandatory OvhCredsGate, multi-account support, dual SQLite drivers (`modernc.org/sqlite` pure-Go / `mattn/go-sqlite3` cgo, auto-selected via build tags), **bilingual UI (Chinese/English, follows the browser, can be pinned manually)**, and automatic GitHub Releases update checks.
 
 ## Download
 
-Grab the binary for your platform from [Releases](https://github.com/gokele/ovh/releases), extract and run — **no Go, Node, or SQLite required**:
+Grab the binary for your platform from [Releases](https://github.com/coolci/OVH_WEBUI/releases), extract and run — **no Go, Node, or SQLite required**:
 
 | Platform | File |
 |---|---|
-| Windows x64 | `ovh-server-windows-amd64.exe` |
-| Linux x64 | `ovh-server-linux-amd64` |
-| Linux ARM64 (Raspberry Pi / ARM cloud hosts) | `ovh-server-linux-arm64` |
+| Windows x64 | `ovh-webui-windows-amd64.exe` |
+| Linux x64 | `ovh-webui-linux-amd64` |
+| Linux ARM64 (Raspberry Pi / ARM cloud hosts) | `ovh-webui-linux-arm64` |
 
 The frontend is embedded into the binary via `//go:embed`; once running, open `http://localhost:19998` for the full UI. Remember `chmod +x` on Linux. To build it yourself see [Deployment](#deployment).
 
 A Docker image is also provided (`linux/amd64` + `linux/arm64`):
 
 ```bash
-docker pull ghcr.io/gokele/ovh:latest
+docker pull ghcr.io/coolci/ovh_webui:latest
 ```
 
 ## Tech Stack
 
 | Layer | Technology |
 |---|---|
-| Frontend | Vite 5 + React 18 + TypeScript + TanStack Router + TanStack Query + shadcn-ui + Tailwind + recharts + **react-i18next (zh/en)** |
-| Backend | Go 1.21+ + Gin + the official [go-ovh](https://github.com/ovh/go-ovh) SDK |
+| Frontend | Vite 5 + React 18 + TypeScript + React Router v6 + TanStack Query + shadcn-ui + Tailwind + recharts + **react-i18next (zh/en)** |
+| Backend | Go 1.26 + Gin + the official [go-ovh](https://github.com/ovh/go-ovh) SDK |
 | Persistence | SQLite (`modernc.org/sqlite` pure-Go / `mattn/go-sqlite3` cgo dual drivers, auto-selected via build tag); credential fields encrypted at rest with AES-256-GCM |
 | Notifications | Telegram Bot (long polling, no public endpoint needed) + custom webhooks (DingTalk / Feishu / Bark / self-hosted), multi-channel redundancy |
-| Deployment | Single binary (frontend embedded into the Go binary via //go:embed), or run frontend and backend separately |
+| Deployment | Single binary (frontend embedded into the Go binary via `//go:embed`), single Docker image, or Compose frontend/backend stack |
 
 ## Project Structure
 
-```
+```text
 .
-├── server/   # Go backend (Gin, default :19998)
+├── .github/workflows/ # CI and release pipelines (ci.yml / release.yml)
+├── server/            # Go backend (Gin, default :19998, SQLite data/sniper.db)
 │   ├── main.go
-│   ├── webembed_ui.go    # with build tag=ui, embeds the whole web/ dir into the binary
+│   ├── webembed_ui.go    # with build tag=ui, embeds server/web/ into the binary
 │   ├── webembed_noui.go  # default build, no frontend
 │   └── internal/
 │       ├── app/          # State aggregation
 │       ├── db/           # SQLite layer (schema.sql + per-table CRUD)
 │       ├── handlers/     # Gin handlers
 │       ├── monitor/      # server restock monitoring
-│       ├── vps/          # VPS restock monitoring
-│       ├── purchase/     # ordering flow
+│       ├── vps/          # VPS restock monitoring & control
+│       ├── purchase/     # ordering flow & sniping queue
 │       ├── price/        # OVH cart price quoting
 │       ├── ovh/          # multi-account client factory routed by account_id
 │       ├── notify/       # multi-channel notifications (Telegram / custom webhooks)
 │       ├── secret/       # at-rest credential encryption (AES-256-GCM)
 │       ├── updater/      # in-place updates: download / verify / self-replace / rollback
 │       └── ...
-└── web/      # frontend (Vite + TanStack, dev default :19997)
-    └── src/
-        ├── routes/       # file-based routing
-        ├── components/   # shared components + AuthGate / OvhCredsGate
-        ├── hooks/        # TanStack Query hooks
-        ├── i18n/         # localization: (modular) language packs + error-code translation layer + localized formatting
-        └── lib/          # subsidiary tables / OVH datacenter constants / utils
+├── web/               # frontend (Vite + React Router v6 + TanStack Query, dev :8080)
+│   ├── src/
+│   │   ├── pages/        # route views
+│   │   ├── components/   # shared components + AuthGate / OvhCredsGate
+│   │   ├── hooks/        # TanStack Query hooks
+│   │   ├── i18n/         # localization packs + error-code translation layer
+│   │   └── lib/          # HTTP client / subsidiary tables / OVH datacenter constants
+│   └── scripts/          # frontend unit & regression tests
+├── api/               # OpenAPI 3.1 contract (openapi.yaml)
+├── deploy/            # Dockerfiles, HTTPS Compose, Nginx & Caddy configs
+├── docs/              # documentation & historical archives (docs/archive/)
+├── scripts/           # init, start & one-click deploy scripts
+└── tools/             # ledger verification (tools/status) & API code generator
 ```
 
-See [server/README.md](server/README.md) for detailed backend documentation.
+See [server/README.md](server/README.md) and [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 ## Deployment
 
 ### Option A: Docker (recommended)
 
 ```bash
-# Grab a docker-compose.yml, change the API_SECRET_KEY inside, then:
-docker compose up -d
+# Copy .env.example to .env and configure strong API_SECRET_KEY / OVH_DB_KEY:
+cp .env.example .env
 
-# Updating
-docker compose pull && docker compose up -d
+# Run frontend (:8080) + backend (127.0.0.1:19998):
+docker compose up -d --build
+
+# Or full HTTPS stack with Caddy auto-TLS:
+docker compose -f deploy/docker-compose.https.yml up -d --build
 ```
 
-Or run directly:
+Or run the embedded single-container image directly:
 
 ```bash
-docker run -d --name ovh-console \
-  -p 127.0.0.1:20000:20000 \
+docker run -d --name ovh-webui \
+  -p 127.0.0.1:19998:19998 \
   -v "$PWD/data:/data" \
   -e API_SECRET_KEY=your-own-random-string \
   --restart unless-stopped \
-  ghcr.io/gokele/ovh:latest
+  ghcr.io/coolci/ovh_webui:latest
 ```
 
-The image is built by a GitHub Action on tag push and published to `ghcr.io/gokele/ovh`, for `linux/amd64` and `linux/arm64`.
+The image is built by GitHub Actions on tag push and published to `ghcr.io/coolci/ovh_webui`, for `linux/amd64` and `linux/arm64`.
 
 **All data lives under the single `/data` directory**: the SQLite database, the **database encryption key** (`.env`), caches, and logs. Back up that directory and you have everything.
 
@@ -104,23 +114,22 @@ On first start the container chowns `/data` to `PUID:PGID` (default 10001). Bind
 
 ### Option B: Single binary
 
-Build the frontend → Vite outputs to `server/web/` → Go with `-tags ui` triggers `//go:embed` of the whole directory into the binary → deploy a single file, double-click to run.
+Build the frontend → Vite outputs to `web/dist/` → copy to `server/web/` → Go with `-tags ui` triggers `//go:embed` of the whole directory into the binary → deploy a single file, double-click to run.
 
 ```bash
-# 1) Build the frontend into server/web/
-cd web
-npm ci
-npm run build
+# 1) Build the frontend and copy into server/web/
+cd web && npm ci && npm run build && cd ..
+rm -rf server/web && cp -r web/dist server/web
 
 # 2) Compile the single binary with the frontend (CGO_ENABLED=0 uses pure-Go SQLite; cross-compiling needs no gcc)
-cd ../server
+cd server
 CGO_ENABLED=0 go build -tags ui -trimpath \
-  -ldflags "-s -w -X github.com/ovh-buy/server/internal/handlers.Version=$(cat ../VERSION)" \
-  -o ovh-server .
-./ovh-server
+  -ldflags "-s -w -X github.com/ovh-webui/server/internal/handlers.Version=$(cat ../VERSION)" \
+  -o ../ovh-webui .
+../ovh-webui
 ```
 
-On Windows, name the output `ovh-server.exe`; for cross-compilation prefix with `GOOS=linux GOARCH=arm64` etc.
+On Windows, name the output `ovh-webui.exe`; for cross-compilation prefix with `GOOS=linux GOARCH=arm64` etc.
 **No external SQLite library needed — the binary is self-contained.** It listens on `:19998` by default; open `http://localhost:19998`, and the database is created automatically at `./data/sniper.db`.
 
 > The Release page provides prebuilt binaries for Windows amd64 / Linux amd64 / Linux arm64 if you'd rather not compile.
@@ -135,10 +144,10 @@ go run .                # default :19998
 # Frontend (another terminal)
 cd web
 npm install
-npm run dev             # default :19997, /api/* proxied to 19998
+npm run dev             # default :8080, /api/* proxied to 19998
 ```
 
-Open `http://localhost:19997` in the browser.
+Open `http://localhost:8080` in the browser.
 
 ## First Visit
 
@@ -465,7 +474,7 @@ Inside: after ~3–5 minutes the root password arrives at the email you set (emp
 
 Since v0.1.32, 10 consecutive wrong keys from one source triggers a 5-minute refusal — this blocks brute force (this service can order servers with your OVH account; with no friction, anyone who can reach the port gets thousands of guesses per second).
 
-The key is `API_SECRET_KEY` in the backend `.env`; the default is `123456` if never set (strongly recommended to change; the startup log warns in red). Wait out the cooldown and enter the correct one — **a correct entry resets the counter immediately**. Rate limits are per source IP; someone else's mistakes won't lock you out.
+The key is `API_SECRET_KEY` in `server/.env` (initialized to a strong random secret by `./scripts/init-first-run.sh` or `.ps1`; weak keys are blocked on startup). Wait out the cooldown and enter the correct one — **a correct entry resets the counter immediately**. Rate limits are per source IP; someone else's mistakes won't lock you out.
 
 ### Logs seem to be missing a chunk when stopping / restarting the container
 
@@ -473,7 +482,11 @@ v0.1.31 and earlier: the program didn't handle SIGTERM, which is exactly what `d
 
 ### Where are the database / config, and how to back up
 
-- SQLite: `sniper.db` in the working directory (the mounted volume under Docker)
+- SQLite: `data/sniper.db` in the working directory (the `/data/sniper.db` mounted volume under Docker)
 - Encryption key: `OVH_DB_KEY` in `.env`
 
 **Back up both together**. Only backing up `sniper.db` and losing `OVH_DB_KEY` means stored OVH credentials and Telegram tokens are undecryptable forever — you'd have to revoke and re-enter them from the OVH console.
+
+## License & Attribution
+
+Derivative work based on [gokele/ovh](https://github.com/gokele/ovh), licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)**. See [LICENSE](LICENSE) and [NOTICE](NOTICE).

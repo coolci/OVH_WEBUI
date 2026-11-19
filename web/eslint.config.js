@@ -5,9 +5,8 @@ import reactRefresh from "eslint-plugin-react-refresh";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  // dist / artifacts 是构建与发布产物(不进 Git),不参与 lint
-  // scratch/** 是本地临时检查脚本/打包快照,不参与 lint
-  { ignores: ["dist", "artifacts", "scratch/**"] },
+  // dist / scripts 是构建产物与 Node 回归脚本,不参与浏览器源码 lint
+  { ignores: ["dist", "scripts"] },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ["**/*.{ts,tsx}"],

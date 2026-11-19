@@ -54,23 +54,23 @@ func newTestState(t *testing.T) (*app.State, *db.DB) {
 	return st, database
 }
 
-// BUG-SEC-01: Verify backend/.env.example removes weak API_SECRET_KEY=123456 & binds 127.0.0.1,
+// BUG-SEC-01: Verify server/.env.example removes weak API_SECRET_KEY=123456 & binds 127.0.0.1,
 // init-first-run scripts anchor ^API_SECRET_KEY=.* with post-write verification, and ValidateStartupAPIKey rejects weak keys.
 func TestSEC01_EnvExampleClearedInitScriptsAnchoredAndWeakKeyBlocked(t *testing.T) {
 	repoRoot := filepath.Clean(filepath.Join("..", "..", ".."))
-	envExampleBytes, err := os.ReadFile(filepath.Join(repoRoot, "backend", ".env.example"))
+	envExampleBytes, err := os.ReadFile(filepath.Join(repoRoot, "server", ".env.example"))
 	if err != nil {
-		t.Fatalf("read backend/.env.example: %v", err)
+		t.Fatalf("read server/.env.example: %v", err)
 	}
 	envExample := string(envExampleBytes)
 	if strings.Contains(envExample, "API_SECRET_KEY=123456") {
-		t.Fatalf("backend/.env.example still contains weak default API_SECRET_KEY=123456")
+		t.Fatalf("server/.env.example still contains weak default API_SECRET_KEY=123456")
 	}
 	if !regexp.MustCompile(`(?m)^API_SECRET_KEY=\s*$`).MatchString(envExample) {
-		t.Fatalf("expected backend/.env.example to declare empty API_SECRET_KEY=, got:\n%s", envExample)
+		t.Fatalf("expected server/.env.example to declare empty API_SECRET_KEY=, got:\n%s", envExample)
 	}
 	if !regexp.MustCompile(`(?m)^LISTEN_HOST=127\.0\.0\.1\s*$`).MatchString(envExample) {
-		t.Fatalf("expected backend/.env.example to set LISTEN_HOST=127.0.0.1, got:\n%s", envExample)
+		t.Fatalf("expected server/.env.example to set LISTEN_HOST=127.0.0.1, got:\n%s", envExample)
 	}
 
 	initShBytes, err := os.ReadFile(filepath.Join(repoRoot, "scripts", "init-first-run.sh"))
@@ -206,7 +206,7 @@ func TestSEC03_ValidCredentialsBypassSharedIPLockoutAndComposeTrustedProxies(t *
 	t.Cleanup(auth.ResetAuthFailures)
 
 	repoRoot := filepath.Clean(filepath.Join("..", "..", ".."))
-	for _, composeName := range []string{"docker-compose.yml", "docker-compose.https.yml", "docker-compose.prod.yml", "docker-compose.ssl.yml"} {
+	for _, composeName := range []string{"docker-compose.yml", "deploy/docker-compose.https.yml"} {
 		b, err := os.ReadFile(filepath.Join(repoRoot, composeName))
 		if err != nil {
 			t.Fatalf("read %s: %v", composeName, err)
@@ -719,31 +719,31 @@ func TestSEC11_SEC12_ScriptsPermissionsNginxHeadersAndViteHost(t *testing.T) {
 		}
 	}
 
-	nginxBytes, err := os.ReadFile(filepath.Join(repoRoot, "nginx", "default.conf"))
+	nginxBytes, err := os.ReadFile(filepath.Join(repoRoot, "deploy", "nginx", "default.conf"))
 	if err != nil {
-		t.Fatalf("read nginx/default.conf: %v", err)
+		t.Fatalf("read deploy/nginx/default.conf: %v", err)
 	}
 	nginxConf := string(nginxBytes)
 	if !strings.Contains(nginxConf, "location ^~ /api/internal") {
-		t.Fatalf("nginx/default.conf missing location ^~ /api/internal 403 block")
+		t.Fatalf("deploy/nginx/default.conf missing location ^~ /api/internal 403 block")
 	}
 	assetsRe := regexp.MustCompile(`location /assets/\s*\{([\s\S]*?)\}`)
 	m := assetsRe.FindStringSubmatch(nginxConf)
 	if len(m) < 2 {
-		t.Fatalf("nginx/default.conf missing location /assets/ block")
+		t.Fatalf("deploy/nginx/default.conf missing location /assets/ block")
 	}
 	for _, hdr := range []string{"Cache-Control", "X-Frame-Options", "X-Content-Type-Options", "Referrer-Policy"} {
 		if !strings.Contains(m[1], hdr) {
-			t.Fatalf("nginx/default.conf location /assets/ missing security header %s", hdr)
+			t.Fatalf("deploy/nginx/default.conf location /assets/ missing security header %s", hdr)
 		}
 	}
 
-	viteBytes, err := os.ReadFile(filepath.Join(repoRoot, "vite.config.ts"))
+	viteBytes, err := os.ReadFile(filepath.Join(repoRoot, "web", "vite.config.ts"))
 	if err != nil {
-		t.Fatalf("read vite.config.ts: %v", err)
+		t.Fatalf("read web/vite.config.ts: %v", err)
 	}
 	viteConf := string(viteBytes)
 	if strings.Contains(viteConf, `host: "0.0.0.0"`) || !strings.Contains(viteConf, "127.0.0.1") {
-		t.Fatalf("vite.config.ts must default server.host to 127.0.0.1 instead of 0.0.0.0")
+		t.Fatalf("web/vite.config.ts must default server.host to 127.0.0.1 instead of 0.0.0.0")
 	}
 }

@@ -10,7 +10,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
-$Backend = Join-Path $Root "backend"
+$Backend = Join-Path $Root "server"
 $Exe = Join-Path $Backend "ovh-webui.exe"
 
 function Test-BackendUp {
@@ -39,7 +39,7 @@ New-Item -ItemType Directory -Path (Join-Path $Backend "data\logs") -Force | Out
 New-Item -ItemType Directory -Path (Join-Path $Backend "data\cache") -Force | Out-Null
 
 if (-not (Test-Path -LiteralPath (Join-Path $Backend ".env"))) {
-  Write-Host "WARN: no backend/.env - run .\scripts\init-first-run.ps1 first" -ForegroundColor Yellow
+  Write-Host "WARN: no server/.env - run .\scripts\init-first-run.ps1 first" -ForegroundColor Yellow
 }
 
 if ($Rebuild -or -not (Test-Path -LiteralPath $Exe)) {

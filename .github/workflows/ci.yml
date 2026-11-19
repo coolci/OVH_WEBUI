@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (gofmt / vet / test / cross-build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - name: gofmt check
+        run: |
+          unformatted="$(gofmt -l . | grep -v '^$' || true)"
+          if [ -n "$unformatted" ]; then
+            echo "Unformatted Go files (run gofmt -w):"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test (-race -short)
+        run: go test -race -short -count=1 ./...
+
+      - name: Cross-compile release targets
+        run: |
+          set -e
+          for target in "windows amd64" "linux amd64" "linux arm64"; do
+            set -- $target
+            echo "==> $1/$2"
+            GOOS="$1" GOARCH="$2" CGO_ENABLED=0 go build -trimpath -o /dev/null .
+          done
+
+  frontend:
+    name: Frontend (lint / typecheck / test / build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+      - name: ESLint
+        run: npm run lint
+      - name: TypeScript typecheck
+        run: npm run typecheck
+      - name: Frontend unit tests
+        run: npm test
+      - name: Production build
+        run: npm run build
+
+  contracts:
+    name: Contracts & Tooling Gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: tools/status unit tests
+        run: go test ./tools/status -count=1
+
+      - name: Route ledger verification
+        run: |
+          go run ./tools/status --ledger docs/prd-v2/progress/ledger.csv --verify
+          go run ./tools/status --ledger docs/archive/progress/ledger.csv --verify
+
+      - name: Tooling & catalog_watch unit tests
+        run: |
+          python -m unittest discover -s tools/catalog_watch -p test_*.py
+          python docs/audit-2026-11-06/proofs/tooling-proof.py

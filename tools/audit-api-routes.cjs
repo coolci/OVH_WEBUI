@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const { execFileSync } = require('child_process');
-const backendRoutes = JSON.parse(execFileSync('go', ['run', './backend/cmd/routes'], {cwd:path.join(__dirname,'..'),encoding:'utf8'}))
+const backendRoutes = JSON.parse(execFileSync('go', ['run', './server/cmd/routes'], {cwd:path.join(__dirname,'..'),encoding:'utf8'}))
   .map(route => ({...route, path:route.path.replace(/^\/api(?=\/)/, '')}));
 if (!backendRoutes.length) throw Error('Backend route registry is empty');
 
@@ -23,7 +23,7 @@ function scanDir(dir) {
   return results;
 }
 
-const frontendFiles = scanDir(path.join(__dirname, '../src'));
+const frontendFiles = scanDir(path.join(__dirname, '../web/src'));
 const apiCalls = [];
 // Match strings with api endpoint patterns
 const pathRegex = /api\.(get|post|put|delete|patch)\s*(?:<[^;]+?>)?\s*\(\s*(["'`])([^"'`]+)\2/g;

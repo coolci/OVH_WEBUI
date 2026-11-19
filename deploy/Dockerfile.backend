@@ -8,10 +8,10 @@ FROM golang:${GO_VERSION}-bookworm AS build
 WORKDIR /src
 
 # 依赖层缓存
-COPY backend/go.mod backend/go.sum ./
+COPY server/go.mod server/go.sum ./
 RUN go mod download
 
-COPY backend/ ./
+COPY server/ ./
 # CGO_ENABLED=0 → 使用 modernc.org/sqlite（driver_purego.go）
 RUN VER=$(cat VERSION) && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build -trimpath -ldflags="-s -w -X github.com/ovh-webui/server/internal/handlers.Version=${VER}" -o /out/ovh-webui .
@@ -23,7 +23,7 @@ RUN apk add --no-cache ca-certificates tzdata wget \
 
 WORKDIR /app
 COPY --from=build /out/ovh-webui /app/ovh-webui
-COPY backend/docker-entrypoint.sh /app/docker-entrypoint.sh
+COPY server/docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod +x /app/ovh-webui /app/docker-entrypoint.sh \
     && mkdir -p /data/cache /data/logs \
     && chown -R ovh:ovh /app /data

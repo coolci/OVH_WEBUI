@@ -21,7 +21,7 @@ for a in "$@"; do
 done
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BACKEND="$ROOT/backend"
+BACKEND="$ROOT/server"
 ENV_EXAMPLE="$BACKEND/.env.example"
 ENV_FILE="$BACKEND/.env"
 DATA_DIR="$BACKEND/data"
@@ -97,7 +97,7 @@ fi
 API_KEY=""
 if [[ -f "$ENV_FILE" && "$FORCE_ENV" -eq 0 ]]; then
   chmod 600 "$ENV_FILE"
-  echo "  keep existing backend/.env"
+  echo "  keep existing server/.env"
   API_KEY="$(grep -E '^[[:space:]]*API_SECRET_KEY=' "$ENV_FILE" | head -1 | cut -d= -f2- | tr -d '\r' | tr -d '\"' | tr -d \"\'\")"
   if is_weak_api_key "$API_KEY"; then
     echo "ERROR: existing $ENV_FILE has empty or weak API_SECRET_KEY; re-run with --force-env to regenerate" >&2
@@ -112,7 +112,7 @@ else
   fi
   API_KEY="$(gen_key)"
   write_env_with_key "$ENV_EXAMPLE" "$ENV_FILE" "$API_KEY" 1
-  echo "  wrote backend/.env (mode 0600)"
+  echo "  wrote server/.env (mode 0600)"
 fi
 
 if [[ -f "$ROOT/.env.example" ]] && { [[ ! -f "$ROOT/.env" ]] || [[ "$FORCE_ENV" -eq 1 ]]; }; then
@@ -137,7 +137,7 @@ fi
 
 echo ""
 echo "API_SECRET_KEY (login with this):"
-echo "  ${API_KEY:-see backend/.env}"
+echo "  ${API_KEY:-see server/.env}"
 echo ""
-echo "Next: cd backend && go run .   |   npm run dev → http://127.0.0.1:8080"
+echo "Next: cd server && go run .   |   npm run dev → http://127.0.0.1:8080"
 echo "Add OVH account in UI. Never commit .env or data/."

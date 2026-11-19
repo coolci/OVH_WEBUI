@@ -5,16 +5,16 @@
 .vscode
 **/.DS_Store
 
-# local env & secrets (注入用 compose env_file，勿打进镜像)
+# local env & secrets (injected via compose env_file, never bake into image)
 .env
 .env.*
-backend/.env
-backend/.env.*
+server/.env
+server/.env.*
 secrets
 
-# runtime data (volume 挂载)
-backend/data
-backend/data/**
+# runtime data (volume mounted)
+server/data
+server/data/**
 data
 **/*.db
 **/*.db-*
@@ -25,19 +25,18 @@ data
 **/*.exe
 **/*.exe~
 **/ovh-webui
-backend/ovh-webui*
+server/ovh-webui*
+server/web
 **/*.test
 **/*.out
 **/coverage
 **/*.tsbuildinfo
 
-# docs / scripts not needed in image
+# docs / scripts / local artifacts not needed in image
 docs
 scripts
+artifacts
+deploy_package.tar.gz
 **/*.md
-!package.json
-!package-lock.json
-
-# frontend unused in backend image (Dockerfile.backend only copies backend/)
-# keep whole tree for frontend build but ignore large junk
-bun.lockb
+!web/package.json
+!web/package-lock.json

@@ -13,7 +13,7 @@ func TestLedgerRequiresActualMethodAndExplicitTest(t *testing.T) {
 	if deriveStatus(&row, contract) != "wip" {
 		t.Fatal("unrelated evidence claimed completion")
 	}
-	row.Evidence = "go-test:./backend/internal/example#TestSpecific"
+	row.Evidence = "go-test:./server/internal/example#TestSpecific"
 	testResults[row.Evidence] = true
 	if deriveStatus(&row, contract) != "done" {
 		t.Fatal("verified matching route not done")

@@ -1,6 +1,6 @@
 go 1.26.0
 
 use (
-	./backend
+	./server
 	./tools/status
 )

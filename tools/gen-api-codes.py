@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Generate frontend API code dictionaries from backend Go sources.
+"""Generate frontend API code dictionaries from server Go sources.
 
-Scans backend/**/*.go (excluding *_test.go) for API error/status codes and
+Scans server/**/*.go (excluding *_test.go) for API error/status codes and
 synchronizes:
-  - src/i18n/api-codes.generated.json
-  - src/i18n/locales/api-zh.generated.ts
-  - src/i18n/locales/api-en.generated.ts
+  - web/src/i18n/api-codes.generated.json
+  - web/src/i18n/locales/api-zh.generated.ts
+  - web/src/i18n/locales/api-en.generated.ts
 """
 from __future__ import annotations
 
@@ -14,11 +14,11 @@ from pathlib import Path
 import re
 
 ROOT = Path(__file__).resolve().parents[1]
-BACKEND_DIR = ROOT / "backend"
-JSON_OUT = ROOT / "src" / "i18n" / "api-codes.generated.json"
-ZH_OUT = ROOT / "src" / "i18n" / "locales" / "api-zh.generated.ts"
-EN_OUT = ROOT / "src" / "i18n" / "locales" / "api-en.generated.ts"
-EN_TRANSLATED = ROOT / "src" / "i18n" / "locales" / "api-en.translated.ts"
+BACKEND_DIR = ROOT / "server"
+JSON_OUT = ROOT / "web" / "src" / "i18n" / "api-codes.generated.json"
+ZH_OUT = ROOT / "web" / "src" / "i18n" / "locales" / "api-zh.generated.ts"
+EN_OUT = ROOT / "web" / "src" / "i18n" / "locales" / "api-en.generated.ts"
+EN_TRANSLATED = ROOT / "web" / "src" / "i18n" / "locales" / "api-en.translated.ts"
 
 CURATED_ZH: dict[str, str] = {
     "AUTH_RATE_LIMITED": "API 密钥连续错误次数过多，已暂时拒绝该来源的请求，请稍后再试",

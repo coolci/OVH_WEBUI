@@ -65,7 +65,7 @@ fi
 
 COMPOSE=(docker compose -f docker-compose.yml)
 if [[ "$PROD" -eq 1 ]]; then
-  COMPOSE+=(-f docker-compose.prod.yml)
+  COMPOSE=(docker compose -f deploy/docker-compose.https.yml)
 fi
 
 case "$ACTION" in

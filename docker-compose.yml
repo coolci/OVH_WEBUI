@@ -14,7 +14,7 @@ services:
   backend:
     build:
       context: .
-      dockerfile: Dockerfile.backend
+      dockerfile: deploy/Dockerfile.backend
     image: ovh-webui-backend:latest
     container_name: ovh-webui-backend
     restart: unless-stopped
@@ -53,7 +53,7 @@ services:
   frontend:
     build:
       context: .
-      dockerfile: Dockerfile.frontend
+      dockerfile: deploy/Dockerfile.frontend
     image: ovh-webui-frontend:latest
     container_name: ovh-webui-frontend
     restart: unless-stopped
