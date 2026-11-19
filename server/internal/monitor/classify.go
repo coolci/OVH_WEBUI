@@ -52,4 +52,3 @@ func ClassifyPriceCheckError(errStr string) (PriceCheckErrorKind, string) {
 
 	return ErrorKindUnknown, errStr
 }
-

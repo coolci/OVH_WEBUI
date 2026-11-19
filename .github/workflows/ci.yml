@@ -37,6 +37,13 @@ jobs:
       - name: go vet
         run: go vet ./...
 
+      - name: golangci-lint (new/changed lines)
+        uses: golangci/golangci-lint-action@v7
+        with:
+          working-directory: server
+          version: latest
+          only-new-issues: true
+
       - name: go test (-race -short)
         run: go test -race -short -count=1 ./...
 

@@ -173,7 +173,7 @@ func TestRegression_BE07_UpsertSubscriptionClearsExplicitEmptyAndPreservesNil(t 
 	}
 }
 
-// BUG-BE-08: DeleteAccount must reset auto_order=0 and auto_pay=0 alongside auto_order_account_id='' on vps_subscriptions.
+// BUG-BE-08: DeleteAccount must reset auto_order=0 and auto_pay=0 alongside auto_order_account_id=” on vps_subscriptions.
 func TestRegression_BE08_DeleteAccountClearsVPSAutoOrderAndAutoPay(t *testing.T) {
 	dir := t.TempDir()
 	database, err := Open(dir)

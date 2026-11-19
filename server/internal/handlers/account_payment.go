@@ -95,6 +95,7 @@ func loadOrderBalances(ctx context.Context, client *ovhsdk.Client, amount float6
 	}
 	return out, nil
 }
+
 type registeredPaymentMethod struct {
 	ID             int64  `json:"paymentMethodId"`
 	Type           string `json:"paymentType"`

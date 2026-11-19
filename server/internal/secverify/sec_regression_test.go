@@ -110,9 +110,9 @@ func TestSEC01_EnvExampleClearedInitScriptsAnchoredAndWeakKeyBlocked(t *testing.
 }
 
 // BUG-SEC-02 & REJECTED-02:
-// 1. Keep Linux stdlib executable_procfs.go TrimSuffix(" (deleted)") proof.
-// 2. On Windows, compile a real running binary that invokes updater.RollbackIfStale on ITSELF while mapped & running,
-//    proving the two-step rename (exe -> exe.failed, backup -> exe) succeeds without Access is denied!
+//  1. Keep Linux stdlib executable_procfs.go TrimSuffix(" (deleted)") proof.
+//  2. On Windows, compile a real running binary that invokes updater.RollbackIfStale on ITSELF while mapped & running,
+//     proving the two-step rename (exe -> exe.failed, backup -> exe) succeeds without Access is denied!
 func TestSEC02_WindowsRollbackRunningExeSucceedsAndLinuxStdlibCheck(t *testing.T) {
 	procfsPath := filepath.Join(runtime.GOROOT(), "src", "os", "executable_procfs.go")
 	procfsBytes, err := os.ReadFile(procfsPath)

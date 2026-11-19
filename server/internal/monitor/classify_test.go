@@ -42,4 +42,3 @@ func TestClassifyPriceCheckError(t *testing.T) {
 		}
 	}
 }
-

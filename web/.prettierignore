@@ -1,0 +1,5 @@
+dist
+node_modules
+scripts
+src/i18n/locales/*.generated.ts
+src/i18n/api-codes.generated.json

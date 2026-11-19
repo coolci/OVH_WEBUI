@@ -468,4 +468,3 @@ func (m *Monitor) cleanupExpiredPlanCooldowns() {
 		delete(m.planCooldowns, key)
 	}
 }
-

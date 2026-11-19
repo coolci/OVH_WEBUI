@@ -31,9 +31,9 @@ func GetVersion(state *app.State) gin.HandlerFunc {
 }
 
 const (
-	updateUserAgent      = "OVH-Console-UpdateChecker"
-	updateCheckCacheTTL  = 15 * time.Minute
-	maxReleaseJSONBytes  = 1 << 20 // 1 MiB 响应体上限（BUG-SEC-08）
+	updateUserAgent     = "OVH-Console-UpdateChecker"
+	updateCheckCacheTTL = 15 * time.Minute
+	maxReleaseJSONBytes = 1 << 20 // 1 MiB 响应体上限（BUG-SEC-08）
 )
 
 type cachedUpdateResult struct {
@@ -42,7 +42,7 @@ type cachedUpdateResult struct {
 }
 
 var (
-	updateCacheMu   sync.RWMutex
+	updateCacheMu    sync.RWMutex
 	updateCacheByKey = map[string]cachedUpdateResult{}
 	updateCheckGroup singleflight.Group
 	updateHTTPClient = &http.Client{Timeout: 15 * time.Second}
