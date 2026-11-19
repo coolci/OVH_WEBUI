@@ -71,6 +71,7 @@ func TestRegression_BUG_OVH_02_OrderDetailAliasNormalizationPreventsDoublePurcha
 		}
 	}))
 	defer srv.Close()
+	defer CancelAndWaitBackfills()
 	swapEndpoint(t, "ovh-eu", srv.URL)
 
 	st := quickOrderTestState(t)
@@ -140,6 +141,7 @@ func TestRegression_BUG_OVH_11_TrackCartReleasedOnCheckoutSuccess(t *testing.T) 
 		return nil, fmt.Errorf("blocked external request: %s", r.URL.String())
 	}))
 	defer restore()
+	defer CancelAndWaitBackfills()
 
 	st := quickOrderTestState(t)
 	st.Accounts = []types.OVHAccount{{ID: "acc-leak", Name: "EU", Endpoint: "ovh-eu", Zone: "IE", AppKey: "k", AppSecret: "s", ConsumerKey: "c", IsDefault: true}}

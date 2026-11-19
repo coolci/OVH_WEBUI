@@ -363,8 +363,18 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 			err  error
 		}
 		var ecoOptsCh chan ecoOptsResult
+		var ecoOptsConsumed bool
+		var cancelPrefetch context.CancelFunc
 		if len(effectiveOptions) > 0 {
 			ecoOptsCh = make(chan ecoOptsResult, 1)
+			var prefetchCtx context.Context
+			prefetchCtx, cancelPrefetch = context.WithCancel(ctx)
+			defer func() {
+				cancelPrefetch()
+				if !ecoOptsConsumed {
+					<-ecoOptsCh
+				}
+			}()
 			prefetchClient, perr := state.OVH.IsolatedClientFor(item.AccountID)
 			if perr != nil {
 				prefetchClient = nil
@@ -379,7 +389,7 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 					// 拿它判断会让开售后的第一次尝试误判"所选配置未开放",白白浪费一轮
 					invalidateEcoOptions(subsidiary, item.PlanCode)
 				}
-				opts, err := getOrFetchEcoOptions(ctx, prefetchClient, cartID, subsidiary, item.PlanCode)
+				opts, err := getOrFetchEcoOptions(prefetchCtx, prefetchClient, cartID, subsidiary, item.PlanCode)
 				ecoOptsCh <- ecoOptsResult{opts: opts, err: err}
 			}()
 		}
@@ -568,6 +578,7 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 				var err error
 				if ecoOptsCh != nil {
 					r := <-ecoOptsCh
+					ecoOptsConsumed = true
 					availableEcoOpts, err = r.opts, r.err
 				} else {
 					availableEcoOpts, err = getOrFetchEcoOptions(ctx, client, cartID, subsidiary, item.PlanCode)
@@ -900,7 +911,7 @@ func PurchaseServer(ctx context.Context, state *app.State, item *types.QueueItem
 
 	// 异步补:从 /me/order/{orderID} 读 expirationDate + 价格,写回 history
 	if orderID != "" {
-		go backfillOrderDetail(state, client, item.ID, orderID)
+		startBackfillOrderDetail(state, client, item.ID, orderID)
 	}
 
 	state.Logger.Info(fmt.Sprintf("成功购买 %s 在 %s (订单ID: %s, URL: %s)",

@@ -89,7 +89,13 @@ func auditOrderFixture(t *testing.T, plan, optionResponse string) (*app.State, *
 	})
 	http.DefaultTransport = transport
 	restore := netfp.SwapSharedTransportForTesting(transport)
-	t.Cleanup(func() { restore(); http.DefaultTransport = base; ClearPrewarmPool(nil); resetEcoOptionsCache() })
+	t.Cleanup(func() {
+		CancelAndWaitBackfills()
+		restore()
+		http.DefaultTransport = base
+		ClearPrewarmPool(nil)
+		resetEcoOptionsCache()
+	})
 	return s, &types.QueueItem{ID: "audit-task", AccountID: "audit-account", PlanCode: plan, Datacenter: "gra", Status: "running", Force: true}, checkout, options
 }
 

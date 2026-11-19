@@ -150,7 +150,10 @@ func TestParallelCartAssembly_OrderSuccessAndConcurrency(t *testing.T) {
 		}
 		return nil, fmt.Errorf("audit blocked external request: %s", r.URL)
 	})
-	defer func() { http.DefaultTransport = oldTransport }()
+	defer func() {
+		CancelAndWaitBackfills()
+		http.DefaultTransport = oldTransport
+	}()
 
 	start := time.Now()
 	outcome := PurchaseServer(context.Background(), s, item)
@@ -251,7 +254,10 @@ func TestParallelCartAssembly_EcoOptionsCache(t *testing.T) {
 		}
 		return nil, fmt.Errorf("audit blocked external request: %s", r.URL)
 	})
-	defer func() { http.DefaultTransport = oldTransport }()
+	defer func() {
+		CancelAndWaitBackfills()
+		http.DefaultTransport = oldTransport
+	}()
 
 	// 第一次调用：应触发 GET /eco/options 填充缓存
 	out1 := PurchaseServer(context.Background(), s, item)
@@ -337,7 +343,10 @@ func TestParallelCartAssembly_ConfigFailureCancelsAndCleans(t *testing.T) {
 		}
 		return nil, fmt.Errorf("audit blocked external request: %s", r.URL)
 	})
-	defer func() { http.DefaultTransport = oldTransport }()
+	defer func() {
+		CancelAndWaitBackfills()
+		http.DefaultTransport = oldTransport
+	}()
 
 	out := PurchaseServer(context.Background(), s, item)
 	if out.Success {

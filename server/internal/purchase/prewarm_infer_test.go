@@ -73,7 +73,13 @@ func TestNoOptionTaskPrewarmIsHitAtCheckout(t *testing.T) {
 	})
 	http.DefaultTransport = transport
 	restore := netfp.SwapSharedTransportForTesting(transport)
-	t.Cleanup(func() { restore(); http.DefaultTransport = base; ClearPrewarmPool(nil); resetEcoOptionsCache() })
+	t.Cleanup(func() {
+		CancelAndWaitBackfills()
+		restore()
+		http.DefaultTransport = base
+		ClearPrewarmPool(nil)
+		resetEcoOptionsCache()
+	})
 
 	item := &types.QueueItem{ID: "inf-task", AccountID: "inf-acc", PlanCode: plan, Datacenter: "gra", Status: "running", Force: true}
 	inferred := []string{"ram-64g-ecc", "softraid-2x480ssd"}

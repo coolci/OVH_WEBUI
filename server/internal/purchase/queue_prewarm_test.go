@@ -78,7 +78,10 @@ func TestQueueTaskAutoPrewarm(t *testing.T) {
 		}
 		return nil, fmt.Errorf("blocked: %s", r.URL)
 	})
-	defer func() { http.DefaultTransport = oldTransport }()
+	defer func() {
+		CancelAndWaitBackfills()
+		http.DefaultTransport = oldTransport
+	}()
 
 	item := &types.QueueItem{
 		ID:         "task-q-1",

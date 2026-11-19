@@ -1,8 +1,10 @@
 package purchase
 
 import (
+	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -122,6 +124,43 @@ func recordFailure(state *app.State, item *types.QueueItem, errMsg string) {
 // orderDetailRetryDelays 查订单详情失败后的重试间隔(测试可缩短)
 var orderDetailRetryDelays = []time.Duration{2 * time.Second, 5 * time.Second, 10 * time.Second, 15 * time.Second, 30 * time.Second}
 
+var (
+	backfillMu     sync.Mutex
+	backfillCtx    context.Context
+	backfillCancel context.CancelFunc
+	backfillWG     sync.WaitGroup
+)
+
+func currentBackfillContext() context.Context {
+	backfillMu.Lock()
+	defer backfillMu.Unlock()
+	if backfillCtx == nil {
+		backfillCtx, backfillCancel = context.WithCancel(context.Background())
+	}
+	return backfillCtx
+}
+
+func startBackfillOrderDetail(state *app.State, client *ovhsdk.Client, taskID, orderID string) {
+	ctx := currentBackfillContext()
+	backfillWG.Add(1)
+	go func() {
+		defer backfillWG.Done()
+		backfillOrderDetailWithContext(ctx, state, client, taskID, orderID)
+	}()
+}
+
+// CancelAndWaitBackfills 取消并等待所有在途的订单详情异步回填协程退出。
+func CancelAndWaitBackfills() {
+	backfillMu.Lock()
+	cancel := backfillCancel
+	backfillCtx, backfillCancel = context.WithCancel(context.Background())
+	backfillMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	backfillWG.Wait()
+}
+
 // backfillOrderDetail 下单成功后异步补 history 行的 expirationTime + price。
 // 不阻塞 PurchaseServer 主流程,即便这一步失败 history 也已经标 success(只是少了价格 / 过期时间)。
 // 在独立 goroutine 跑,持有 OVH client 引用,只 read /me/order/{orderID}。
@@ -130,47 +169,39 @@ var orderDetailRetryDelays = []time.Duration{2 * time.Second, 5 * time.Second, 1
 // 而下单那一刻正是 OVH 最容易 429 的时候 —— 只查一次、失败就放弃的话,
 // 历史里就没有截止时间,用户只能干等。所以失败按退避重试,总共约一分钟。
 func backfillOrderDetail(state *app.State, client *ovhsdk.Client, taskID, orderID string) {
+	backfillOrderDetailWithContext(context.Background(), state, client, taskID, orderID)
+}
+
+func fetchOrderInfoWithRetry(ctx context.Context, state *app.State, client *ovhsdk.Client, orderID string) (map[string]interface{}, bool) {
 	var orderInfo map[string]interface{}
 	var lastErr error
 	for attempt := 0; attempt <= len(orderDetailRetryDelays); attempt++ {
+		if ctx.Err() != nil {
+			return nil, false
+		}
 		if attempt > 0 {
-			time.Sleep(orderDetailRetryDelays[attempt-1])
+			timer := time.NewTimer(orderDetailRetryDelays[attempt-1])
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return nil, false
+			case <-timer.C:
+			}
 		}
 		orderInfo = nil
-		if lastErr = client.Get("/me/order/"+orderID, &orderInfo); lastErr == nil {
-			break
+		if lastErr = client.GetWithContext(ctx, "/me/order/"+orderID, &orderInfo); lastErr == nil {
+			return orderInfo, true
+		}
+		if ctx.Err() != nil {
+			return nil, false
 		}
 		state.Logger.Warn(fmt.Sprintf("异步查询订单 %s 详情失败(第 %d 次): %s", orderID, attempt+1, lastErr.Error()), "purchase")
 	}
-	if lastErr != nil {
-		state.Logger.Error(fmt.Sprintf("订单 %s 详情多次查询失败,付款截止时间未知 —— 请尽快到 OVH 订单页付款", orderID), "purchase")
-		return
-	}
+	state.Logger.Error(fmt.Sprintf("订单 %s 详情多次查询失败,付款截止时间未知 —— 请尽快到 OVH 订单页付款", orderID), "purchase")
+	return nil, false
+}
 
-	// billing.Order 里 expirationDate（订单待付款到期作废时间）与 retractionDate
-	// （法定撤销权截止日）是两个语义完全不同的 datetime，历史里展示的"过期时间"
-	// 指的是前者，拿 retractionDate 当付款截止时间会让用户误判付款窗口。
-	//
-	// 注意 retractionDate 现在是有意义的:checkout 不再传 waiveRetractationPeriod,
-	// 撤回权没被放弃,这个日期就是"在此之前还能申请无理由撤单"的真实截止时间。
-	// 而这个 fix 之前下的单都弃权了,OVH 对它们不返回 retractionDate ——
-	// 前端据此判断要不要显示撤回入口,不用自己算 14 天(算了就会给老订单
-	// 显示一个点了必然失败的按钮)。
-	expirationTime := ""
-	if exp, ok := orderInfo["expirationDate"].(string); ok && exp != "" {
-		expirationTime = exp
-	}
-	// 撤销权截止日单独存 RetractionTime,不混进 ExpirationTime(付款到期),
-	// 两者语义不同,混用会让用户误判付款窗口
-	retractionTime := ""
-	if ret, ok := orderInfo["retractionDate"].(string); ok && ret != "" {
-		retractionTime = ret
-		state.Logger.Debug(fmt.Sprintf("订单 %s 撤销权截止日: %s", orderID, ret), "purchase")
-	}
-
-	// /me/order 返回的价格字段:priceWithTax / priceWithoutTax / tax,
-	// 每个典型形式 { value: <number-or-json.Number>, currencyCode: string, text: string }。
-	// 复用 extract(),它能容 float64 / json.Number / string / int 各种来法。
+func parseOrderPrice(state *app.State, orderID string, orderInfo map[string]interface{}) *types.PriceInfo {
 	pickCurrency := func(field interface{}) string {
 		m, ok := field.(map[string]interface{})
 		if !ok {
@@ -179,8 +210,6 @@ func backfillOrderDetail(state *app.State, client *ovhsdk.Client, taskID, orderI
 		c, _ := m["currencyCode"].(string)
 		return c
 	}
-
-	var priceInfo *types.PriceInfo
 	withTax := extract(orderInfo["priceWithTax"])
 	withoutTax := extract(orderInfo["priceWithoutTax"])
 	tax := extract(orderInfo["tax"])
@@ -191,40 +220,63 @@ func backfillOrderDetail(state *app.State, client *ovhsdk.Client, taskID, orderI
 	if currency == "" {
 		currency = pickCurrency(orderInfo["tax"])
 	}
-	// 以前这里兜底写死 "EUR"。币种是按子公司定的,不是按站点:实测公开目录 locale.currencyCode
-	// IE=EUR / CA=QC=CAD / US=WE=WS=USD / SG=SGD / AU=AUD ——
-	// 给一张美元账单盖上 EUR 会直接误导花了多少钱。宁可留空让上层显示"未知"。
 	if currency == "" {
 		state.Logger.Warn(fmt.Sprintf("订单 %s 的价格里没有 currencyCode，币种留空（不再默认 EUR：美区/加区/亚太子公司都不是欧元计价）", orderID), "purchase")
 	}
-	if withTax != nil || withoutTax != nil {
-		priceInfo = &types.PriceInfo{
-			WithTax:      withTax,
-			WithoutTax:   withoutTax,
-			Tax:          tax,
-			CurrencyCode: currency,
+	if withTax == nil && withoutTax == nil {
+		return nil
+	}
+	return &types.PriceInfo{
+		WithTax:      withTax,
+		WithoutTax:   withoutTax,
+		Tax:          tax,
+		CurrencyCode: currency,
+	}
+}
+
+func backfillOrderDetailWithContext(ctx context.Context, state *app.State, client *ovhsdk.Client, taskID, orderID string) {
+	if client != nil {
+		if iso, err := ovh.IsolateClient(client); err == nil {
+			client = iso
 		}
 	}
+	orderInfo, ok := fetchOrderInfoWithRetry(ctx, state, client, orderID)
+	if !ok || ctx.Err() != nil {
+		return
+	}
 
-	// 支付状态也顺手读一次(之后由 OrderStatusLoop 定时刷)。
-	// 拿到的多半是 notPaid —— 但"明确的待付款"和"什么都不知道"对用户是两回事
+	expirationTime, _ := orderInfo["expirationDate"].(string)
+	retractionTime, _ := orderInfo["retractionDate"].(string)
+	if retractionTime != "" {
+		state.Logger.Debug(fmt.Sprintf("订单 %s 撤销权截止日: %s", orderID, retractionTime), "purchase")
+	}
+	priceInfo := parseOrderPrice(state, orderID, orderInfo)
+
 	orderStatus := ""
-	if st, err := FetchOrderStatus(client, orderID); err != nil {
+	if st, err := FetchOrderStatusContext(ctx, client, orderID); err != nil {
+		if ctx.Err() != nil {
+			return
+		}
 		state.Logger.Warn(fmt.Sprintf("查询订单 %s 状态失败: %s", orderID, err.Error()), "purchase")
 	} else {
 		orderStatus = st
 	}
 
-	if expirationTime == "" && priceInfo == nil && orderStatus == "" {
+	if ctx.Err() != nil || (expirationTime == "" && priceInfo == nil && orderStatus == "") {
 		return
 	}
+	applyBackfillToHistory(state, taskID, orderID, expirationTime, retractionTime, orderStatus, priceInfo)
+}
 
+func applyBackfillToHistory(state *app.State, taskID, orderID, expirationTime, retractionTime, orderStatus string, priceInfo *types.PriceInfo) {
 	state.HistoryMu.Lock()
 	// defer 先 Unlock 再 Save:SaveHistory 内部拿 HistoryMu(快照),
 	// 持锁调它 = 同 goroutine 不可重入死锁(跟 recordSuccess 同型 bug)
 	defer func() {
 		state.HistoryMu.Unlock()
-		_ = state.SaveHistory()
+		if err := state.SaveHistory(); err != nil {
+			state.Logger.Warn("保存订单详情回填历史失败: "+err.Error(), "purchase")
+		}
 	}()
 	for i := range state.History {
 		if state.History[i].TaskID != taskID {
@@ -320,7 +372,7 @@ func handleReconciledOrder(state *app.State, client *ovhsdk.Client, endpoint str
 	recordTimingToHistory(state, item.ID, tl)
 	state.Logger.Info("[耗时] "+item.PlanCode+"@"+item.Datacenter+" 对账确认成功 "+tl.String(), "purchase")
 	if orderID != "" && client != nil {
-		go backfillOrderDetail(state, client, item.ID, orderID)
+		startBackfillOrderDetail(state, client, item.ID, orderID)
 	}
 	payURL := ovh.ManagerOrderURL(endpoint, orderID)
 	extra := map[string]string{

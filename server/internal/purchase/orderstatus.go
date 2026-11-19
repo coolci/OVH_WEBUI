@@ -43,8 +43,13 @@ const orderStatusMaxAge = 30 * 24 * time.Hour
 
 // FetchOrderStatus 读一次订单状态。响应体就是一个 JSON 字符串。
 func FetchOrderStatus(client *ovhsdk.Client, orderID string) (string, error) {
+	return FetchOrderStatusContext(context.Background(), client, orderID)
+}
+
+// FetchOrderStatusContext 支持按 context 取消的单次订单状态查询。
+func FetchOrderStatusContext(ctx context.Context, client *ovhsdk.Client, orderID string) (string, error) {
 	var status string
-	if err := client.Get("/me/order/"+orderID+"/status", &status); err != nil {
+	if err := client.GetWithContext(ctx, "/me/order/"+orderID+"/status", &status); err != nil {
 		return "", err
 	}
 	return strings.TrimSpace(status), nil
@@ -129,11 +134,9 @@ func RefreshOrderStatuses(state *app.State, force bool) int {
 		}
 	}
 	if updated > 0 {
-		go func() {
-			if err := state.SaveHistory(); err != nil {
-				state.Logger.Warn("保存订单状态历史失败: "+err.Error(), "purchase")
-			}
-		}()
+		if err := state.SaveHistory(); err != nil {
+			state.Logger.Warn("保存订单状态历史失败: "+err.Error(), "purchase")
+		}
 	}
 	return updated
 }

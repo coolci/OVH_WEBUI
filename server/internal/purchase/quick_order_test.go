@@ -22,7 +22,10 @@ func quickOrderTestState(t *testing.T) *app.State {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = database.Close() })
+	t.Cleanup(func() {
+		CancelAndWaitBackfills()
+		_ = database.Close()
+	})
 	lg := logger.New(filepath.Join(dir, "t.log"), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	return app.NewState(storage.Paths{DataDir: dir}, config.New(database), lg, database)
 }

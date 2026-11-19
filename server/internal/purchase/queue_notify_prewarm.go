@@ -206,6 +206,13 @@ func prewarmQueueItemWith(state *app.State, item *types.QueueItem, accountID str
 	globalQueuePrewarmCoord.lastAttempt[key] = time.Now()
 	globalQueuePrewarmCoord.mu.Unlock()
 
+	itemID := item.ID
+	planCode := item.PlanCode
+	datacenter := item.Datacenter
+	coupon := item.Coupon
+	duration := item.Duration
+	optsCopy := append([]string(nil), options...)
+
 	go func() {
 		defer func() {
 			globalQueuePrewarmCoord.mu.Lock()
@@ -214,17 +221,17 @@ func prewarmQueueItemWith(state *app.State, item *types.QueueItem, accountID str
 		}()
 
 		state.Logger.Info(fmt.Sprintf("[queue/prewarm] 开始为队列任务 %s (%s@%s) 预热购物车...",
-			item.ID, item.PlanCode, item.Datacenter), "purchase")
+			itemID, planCode, datacenter), "purchase")
 
 		pwCtx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 		defer cancel()
 
-		cart, err := AssemblePrewarmedCart(pwCtx, state, accountID, item.PlanCode, item.Datacenter, options, item.Coupon, item.Duration)
+		cart, err := AssemblePrewarmedCart(pwCtx, state, accountID, planCode, datacenter, optsCopy, coupon, duration)
 		if err != nil {
 			globalQueuePrewarmCoord.mu.Lock()
 			globalQueuePrewarmCoord.failedCounts[key]++
 			globalQueuePrewarmCoord.mu.Unlock()
-			state.Logger.Warn(fmt.Sprintf("[queue/prewarm] 队列任务 %s 预热装车失败: %v", item.ID, err), "purchase")
+			state.Logger.Warn(fmt.Sprintf("[queue/prewarm] 队列任务 %s 预热装车失败: %v", itemID, err), "purchase")
 			return
 		}
 
@@ -233,7 +240,7 @@ func prewarmQueueItemWith(state *app.State, item *types.QueueItem, accountID str
 		globalQueuePrewarmCoord.mu.Unlock()
 
 		state.Logger.Info(fmt.Sprintf("[queue/prewarm] ✅ 队列任务预热装车成功就绪！CartID: %s (%s@%s)",
-			cart.CartID, item.PlanCode, item.Datacenter), "purchase")
+			cart.CartID, planCode, datacenter), "purchase")
 	}()
 }
 

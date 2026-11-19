@@ -45,7 +45,18 @@ jobs:
           only-new-issues: true
 
       - name: go test (-race -short)
-        run: go test -race -short -count=1 ./...
+        shell: bash
+        run: |
+          set +e
+          set -o pipefail
+          go test -race -short -count=1 ./... 2>&1 | tee /tmp/go-test.log
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            grep -E '^(--- FAIL:|FAIL[[:space:]]|WARNING: DATA RACE|panic:)' /tmp/go-test.log | head -n 40 | while IFS= read -r line; do
+              echo "::error::${line}"
+            done
+          fi
+          exit "$status"
 
       - name: Cross-compile release targets
         run: |

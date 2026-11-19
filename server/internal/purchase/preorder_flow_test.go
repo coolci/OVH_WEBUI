@@ -134,7 +134,13 @@ func newPreorderFixture(t *testing.T) (*app.State, *preorderFixture) {
 	})
 	http.DefaultTransport = transport
 	restore := netfp.SwapSharedTransportForTesting(transport)
-	t.Cleanup(func() { restore(); http.DefaultTransport = base; ClearPrewarmPool(nil); resetEcoOptionsCache() })
+	t.Cleanup(func() {
+		CancelAndWaitBackfills()
+		restore()
+		http.DefaultTransport = base
+		ClearPrewarmPool(nil)
+		resetEcoOptionsCache()
+	})
 	return s, f
 }
 

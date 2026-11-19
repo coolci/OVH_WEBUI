@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/ovh-webui/server/internal/config"
 	"github.com/ovh-webui/server/internal/db"
 	"github.com/ovh-webui/server/internal/logger"
+	"github.com/ovh-webui/server/internal/netfp"
 	"github.com/ovh-webui/server/internal/storage"
 	"github.com/ovh-webui/server/internal/types"
 )
@@ -55,7 +57,7 @@ func TestPreorderTriesLiveCartWithoutWaitingForCatalog(t *testing.T) {
 			lg := logger.New(filepath.Join(dir, "test.log"), slog.New(slog.NewTextHandler(io.Discard, nil)))
 			st := app.NewState(storage.Paths{DataDir: dir}, config.New(database), lg, database)
 			st.Accounts = []types.OVHAccount{{ID: "eu", Endpoint: "ovh-eu", Zone: tc.sub, AppKey: "test", AppSecret: "test", ConsumerKey: "test"}}
-			carts, checkouts := 0, 0
+			var carts, checkouts atomic.Int32
 			transport := preorderTransport(func(r *http.Request) (*http.Response, error) {
 				var body string
 				status := http.StatusOK
@@ -73,38 +75,41 @@ func TestPreorderTriesLiveCartWithoutWaitingForCatalog(t *testing.T) {
 				case strings.Contains(r.URL.Path, "/dedicated/server/datacenter/availabilities"):
 					body = `[{"fqn":"27skle03-v1.ram-32g","datacenters":[{"datacenter":"gra","availability":"1H-low"}]}]`
 				case strings.HasSuffix(r.URL.Path, "/order/cart"):
-					carts++
+					carts.Add(1)
 					status, body = http.StatusBadRequest, `{"message":"test stops at cart creation"}`
 				default:
 					if strings.Contains(r.URL.Path, "checkout") {
-						checkouts++
+						checkouts.Add(1)
 					}
 					return nil, fmt.Errorf("unexpected test request: %s", r.URL)
 				}
 				return &http.Response{StatusCode: status, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
 			})
 			http.DefaultTransport = transport // public catalog; every request stays inside this fixture
+			restoreShared := netfp.SwapSharedTransportForTesting(transport)
+			defer restoreShared()
+			defer CancelAndWaitBackfills()
 			client, err := st.OVH.ClientFor("eu")
 			if err != nil {
 				t.Fatal(err)
 			}
 			client.Client = &http.Client{Transport: transport}
 			for _, preorder := range []bool{false, true} {
-				carts = 0
+				carts.Store(0)
 				item := &types.QueueItem{ID: "pre", AccountID: "eu", PlanCode: "27skle03-v1", Datacenter: "gra", Preorder: preorder, MaxRetries: 1, Options: tc.options}
 				outcome := PurchaseServer(context.Background(), st, item)
 				want := tc.normalCart
 				if preorder {
 					want = tc.preorderCart
 				}
-				if (carts == 1) != want {
-					t.Fatalf("preorder=%v: carts=%d want cart=%v outcome=%+v", preorder, carts, want, outcome)
+				if (carts.Load() == 1) != want {
+					t.Fatalf("preorder=%v: carts=%d want cart=%v outcome=%+v", preorder, carts.Load(), want, outcome)
 				}
 				if !want && (outcome.Attempted || outcome.Fatal) {
 					t.Fatalf("preorder=%v: a missing configuration is only 'no stock yet': %+v", preorder, outcome)
 				}
 			}
-			if checkouts != 0 {
+			if checkouts.Load() != 0 {
 				t.Fatal("fixture must never reach checkout")
 			}
 		})

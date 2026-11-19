@@ -102,7 +102,10 @@ func TestPrewarmedCartAssemblyAndInstantCheckout(t *testing.T) {
 		}
 		return nil, fmt.Errorf("audit blocked external request: %s", r.URL)
 	})
-	defer func() { http.DefaultTransport = oldTransport }()
+	defer func() {
+		CancelAndWaitBackfills()
+		http.DefaultTransport = oldTransport
+	}()
 
 	// 阶段一：后台在等待库存时静默预装车
 	pre, err := AssemblePrewarmedCart(context.Background(), s, item.AccountID, item.PlanCode, item.Datacenter, item.Options, item.Coupon, "")

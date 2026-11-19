@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -17,6 +19,7 @@ import (
 	"github.com/ovh-webui/server/internal/config"
 	"github.com/ovh-webui/server/internal/db"
 	"github.com/ovh-webui/server/internal/logger"
+	"github.com/ovh-webui/server/internal/netfp"
 	"github.com/ovh-webui/server/internal/storage"
 	"github.com/ovh-webui/server/internal/types"
 )
@@ -62,9 +65,15 @@ func TestPurchaseCouponBeforeCheckout(t *testing.T) {
 			}
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
+			var mu sync.Mutex
 			var steps []string
 			couponCalls, checkoutCalls := 0, 0
 			var messages []string
+			recordStep := func(step string) {
+				mu.Lock()
+				steps = append(steps, step)
+				mu.Unlock()
+			}
 			transport := preorderTransport(func(r *http.Request) (*http.Response, error) {
 				body, status := "{}", http.StatusOK
 				path := r.URL.Path
@@ -72,10 +81,13 @@ func TestPurchaseCouponBeforeCheckout(t *testing.T) {
 				case r.URL.Host == "coupon-notify.invalid":
 					var payload map[string]interface{}
 					if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-						t.Fatal(err)
+						t.Errorf("decode webhook payload: %v", err)
+						return nil, err
 					}
 					message, _ := payload["message"].(string)
+					mu.Lock()
 					messages = append(messages, message)
+					mu.Unlock()
 				case strings.HasSuffix(path, "/me/order"):
 					body = `[{"orderId":123,"url":"https://example.invalid/order"}]`
 				case strings.HasSuffix(path, "/auth/time"):
@@ -85,18 +97,20 @@ func TestPurchaseCouponBeforeCheckout(t *testing.T) {
 				case strings.Contains(path, "/dedicated/server/datacenter/availabilities"):
 					body = `[{"fqn":"24sk202","datacenters":[{"datacenter":"gra","availability":"1H-low"}]}]`
 				case strings.HasSuffix(path, "/order/cart") && r.Method == "POST":
-					steps = append(steps, "cart")
+					recordStep("cart")
 					body = `{"cartId":"coupon-cart"}`
 				case strings.HasSuffix(path, "/coupon-cart/assign"):
-					steps = append(steps, "assign")
+					recordStep("assign")
 				case strings.HasSuffix(path, "/coupon-cart/eco") && r.Method == "POST":
-					steps = append(steps, "item")
+					recordStep("item")
 					body = `{"itemId":1}`
 				case strings.HasSuffix(path, "/item/1/configuration"):
-					steps = append(steps, "config")
+					recordStep("config")
 				case strings.HasSuffix(path, "/coupon-cart/coupon") && r.Method == "POST":
+					mu.Lock()
 					couponCalls++
 					steps = append(steps, "coupon")
+					mu.Unlock()
 					var payload map[string]string
 					if err := json.NewDecoder(r.Body).Decode(&payload); err != nil || payload["coupon"] != "Save10" {
 						t.Errorf("coupon must be trimmed without changing case: %v, %v", payload, err)
@@ -114,6 +128,7 @@ func TestPurchaseCouponBeforeCheckout(t *testing.T) {
 						body = `{"message":"coupon fixture rejection"}`
 					}
 				case strings.HasSuffix(path, "/coupon-cart/checkout") && r.Method == "POST":
+					mu.Lock()
 					checkoutCalls++
 					steps = append(steps, "checkout")
 					prev := ""
@@ -123,12 +138,15 @@ func TestPurchaseCouponBeforeCheckout(t *testing.T) {
 							break
 						}
 					}
+					stepsSnapshot := append([]string(nil), steps...)
+					mu.Unlock()
 					if tc.coupon != "  " && prev != "coupon" {
-						t.Errorf("coupon must precede checkout after configuration: %v", steps)
+						t.Errorf("coupon must precede checkout after configuration: %v", stepsSnapshot)
 					}
 					var payload map[string]interface{}
 					if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-						t.Fatal(err)
+						t.Errorf("decode checkout payload: %v", err)
+						return nil, err
 					}
 					if payload["autoPayWithPreferredPaymentMethod"] != false {
 						t.Error("coupon changed auto-pay default")
@@ -141,18 +159,21 @@ func TestPurchaseCouponBeforeCheckout(t *testing.T) {
 					}
 				case strings.HasSuffix(path, "/order/cart/coupon-cart") && r.Method == "GET":
 					// 预订结账前核对购物车:主机一项,月付
-					steps = append(steps, "verify")
+					recordStep("verify")
 					body = `{"items":[1]}`
 				case strings.HasSuffix(path, "/order/cart/coupon-cart/item/1") && r.Method == "GET":
 					body = `{"itemId":1,"duration":"P1M","options":[],"settings":{"planCode":"24sk202","quantity":1}}`
 				case strings.HasSuffix(path, "/order/cart/coupon-cart") && r.Method == "DELETE":
-					steps = append(steps, "cleanup")
+					recordStep("cleanup")
 				default:
 					return nil, fmt.Errorf("unexpected fixture request: %s %s", r.Method, r.URL)
 				}
 				return &http.Response{StatusCode: status, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
 			})
 			http.DefaultTransport = transport
+			restoreShared := netfp.SwapSharedTransportForTesting(transport)
+			defer restoreShared()
+			defer CancelAndWaitBackfills()
 			client, err := st.OVH.ClientFor("eu")
 			if err != nil {
 				t.Fatal(err)
@@ -163,8 +184,15 @@ func TestPurchaseCouponBeforeCheckout(t *testing.T) {
 				item.ID = "catalog-watch-scoped-job-waw"
 			}
 			outcome := PurchaseServer(ctx, st, item)
+			CancelAndWaitBackfills()
+			mu.Lock()
+			gotCouponCalls := couponCalls
+			gotCheckoutCalls := checkoutCalls
+			gotSteps := append([]string(nil), steps...)
+			gotMessages := append([]string(nil), messages...)
+			mu.Unlock()
 			if tc.catalogWatch {
-				if !outcome.PauseTask || outcome.Success || checkoutCalls != 1 {
+				if !outcome.PauseTask || outcome.Success || gotCheckoutCalls != 1 {
 					t.Fatalf("uncertain concurrent checkout not paused: %+v", outcome)
 				}
 				for _, h := range st.HistorySnapshot() {
@@ -182,23 +210,23 @@ func TestPurchaseCouponBeforeCheckout(t *testing.T) {
 			if tc.checkout {
 				wantCheckout = 1
 			}
-			if couponCalls != wantCoupon || checkoutCalls != wantCheckout || outcome.Success != tc.checkout || outcome.PauseTask || outcome.Attempted || outcome.Cancelled != tc.cancel {
-				t.Fatalf("unexpected flow: outcome=%+v coupon=%d checkout=%d steps=%v", outcome, couponCalls, checkoutCalls, steps)
+			if gotCouponCalls != wantCoupon || gotCheckoutCalls != wantCheckout || outcome.Success != tc.checkout || outcome.PauseTask || outcome.Attempted || outcome.Cancelled != tc.cancel {
+				t.Fatalf("unexpected flow: outcome=%+v coupon=%d checkout=%d steps=%v", outcome, gotCouponCalls, gotCheckoutCalls, gotSteps)
 			}
 			if tc.checkout {
 				history, err := st.DB.ListHistory()
 				if err != nil || len(history) != 1 || history[0].Status != "success" || (history[0].CouponWarning != "") != tc.warning {
 					t.Fatalf("coupon warning not persisted with successful order: %+v %v", history, err)
 				}
-				if len(messages) != 1 || strings.Contains(messages[0], "未使用优惠码") != tc.warning {
-					t.Fatalf("notification missing or misleading: %v", messages)
+				if len(gotMessages) != 1 || strings.Contains(gotMessages[0], "未使用优惠码") != tc.warning {
+					t.Fatalf("notification missing or misleading: %v", gotMessages)
 				}
 				if tc.warning && !strings.Contains(history[0].CouponWarning, "未使用优惠码") {
 					t.Fatal(history[0].CouponWarning)
 				}
 			}
-			if !tc.checkout && (len(steps) == 0 || steps[len(steps)-1] != "cleanup") {
-				t.Fatalf("failed cart was not cleaned: %v", steps)
+			if !tc.checkout && (len(gotSteps) == 0 || gotSteps[len(gotSteps)-1] != "cleanup") {
+				t.Fatalf("failed cart was not cleaned: %v", gotSteps)
 			}
 		})
 	}
@@ -219,8 +247,8 @@ func TestPurchaseCoupon_RejectedWithLegacyAutoPayContinuesUnpaid(t *testing.T) {
 	st.Accounts = []types.OVHAccount{{ID: "eu", Endpoint: "ovh-eu", Zone: "PT", AppKey: "test", AppSecret: "test", ConsumerKey: "test"}}
 
 	ctx := context.Background()
-	checkoutCalled := false
-	couponCalled := false
+	var checkoutCalled atomic.Bool
+	var couponCalled atomic.Bool
 
 	transport := preorderTransport(func(r *http.Request) (*http.Response, error) {
 		body, status := "{}", http.StatusOK
@@ -239,11 +267,11 @@ func TestPurchaseCoupon_RejectedWithLegacyAutoPayContinuesUnpaid(t *testing.T) {
 			body = `{"itemId":1}`
 		case strings.HasSuffix(path, "/item/1/configuration"):
 		case strings.HasSuffix(path, "/coupon-cart/coupon") && r.Method == "POST":
-			couponCalled = true
+			couponCalled.Store(true)
 			status = http.StatusBadRequest
 			body = `{"message":"coupon is invalid or expired"}`
 		case strings.HasSuffix(path, "/coupon-cart/checkout") && r.Method == "POST":
-			checkoutCalled = true
+			checkoutCalled.Store(true)
 			var payload map[string]interface{}
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil || payload["autoPayWithPreferredPaymentMethod"] != false {
 				t.Errorf("legacy autoPay enabled checkout payment: %+v %v", payload, err)
@@ -251,6 +279,8 @@ func TestPurchaseCoupon_RejectedWithLegacyAutoPayContinuesUnpaid(t *testing.T) {
 			body = `{"orderId":1001,"url":"https://fixture.invalid/order"}`
 		case strings.HasSuffix(path, "/me/order/1001"):
 			body = `{"orderId":1001,"expirationDate":"2099-01-01T00:00:00Z"}`
+		case strings.HasSuffix(path, "/me/order/1001/status"):
+			body = `"notPaid"`
 		case strings.HasSuffix(path, "/order/cart/coupon-cart") && r.Method == "DELETE":
 		default:
 			return nil, fmt.Errorf("unexpected fixture request: %s %s", r.Method, r.URL)
@@ -258,6 +288,9 @@ func TestPurchaseCoupon_RejectedWithLegacyAutoPayContinuesUnpaid(t *testing.T) {
 		return &http.Response{StatusCode: status, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
 	})
 	http.DefaultTransport = transport
+	restoreShared := netfp.SwapSharedTransportForTesting(transport)
+	defer restoreShared()
+	defer CancelAndWaitBackfills()
 	client, err := st.OVH.ClientFor("eu")
 	if err != nil {
 		t.Fatal(err)
@@ -274,11 +307,12 @@ func TestPurchaseCoupon_RejectedWithLegacyAutoPayContinuesUnpaid(t *testing.T) {
 	}
 
 	outcome := PurchaseServer(ctx, st, item)
+	CancelAndWaitBackfills()
 
-	if !couponCalled {
+	if !couponCalled.Load() {
 		t.Fatal("expected coupon to be called")
 	}
-	if !checkoutCalled || item.AutoPay {
+	if !checkoutCalled.Load() || item.AutoPay {
 		t.Fatal("legacy autoPay must be ignored and checkout must stay unpaid")
 	}
 	if outcome.PauseTask || !outcome.Success {
