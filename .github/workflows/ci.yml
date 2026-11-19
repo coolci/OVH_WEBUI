@@ -75,7 +75,7 @@ jobs:
         run: npm run lint
       - name: TypeScript typecheck
         run: npm run typecheck
-      - name: Frontend unit tests
+      - name: Frontend unit tests (Vitest + regression)
         run: npm test
       - name: Production build
         run: npm run build

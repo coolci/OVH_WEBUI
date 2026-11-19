@@ -61,7 +61,7 @@ Get-Process ovh-webui -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq
 Start-Sleep -Milliseconds 400
 
 # Fully detached: UseShellExecute=true so process is not killed when this shell exits.
-# Binary loads backend/.env via godotenv from WorkingDirectory.
+# Binary loads server/.env via godotenv from WorkingDirectory.
 $psi = New-Object System.Diagnostics.ProcessStartInfo
 $psi.FileName = $Exe
 $psi.WorkingDirectory = $Backend
