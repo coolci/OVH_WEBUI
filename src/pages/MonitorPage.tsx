@@ -87,7 +87,7 @@ function MonitorPage() {
   const cleanup = useBulkCleanup(subs, monitorCleanupTarget, "monitor");
 
   return (
-    <DragSelectArea className="space-y-6" selectedKeys={cleanup.selectedKeys} onSelectionChange={cleanup.selectKeys}
+    <DragSelectArea className="space-y-5" selectedKeys={cleanup.selectedKeys} onSelectionChange={cleanup.selectKeys}
       onDeleteSelected={cleanup.requestCleanup} disabled={cleanup.locked || list.isError || clear.isPending}>
       <PageHeader
         icon={Activity}
@@ -96,16 +96,9 @@ function MonitorPage() {
         action={
           <div className="flex items-center gap-2">
             <Button
+              variant="outline"
               size="sm"
-              className="h-8 text-xs gap-1.5 font-medium px-3 rounded-lg shadow-sm"
-              onClick={() => setOpenAdd(true)}
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>添加订阅</span>
-            </Button>
-            <Button
-              size="sm"
-              className="h-8 text-xs gap-1.5 font-medium rounded-lg shadow-sm px-3"
+              className="h-8 text-xs gap-1.5 font-medium rounded-lg border-border/80 hover:bg-secondary px-3"
               onClick={handleRefresh}
               disabled={isRefreshing || list.isFetching || status.isFetching}
               title="刷新订阅与监控状态"
@@ -118,6 +111,14 @@ function MonitorPage() {
               />
               <span>刷新</span>
             </Button>
+            <Button
+              size="sm"
+              className="h-8 text-xs gap-1.5 font-medium px-3 rounded-lg shadow-sm"
+              onClick={() => setOpenAdd(true)}
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>添加订阅</span>
+            </Button>
           </div>
         }
       />
@@ -128,7 +129,7 @@ function MonitorPage() {
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-secondary text-foreground border border-border/60 flex items-center justify-center flex-shrink-0">
               {status.data?.running ? (
-                <Bell className="w-4 h-4 text-foreground" />
+                <Bell className="w-4 h-4 text-primary" />
               ) : (
                 <BellOff className="w-4 h-4 text-muted-foreground" />
               )}
@@ -145,7 +146,7 @@ function MonitorPage() {
               </div>
             </div>
           </div>
-          <div className="flex gap-6 text-sm">
+          <div className="grid grid-cols-3 sm:flex items-center gap-4 sm:gap-6 pt-3 sm:pt-0 border-t sm:border-t-0 border-border/50 text-sm">
             <Stat label="订阅数" value={status.data?.subscriptions_count ?? 0} />
             <Stat label="检查间隔" value={`${status.data?.check_interval ?? 0}s`} />
             <Stat label="已知服务器" value={status.data?.known_servers_count ?? 0} />
@@ -155,7 +156,7 @@ function MonitorPage() {
 
       {/* 区域问题:后端发现监控查错大区时逐条列出,不渲染的话监控静默失效 */}
       {(status.data?.region_issues?.length ?? 0) > 0 && (
-        <div className="border border-warning/40 bg-warning/5 rounded-2xl p-3 space-y-1.5">
+        <div className="border border-warning/40 bg-warning/5 rounded-xl px-4 py-3 space-y-1.5">
           {(status.data?.region_issues ?? []).map((issue, i) => (
             <p key={i} className="text-[12px] text-foreground/80 leading-relaxed">
               ⚠️ {typeof issue === "string" ? issue : [issue.planCode, issue.accountId, issue.region, issue.error].filter(Boolean).join(" · ")}
@@ -171,7 +172,7 @@ function MonitorPage() {
       {list.isPending ? (
         <div className="space-y-3">
           {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-24 rounded-2xl" />
+            <Skeleton key={i} className="h-24 rounded-xl" />
           ))}
         </div>
       ) : list.isError ? (
@@ -194,10 +195,10 @@ function MonitorPage() {
       ) : (
         <div className="space-y-3">
           {/* 订阅列表头部栏 */}
-          <div className="flex items-center justify-between text-xs px-1">
+          <div className="flex items-center justify-between text-xs px-0.5">
             <div className="text-muted-foreground font-medium flex items-center gap-1.5">
               <span>已订阅型号</span>
-              <span className="text-[11px] px-1.5 py-0.2 rounded-full bg-secondary text-foreground font-mono font-medium">
+              <span className="text-[11px] px-2 py-0.5 leading-none rounded-full bg-secondary text-foreground font-mono tabular-nums font-medium">
                 {subs.length}
               </span>
             </div>
@@ -333,25 +334,34 @@ function SubRow({
 }) {
   const orderAccountIds = monitorAccountIds(sub);
   return (
-    <Card data-selection-key={monitorCleanupTarget(sub).key} className={cn("surface-card rounded-xl border-border hover:border-border/80 transition-all duration-200 shadow-sm", selected && "border-primary bg-primary/5", sub.paused && "opacity-60")}>
-      <CardContent className="p-4 sm:p-5">
+    <Card data-selection-key={monitorCleanupTarget(sub).key} className={cn("surface-card rounded-xl border-border hover:border-border/90 transition-colors", selected && "border-primary bg-primary/5", sub.paused && "opacity-65")}>
+      <CardContent className="p-3.5 sm:p-4">
         <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1 flex-wrap">
+          <div className="flex-1 min-w-0 space-y-1.5">
+            <div className="flex items-center gap-2 flex-wrap">
               <Checkbox checked={selected} disabled={selectionDisabled} onCheckedChange={onSelect}
                 aria-label={`选择监控订阅 ${sub.planCode} ${(sub.options || []).join(",") || "全部配置"}`} />
-              <span className="font-mono font-semibold text-sm">{sub.planCode}</span>
+              <span className="font-mono font-bold text-sm text-foreground">{sub.planCode}</span>
               {sub.serverName && (
-                <span className="text-xs text-muted-foreground">| {sub.serverName}</span>
+                <span className="text-xs text-muted-foreground truncate max-w-[240px]">· {sub.serverName}</span>
+              )}
+              {sub.paused && <Chip tone="warning">已暂停</Chip>}
+            </div>
+            <div className="flex items-center gap-1.5 flex-wrap text-xs text-muted-foreground">
+              {(sub.datacenters?.length ?? 0) > 0 ? (
+                <>
+                  <span className="text-[11px]">机房:</span>
+                  {sub.datacenters?.map((dc) => (
+                    <span key={dc} className="px-1.5 py-0.5 rounded bg-secondary/70 border border-border/50 font-mono text-[10px] font-medium uppercase text-foreground/85 leading-none">
+                      {dc}
+                    </span>
+                  ))}
+                </>
+              ) : (
+                <span className="text-[11px]">监控全部数据中心</span>
               )}
             </div>
-            <p className="text-xs text-muted-foreground mb-1.5">
-              {(sub.datacenters?.length ?? 0) > 0
-                ? `监控数据中心: ${sub.datacenters?.join(", ")}`
-                : "监控所有数据中心"}
-            </p>
             <div className="flex gap-1.5 flex-wrap items-center">
-              {sub.paused && <Chip tone="warning">已暂停</Chip>}
               {sub.options && sub.options.length > 0 ? (
                 <Chip tone="default" title={sub.options.join("\n")}>
                   只盯 {describeOptionCodes(sub.options)}
@@ -383,32 +393,35 @@ function SubRow({
             </div>
             {/* 检查问题(lastCheckError)已在页首 region_issues 横幅里逐条列出,这里只补最近检查时间 */}
             {sub.lastCheckAt && (
-              <p className="mt-1 text-[11px] text-muted-foreground">
+              <p className="text-[11px] font-mono tabular-nums text-muted-foreground">
                 最近检查：{new Date(sub.lastCheckAt).toLocaleString()}
               </p>
             )}
           </div>
-          <div className="flex items-center gap-1 flex-shrink-0">
+          <div className="flex items-center justify-end gap-1 flex-shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-border/50">
             <Button
               variant="ghost"
               size="icon"
+              className="h-8 w-8 rounded-lg hover:bg-secondary"
               aria-label={sub.paused ? "恢复此订阅" : "暂停此订阅"}
               title={sub.paused ? "恢复监控" : "暂停监控"}
               onClick={onTogglePause}
             >
               {sub.paused ? (
-                <PlayCircle className="w-4 h-4 text-emerald-400" />
+                <PlayCircle className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
               ) : (
-                <PauseCircle className="w-4 h-4 text-amber-400" />
+                <PauseCircle className="w-4 h-4 text-amber-500 dark:text-amber-400" />
               )}
             </Button>
-            <Button variant="ghost" size="icon" aria-label="编辑订阅设置" onClick={onEdit}>
-              <Pencil className="w-4 h-4" />
+            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground" aria-label="编辑订阅设置" title="编辑订阅" onClick={onEdit}>
+              <Pencil className="w-3.5 h-3.5" />
             </Button>
             <Button
               variant="ghost"
               size="icon"
+              className="h-8 w-8 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground"
               aria-label="查看历史"
+              title="查看历史"
               onClick={onToggleExpand}
             >
               {expanded ? (
@@ -420,12 +433,13 @@ function SubRow({
             <Button
               variant="ghost"
               size="icon"
-              className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+              className="h-8 w-8 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10"
               onClick={onDelete}
               disabled={selectionDisabled}
               aria-label="删除"
+              title="删除订阅"
             >
-              <Trash2 className="w-4 h-4" />
+              <Trash2 className="w-3.5 h-3.5" />
             </Button>
           </div>
         </div>

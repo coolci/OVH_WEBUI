@@ -86,6 +86,11 @@ const pack: CommonLayerPack = {
       clearFailed: "Failed to clear",
       intervalUpdated: "Check interval updated",
       intervalSetFailed: "Failed to apply",
+      pausedWithQueue: "Monitor paused; {{count}} related sniping task(s) also paused",
+      resumedNoTasks: "Monitor resumed",
+      resumedWithHeld: "Monitor resumed; {{count}} task(s) were paused by this subscription",
+      resumeHeldAction: "Resume all",
+      resumeHeldDone: "Resumed {{count}} sniping task(s)",
     },
     queue: {
       clampedWarning:

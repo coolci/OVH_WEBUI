@@ -22,13 +22,13 @@ interface TelemetryCardProps {
 
 export function TelemetryCard({ metrics }: TelemetryCardProps) {
   return (
-    <Card className="surface-card rounded-2xl overflow-hidden border-border/80 shadow-sm">
-      <CardHeader className="p-3.5 sm:p-4 pb-2 border-b border-border/40 flex flex-row items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Cpu className="w-4 h-4 text-primary" />
-          <CardTitle className="text-xs sm:text-sm font-semibold">系统资源与硬件遥测</CardTitle>
+    <Card className="surface-card rounded-xl overflow-hidden border-border/80">
+      <CardHeader className="px-4 py-3 sm:px-5 border-b border-border/50 flex flex-row items-center justify-between gap-2 space-y-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <Cpu className="w-4 h-4 text-primary shrink-0" />
+          <CardTitle className="text-xs sm:text-sm font-semibold truncate">系统资源与硬件遥测</CardTitle>
         </div>
-        <span className="text-[11px] text-muted-foreground font-mono">
+        <span className="text-[11px] text-muted-foreground font-mono tabular-nums shrink-0">
           {metrics
             ? `${metrics.cpu.cores} 核心 · ${formatBytesShort(metrics.memory.totalBytes)} 内存`
             : "遥测就绪"}
@@ -36,7 +36,7 @@ export function TelemetryCard({ metrics }: TelemetryCardProps) {
       </CardHeader>
       <CardContent className="p-0">
         <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-border/60">
-          <div className="p-1 sm:p-2">
+          <div className="px-4 py-3">
             <MetricRing
               label="CPU 占用"
               subLabel={metrics ? `${metrics.cpu.cores} 核心活跃` : "—"}
@@ -44,7 +44,7 @@ export function TelemetryCard({ metrics }: TelemetryCardProps) {
               size={84}
             />
           </div>
-          <div className="p-1 sm:p-2">
+          <div className="px-4 py-3">
             <MetricRing
               label="物理内存"
               subLabel={
@@ -58,7 +58,7 @@ export function TelemetryCard({ metrics }: TelemetryCardProps) {
               size={84}
             />
           </div>
-          <div className="p-1 sm:p-2">
+          <div className="px-4 py-3">
             <MetricRing
               label={metrics?.disk.path ? `磁盘 (${metrics.disk.path})` : "磁盘使用"}
               subLabel={

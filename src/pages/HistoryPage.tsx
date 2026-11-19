@@ -1,7 +1,8 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Helmet } from "react-helmet-async";
-import { History, RefreshCw, Trash2, Search, ExternalLink, AlertCircle, Hourglass } from "lucide-react";
+import { History, RefreshCw, Trash2, Search, ExternalLink, AlertCircle, Hourglass, RotateCcw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
@@ -239,7 +240,7 @@ function HistoryPage() {
   const cleanup = useBulkCleanup(filtered, historyCleanupTarget, "history");
 
   return (
-    <DragSelectArea className="space-y-6" selectedKeys={cleanup.selectedKeys} onSelectionChange={cleanup.selectKeys}
+    <DragSelectArea className="space-y-5" selectedKeys={cleanup.selectedKeys} onSelectionChange={cleanup.selectKeys}
       onDeleteSelected={cleanup.requestCleanup} disabled={cleanup.locked || list.isError || clear.isPending}>
       <PageHeader
         icon={History}
@@ -248,8 +249,9 @@ function HistoryPage() {
         action={
           <div className="flex items-center gap-2">
             <Button
+              variant="outline"
               size="sm"
-              className="h-8 gap-1.5 text-xs font-medium rounded-lg shadow-sm px-3"
+              className="h-8 gap-1.5 text-xs font-medium rounded-lg border-border/80 hover:bg-secondary px-3"
               onClick={() => refreshStatus.mutate()}
               disabled={list.isFetching || refreshStatus.isPending}
               title="向 OVH 查询未到终态订单的支付状态，然后重载列表"
@@ -278,19 +280,19 @@ function HistoryPage() {
       />
 
       <Card className="surface-card rounded-xl border-border">
-        <CardContent className="p-3.5 sm:p-4">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <CardContent className="p-3 sm:p-3.5">
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_140px_188px] gap-2.5 items-center">
             <div className="relative">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
               <Input
                 placeholder="搜索型号 / 机房 / 订单号..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="pl-9 rounded-lg h-8 text-xs bg-background/50 border-border/80 focus-visible:ring-1 focus-visible:ring-primary/40"
+                className="pl-8 rounded-lg h-8 text-xs bg-background/60 border-border/80 focus-visible:ring-1 focus-visible:ring-primary/40"
               />
             </div>
             <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}>
-              <SelectTrigger className="rounded-lg h-8 text-xs bg-background/50 border-border/80">
+              <SelectTrigger className="rounded-lg h-8 text-xs bg-background/60 border-border/80">
                 <SelectValue placeholder="所有状态" />
               </SelectTrigger>
               <SelectContent>
@@ -304,7 +306,7 @@ function HistoryPage() {
               setSort(next);
               try { localStorage.setItem("ovh_history_sort", next); } catch { /* private mode */ }
             }}>
-              <SelectTrigger aria-label="排序方式" className="rounded-lg h-8 text-xs bg-background/50 border-border/80">
+              <SelectTrigger aria-label="排序方式" className="rounded-lg h-8 text-xs bg-background/60 border-border/80">
                 <SelectValue placeholder="排序方式" />
               </SelectTrigger>
               <SelectContent>
@@ -314,9 +316,16 @@ function HistoryPage() {
               </SelectContent>
             </Select>
           </div>
-          {sort === "paid-first" && <p className="mt-2 text-[11px] text-muted-foreground">
-            已付款·交付中、已付款·已交付的订单置顶，同组按下单时间从新到旧排列。
-          </p>}
+          <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+            <span>
+              {sort === "paid-first"
+                ? "已付款·交付中、已付款·已交付的订单置顶，同组按下单时间从新到旧排列。"
+                : "按下单时间排序展示历史记录。"}
+            </span>
+            <span className="font-mono tabular-nums shrink-0">
+              {filtered.length}/{items.length} 条
+            </span>
+          </div>
         </CardContent>
       </Card>
 
@@ -351,25 +360,24 @@ function HistoryPage() {
       ) : (
         <>
           {/* 桌面 / 平板:横向表格 */}
-          <Card className="surface-card rounded-xl border-border overflow-hidden shadow-sm hidden md:block">
+          <Card className="surface-card rounded-xl border-border overflow-hidden hidden md:block">
             <div className="table-scroll">
-              <table className="w-full min-w-[760px]">
+              <table className="w-full min-w-[820px]">
                 <thead>
-                  <tr className="text-left text-[11px] font-medium text-muted-foreground/80 border-b border-border/60 bg-muted/30">
-                    <th className="pl-4 py-3 w-10"><span className="sr-only">选择记录</span></th>
-                    <th className="px-4 py-3">型号</th>
-                    <th className="px-4 py-3">机房</th>
-                    <th className="px-4 py-3">配置</th>
-                    <th className="px-4 py-3">价格</th>
-                    <th className="px-4 py-3">状态</th>
-                    <th className="px-4 py-3">时间</th>
-                    <th className="px-4 py-3" title="付款窗口:下单不会自动扣款,倒计时结束前未付款订单作废">
+                  <tr className="text-left text-[11px] font-medium text-muted-foreground border-b border-border/60 bg-muted/35">
+                    <th className="pl-4 py-2.5 w-10"><span className="sr-only">选择记录</span></th>
+                    <th className="px-3 py-2.5">型号 / 账户</th>
+                    <th className="px-3 py-2.5">配置</th>
+                    <th className="px-3 py-2.5 text-right">价格</th>
+                    <th className="px-3 py-2.5">状态</th>
+                    <th className="px-3 py-2.5">下单时间</th>
+                    <th className="px-3 py-2.5" title="付款窗口:下单不会自动扣款,倒计时结束前未付款订单作废">
                       付款剩余
                     </th>
-                    <th className="px-4 py-3">操作</th>
+                    <th className="pr-4 pl-3 py-2.5 text-right">操作</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border/40">
+                <tbody className="divide-y divide-border/45">
                   {filtered.map((item) => (
                     <HistoryRow key={item.id} item={item} now={now} selected={cleanup.isSelected(item)}
                       onSelect={() => cleanup.toggle(item)} selectionDisabled={cleanup.locked} />
@@ -426,33 +434,41 @@ function HistoryRow({ item, now, selected, selectionDisabled, onSelect }: Histor
   const { showCountdown, isExpired } = w;
 
   return (
-    <tr data-selection-key={item.id} className={`text-[13px] hover:bg-muted ${selected ? "bg-primary/5" : ""} ${isExpired ? "opacity-60" : ""}`}>
+    <tr data-selection-key={item.id} className={`text-[13px] align-middle hover:bg-muted/45 transition-colors ${selected ? "bg-primary/5" : ""} ${isExpired ? "opacity-60" : ""}`}>
       <td className="pl-4 py-3"><Checkbox checked={selected} disabled={selectionDisabled} onCheckedChange={onSelect}
         aria-label={`选择历史记录 ${item.planCode} ${item.orderId || item.id}`} /></td>
-      <td className={`px-4 py-3 font-mono font-semibold ${isExpired ? "line-through" : ""}`}>
-        <div className="flex items-center gap-2 flex-wrap">
-          {item.planCode}
-          <AccountChip accountId={item.accountId} />
-          <TimingChip totalMs={item.totalMs} phases={item.timing} />
-          <OrderDurationBadge value={item.duration} />
+      <td className="px-3 py-3">
+        <div className="space-y-1">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className={`font-mono font-semibold text-foreground ${isExpired ? "line-through" : ""}`}>
+              {item.planCode}
+            </span>
+            <span className={`px-1.5 py-0.5 rounded bg-secondary text-foreground/85 border border-border/60 font-mono text-[10px] font-semibold uppercase leading-none ${isExpired ? "line-through" : ""}`}>
+              {item.datacenter}
+            </span>
+            <OrderDurationBadge value={item.duration} />
+          </div>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <AccountChip accountId={item.accountId} />
+            <TimingChip totalMs={item.totalMs} phases={item.timing} />
+          </div>
           {item.couponWarning && (
-            <p className="w-full text-[11px] font-normal text-warning break-words" role="status">
+            <p className="text-[11px] font-normal text-warning break-words" role="status">
               {item.couponWarning}
             </p>
           )}
         </div>
       </td>
-      <td className={`px-4 py-3 ${isExpired ? "line-through" : ""}`}>{item.datacenter.toUpperCase()}</td>
       <td
-        className={`px-4 py-3 text-muted-foreground max-w-[200px] truncate ${isExpired ? "line-through" : ""}`}
+        className={`px-3 py-3 text-xs text-muted-foreground max-w-[200px] truncate ${isExpired ? "line-through" : ""}`}
         title={item.options && item.options.length > 0 ? item.options.join("\n") : undefined}
       >
         {item.options && item.options.length > 0 ? describeOptionCodes(item.options) : "默认配置"}
       </td>
-      <td className="px-4 py-3">
+      <td className="px-3 py-3 text-right whitespace-nowrap tabular-nums">
         <HistoryPrice item={item} strike={isExpired} />
       </td>
-      <td className="px-4 py-3">
+      <td className="px-3 py-3 whitespace-nowrap">
         {item.status === "success" ? (
           <Chip tone={st.tone} title={st.title}>
             {st.label}
@@ -461,7 +477,7 @@ function HistoryRow({ item, now, selected, selectionDisabled, onSelect }: Histor
           <Chip tone="danger">失败</Chip>
         )}
       </td>
-      <td className="px-4 py-3 text-[11px] text-muted-foreground font-mono whitespace-nowrap">
+      <td className="px-3 py-3 text-[11px] text-muted-foreground font-mono tabular-nums whitespace-nowrap">
         {new Date(item.purchaseTime).toLocaleString("zh-CN", {
           month: "2-digit",
           day: "2-digit",
@@ -469,25 +485,26 @@ function HistoryRow({ item, now, selected, selectionDisabled, onSelect }: Histor
           minute: "2-digit",
         })}
       </td>
-      <td className="px-4 py-3 whitespace-nowrap">
+      <td className="px-3 py-3 whitespace-nowrap">
         {showCountdown ? (
           <DeadlineChip w={w} />
         ) : (
           <span className="text-muted-foreground">—</span>
         )}
       </td>
-      <td className="px-4 py-3">
-        <div className="flex items-center gap-2">
+      <td className="pr-4 pl-3 py-3">
+        <div className="flex items-center justify-end gap-1.5 flex-wrap">
           {item.status === "success" && item.orderId && <OrderProgressButton accountId={item.accountId} orderId={item.orderId} />}
           <HistoryPaymentButton item={item} />
           <CancelOrderButton item={item} />
+          <BuyAgainButton item={item} />
           {item.status === "success" && safeHttpsUrl(item.orderUrl) ? (
             <a
               href={safeHttpsUrl(item.orderUrl)}
               target="_blank"
               rel="noopener noreferrer"
               aria-disabled={isExpired}
-              className={`inline-flex items-center gap-1 text-foreground hover:underline text-[12px] ${isExpired ? "pointer-events-none opacity-50" : ""
+              className={`inline-flex items-center gap-1 text-foreground hover:underline text-[12px] px-1 ${isExpired ? "pointer-events-none opacity-50" : ""
                 }`}
             >
               <ExternalLink className="w-3 h-3" />
@@ -497,14 +514,12 @@ function HistoryRow({ item, now, selected, selectionDisabled, onSelect }: Histor
             <button
               type="button"
               onClick={() => toast.info(item.errorMessage)}
-              className="inline-flex items-center gap-1 text-destructive hover:underline text-[12px]"
+              className="inline-flex items-center gap-1 text-destructive hover:underline text-[12px] px-1"
             >
               <AlertCircle className="w-3 h-3" />
               错误
             </button>
-          ) : (
-            "—"
-          )}
+          ) : null}
         </div>
       </td>
     </tr>
@@ -518,35 +533,35 @@ function HistoryCard({ item, now, selected, selectionDisabled, onSelect }: Histo
   const { showCountdown, isExpired } = w;
 
   return (
-    <Card data-selection-key={item.id} className={cn("surface-card rounded-xl border-border hover:border-border/80 transition-all duration-200 shadow-sm", selected && "border-primary bg-primary/5", isExpired && "opacity-60")}>
-      <CardContent className="p-3.5 sm:p-4 space-y-2.5">
-        <label className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Checkbox checked={selected} disabled={selectionDisabled} onCheckedChange={onSelect}
-            aria-label={`选择历史记录 ${item.planCode} ${item.orderId || item.id}`} />选择此记录
-        </label>
-        <div className="flex items-start justify-between gap-2 flex-wrap">
+    <Card data-selection-key={item.id} className={cn("surface-card rounded-xl border-border hover:border-border/90 transition-colors", selected && "border-primary bg-primary/5", isExpired && "opacity-60")}>
+      <CardContent className="p-3.5 space-y-2.5">
+        <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-2 flex-wrap min-w-0">
-            <span className={`font-mono font-semibold text-[13px] ${isExpired ? "line-through" : ""}`}>
+            <Checkbox checked={selected} disabled={selectionDisabled} onCheckedChange={onSelect}
+              aria-label={`选择历史记录 ${item.planCode} ${item.orderId || item.id}`} />
+            <span className={`font-mono font-bold text-sm ${isExpired ? "line-through" : ""}`}>
               {item.planCode}
             </span>
-            <AccountChip accountId={item.accountId} />
-            <Chip tone="default" className="text-[10px]">
-              {item.datacenter.toUpperCase()}
-            </Chip>
-            <TimingChip totalMs={item.totalMs} phases={item.timing} />
+            <span className="px-1.5 py-0.5 rounded bg-secondary text-foreground/85 border border-border/60 font-mono text-[10px] font-semibold uppercase leading-none">
+              {item.datacenter}
+            </span>
             <OrderDurationBadge value={item.duration} />
-            {item.couponWarning && (
-              <p className="w-full text-[11px] font-normal text-warning break-words" role="status">
-                {item.couponWarning}
-              </p>
-            )}
           </div>
           {item.status === "success" ? (
-            <Chip tone={st.tone} title={st.title}>
+            <Chip tone={st.tone} title={st.title} className="shrink-0">
               {st.label}
             </Chip>
           ) : (
-            <Chip tone="danger">失败</Chip>
+            <Chip tone="danger" className="shrink-0">失败</Chip>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <AccountChip accountId={item.accountId} />
+          <TimingChip totalMs={item.totalMs} phases={item.timing} />
+          {item.couponWarning && (
+            <p className="w-full text-[11px] font-normal text-warning break-words" role="status">
+              {item.couponWarning}
+            </p>
           )}
         </div>
         <div
@@ -555,7 +570,7 @@ function HistoryCard({ item, now, selected, selectionDisabled, onSelect }: Histo
         >
           {item.options && item.options.length > 0 ? describeOptionCodes(item.options) : "默认配置"}
         </div>
-        <div className="flex items-center justify-between gap-2 text-[11px]">
+        <div className="flex items-center justify-between gap-2 text-[11px] tabular-nums">
           <span className="text-muted-foreground font-mono">
             {new Date(item.purchaseTime).toLocaleString("zh-CN", {
               month: "2-digit",
@@ -566,16 +581,17 @@ function HistoryCard({ item, now, selected, selectionDisabled, onSelect }: Histo
           </span>
           {(item.price?.withoutTax ?? item.price?.withTax) != null ? <HistoryPrice item={item} strike={isExpired} /> : null}
         </div>
-        <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center justify-between gap-2 flex-wrap pt-2 border-t border-border/45">
           {showCountdown ? (
             <DeadlineChip w={w} />
           ) : (
             <span />
           )}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             {item.status === "success" && item.orderId && <OrderProgressButton accountId={item.accountId} orderId={item.orderId} />}
             <HistoryPaymentButton item={item} />
             <CancelOrderButton item={item} />
+            <BuyAgainButton item={item} />
             {item.status === "success" && safeHttpsUrl(item.orderUrl) ? (
               <a
                 href={safeHttpsUrl(item.orderUrl)}
@@ -601,6 +617,32 @@ function HistoryCard({ item, now, selected, selectionDisabled, onSelect }: Histo
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+/** 购买历史「再抢一单」：把原订单的型号、账户、机房、配置与周期一并带入队列新建弹窗。 */
+function BuyAgainButton({ item }: { item: PurchaseHistory }) {
+  const navigate = useNavigate();
+  if (!item.planCode) return null;
+  const openCreate = () => {
+    const params = new URLSearchParams({ create: item.planCode });
+    if (item.accountId) params.set("account", item.accountId);
+    if (item.datacenter) params.set("dc", item.datacenter);
+    if (item.options?.length) params.set("options", item.options.join(","));
+    if (item.duration) params.set("duration", item.duration);
+    navigate(`/queue?${params.toString()}`);
+  };
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="h-7 gap-1 px-1.5 text-xs text-muted-foreground hover:text-foreground"
+      onClick={openCreate}
+      title="沿用原账户、机房、配置和周期新建抢购任务"
+    >
+      <RotateCcw className="h-3 w-3" />
+      再抢一单
+    </Button>
   );
 }
 

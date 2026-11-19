@@ -160,10 +160,43 @@ export function usePauseMonitorSubscription() {
           optionsKey: v.optionsKey,
           paused: v.paused,
         })
-      ).data,
-    onSuccess: () => {
+      ).data as { paused?: boolean; pausedTasks?: number; heldTaskIds?: string[] },
+    onSuccess: (data, vars) => {
       qc.invalidateQueries({ queryKey: qk.monitor.list() });
       qc.invalidateQueries({ queryKey: qk.monitor.status() });
+      qc.invalidateQueries({ queryKey: qk.queue.list() });
+      if (data?.paused) {
+        if ((data.pausedTasks || 0) > 0) {
+          toast.success(i18n.t("hooksMsg.monitor.pausedWithQueue", { count: data.pausedTasks }));
+        }
+        return;
+      }
+      // 恢复监控不自动恢复抢购任务（避免意外下单），按后端返回的订阅范围内 heldTaskIds 提供一键恢复
+      const heldIds = Array.isArray(data?.heldTaskIds) ? data.heldTaskIds : [];
+      if (heldIds.length === 0) {
+        if (vars.paused === false) toast.success(i18n.t("hooksMsg.monitor.resumedNoTasks"));
+        return;
+      }
+      toast.success(i18n.t("hooksMsg.monitor.resumedWithHeld", { count: heldIds.length }), {
+        duration: 8000,
+        action: {
+          label: i18n.t("hooksMsg.monitor.resumeHeldAction"),
+          onClick: async () => {
+            let resumed = 0;
+            for (const id of heldIds) {
+              try {
+                await api.put(`/queue/${encodeURIComponent(id)}/status`, { status: "running" });
+                resumed++;
+              } catch {
+                // 单个失败不阻断其余任务
+              }
+            }
+            qc.invalidateQueries({ queryKey: qk.queue.list() });
+            qc.invalidateQueries({ queryKey: qk.stats() });
+            if (resumed > 0) toast.success(i18n.t("hooksMsg.monitor.resumeHeldDone", { count: resumed }));
+          },
+        },
+      });
     },
     onError: (e: unknown) => toast.error(apiMessage(e) || i18n.t("hooksMsg.monitor.updateFailed")),
   });

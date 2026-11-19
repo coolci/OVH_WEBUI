@@ -32,7 +32,7 @@ export function StatusBar() {
         <span className="hidden md:inline text-border/60">/</span>
 
         <div className="hidden md:flex items-center gap-1.5">
-          <Database className="h-3 w-3 text-accent/80" />
+          <Database className="h-3 w-3 text-info/80" />
           <span>队列: {stats?.activeQueues ?? 0}</span>
         </div>
       </div>

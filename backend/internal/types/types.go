@@ -182,6 +182,8 @@ type QueueItem struct {
 	// UncertainCheckout 结账曾出现超时未决，恢复运行时先对账确认上一单是否已建
 	UncertainCheckout bool   `json:"uncertainCheckout,omitempty"`
 	UncertainTime     string `json:"uncertainTime,omitempty"`
+	// StopReason 系统自动暂停任务的原因（monitorPaused / proxyFailed / checkoutUncertain），手动恢复后清空。
+	StopReason string `json:"stopReason,omitempty"`
 	// Force 用户允许自定义或未收录型号入队(放过 NoSuchPlan/Unlisted,不绕过明确跨区/非 Eco)
 	Force bool `json:"force,omitempty"`
 }
@@ -267,6 +269,8 @@ type ServerPlan struct {
 	// FirstSeen 本程序第一次在目录里看到这个型号的时间(unix 秒)。只在 /api/servers 响应里填,
 	// 不落库;0 = 开始记录之前就已在售(不算新品)。服务器列表按它把新上架的排在前面。
 	FirstSeen int64 `json:"firstSeen,omitempty"`
+	// StockStale 本次目录刷新未能读到该型号的库存，机房列表沿用上一份缓存（无缓存时为空）。
+	StockStale bool `json:"stockStale,omitempty"`
 }
 
 // SubscriptionHistoryEntry 监控订阅的历史记录条目

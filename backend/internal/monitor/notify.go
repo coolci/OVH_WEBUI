@@ -977,6 +977,14 @@ func (m *Monitor) prewarmAlertButtons(planCode string, availableDCs []map[string
 		explicitAccounts = append(explicitAccounts, cfgAcc)
 	}
 	btnAccountID := m.resolveNotifyAccountID(planCode, explicitAccounts...)
+	unverifiedDCs := map[string]bool{}
+	for _, dcInfo := range availableDCs {
+		if unverified, _ := dcInfo["price_unverified"].(bool); unverified {
+			if dc, _ := dcInfo["dc"].(string); strings.TrimSpace(dc) != "" {
+				unverifiedDCs[strings.ToLower(strings.TrimSpace(dc))] = true
+			}
+		}
+	}
 	seen := map[string]bool{}
 	n := 0
 	for _, t := range m.orderButtonTargets(planCode, availableDCs, btnAccountID) {
@@ -988,6 +996,9 @@ func (m *Monitor) prewarmAlertButtons(planCode string, availableDCs []map[string
 		}
 		dc := strings.TrimSpace(t.dc)
 		if acc == "" || dc == "" {
+			continue
+		}
+		if unverifiedDCs[strings.ToLower(dc)] {
 			continue
 		}
 		k := acc + "|" + strings.ToLower(dc)

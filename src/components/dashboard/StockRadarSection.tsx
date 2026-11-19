@@ -51,8 +51,8 @@ export function StockRadarSection({
   onOpenQuickOrder,
 }: StockRadarSectionProps) {
   return (
-    <Card className="surface-card rounded-2xl border-border/80 overflow-hidden shadow-sm">
-      <CardHeader className="p-3.5 sm:p-5 pb-3 border-b border-border/40 flex flex-row items-center justify-between gap-2">
+    <Card className="surface-card rounded-xl border-border/80 overflow-hidden">
+      <CardHeader className="px-4 py-3.5 sm:px-5 sm:py-4 border-b border-border/50 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 space-y-0">
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="relative flex items-center justify-center flex-shrink-0">
             <span

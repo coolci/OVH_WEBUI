@@ -1,9 +1,9 @@
 {
-  "backendRouteCount": 267,
-  "backendUniqueMethodPathCount": 267,
-  "openapiRouteCount": 267,
+  "backendRouteCount": 272,
+  "backendUniqueMethodPathCount": 272,
+  "openapiRouteCount": 272,
   "openapiHasApiPrefix": false,
-  "feExtractedCallCount": 316,
+  "feExtractedCallCount": 322,
   "feFetchCalls": [
     {
       "file": "src/hooks/use-backend-connection.ts",
@@ -48,6 +48,15 @@
       "rawUrl": "{param}/{param}/retraction",
       "fullPath": "/api/{param}/{param}/retraction",
       "normKey": "POST /api/{*}/{*}/retraction"
+    },
+    {
+      "file": "src/hooks/ovh/use-account.ts",
+      "line": 290,
+      "kind": "api.post",
+      "method": "POST",
+      "rawUrl": "/ovh/account/orders/{param}/{param}",
+      "fullPath": "/api/ovh/account/orders/{param}/{param}",
+      "normKey": "POST /api/ovh/account/orders/{*}/{*}"
     },
     {
       "file": "src/hooks/ovh/use-vps-monitor.ts",

@@ -131,8 +131,8 @@ export function CreateTicketDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[min(85dvh,640px)] w-[calc(100vw-1.5rem)] max-w-md flex-col gap-0 overflow-hidden rounded-xl p-0 sm:max-h-[min(88dvh,820px)] sm:w-[calc(100vw-2rem)] sm:max-w-2xl lg:max-w-3xl">
         <div className="flex items-center gap-2.5 border-b border-border/70 px-3.5 py-2.5 pr-11 sm:items-start sm:gap-3 sm:px-5 sm:py-3.5 sm:pr-14">
-          <div className="flex h-7.5 w-7.5 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 text-primary shadow-xs sm:h-9 sm:w-9 sm:rounded-xl">
-            <Ticket className="h-3.5 w-3.5 sm:h-4.5 sm:w-4.5" />
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-primary/20 bg-primary/10 text-primary shadow-sm sm:h-9 sm:w-9 sm:rounded-xl">
+            <Ticket className="h-4 w-4 sm:h-[18px] sm:w-[18px]" />
           </div>
           <div className="min-w-0">
             <DialogTitle className="text-[13px] font-semibold tracking-tight text-foreground sm:text-base">
@@ -147,7 +147,7 @@ export function CreateTicketDialog({
         <form
           id="create-ticket-form"
           onSubmit={handleSubmit}
-          className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3.5 py-2.5 sm:space-y-4.5 sm:px-5 sm:py-4"
+          className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3.5 py-2.5 sm:space-y-4 sm:px-5 sm:py-4"
         >
           <section className="space-y-2 sm:space-y-2.5">
             <div className="space-y-0.5 sm:space-y-1">
@@ -264,7 +264,7 @@ export function CreateTicketDialog({
                         aria-pressed={serviceType === value}
                         onClick={() => setServiceType(value)}
                         className={cn(
-                          "h-6.5 flex-1 rounded-md text-[11px] font-medium outline-none transition-colors sm:h-7.5 sm:rounded-lg sm:text-xs sm:flex-none sm:px-3",
+                          "h-7 flex-1 rounded-md text-[11px] font-medium outline-none transition-colors sm:h-8 sm:rounded-lg sm:text-xs sm:flex-none sm:px-3",
                           serviceType === value
                             ? "bg-primary/10 text-primary font-semibold"
                             : "text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -378,7 +378,7 @@ export function CreateTicketDialog({
             <Button
               type="button"
               variant="outline"
-              className="h-7.5 flex-1 px-3 text-xs sm:h-8.5 sm:flex-none sm:px-4 sm:text-sm"
+              className="h-8 flex-1 px-3 text-xs sm:h-9 sm:flex-none sm:px-4 sm:text-sm"
               onClick={() => onOpenChange(false)}
               disabled={createMutation.isPending}
             >
@@ -387,7 +387,7 @@ export function CreateTicketDialog({
             <Button
               type="submit"
               form="create-ticket-form"
-              className="h-7.5 flex-1 px-3 text-xs sm:h-8.5 sm:flex-none sm:px-4 sm:text-sm"
+              className="h-8 flex-1 px-3 text-xs sm:h-9 sm:flex-none sm:px-4 sm:text-sm"
               disabled={!subject.trim() || !body.trim() || createMutation.isPending}
             >
               {createMutation.isPending ? (

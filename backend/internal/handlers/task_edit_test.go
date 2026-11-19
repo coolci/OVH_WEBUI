@@ -12,7 +12,7 @@ import (
 	"github.com/ovh-webui/server/internal/types"
 )
 
-func TestQueueEditPreservesIdentityAndRequiresPause(t *testing.T) {
+func TestQueueEditPreservesIdentityAndRunsWithoutPause(t *testing.T) {
 	st, _ := newWatchTestMonitor(t)
 	st.Queue = []types.QueueItem{{ID: "task", AccountID: "eu", PlanCode: "24sk202", Status: "running", Datacenter: "gra", Preorder: true, RetryCount: 9, FailureCount: 2}}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -27,22 +27,30 @@ func TestQueueEditPreservesIdentityAndRequiresPause(t *testing.T) {
 		return w
 	}
 	const patch = `{"datacenter":" rbx ","options":["ram-64g","custom-addon"],"retryInterval":17,"autoPay":true,"coupon":" Save10 "}`
-	if w := request("/queue/task", patch); w.Code != http.StatusConflict {
-		t.Fatalf("running edit must be rejected: %d %s", w.Code, w.Body.String())
+	// 运行中直接编辑：成功、取消旧配置那一轮、任务保持 running 且不强迫先暂停
+	if w := request("/queue/task", patch); w.Code != http.StatusOK {
+		t.Fatalf("running edit must succeed: %d %s", w.Code, w.Body.String())
 	}
-	if w := request("/queue/task/status", `{"status":"paused"}`); w.Code != 200 || ctx.Err() != context.Canceled {
-		t.Fatalf("pause did not cancel attempt: %d %v", w.Code, ctx.Err())
-	}
-	if w := request("/queue/task", patch); w.Code != 200 {
-		t.Fatal(w.Code, w.Body.String())
+	if ctx.Err() != context.Canceled {
+		t.Fatalf("editing a running task must cancel the attempt using old config: %v", ctx.Err())
 	}
 	got, err := st.DB.ListQueue()
 	if err != nil || len(got) != 1 {
 		t.Fatal(got, err)
 	}
 	q := got[0]
-	if q.ID != "task" || q.AccountID != "eu" || q.PlanCode != "24sk202" || !q.Preorder || q.Status != "paused" || q.RetryCount != 9 || q.FailureCount != 0 || q.Datacenter != "rbx" || q.Coupon != "Save10" || len(q.Options) != 2 || q.Options[1] != "custom-addon" || q.RetryInterval != 17 || !q.AutoPay {
-		t.Fatalf("bad edited task: %+v", q)
+	if q.ID != "task" || q.AccountID != "eu" || q.PlanCode != "24sk202" || !q.Preorder || q.Status != "running" || q.RetryCount != 9 || q.FailureCount != 0 || q.Datacenter != "rbx" || q.Coupon != "Save10" || len(q.Options) != 2 || q.Options[1] != "custom-addon" || q.RetryInterval != 17 || q.LastCheckTime != 0 {
+		t.Fatalf("bad edited running task: %+v", q)
+	}
+	// 暂停的任务改完仍保持 paused
+	if w := request("/queue/task/status", `{"status":"paused"}`); w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	if w := request("/queue/task", patch); w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	if got, _ := st.DB.ListQueue(); len(got) != 1 || got[0].Status != "paused" {
+		t.Fatalf("paused task must stay paused after edit: %+v", got)
 	}
 	for _, body := range []string{`{"datacenter":"gra","retryInterval":0}`, `{"datacenter":"gra","retryInterval":17,"autoPay":"yes"}`, `{"datacenter":"gra","retryInterval":17,`} {
 		if w := request("/queue/task", body); w.Code != 400 {
@@ -52,6 +60,16 @@ func TestQueueEditPreservesIdentityAndRequiresPause(t *testing.T) {
 	if w := request("/queue/missing", patch); w.Code != 404 {
 		t.Fatal(w.Code, w.Body.String())
 	}
+	// 已下单的任务不能再改
+	st.QueueMu.Lock()
+	st.Queue[0].Status = "completed"
+	st.QueueMu.Unlock()
+	if w := request("/queue/task", patch); w.Code != http.StatusConflict {
+		t.Fatalf("completed edit must be rejected: %d %s", w.Code, w.Body.String())
+	}
+	st.QueueMu.Lock()
+	st.Queue[0].Status = "paused"
+	st.QueueMu.Unlock()
 	st.DB.Close()
 	if w := request("/queue/task", `{"datacenter":"gra","retryInterval":17}`); w.Code != 500 {
 		t.Fatal(w.Code, w.Body.String())

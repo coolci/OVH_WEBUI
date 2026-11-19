@@ -769,6 +769,7 @@ func LoadServerList(state *app.State, accountID string) ([]types.ServerPlan, int
 	// 96 个 plan × 200ms 串行 = 20 秒；改 15 并发 ≈ 1.5 秒
 	type availEntry struct {
 		availabilities []map[string]interface{}
+		failed         bool
 	}
 	availByPlan := make(map[string]*availEntry, len(plans))
 	var availMu sync.Mutex
@@ -799,7 +800,7 @@ func LoadServerList(state *app.State, accountID string) ([]types.ServerPlan, int
 			if abort {
 				availMu.Lock()
 				availFailed++
-				availByPlan[planCode] = &availEntry{}
+				availByPlan[planCode] = &availEntry{failed: true}
 				availMu.Unlock()
 				return
 			}
@@ -807,7 +808,7 @@ func LoadServerList(state *app.State, accountID string) ([]types.ServerPlan, int
 			if ierr != nil {
 				availMu.Lock()
 				availFailed++
-				availByPlan[planCode] = &availEntry{}
+				availByPlan[planCode] = &availEntry{failed: true}
 				availMu.Unlock()
 				return
 			}
@@ -820,7 +821,7 @@ func LoadServerList(state *app.State, accountID string) ([]types.ServerPlan, int
 					availMu.Lock()
 					isRateLimited = true
 					availFailed++
-					availByPlan[planCode] = &availEntry{availabilities: avs}
+					availByPlan[planCode] = &availEntry{availabilities: avs, failed: true}
 					availMu.Unlock()
 					rateLimited.Do(func() {
 						state.Logger.Warn(fmt.Sprintf("预拉 %s 可用性触发 OVH 429 限流，提前中止本轮剩余并发预拉", planCode), "")
@@ -839,7 +840,7 @@ func LoadServerList(state *app.State, accountID string) ([]types.ServerPlan, int
 				availFailed++
 				state.Logger.Warn(fmt.Sprintf("预拉 %s 的可用性失败: %s（该机型的机房列表将为空）", planCode, err.Error()), "")
 			}
-			availByPlan[planCode] = &availEntry{availabilities: avs}
+			availByPlan[planCode] = &availEntry{availabilities: avs, failed: err != nil}
 			availMu.Unlock()
 		}(pc)
 	}
@@ -885,8 +886,10 @@ func LoadServerList(state *app.State, accountID string) ([]types.ServerPlan, int
 		datacenters := []types.Datacenter{}
 		dcIdxByCode := map[string]int{}
 		var availabilities []map[string]interface{}
+		stockStale := false
 		if entry, ok := availByPlan[planCode]; ok {
 			availabilities = entry.availabilities
+			stockStale = entry.failed
 		}
 		for _, item := range availabilities {
 			if dcsRaw, ok := item["datacenters"].([]interface{}); ok {
@@ -936,6 +939,7 @@ func LoadServerList(state *app.State, accountID string) ([]types.ServerPlan, int
 			Datacenters:      datacenters,
 			DefaultOptions:   []types.ServerOption{},
 			AvailableOptions: []types.ServerOption{},
+			StockStale:       stockStale,
 		}
 
 		// 优先从关联 product 的硬件表读 CPU(品牌 + 型号 + 物理处理器数量,移植上游 v0.4.17)。

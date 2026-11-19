@@ -247,9 +247,8 @@ func EnqueueQuickOrder(state *app.State, params QuickOrderParams) *QuickOrderRes
 	} else if params.FromMonitor {
 		// 监控批量入队路径:
 		// 监控已在 check 阶段做过可用性探测，在此切忌重新发起完整的建车删车周期 (消耗 3~6s 且易踩 429 导致任务被拦截弃单)。
-		// 仅尝试从短 TTL 内存缓存获取价格；若无缓存或失败，不阻塞任务直接入队抢购。
-		priceResult := price.GetInternalCached(state, params.AccountID, params.PlanCode, params.Datacenter, options, params.Duration)
-		if priceResult.Success && priceResult.Price != nil && !priceResult.Degraded {
+		// 仅尝试从短 TTL 内存缓存只读获取价格；若无缓存或失败，不发任何 OVH 请求、不阻塞任务直接入队抢购。
+		if priceResult, hit := price.PeekCached(params.AccountID, params.PlanCode, params.Datacenter, options, params.Duration); hit && priceResult.Success && priceResult.Price != nil && !priceResult.Degraded {
 			priceInfo = priceResult.Price
 		} else {
 			state.Logger.Info("监控来源快速下单: 跳过同步建车询价阻塞, 优先抢占入队", "quick_order")

@@ -1,6 +1,7 @@
 package ovh
 
 import (
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -201,5 +202,7 @@ func ManagerOrderURL(endpoint, orderID string) string {
 	case "CA":
 		host = "manager.ca.ovhcloud.com"
 	}
-	return "https://" + host + "/dedicated/#/billing/order?orderId=" + orderID
+	// 路由与 OVH 官方现代控制台一致：https://manager.{eu|us|ca}.ovhcloud.com/#/dedicated/billing/orders/{id}
+	// 旧路由 /dedicated/#/billing/order?orderId= 已无法打开。
+	return "https://" + host + "/#/dedicated/billing/orders/" + url.PathEscape(orderID)
 }

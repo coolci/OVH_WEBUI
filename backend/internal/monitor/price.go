@@ -157,7 +157,18 @@ func (m *Monitor) hasFreshPrewarmedCartForConfig(planCode, datacenter string, co
 		(coupon != "" && purchase.HasFreshPrewarmedCart(accountID, planCode, datacenter, options, coupon, duration, prewarmVerifyMaxAge))
 }
 
+// priceVerifyWait 自动下单前等待价格校验的上限。完整询价需十余次 OVH 往返，
+// 补货窗口内超过此上限按暂时性失败放行，避免丢单；后台询价继续执行并缓存。
+var priceVerifyWait = 8 * time.Second
+
 func (m *Monitor) verifyPriceAvailable(planCode, datacenter string, configInfo map[string]interface{}) (verified bool, failReason string) {
+	ok, reason, _ := m.verifyPriceWithTransient(planCode, datacenter, configInfo)
+	return ok, reason
+}
+
+// verifyPriceWithTransient 返回 (是否可下单, 失败原因, 是否暂时性失败)。
+// 暂时性失败（超时、网络、408/429/5xx）不代表配置不可买，自动下单路径照常放行给抢购任务完整核对。
+func (m *Monitor) verifyPriceWithTransient(planCode, datacenter string, configInfo map[string]interface{}) (verified bool, failReason string, transient bool) {
 	options := optionsFromConfig(configInfo)
 	accountID := accountIDFromConfig(configInfo)
 	duration := durationFromConfig(configInfo)
@@ -173,16 +184,39 @@ func (m *Monitor) verifyPriceAvailable(planCode, datacenter string, configInfo m
 	if m.hasFreshPrewarmedCartForConfig(planCode, datacenter, configInfo) {
 		m.recordPlanVerifySuccess(accountID, subsidiary, planCode)
 		m.state.Logger.Info(fmt.Sprintf("[monitor/prewarm] %s@%s 命中预热就绪车，跳过二次建车验价直通放行", planCode, datacenter), "monitor")
-		return true, ""
+		return true, "", false
 	}
 
-	// 监控轮询验价: 直接进程内调用带有短 TTL 缓存的 price.GetInternalCached,
-	// 避免 HTTP 回环网络开销与 429 抖动。
-	// 验价按订阅要买的周期:目录里没有年付的型号,年付订阅不该被判成"可下单"
-	//
-	// 询价车按下单的配置装好、绑定过,校验通过就直接留作预热车:自动下单 / 一键下单按钮
-	// 紧接着就能拿它结账,不用再重装一辆。没通过就删掉,不留僵尸车。
-	result, cartID := price.GetInternalCachedKeepCart(m.state, accountID, planCode, datacenter, options, duration)
+	// 监控轮询验价: 直接进程内调用带有短 TTL 缓存的 price.GetInternalCachedKeepCart，
+	// 并附加 priceVerifyWait 超时保护，避免补货瞬间卡死在单次慢询价上。
+	type cartQuote struct {
+		result price.Result
+		cartID string
+	}
+	ch := make(chan cartQuote, 1)
+	go func() {
+		r, cid := price.GetInternalCachedKeepCart(m.state, accountID, planCode, datacenter, options, duration)
+		ch <- cartQuote{result: r, cartID: cid}
+	}()
+	var result price.Result
+	var cartID string
+	select {
+	case q := <-ch:
+		result, cartID = q.result, q.cartID
+	case <-time.After(priceVerifyWait):
+		// 后台询价结束后若带着未接管的预热车，保留进预热池供后续任务复用，避免僵尸车泄漏。
+		go func() {
+			q := <-ch
+			if q.cartID != "" {
+				if q.result.Success && !q.result.Degraded {
+					m.keepPriceCheckCart(q.cartID, accountID, planCode, datacenter, options, duration, coupon)
+				} else {
+					m.discardPriceCheckCart(accountID, q.cartID)
+				}
+			}
+		}()
+		return false, fmt.Sprintf("价格校验超过 %d 秒未完成", int(priceVerifyWait.Seconds())), true
+	}
 	defer func() {
 		if verified {
 			m.recordPlanVerifySuccess(accountID, subsidiary, planCode)
@@ -203,8 +237,8 @@ func (m *Monitor) verifyPriceAvailable(planCode, datacenter string, configInfo m
 		if errMsg == "" {
 			errMsg = "未知错误"
 		}
-		m.state.Logger.Debug(fmt.Sprintf("价格校验失败: %s@%s - %s", planCode, datacenter, errMsg), "monitor")
-		return false, errMsg
+		m.state.Logger.Debug(fmt.Sprintf("价格校验失败: %s@%s - %s (暂时性=%t)", planCode, datacenter, errMsg, result.Transient), "monitor")
+		return false, errMsg, result.Transient
 	}
 
 	// degraded = 价格算出来了,但购物车没配成用户要的样子(dedicated_os / region 没设上)。
@@ -218,17 +252,17 @@ func (m *Monitor) verifyPriceAvailable(planCode, datacenter string, configInfo m
 		}
 		errMsg := "询价结果降级，无法下单：" + reason
 		m.state.Logger.Debug(fmt.Sprintf("价格校验失败: %s@%s - %s", planCode, datacenter, errMsg), "monitor")
-		return false, errMsg
+		return false, errMsg, false
 	}
 
 	if result.Price == nil {
 		m.state.Logger.Debug(fmt.Sprintf("价格校验失败: %s@%s - price字段缺失", planCode, datacenter), "monitor")
-		return false, "price字段缺失"
+		return false, "price字段缺失", false
 	}
 	prices := result.Price.Prices
 	if prices == nil {
 		m.state.Logger.Debug(fmt.Sprintf("价格校验失败: %s@%s - prices字段缺失或类型错误", planCode, datacenter), "monitor")
-		return false, "prices字段缺失或类型错误"
+		return false, "prices字段缺失或类型错误", false
 	}
 	priceVal := prices["withoutTax"]
 	if priceVal == nil {
@@ -237,16 +271,16 @@ func (m *Monitor) verifyPriceAvailable(planCode, datacenter string, configInfo m
 	if priceVal == nil {
 		errMsg := "价格字段无效(<nil>)"
 		m.state.Logger.Debug(fmt.Sprintf("价格校验失败: %s@%s - %s", planCode, datacenter, errMsg), "monitor")
-		return false, errMsg
+		return false, errMsg, false
 	}
 	v, ok := numconv.ToFloat64(priceVal)
 	if !ok || math.IsNaN(v) || math.IsInf(v, 0) || !(v > 0) {
 		errMsg := fmt.Sprintf("价格无效(%v)", priceVal)
 		m.state.Logger.Debug(fmt.Sprintf("价格校验失败: %s@%s - %s", planCode, datacenter, errMsg), "monitor")
-		return false, errMsg
+		return false, errMsg, false
 	}
 	m.state.Logger.Debug(fmt.Sprintf("价格校验通过: %s@%s - 价格(未税优先): %v", planCode, datacenter, priceVal), "monitor")
-	return true, ""
+	return true, "", false
 }
 
 // keptCartCoupon 验价车留作预热车时该带的优惠码,与接下来会用它下单的那一方一致:
@@ -405,9 +439,18 @@ func (m *Monitor) GetPriceInfoText(planCode, datacenter string, configInfo map[s
 		return ""
 	}
 	prices := result.Price.Prices
-	priceRaw := prices["withoutTax"]
+	// 优先采用 summary 拆分出的纯周期费（已剥离 detailType=INSTALLATION 一次性安装费），避免月费重复计入安装费。
+	splitRecurring := true
+	priceRaw := prices["recurringWithoutTax"]
 	if priceRaw == nil {
-		priceRaw = prices["withTax"]
+		priceRaw = prices["recurringWithTax"]
+	}
+	if priceRaw == nil {
+		splitRecurring = false
+		priceRaw = prices["withoutTax"]
+		if priceRaw == nil {
+			priceRaw = prices["withTax"]
+		}
 	}
 	if priceRaw == nil {
 		m.state.Logger.Warn("价格获取成功但withoutTax与withTax均为None", "monitor")
@@ -433,9 +476,11 @@ func (m *Monitor) GetPriceInfoText(planCode, datacenter string, configInfo map[s
 		}
 	}
 	if v, ok := numconv.ToFloat64(priceRaw); ok && !math.IsNaN(v) && !math.IsInf(v, 0) && v > 0 {
-		// 若能拿到目录中的安装费，且购物车总额包含了安装费，则月费应扣除安装费（避免安装费重复计算）
-		if p, err := catalog.PriceForOptions(m.state, accountID, planCode, options); err == nil && p.Install > 0 && v > p.Install {
-			v -= p.Install
+		// 仅当 summary 未能按明细拆出纯周期费时，才回退用目录安装费兜底扣减。
+		if !splitRecurring {
+			if p, err := catalog.PriceForOptions(m.state, accountID, planCode, options); err == nil && p.Install > 0 && v > p.Install {
+				v -= p.Install
+			}
 		}
 		text := formatMoney(currency, v)
 		m.state.Logger.Debug("价格获取成功: "+text, "monitor")

@@ -39,80 +39,87 @@ export function ServerCard({
   const okCount = dcStatuses.filter((s) => s.isOk).length;
 
   return (
-    <Card className="surface-card rounded-xl border-border hover:border-border/80 transition-all duration-200 shadow-sm overflow-hidden flex flex-col justify-between">
-      <CardContent className="p-4 sm:p-5 flex flex-col gap-4 h-full">
+    <Card
+      className={cn(
+        "surface-card rounded-xl transition-all duration-200 overflow-hidden flex flex-col justify-between",
+        okCount > 0 ? "border-primary/35 hover:border-primary/60" : "border-border hover:border-border/90"
+      )}
+    >
+      <CardContent className="p-4 flex flex-col gap-3.5 h-full">
         {/* 头部：型号 + 当前可用标识 */}
-        <div className="flex items-center justify-between gap-2.5">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <h3 className="font-mono text-[15px] font-bold tracking-tight text-foreground truncate">
-              {server.planCode}
-            </h3>
-            {server.prerelease && (
-              <Chip tone="warning" className="h-4 px-1 text-[10px] shrink-0 font-medium" title="只在库存中出现、尚未进入销售目录,可创建预订任务">
-                预订
+        <div className="space-y-1">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <h3 className="font-mono text-[15px] font-bold tracking-tight text-foreground truncate">
+                {server.planCode}
+              </h3>
+              {server.prerelease && (
+                <Chip tone="warning" className="h-4 px-1 text-[10px] shrink-0 font-medium" title="只在库存中出现、尚未进入销售目录,可创建预订任务">
+                  预订
+                </Chip>
+              )}
+              {!server.prerelease && isNewPlan(server.firstSeen) && (
+                <Chip
+                  tone="info"
+                  className="h-4 px-1 text-[10px] shrink-0 font-medium"
+                  title={server.firstSeen ? `首次上架: ${new Date(server.firstSeen * 1000).toLocaleString()}` : undefined}
+                >
+                  新上架
+                </Chip>
+              )}
+            </div>
+            {okCount > 0 ? (
+              <Chip tone="success" className="flex-shrink-0">
+                <StatusDot tone="success" size="xs" pulse />
+                <span>{okCount} 机房有货</span>
               </Chip>
-            )}
-            {!server.prerelease && isNewPlan(server.firstSeen) && (
-              <Chip
-                tone="info"
-                className="h-4 px-1 text-[10px] shrink-0 font-medium"
-                title={server.firstSeen ? `首次上架: ${new Date(server.firstSeen * 1000).toLocaleString()}` : undefined}
-              >
-                新上架
+            ) : (
+              <Chip tone="default" className="flex-shrink-0 text-muted-foreground">
+                <StatusDot tone="muted" size="xs" />
+                <span>暂时缺货</span>
               </Chip>
             )}
           </div>
-          {okCount > 0 ? (
-            <Chip tone="success" className="flex-shrink-0">
-              <StatusDot tone="success" size="xs" pulse />
-              <span>{okCount} 机房有货</span>
-            </Chip>
-          ) : (
-            <Chip tone="default" className="flex-shrink-0 text-muted-foreground">
-              <StatusDot tone="muted" size="xs" />
-              <span>暂时缺货</span>
-            </Chip>
-          )}
-        </div>
 
-        {/* 次行：名称 + 价格 */}
-        <div className="flex items-baseline justify-between gap-2 -mt-1.5 text-xs">
-          <p className="text-muted-foreground truncate flex-1 min-w-0" title={server.name}>
-            {server.name}
-          </p>
-          <div className="text-sm font-bold tabular-nums text-foreground flex-shrink-0">
-            {price ? formatPrice(price) : <span className="text-muted-foreground font-normal text-xs">—</span>}
+          {/* 次行：名称 + 价格 */}
+          <div className="flex items-baseline justify-between gap-2 text-xs">
+            <p className="text-muted-foreground truncate flex-1 min-w-0" title={server.name}>
+              {server.name}
+            </p>
+            <div className="text-sm font-bold font-mono tabular-nums text-foreground flex-shrink-0">
+              {price ? formatPrice(price) : <span className="text-muted-foreground font-normal text-xs">—</span>}
+            </div>
           </div>
         </div>
 
         {/* 规格 2x2 */}
-        <div className="grid grid-cols-2 gap-2 text-[12px] bg-secondary/30 p-2.5 rounded-lg border border-border/50">
+        <div className="grid grid-cols-2 gap-x-2.5 gap-y-2 text-[12px] bg-secondary/35 px-3 py-2.5 rounded-lg border border-border/50">
           <SpecRow icon={<Cpu className="w-3.5 h-3.5" />} text={server.cpu} />
           <SpecRow icon={<MemoryStick className="w-3.5 h-3.5" />} text={server.memory} />
           <SpecRow icon={<HardDrive className="w-3.5 h-3.5" />} text={server.storage} />
           <SpecRow icon={<Wifi className="w-3.5 h-3.5" />} text={server.bandwidth} />
         </div>
 
-        {/* DC 点阵：12 个标准 OVH DC */}
-        <div className="flex flex-wrap items-center gap-1.5 py-1">
+        {/* DC 点阵：12 个标准 OVH DC 严格 6 列对齐（2×6，绝无尾行孤项） */}
+        <div className="grid grid-cols-4 sm:grid-cols-6 gap-1">
           {dcStatuses.map(({ dc, isOk }) => (
             <Chip
               key={dc.code}
               tone={isOk ? "success" : "default"}
-              title={`${dc.name} · ${dc.region}`}
+              title={`${dc.name} · ${dc.region} (${isOk ? "有货" : "缺货"})`}
               className={cn(
-                "h-5 px-1.5 font-mono text-[10px]",
-                !isOk && "bg-muted/30 text-muted-foreground/60"
+                "h-5 px-1 justify-center font-mono text-[10px] rounded-md",
+                !isOk && "bg-muted/35 border-border/40 text-muted-foreground/60"
               )}
             >
-              <StatusDot tone={isOk ? "success" : "danger"} size="xs" pulse={isOk} />
+              <StatusDot tone={isOk ? "success" : "muted"} size="xs" pulse={isOk} />
               {dc.code.toUpperCase()}
             </Chip>
           ))}
         </div>
 
         {/* 操作按钮 */}
-        <div className="flex items-center gap-2.5 pt-2.5 mt-auto border-t border-border/40">
+        <div className="flex items-center gap-2 pt-3 mt-auto border-t border-border/50">
           <Button
             variant="outline"
             size="sm"

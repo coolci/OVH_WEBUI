@@ -5,10 +5,10 @@ import "testing"
 // 三个大区的控制面板互不认对方的订单号,发错区用户只会看到"订单不存在"。
 func TestManagerOrderURLPerRegion(t *testing.T) {
 	cases := []struct{ endpoint, want string }{
-		{"ovh-eu", "https://manager.eu.ovhcloud.com/dedicated/#/billing/order?orderId=123"},
-		{"ovh-us", "https://manager.us.ovhcloud.com/dedicated/#/billing/order?orderId=123"},
-		{"ovh-ca", "https://manager.ca.ovhcloud.com/dedicated/#/billing/order?orderId=123"},
-		{"", "https://manager.eu.ovhcloud.com/dedicated/#/billing/order?orderId=123"},
+		{"ovh-eu", "https://manager.eu.ovhcloud.com/#/dedicated/billing/orders/123"},
+		{"ovh-us", "https://manager.us.ovhcloud.com/#/dedicated/billing/orders/123"},
+		{"ovh-ca", "https://manager.ca.ovhcloud.com/#/dedicated/billing/orders/123"},
+		{"", "https://manager.eu.ovhcloud.com/#/dedicated/billing/orders/123"},
 	}
 	for _, c := range cases {
 		if got := ManagerOrderURL(c.endpoint, "123"); got != c.want {

@@ -52,9 +52,24 @@ const getLogIcon = (level: string) => {
     case "success":
       return <CheckCircle2 className="h-4 w-4 text-primary flex-shrink-0" />;
     default:
-      return <Info className="h-4 w-4 text-accent flex-shrink-0" />;
+      return <Info className="h-4 w-4 text-info flex-shrink-0" />;
   }
 };
+
+/** 独立时钟组件：避免每秒定时刷新导致整个 TopBar 与通知弹窗重复重渲染 */
+function TopBarClock() {
+  const [time, setTime] = useState(() => new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  return (
+    <div className="hidden md:flex items-center gap-1.5 px-2.5 h-7 rounded-lg border border-border/60 bg-muted/35 text-[11px] font-mono text-muted-foreground tabular-nums">
+      <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary/70" />
+      <span>{time.toLocaleTimeString("zh-CN", { hour12: false })}</span>
+    </div>
+  );
+}
 
 const formatTimeAgo = (timestamp: string) => {
   try {
@@ -70,7 +85,6 @@ const formatTimeAgo = (timestamp: string) => {
 };
 
 export function TopBar() {
-  const [time, setTime] = useState(new Date());
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [readNotifications, setReadNotifications] = useState<Set<string>>(new Set());
   const location = useLocation();
@@ -80,11 +94,6 @@ export function TopBar() {
 
   // 通知铃铛：只拉最近 20 条，15s 轮询，后台标签页自动停
   const { data: logsData, isLoading, refetch } = useRecentLogs(20, true);
-
-  useEffect(() => {
-    const timer = setInterval(() => setTime(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
 
   const currentPath = pathNames[location.pathname] || "OVH WebUI";
   const notifications = logsData?.logs || [];
@@ -98,9 +107,9 @@ export function TopBar() {
     <div className="flex-1 flex items-center justify-between gap-2 min-w-0">
       <div className="flex min-w-0 items-center gap-2">
         <div className="flex items-center gap-1.5 text-xs">
-          <span className="text-muted-foreground/70 font-medium">控制台</span>
-          <span className="text-border font-mono">/</span>
-          <span className="truncate text-xs sm:text-sm font-semibold tracking-tight text-foreground">
+          <span className="hidden sm:inline text-muted-foreground/75 font-medium">控制台</span>
+          <span className="hidden sm:inline text-border font-mono">/</span>
+          <span className="truncate text-[13px] sm:text-sm font-semibold tracking-tight text-foreground">
             {currentPath}
           </span>
         </div>
@@ -111,7 +120,7 @@ export function TopBar() {
         {defaultAccount && (
           <Link
             to="/account"
-            className="hidden lg:inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-lg border border-border/70 hover:border-primary/40 bg-secondary/35 hover:bg-secondary/70 text-muted-foreground hover:text-foreground transition-all duration-150"
+            className="hidden lg:inline-flex items-center gap-1.5 text-[11px] px-2.5 h-7 rounded-lg border border-border/70 hover:border-primary/40 bg-secondary/35 hover:bg-secondary/70 text-muted-foreground hover:text-foreground transition-colors"
             title={`默认下单账户: ${defaultAccount.name} (${defaultAccount.zone || "OVH"})`}
           >
             <User className="h-3 w-3 text-primary" />
@@ -121,7 +130,7 @@ export function TopBar() {
 
         <div
           className={cn(
-            "flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-lg border transition-colors font-medium",
+            "flex items-center gap-1.5 text-[11px] px-2.5 h-7 rounded-lg border transition-colors font-medium",
             isChecking
               ? "border-border/60 text-muted-foreground bg-secondary/30"
               : isConnected
@@ -143,10 +152,9 @@ export function TopBar() {
         </div>
 
         {/* 实时时钟 */}
-        <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-border/60 bg-muted/30 text-[11px] font-mono text-muted-foreground tabular-nums">
-          <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary/70 animate-pulse" />
-          <span>{time.toLocaleTimeString("zh-CN", { hour12: false })}</span>
-        </div>
+        <TopBarClock />
+
+        <span className="hidden sm:block h-4 w-px bg-border/70 mx-0.5" aria-hidden />
 
         {/* 多语言切换 */}
         <LanguageToggle />

@@ -124,6 +124,10 @@ func Open(dataDir string) (*DB, error) {
 		return nil, fmt.Errorf("ping sqlite write pool (%s): %w", driverName, err)
 	}
 
+	// Unsafe: 结果里有结构体没有的列时忽略，而不是整条查询失败。
+	// 新版本加列后回退到旧版本时，SELECT * 不会再因 missing destination name 导致历史/队列/账户读不出。
+	// 读写双连接池均开启 Unsafe，保持前向/回退一致性。
+	writeSX = writeSX.Unsafe()
 	db := &DB{DB: writeSX, Path: path, Driver: driverName}
 	if err := db.migrate(); err != nil {
 		_ = writeSX.Close()
@@ -144,7 +148,7 @@ func Open(dataDir string) (*DB, error) {
 		_ = writeSX.Close()
 		return nil, fmt.Errorf("ping sqlite read pool (%s): %w", driverName, err)
 	}
-	db.readDB = readSX
+	db.readDB = readSX.Unsafe()
 
 	return db, nil
 }
@@ -254,6 +258,7 @@ func (db *DB) migrate() error {
 	for _, c := range [][2]string{
 		{"uncertain_checkout", "INTEGER NOT NULL DEFAULT 0"},
 		{"uncertain_time", "TEXT NOT NULL DEFAULT ''"},
+		{"stop_reason", "TEXT NOT NULL DEFAULT ''"},
 	} {
 		if err := db.addColumnIfMissing("queue", c[0], c[1]); err != nil {
 			return err

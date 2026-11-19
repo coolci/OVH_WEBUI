@@ -96,20 +96,21 @@ function VpsControlPage() {
   const activeEndpoint = (accounts || []).find((a) => a.id === (selectedAccountId || activeAccount))?.endpoint;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <PageHeader
         title="VPS 控制"
         description="已购 VPS 的电源 / 快照 / 重装 / 控制台管理"
         icon={Cloud}
         action={
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5 px-3 rounded-lg" onClick={toggle}>
+            <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5 px-3 rounded-lg border-border/80 hover:bg-secondary" onClick={toggle}>
               {hidden ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
               <span>{hidden ? "显示 IP" : "隐藏 IP"}</span>
             </Button>
             <Button
+              variant="outline"
               size="sm"
-              className="h-8 gap-1.5 text-xs font-medium rounded-lg shadow-sm px-3"
+              className="h-8 gap-1.5 text-xs font-medium rounded-lg border-border/80 hover:bg-secondary px-3"
               onClick={() => q.refetch()}
               disabled={q.isFetching}
               title="刷新 VPS 状态"

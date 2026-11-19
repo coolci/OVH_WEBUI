@@ -37,9 +37,13 @@ export interface QueueItem {
   /** 结账超时且对账未能确认:任务已暂停,恢复运行时后端会先对账,不会直接再下一单 */
   uncertainCheckout?: boolean;
   uncertainTime?: string;
+  /** 系统自动暂停任务的原因（monitorPaused / proxyFailed / checkoutUncertain），手动恢复后清空 */
+  stopReason?: "monitorPaused" | "proxyFailed" | "checkoutUncertain" | string;
   preorder?: boolean;
   /** 已下单(completed)任务对应的 OVH 订单号,由 GET /api/queue 从购买历史补上 */
   orderId?: string;
+  /** 目录缓存里的型号可读名称，由 GET /api/queue 附带 */
+  planName?: string;
 }
 
 /** 抢购队列列表 */
@@ -161,16 +165,29 @@ export function useCreateQueueItem() {
   });
 }
 
-/** 修改暂停/失败任务的机房、选项、重试间隔、自动付款与优惠码 */
+/** 修改抢购任务的机房、选项、重试间隔、优惠码与购买时长；运行中任务可直接保存并立即生效 */
 export function useUpdateQueueItem() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, ...patch }: { id: string; datacenter: string; options: string[]; retryInterval: number; autoPay: boolean; coupon: string; duration?: string }) =>
-      (await api.put(`/queue/${encodeURIComponent(id)}`, patch)).data,
-    onSuccess: () => {
+    // wasRunning 仅用于前端提示文案，不发送给后端
+    mutationFn: async ({
+      id,
+      wasRunning: _wasRunning,
+      ...patch
+    }: {
+      id: string;
+      wasRunning?: boolean;
+      datacenter: string;
+      options: string[];
+      retryInterval: number;
+      autoPay: boolean;
+      coupon: string;
+      duration?: string;
+    }) => (await api.put(`/queue/${encodeURIComponent(id)}`, patch)).data,
+    onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: qk.queue.list() });
       qc.invalidateQueries({ queryKey: qk.stats() });
-      toast.success(i18n.t("queue.editSaved") || "修改已保存");
+      toast.success(i18n.t(vars.wasRunning ? "queue.editSavedRunning" : "queue.editSaved"));
     },
     onError: (e: unknown) => toast.error(apiMessage(e) || i18n.t("queue.editFailed") || "修改失败"),
   });

@@ -45,7 +45,13 @@ const App = () => (
               <OvhCredsGate>
                 <ActiveAccountSync />
                 <ErrorBoundary>
-                  <Suspense fallback={null}>
+                  <Suspense
+                    fallback={
+                      <div className="min-h-[100dvh] app-canvas flex items-center justify-center">
+                        <div className="h-5 w-5 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
+                      </div>
+                    }
+                  >
                     <Routes>
                       <Route path="/" element={<Index />} />
                       <Route path="/servers" element={<ServersPage />} />

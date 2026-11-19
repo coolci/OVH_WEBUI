@@ -23,7 +23,7 @@ import { useCreateQueueItem } from "@/hooks/use-queue";
 import { useOrderDurations } from "@/hooks/use-order-durations";
 import { preorderOptions, preorderVariantCoversAll } from "@/lib/preorder-options";
 import { OrderDurationField } from "@/components/orders/OrderDurationField";
-import { DEFAULT_ORDER_DURATION, supportsDuration } from "@/lib/order-duration";
+import { DEFAULT_ORDER_DURATION, normalizeDuration, supportsDuration } from "@/lib/order-duration";
 import { useSettings, RETRY_INTERVAL } from "@/hooks/use-settings";
 import { useAccounts, findAccountByID } from "@/hooks/use-accounts";
 import { useActiveServerControlAccount } from "@/hooks/use-active-account";
@@ -35,7 +35,7 @@ import {
   buildVariantIndex,
   hasStockWithOption,
 } from "@/hooks/use-availability";
-import { mergeDcAvailability } from "@/lib/datacenters";
+import { displayDatacenterCode, mergeDcAvailability } from "@/lib/datacenters";
 import { describeOptionCode, describeOptionCodes, groupOptions, type OptionGroupKey } from "@/lib/option-groups";
 // 自动付款已停用，保留原实现。
 // import { AutoPayCheck } from "@/components/orders/AutoPayCheck";
@@ -45,6 +45,9 @@ interface CreateQueueDialogProps {
   onOpenChange: (open: boolean) => void;
   initialPlanCode?: string;
   initialOptions?: string;
+  initialAccountId?: string;
+  initialDatacenter?: string;
+  initialDuration?: string;
 }
 
 const NON_FQN_GROUPS = new Set<OptionGroupKey>(["bandwidth", "vrack", "cpu", "other"]);
@@ -54,17 +57,29 @@ export function CreateQueueDialog({
   onOpenChange,
   initialPlanCode,
   initialOptions,
+  initialAccountId,
+  initialDatacenter,
+  initialDuration,
 }: CreateQueueDialogProps) {
   const [activeAccountId] = useActiveServerControlAccount();
   const { data: accounts } = useAccounts();
   const [accountId, setAccountId] = useState("");
 
   useEffect(() => {
-    if (!accountId && accounts && accounts.length > 0) {
+    if (!open || !accounts || accounts.length === 0) return;
+    // 预填账户存在时优先沿用（如购买历史「再抢一单」），已删除则回退到当前全局/默认账户
+    if (initialAccountId) {
+      const prefilled = findAccountByID(accounts, initialAccountId);
+      if (prefilled) {
+        setAccountId(prefilled.id);
+        return;
+      }
+    }
+    if (!accountId) {
       const hit = findAccountByID(accounts, activeAccountId) || accounts.find((a) => a.isDefault) || accounts[0];
       if (hit) setAccountId(hit.id);
     }
-  }, [accounts, activeAccountId, accountId]);
+  }, [open, accounts, activeAccountId, accountId, initialAccountId]);
 
   const activeAcc = findAccountByID(accounts, accountId);
   const servers = useServers(true, accountId);
@@ -91,16 +106,22 @@ export function CreateQueueDialog({
   // const [autoPay, setAutoPay] = useState(false); // 自动付款已停用，保留原状态。
   const [duration, setDuration] = useState(DEFAULT_ORDER_DURATION);
   const durations = useOrderDurations(accountId, planCode, open);
-  // 换了型号就回到 1 个月:上一个型号选的周期不一定适用于这个型号,不能悄悄带过去
+  // 换了型号就回到 1 个月：上一个型号选的周期不一定适用于这个型号，但若是刚从「再抢一单」预填则保留预填周期
   useEffect(() => {
-    setDuration(DEFAULT_ORDER_DURATION);
-  }, [planCode]);
+    if (initialPlanCode && planCode === initialPlanCode && initialDuration) {
+      setDuration(normalizeDuration(initialDuration));
+    } else {
+      setDuration(DEFAULT_ORDER_DURATION);
+    }
+  }, [planCode, initialPlanCode, initialDuration]);
 
   useEffect(() => {
     if (open) {
       if (initialPlanCode) setPlanCode(initialPlanCode);
+      if (initialDatacenter) setDatacenters([displayDatacenterCode(initialDatacenter)]);
+      if (initialDuration) setDuration(normalizeDuration(initialDuration));
     }
-  }, [initialPlanCode, open]);
+  }, [initialPlanCode, initialDatacenter, initialDuration, open]);
 
   const searchServers = useMemo(
     () => mergeStockPlans(servers.data || [], availQ.data),

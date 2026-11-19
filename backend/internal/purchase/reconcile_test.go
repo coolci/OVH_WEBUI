@@ -132,7 +132,7 @@ func TestReconcileRecentOrderUSHasNoQuery(t *testing.T) {
 	if id != "9" {
 		t.Fatalf("orderID = %q", id)
 	}
-	if !strings.Contains(link, "manager.us.ovhcloud.com") || !strings.Contains(link, "orderId=9") {
+	if !strings.Contains(link, "manager.us.ovhcloud.com") || !strings.Contains(link, "/billing/orders/9") {
 		t.Fatalf("url 缺失时应回退美区控制台深链, got %q", link)
 	}
 }

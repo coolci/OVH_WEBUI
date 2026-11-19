@@ -125,7 +125,7 @@ function ServerControlPage() {
   const activeAcc = accounts?.find((a) => a.id === activeAccount);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <PageHeader
         icon={Cpu}
         title="服务器控制"
@@ -138,13 +138,13 @@ function ServerControlPage() {
           <div className="flex items-center gap-2">
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="outline" size="sm" className="h-8 w-8 p-0 rounded-lg" onClick={toggle} aria-label={hidden ? "显示 IP / MAC" : "隐藏 IP"}>
+                <Button variant="outline" size="sm" className="h-8 w-8 p-0 rounded-lg border-border/80 hover:bg-secondary" onClick={toggle} aria-label={hidden ? "显示 IP / MAC" : "隐藏 IP"}>
                   {hidden ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{hidden ? "已隐藏敏感信息 · 点击显示" : "隐藏 IP"}</TooltipContent>
             </Tooltip>
-            <Button size="sm" className="h-8 gap-1.5 text-xs font-medium rounded-lg shadow-sm px-3" onClick={() => void refresh()} disabled={isFetching} title="刷新服务器状态与中奖检测">
+            <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs font-medium rounded-lg border-border/80 hover:bg-secondary px-3" onClick={() => void refresh()} disabled={isFetching} title="刷新服务器状态与中奖检测">
               <RefreshCw className={cn("w-3.5 h-3.5", isFetching && "animate-spin")} />
               <span>刷新</span>
             </Button>

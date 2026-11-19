@@ -575,14 +575,14 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 		}
 
 		// 并发价格校验
-		priceCheckResults := map[string][2]interface{}{}
+		priceCheckResults := map[string][3]interface{}{}
 		if len(priceCheckTasks) > 0 {
 			var pcMu sync.Mutex
 			var roundHit429 bool
 			runPriceVerify := func(dc string) bool {
-				ok, errMsg := m.verifyPriceAvailable(planCode, dc, priceCfg)
+				ok, errMsg, transient := m.verifyPriceWithTransient(planCode, dc, priceCfg)
 				pcMu.Lock()
-				priceCheckResults[dc] = [2]interface{}{ok, errMsg}
+				priceCheckResults[dc] = [3]interface{}{ok, errMsg, transient}
 				if !ok && isRateLimit429Error(errMsg) {
 					roundHit429 = true
 				}
@@ -672,6 +672,8 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 		}
 
 		notifications := []notification{}
+		var priceUnverified []string
+		unverifiedDCs := map[string]bool{}
 
 		for dc, ds := range dcStatusMap {
 			// 状态机(以及落进 lastStatus 的值)只认 available / unavailable /
@@ -689,6 +691,7 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 				} else if v, ok := priceCheckResults[dc]; ok {
 					okBool, _ := v[0].(bool)
 					errStr, _ := v[1].(string)
+					transient, _ := v[2].(bool)
 					if !okBool && configData.CatalogMissing {
 						// 销售目录尚未收录(常见于预上架:库存先于目录公布)。购物车也验不过 = 还不能买,
 						// 按无货处理:不发"验价失败"提醒、不下单。以前记成 price_check_failed,
@@ -696,6 +699,14 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 						// 基准留在 unavailable,上架后购物车验价通过仍会触发一次正常补货与自动下单。
 						actualStatus = "unavailable"
 						m.state.Logger.Debug(fmt.Sprintf("%s@%s [%s] 销售目录未收录且购物车验价未通过,按无货处理: %s",
+							planCode, dc, configDisplay, errStr), "monitor")
+					} else if !okBool && transient {
+						// 暂时性失败（超时、网络、408/429/5xx）不代表配置不可买：照常按有货放行，
+						// 交由抢购任务在建车/结账阶段完整核对型号、配置、周期与数量，避免补货窗口丢单。
+						actualStatus = "available"
+						unverifiedDCs[dc] = true
+						priceUnverified = append(priceUnverified, errStr)
+						m.state.Logger.Warn(fmt.Sprintf("%s@%s [%s] 价格校验暂时未完成(%s)，按有货处理，下单前由抢购任务完整核对",
 							planCode, dc, configDisplay, errStr), "monitor")
 					} else if !okBool {
 						actualStatus = "price_check_failed"
@@ -849,7 +860,10 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 		if hasAvail {
 			firstDC := ""
 			for _, n := range notifications {
-				if n.changeType == "available" && n.status != "unavailable" {
+				// 跳过本轮验价刚刚暂时性失败（超时/429/5xx）的机房：
+				// 1. 该机房询价未命中缓存，立刻重查只会再撞一次 OVH 建车/限流甚至阻塞通知 30s；
+				// 2. 下方 resolvePlanPriceInfo 会用公开目录缓存补齐参考价，通知也会附带未完成原因。
+				if n.changeType == "available" && n.status != "unavailable" && !unverifiedDCs[n.dc] {
 					firstDC = n.dc
 					break
 				}
@@ -963,6 +977,9 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 				if n.detectedTime != "" {
 					dcInfo["detected_time"] = n.detectedTime
 				}
+				if unverifiedDCs[n.dc] {
+					dcInfo["price_unverified"] = true
+				}
 				availDCs = append(availDCs, dcInfo)
 			}
 			configTraceForNotif := ""
@@ -972,6 +989,14 @@ func (m *Monitor) checkAccountAvailabilityChange(sub *Subscription, traceID stri
 			errIfNoPrice := ""
 			if priceText == "" {
 				errIfNoPrice = priceFetchError
+			}
+			if len(priceUnverified) > 0 {
+				note := "价格校验未完成（" + priceUnverified[0] + "），已照常交给抢购任务，下单前会完整核对购物车"
+				if errIfNoPrice != "" {
+					errIfNoPrice += "；" + note
+				} else {
+					errIfNoPrice = note
+				}
 			}
 			if !m.checkCurrent(sub, cfg) {
 				if sideEffects {

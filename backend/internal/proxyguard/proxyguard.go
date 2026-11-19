@@ -237,6 +237,7 @@ func (g *Guard) pauseQueue(accountID string) int {
 			continue
 		}
 		it.Status = "paused"
+		it.StopReason = app.StopReasonProxyFailed
 		it.UpdatedAt = types.NowISO()
 		pausedIDs = append(pausedIDs, it.ID)
 		n++

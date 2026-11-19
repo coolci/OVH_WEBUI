@@ -36,6 +36,7 @@ type queueRow struct {
 	Duration           string  `db:"duration"`
 	UncertainCheckout  int     `db:"uncertain_checkout"`
 	UncertainTime      string  `db:"uncertain_time"`
+	StopReason         string  `db:"stop_reason"`
 }
 
 func rowToQueueItem(r queueRow) (types.QueueItem, error) {
@@ -75,6 +76,7 @@ func rowToQueueItem(r queueRow) (types.QueueItem, error) {
 		Duration:           r.Duration,
 		UncertainCheckout:  r.UncertainCheckout == 1,
 		UncertainTime:      r.UncertainTime,
+		StopReason:         r.StopReason,
 	}, nil
 }
 
@@ -119,6 +121,7 @@ func queueItemToRow(q types.QueueItem) (queueRow, error) {
 		Duration:           q.Duration,
 		UncertainCheckout:  bi(q.UncertainCheckout),
 		UncertainTime:      q.UncertainTime,
+		StopReason:         q.StopReason,
 	}, nil
 }
 
@@ -175,12 +178,12 @@ func (db *DB) ReplaceQueue(items []types.QueueItem) error {
 			(id, account_id, plan_code, datacenter, options, status, created_at, updated_at,
 			 retry_interval, retry_count, failure_count, max_retries, last_check_time,
 			 quick_order, priority, from_telegram, config_sniper_task_id, auto_pay,
-			 telegram_chat_id, telegram_message_id, force_order, preorder, coupon, duration, uncertain_checkout, uncertain_time)
+			 telegram_chat_id, telegram_message_id, force_order, preorder, coupon, duration, uncertain_checkout, uncertain_time, stop_reason)
 			VALUES
 			(:id, :account_id, :plan_code, :datacenter, :options, :status, :created_at, :updated_at,
 			 :retry_interval, :retry_count, :failure_count, :max_retries, :last_check_time,
 			 :quick_order, :priority, :from_telegram, :config_sniper_task_id, :auto_pay,
-			 :telegram_chat_id, :telegram_message_id, :force_order, :preorder, :coupon, :duration, :uncertain_checkout, :uncertain_time)
+			 :telegram_chat_id, :telegram_message_id, :force_order, :preorder, :coupon, :duration, :uncertain_checkout, :uncertain_time, :stop_reason)
 		`, r)
 		if err != nil {
 			return fmt.Errorf("insert queue %s: %w", q.ID, err)

@@ -17,8 +17,8 @@ func (db *DB) ResumeQueueItem(item types.QueueItem, blockKey string) error {
 		return err
 	}
 	defer tx.Rollback()
-	result, err := tx.Exec(`UPDATE queue SET status=?, updated_at=?, failure_count=?, last_check_time=? WHERE id=?`,
-		item.Status, item.UpdatedAt, item.FailureCount, item.LastCheckTime, item.ID)
+	result, err := tx.Exec(`UPDATE queue SET status=?, updated_at=?, failure_count=?, last_check_time=?, stop_reason=? WHERE id=?`,
+		item.Status, item.UpdatedAt, item.FailureCount, item.LastCheckTime, item.StopReason, item.ID)
 	if err != nil {
 		return err
 	}

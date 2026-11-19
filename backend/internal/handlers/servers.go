@@ -93,15 +93,13 @@ func GetServers(state *app.State) gin.HandlerFunc {
 			apiServers, availFailed := catalog.LoadServerList(state, reqAccount)
 			refreshFailed = availFailed > 0
 			if len(apiServers) > 0 && availFailed > 0 && len(cached) > 0 {
-				// 部分 plan 的可用性没拉到(多半是 OVH 限流),这份结果的机房列是残缺的。
-				// 用它覆盖缓存 + SQLite 会让用户在整个 TTL 内看到"全线无货",宁可继续用旧缓存。
-				serverPlans = cached
-				// 只有缓存真的过期了才算"用过期数据":forceRefresh 时缓存往往还在 TTL 内,
-				// 这时回一条"Using expired cache"告警是假警报
-				usingExpiredCache = !valid
-				state.Logger.Warn("⚠️ 本次刷新有 "+strconv.Itoa(availFailed)+" 个机型的可用性拉取失败，结果不完整，保留旧缓存", "")
-			} else if len(apiServers) > 0 {
-				if availFailed > 0 {
+				// 部分 plan 的可用性拉取失败时保留新目录，只让失败型号沿用旧缓存里的机房列表并标 StockStale，
+				// 避免因偶发限流整份丢弃新目录并冻结缓存时间戳。
+				apiServers = mergeStaleStock(apiServers, cached)
+				state.Logger.Warn("⚠️ 本次刷新有 "+strconv.Itoa(availFailed)+" 个机型的可用性拉取失败，这些机型沿用上一份库存", "")
+			}
+			if len(apiServers) > 0 {
+				if availFailed > 0 && len(cached) == 0 {
 					state.Logger.Warn("⚠️ 有 "+strconv.Itoa(availFailed)+" 个机型的可用性拉取失败，但本地无缓存可退，先用这份不完整数据", "")
 				}
 				// 内存缓存分桶后每个账户视角都写自己那桶;
@@ -505,4 +503,20 @@ func ClearCache(state *app.State) gin.HandlerFunc {
 func JSONString(v interface{}) string {
 	b, _ := json.Marshal(v)
 	return string(b)
+}
+
+// mergeStaleStock 本次没读到库存的型号沿用旧缓存里的机房列表，其余型号采用最新数据。
+func mergeStaleStock(fresh, cached []types.ServerPlan) []types.ServerPlan {
+	old := make(map[string]types.ServerPlan, len(cached))
+	for _, p := range cached {
+		old[p.PlanCode] = p
+	}
+	out := make([]types.ServerPlan, len(fresh))
+	for i, p := range fresh {
+		if prev, ok := old[p.PlanCode]; ok && p.StockStale && len(prev.Datacenters) > 0 {
+			p.Datacenters = prev.Datacenters
+		}
+		out[i] = p
+	}
+	return out
 }

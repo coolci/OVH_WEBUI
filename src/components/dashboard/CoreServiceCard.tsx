@@ -50,8 +50,8 @@ interface CoreServiceCardProps {
 export function CoreServiceCard({ stats, version, update }: CoreServiceCardProps) {
   const safeUpdateUrl = safeHttpsUrl(update?.url);
   return (
-    <Card className="surface-card rounded-2xl overflow-hidden border-border/80 shadow-sm">
-      <CardContent className="p-3.5 sm:p-5">
+    <Card className="surface-card rounded-xl overflow-hidden border-border/80 h-full flex flex-col">
+      <CardContent className="p-4 sm:p-5 flex-1 flex flex-col">
         <div className="flex items-center gap-2 mb-3.5">
           <CheckCheck className="w-4 h-4 text-primary" />
           <h2 className="text-[14px] sm:text-[15px] font-semibold text-foreground">核心服务感知</h2>

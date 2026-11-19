@@ -309,14 +309,7 @@ func runPoller(state *app.State, onUpdate func(map[string]interface{}), kick <-c
 
 		for _, u := range updates {
 			id := ParseUpdateID(u["update_id"])
-			func() {
-				defer func() {
-					if rec := recover(); rec != nil {
-						state.Logger.Error(fmt.Sprintf("处理 Telegram update 崩溃: %v", rec), "telegram")
-					}
-				}()
-				onUpdate(u)
-			}()
+			handleUpdateWithDeadline(state, onUpdate, u, id)
 			if id >= offset {
 				offset = id + 1
 			}
@@ -326,6 +319,31 @@ func runPoller(state *app.State, onUpdate func(map[string]interface{}), kick <-c
 			})
 		}
 		storeOffset(state, token, offset)
+	}
+}
+
+// handleSlowAfter 单条 update 处理超过该时长就放行后续消息，避免一次慢查 OVH 阻塞后面所有按钮点击。
+var handleSlowAfter = 10 * time.Second
+
+// handleUpdateWithDeadline 处理单条 Telegram update；若超过 handleSlowAfter 仍未返回，
+// 放行后续 update，慢操作继续在后台完成（含 panic 恢复）。
+func handleUpdateWithDeadline(state *app.State, onUpdate func(map[string]interface{}), u map[string]interface{}, id int64) {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer func() {
+			if rec := recover(); rec != nil && state != nil && state.Logger != nil {
+				state.Logger.Error(fmt.Sprintf("处理 Telegram update %d 崩溃: %v", id, rec), "telegram")
+			}
+		}()
+		onUpdate(u)
+	}()
+	select {
+	case <-done:
+	case <-time.After(handleSlowAfter):
+		if state != nil && state.Logger != nil {
+			state.Logger.Warn(fmt.Sprintf("Telegram update %d 处理超过 %s，先继续处理后续消息（该条仍在后台执行）", id, handleSlowAfter), "telegram")
+		}
 	}
 }
 

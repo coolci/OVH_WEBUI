@@ -263,3 +263,11 @@ EP-264,F01b,P3,POST,/api/ovh/carts/cleanup,/ovh/carts/cleanup,done,go-test:./bac
 EP-265,F01b,P3,GET,/api/ovh/security/credentials,/ovh/security/credentials,done,go-test:./backend/internal/handlers#TestGetAccountOrders,2026-11-15T17:50:48Z
 EP-266,F01b,P3,DELETE,/api/ovh/security/credentials/:credentialId,/ovh/security/credentials/:credentialId,done,go-test:./backend/internal/handlers#TestGetAccountOrders,2026-11-15T17:50:48Z
 EP-267,F01b,P3,GET,/api/ovh/security/api-logs,/ovh/security/api-logs,done,go-test:./backend/internal/handlers#TestGetAccountOrders,2026-11-15T17:50:48Z
+EP-268,F04,P2,DELETE,/api/purchase-history/:id,/purchase-history/:id,done,go-test:./backend/internal/handlers#TestRemovePurchaseHistoryOnlyDeletesExactLocalID,2026-11-19T06:20:00Z
+EP-269,F04,P2,GET,/api/purchase-history/:id/cancellation,/purchase-history/:id/cancellation,done,go-test:./backend/internal/handlers#TestHistoryAbandonAndRestore,2026-11-19T06:20:00Z
+EP-270,F04,P2,POST,/api/purchase-history/:id/cancellation,/purchase-history/:id/cancellation,done,go-test:./backend/internal/handlers#TestHistoryRetractionSingleSubmission,2026-11-19T06:20:00Z
+EP-271,F01b,P3,POST,/api/ovh/account/orders/:order_id/pay-balance,/ovh/account/orders/:order_id/pay-balance,done,go-test:./backend/internal/handlers#TestOrderPaymentWithBalance,2026-11-19T06:20:00Z
+EP-272,F01b,P3,GET,/api/ovh/account/topup,/ovh/account/topup,done,go-test:./backend/internal/handlers#TestTopupSendsCentsAndValidates,2026-11-19T06:20:00Z
+EP-273,F01b,P3,POST,/api/ovh/account/topup,/ovh/account/topup,done,go-test:./backend/internal/handlers#TestTopupSendsCentsAndValidates,2026-11-19T06:20:00Z
+EP-274,F01b,P3,POST,/api/ovh/account/credit-code,/ovh/account/credit-code,done,go-test:./backend/internal/handlers#TestRedeemCreditCode,2026-11-19T06:20:00Z
+EP-275,F08,P2,GET,/api/server-control/:service_name/pricing,/server-control/:service_name/pricing,done,go-test:./backend/internal/handlers#TestServerPricingSumsOptionsAndCatalogSetupFee,2026-11-19T06:20:00Z

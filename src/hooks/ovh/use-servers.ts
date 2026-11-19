@@ -33,6 +33,8 @@ export interface ServerPlan {
     countryCode: string;
   }[];
   prerelease?: boolean;
+  /** 本次目录刷新未能读到该型号库存，机房列表沿用上一份缓存 */
+  stockStale?: boolean;
   /** 本程序首次在目录里看到它的 unix 秒;0 / 缺省 = 开始记录前就已在售 */
   firstSeen?: number;
 }
@@ -68,25 +70,34 @@ export async function fetchServers(opts: {
   };
 }
 
+/** 服务器目录实际使用的账户 ID：与 useServers 保持同一规则，供缓存徽章等配套组件复用。 */
+export function useCatalogAccountId(explicitAccountId?: string): string {
+  const [activeId] = useActiveServerControlAccount();
+  const { data: accounts } = useAccounts();
+  const resolvedId = explicitAccountId || activeId;
+  return findAccountByID(accounts, resolvedId) ? resolvedId : "";
+}
+
 /** 目录到期后在可见页面自动刷新；旧缓存回退和网络失败均自动退避重试。 */
 export function useServers(showApiServers: boolean = true, explicitAccountId?: string) {
   const qc = useQueryClient();
   // 目录跟着当前账户走:后端 /api/servers 支持 ?account=,按该账户的 zone(子公司)+ endpoint
   // 取目录并单独分桶缓存。只在这个 id 确实存在于账户列表里时才带上。
-  const [activeId] = useActiveServerControlAccount();
-  const { data: accounts, isPending: accountsPending } = useAccounts();
-  const resolvedId = explicitAccountId || activeId;
-  const accountId = findAccountByID(accounts, resolvedId) ? resolvedId : "";
+  const { isPending: accountsPending } = useAccounts();
+  const accountId = useCatalogAccountId(explicitAccountId);
   const key = qk.servers.list(showApiServers, accountId);
   const statusKey = [...key, "refresh-status"];
 
   const refresh = catalogRefresh<ServerPlan[]>(qc, key, async () => {
     const hasPriorFailure = Boolean(qc.getQueryData<CatalogRefreshStatus>(statusKey)?.failures);
-    return fetchServers({
+    const out = await fetchServers({
       showApiServers,
       accountId,
       forceRefresh: hasPriorFailure,
     });
+    // 列表加载可能触发后端重拉目录，同步刷新该账户视角的缓存信息。
+    qc.invalidateQueries({ queryKey: ["settings", "cache-info"] });
+    return out;
   });
 
   // 只用来订阅 catalogRefresh 写进缓存的刷新状态,自己从不取数。

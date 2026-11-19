@@ -278,7 +278,11 @@ func PauseSubscription(state *app.State, mon *monitor.Monitor) gin.HandlerFunc {
 			key = *body.OptionsKey
 		}
 		state.Logger.Info(fmt.Sprintf("订阅 %s(%s) 已%s监控", planCode, key, map[bool]string{true: "暂停", false: "恢复"}[paused]), "monitor")
-		c.JSON(http.StatusOK, gin.H{"status": "success", "paused": paused, "pausedTasks": pausedTasks})
+		resp := gin.H{"status": "success", "paused": paused, "pausedTasks": pausedTasks}
+		if !paused {
+			resp["heldTaskIds"] = mon.HeldTasks(planCode, body.OptionsKey)
+		}
+		c.JSON(http.StatusOK, resp)
 	}
 }
 

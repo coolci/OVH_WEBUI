@@ -1915,6 +1915,29 @@
       ]
     }
   },
+  "GET /me/credit/balance/{balanceName}": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "me.credit.Balance",
+      "params": [
+        "path:balanceName:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "me.credit.Balance",
+      "params": [
+        "path:balanceName:string:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "me.credit.Balance",
+      "params": [
+        "path:balanceName:string:true"
+      ]
+    }
+  },
   "GET /me/notification/email/history": {
     "CA": {
       "status": "PRODUCTION",
@@ -2098,6 +2121,32 @@
       "response": "billing.order.OrderStatusEnum",
       "params": [
         "path:orderId:long:true"
+      ]
+    }
+  },
+  "GET /me/ovhAccount": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "string[]"
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "string[]"
+    }
+  },
+  "GET /me/ovhAccount/{ovhAccountId}": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "billing.OvhAccount",
+      "params": [
+        "path:ovhAccountId:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "billing.OvhAccount",
+      "params": [
+        "path:ovhAccountId:string:true"
       ]
     }
   },
@@ -3740,6 +3789,55 @@
       ]
     }
   },
+  "POST /me/credit/code": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "me.credit.balance.Movement",
+      "params": [
+        "body::me.credit.code.Redeem:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "me.credit.balance.Movement",
+      "params": [
+        "body::me.credit.code.Redeem:true"
+      ]
+    },
+    "US": {
+      "status": "PRODUCTION",
+      "response": "me.credit.balance.Movement",
+      "params": [
+        "body::me.credit.code.Redeem:true"
+      ]
+    }
+  },
+  "POST /me/order/{orderId}/balance": {
+    "CA": {
+      "status": "BETA",
+      "response": "billing.CreditBalance",
+      "params": [
+        "body:balanceName:string:true",
+        "path:orderId:long:true"
+      ]
+    },
+    "EU": {
+      "status": "BETA",
+      "response": "billing.CreditBalance",
+      "params": [
+        "body:balanceName:string:true",
+        "path:orderId:long:true"
+      ]
+    },
+    "US": {
+      "status": "BETA",
+      "response": "billing.order.credit.Balance",
+      "params": [
+        "body::billing.order.BalanceCreate:true",
+        "path:orderId:long:true"
+      ]
+    }
+  },
   "POST /me/order/{orderId}/pay": {
     "CA": {
       "params": [
@@ -3783,6 +3881,24 @@
         "body:comment:text:false",
         "body:reason:billing.order.RetractionReasonEnum:true",
         "path:orderId:long:true"
+      ]
+    }
+  },
+  "POST /me/ovhAccount/{ovhAccountId}/creditOrder": {
+    "CA": {
+      "status": "PRODUCTION",
+      "response": "billing.Order",
+      "params": [
+        "body:amount:long:true",
+        "path:ovhAccountId:string:true"
+      ]
+    },
+    "EU": {
+      "status": "PRODUCTION",
+      "response": "billing.Order",
+      "params": [
+        "body:amount:long:true",
+        "path:ovhAccountId:string:true"
       ]
     }
   },

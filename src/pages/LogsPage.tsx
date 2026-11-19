@@ -98,7 +98,7 @@ function LogsPage() {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
 
   return (
-    <div className="space-y-5 sm:space-y-6">
+    <div className="space-y-5">
       <PageHeader
         icon={FileText}
         title="系统日志"
@@ -106,8 +106,9 @@ function LogsPage() {
         action={
           <div className="flex items-center gap-2">
             <Button
+              variant="outline"
               size="sm"
-              className="h-8 gap-1.5 text-xs font-medium rounded-lg shadow-sm px-3"
+              className="h-8 gap-1.5 text-xs font-medium rounded-lg border-border/80 hover:bg-secondary px-3"
               onClick={() => logs.refetch()}
               disabled={logs.isFetching}
               title="刷新系统日志"
@@ -131,15 +132,15 @@ function LogsPage() {
       />
 
       <Card className="surface-card rounded-xl border-border">
-        <CardContent className="p-3.5 sm:p-5">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:items-center">
+        <CardContent className="p-3 sm:p-3.5">
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-[1fr_140px_140px_auto] lg:items-center">
             <div className="relative sm:col-span-2 lg:col-span-1">
-              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="搜索消息 / 来源…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="rounded-lg pl-9 h-8 text-xs bg-background/50 border-border/80 focus-visible:ring-1 focus-visible:ring-primary/40"
+                className="rounded-lg pl-8 h-8 text-xs bg-background/60 border-border/80 focus-visible:ring-1 focus-visible:ring-primary/40"
               />
             </div>
             <Select value={levelFilter} onValueChange={setLevelFilter}>

@@ -176,6 +176,7 @@ export function EditQueueDialog({ open, onOpenChange, item }: EditQueueDialogPro
     try {
       await update.mutateAsync({
         id: item.id,
+        wasRunning: item.status === "running" || item.status === "pending",
         datacenter: apiDatacenterCode(datacenter),
         options: parsedOptions,
         retryInterval: intervalNum,

@@ -6,8 +6,8 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   // dist / artifacts 是构建与发布产物(不进 Git),不参与 lint
-  // scratch/*/source 是本地打包时复制出来的源码快照(不进 Git),不参与 lint
-  { ignores: ["dist", "artifacts", "scratch/*/source"] },
+  // scratch/** 是本地临时检查脚本/打包快照,不参与 lint
+  { ignores: ["dist", "artifacts", "scratch/**"] },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ["**/*.{ts,tsx}"],

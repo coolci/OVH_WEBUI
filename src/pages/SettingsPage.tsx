@@ -115,27 +115,29 @@ function SettingsPage() {
   const savableSection = active === "password" || (isConfigSection && loaded);
 
   return (
-    <div className="space-y-3 sm:space-y-6">
+    <div className="space-y-5">
       <PageHeader
         icon={SettingsIcon}
         title={t("settings.title")}
         description={t("settings.description")}
         action={
           <Button
+            size="sm"
+            className="h-8 text-xs font-medium gap-1.5 rounded-lg shadow-sm px-3"
             onClick={onSave}
             disabled={save.isPending || !savableSection}
             title={savableSection ? undefined : t("settings.saveDisabledHint")}
           >
-            <Save className="w-4 h-4" />
+            <Save className="w-3.5 h-3.5" />
             {save.isPending ? t("settings.saving") : t("settings.saveButton")}
           </Button>
         }
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-[200px_1fr] gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-[216px_1fr] gap-4 lg:gap-5 items-start">
         <div className="relative lg:contents">
           <div className="pointer-events-none absolute -right-3 top-0 bottom-0 w-10 bg-gradient-to-l from-background via-background/80 to-transparent lg:hidden z-10" />
-          <nav className="lg:space-y-1 flex lg:flex-col overflow-x-auto lg:overflow-visible gap-1 lg:gap-0 -mx-3 px-3 lg:mx-0 lg:px-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <nav className="lg:space-y-1 flex lg:flex-col overflow-x-auto lg:overflow-visible gap-1 lg:gap-0.5 -mx-3 px-3 lg:mx-0 lg:px-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {SECTIONS.map((s) => {
               const Icon = s.icon;
               const a = active === s.id;
@@ -145,14 +147,14 @@ function SettingsPage() {
                   type="button"
                   onClick={() => setActive(s.id)}
                   className={cn(
-                    "flex items-center gap-2 px-3 py-2 rounded-md text-[13px] transition-colors whitespace-nowrap flex-shrink-0",
+                    "flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] transition-colors whitespace-nowrap flex-shrink-0",
                     "lg:w-full lg:border-l-2",
                     a
-                      ? "bg-secondary text-foreground font-medium lg:border-l-foreground"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground lg:border-l-transparent"
+                      ? "bg-primary/10 text-primary font-semibold lg:border-l-primary"
+                      : "text-muted-foreground hover:bg-muted/70 hover:text-foreground lg:border-l-transparent"
                   )}
                 >
-                  <Icon className="w-4 h-4" />
+                  <Icon className="w-4 h-4 shrink-0" />
                   {t(s.label)}
                 </button>
               );
@@ -160,8 +162,8 @@ function SettingsPage() {
           </nav>
         </div>
 
-        <Card>
-          <CardContent className="p-3 sm:p-6">
+        <Card className="surface-card rounded-xl border-border">
+          <CardContent className="p-4 sm:p-6">
             {cfg.isPending ? (
               <Skeleton className="h-64 rounded-2xl" />
             ) : cfg.isError && active !== "password" && active !== "appearance" && active !== "app" && active !== "accounts" && active !== "cache" ? (

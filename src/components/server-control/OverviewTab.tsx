@@ -1,9 +1,11 @@
 import { useState, useMemo } from "react";
-import { Cpu, HardDrive, MemoryStick, MapPin, Globe, Wifi, AlertTriangle, Sparkles, ArrowRight, PartyPopper, Edit2 } from "lucide-react";
+import { Cpu, HardDrive, MemoryStick, MapPin, Globe, Wifi, AlertTriangle, Sparkles, ArrowRight, PartyPopper, Edit2, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ReverseDnsDialog } from "./ReverseDnsDialog";
-import type { OwnedServer, HardwareLotteryItem } from "@/hooks/use-server-control";
-import { useServerHardware, useServerIps, useServerNetworkInterfaces, useServerReverseDns } from "@/hooks/use-server-control";
+import type { OwnedServer, HardwareLotteryItem, ServerPricing } from "@/hooks/use-server-control";
+import { useServerHardware, useServerIps, useServerNetworkInterfaces, useServerReverseDns, useServerPricing } from "@/hooks/use-server-control";
+import { fmtMoney } from "@/i18n/format";
+import { errorMessage } from "@/lib/api-error";
 import { useHideIp, maskSensitive } from "@/hooks/use-hide-ip";
 import { Skeleton } from "@/components/common/Skeleton";
 import { PartialNotice, DetailErrorTag } from "@/components/common/PartialNotice";
@@ -17,6 +19,7 @@ export function OverviewTab({ server, accountId: propAccountId }: { server: Owne
   const { t } = useTranslation();
   const accountId = useScopedServerAccountId(propAccountId || server.accountId);
   const hw = useServerHardware(server.serviceName, accountId);
+  const pricing = useServerPricing(server.serviceName, accountId);
   const ips = useServerIps(server.serviceName, accountId);
   const interfaces = useServerNetworkInterfaces(server.serviceName, accountId);
   const reverseQ = useServerReverseDns(server.serviceName, accountId);
@@ -112,12 +115,12 @@ export function OverviewTab({ server, accountId: propAccountId }: { server: Owne
                   <span className="font-medium text-foreground/80">{t(`maint.overview.lottery.kind.${i.kind}`)}</span>
                   ：{i.ordered} → <span className="font-semibold text-amber-600 dark:text-amber-300">{i.actual}</span>
                   {i.gainPct && i.gainPct >= 1 && (
-                    <span className="ml-1.5 inline-flex items-center px-1.5 py-0.2 rounded text-[10px] bg-amber-500/15 text-amber-600 dark:text-amber-400 font-mono">
+                    <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 leading-none rounded text-[10px] bg-amber-500/15 text-amber-600 dark:text-amber-400 font-mono">
                       +{Math.round(i.gainPct)}%
                     </span>
                   )}
                   {i.mediaUp && (
-                    <span className="ml-1.5 inline-flex items-center px-1.5 py-0.2 rounded text-[10px] bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-mono">
+                    <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 leading-none rounded text-[10px] bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-mono">
                       {t("maint.overview.lottery.gainMedia")}
                     </span>
                   )}
@@ -128,17 +131,18 @@ export function OverviewTab({ server, accountId: propAccountId }: { server: Owne
         </div>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3">
-        <InfoCard icon={<Cpu className="w-4 h-4" />} label={t("maint.overview.info.cpu")} value={cpuText} loading={hw.isPending} won={wonOf("cpu")} />
-        <InfoCard icon={<MemoryStick className="w-4 h-4" />} label={t("maint.overview.info.mem")} value={memText} loading={hw.isPending} won={wonOf("memory")} />
-        <InfoCard icon={<HardDrive className="w-4 h-4" />} label={t("maint.overview.info.disk")} value={diskText} loading={hw.isPending} won={wonOf("disk")} />
-        <InfoCard icon={<MapPin className="w-4 h-4" />} label={t("maint.overview.info.dc")} value={(server.datacenter || "—").toUpperCase()} />
+      <div className="grid grid-cols-2 md:grid-cols-6 xl:grid-cols-5 gap-2.5 sm:gap-3">
+        <InfoCard className="md:col-span-2 xl:col-span-1" icon={<Cpu className="w-4 h-4" />} label={t("maint.overview.info.cpu")} value={cpuText} loading={hw.isPending} won={wonOf("cpu")} />
+        <InfoCard className="md:col-span-2 xl:col-span-1" icon={<MemoryStick className="w-4 h-4" />} label={t("maint.overview.info.mem")} value={memText} loading={hw.isPending} won={wonOf("memory")} />
+        <InfoCard className="md:col-span-2 xl:col-span-1" icon={<HardDrive className="w-4 h-4" />} label={t("maint.overview.info.disk")} value={diskText} loading={hw.isPending} won={wonOf("disk")} />
+        <InfoCard className="md:col-span-3 xl:col-span-1" icon={<MapPin className="w-4 h-4" />} label={t("maint.overview.info.dc")} value={(server.datacenter || "—").toUpperCase()} />
+        <CostInfoCard className="col-span-2 md:col-span-3 xl:col-span-1" pricing={pricing.data} loading={pricing.isPending} error={pricing.isError ? pricing.error : null} />
       </div>
 
       {/* 网络：IP 列表 + 接口 + MRTG 流量 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 sm:gap-4">
         {/* IP 列表 */}
-        <div className="border border-border rounded-2xl overflow-hidden">
+        <div className="surface-card rounded-xl overflow-hidden">
           <div className="px-4 py-3 border-b border-border flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Globe className="w-4 h-4 text-muted-foreground" />
@@ -195,7 +199,7 @@ export function OverviewTab({ server, accountId: propAccountId }: { server: Owne
         </div>
 
         {/* 网卡接口 */}
-        <div className="border border-border rounded-2xl overflow-hidden">
+        <div className="surface-card rounded-xl overflow-hidden">
           <div className="px-4 py-3 border-b border-border flex items-center gap-2">
             <Wifi className="w-4 h-4 text-muted-foreground" />
             <h3 className="text-sm font-semibold">{t("maint.overview.nicTitle")}</h3>
@@ -250,6 +254,7 @@ function InfoCard({
   value,
   loading,
   won,
+  className,
 }: {
   icon: React.ReactNode;
   label: string;
@@ -257,15 +262,17 @@ function InfoCard({
   loading?: boolean;
   /** 该项中奖明细（实配优于订购），有值时卡片高亮 + 中奖徽标 */
   won?: HardwareLotteryItem;
+  className?: string;
 }) {
   const { t } = useTranslation();
   const tip = won ? t("maint.overview.lottery.tip", { ordered: won.ordered, actual: won.actual }) : value;
   return (
     <div
       className={
-        won
+        (won
           ? "relative overflow-hidden border border-amber-400/60 rounded-xl px-3.5 py-3 flex items-center gap-3 min-w-0 bg-gradient-to-br from-amber-400/10 via-transparent to-orange-500/10 shadow-[0_0_0_1px_rgba(251,191,36,0.15),0_4px_18px_-6px_rgba(251,191,36,0.45)] transition-shadow hover:shadow-[0_0_0_1px_rgba(251,191,36,0.35),0_6px_24px_-6px_rgba(251,191,36,0.6)]"
-          : "border border-border rounded-xl px-3.5 py-3 flex items-center gap-3 min-w-0"
+          : "surface-card rounded-xl px-3.5 py-3 flex items-center gap-3 min-w-0") +
+        (className ? ` ${className}` : "")
       }
       title={tip}
     >
@@ -301,6 +308,83 @@ function InfoCard({
                 <span className="font-semibold text-amber-600 dark:text-amber-300 truncate">{won.actual}</span>
               </div>
             )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** 续费周期文本格式化（ISO8601 duration，如 P1M / P12M / P1Y） */
+function formatRenewalPeriod(
+  duration: string,
+  t: ReturnType<typeof useTranslation>["t"]
+): string {
+  const m = /^P(\d+)([MY])$/i.exec(duration || "");
+  if (!m) return "";
+  const n = Number(m[1]);
+  const unit = m[2].toUpperCase();
+  if (unit === "Y") return n === 1 ? t("maint.overview.info.perYear") : t("maint.overview.info.perYears", { n });
+  if (n === 12) return t("maint.overview.info.perYear");
+  return n === 1 ? t("maint.overview.info.perMonth") : t("maint.overview.info.perMonths", { n });
+}
+
+/** 服务器费用信息格：续费价格（主机 + 附加选项，不含税）+ 公开目录安装费 */
+function CostInfoCard({
+  pricing,
+  loading,
+  error,
+  className,
+}: {
+  pricing?: ServerPricing;
+  loading: boolean;
+  error: unknown;
+  className?: string;
+}) {
+  const { t } = useTranslation();
+  const r = pricing?.renewal;
+  const inst = pricing?.installation;
+
+  const mainText = r
+    ? `${fmtMoney(r.amount, r.currency)} ${formatRenewalPeriod(r.duration, t)}${r.partial ? "+" : ""}`.trim()
+    : "—";
+  const setupText = inst?.ok && inst.amount != null && inst.currency
+    ? t("maint.overview.info.setup", { amount: `${fmtMoney(inst.amount, inst.currency)}${inst.partial ? "+" : ""}` })
+    : inst && !inst.ok
+      ? t("maint.overview.info.setupUnknown")
+      : "";
+
+  let tooltip = "";
+  if (error) {
+    tooltip = t("maint.overview.info.priceFailed", { detail: errorMessage(error) });
+  } else if (r) {
+    const withTax =
+      inst?.ok && inst.amount != null && inst.currency
+        ? fmtMoney(inst.amount + (inst.tax || 0), inst.currency)
+        : "—";
+    tooltip = t("maint.overview.info.priceTitle", {
+      options: r.options > 0 ? t("maint.overview.info.priceOptions", { n: r.options }) : "",
+      withTax,
+    });
+    if (r.partial) tooltip += " " + t("maint.overview.info.pricePartial");
+  }
+
+  return (
+    <div
+      className={`surface-card rounded-xl px-3.5 py-3 flex items-center gap-3 min-w-0 ${className || "col-span-2 lg:col-span-1"}`}
+      title={tooltip || undefined}
+    >
+      <div className="w-9 h-9 rounded-lg bg-secondary flex items-center justify-center flex-shrink-0">
+        <Wallet className="w-4 h-4" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-[11px] text-muted-foreground truncate">{t("maint.overview.info.cost")}</div>
+        {loading ? (
+          <Skeleton className="h-4 w-24 mt-1" />
+        ) : (
+          <>
+            <div className="text-[13px] font-semibold tabular-nums truncate">{mainText}</div>
+            {setupText && <div className="text-[10.5px] text-muted-foreground tabular-nums truncate">{setupText}</div>}
           </>
         )}
       </div>

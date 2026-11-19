@@ -193,6 +193,7 @@ func (s *State) ResumeQueueItem(id, status string) (types.QueueItem, error) {
 		}
 		next := item
 		next.Status, next.UpdatedAt = status, types.NowISO()
+		next.StopReason = ""
 		if item.Status != "running" && item.Status != "pending" {
 			next.LastCheckTime = 0
 		}

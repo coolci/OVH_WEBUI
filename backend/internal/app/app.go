@@ -775,10 +775,14 @@ func (s *State) WakeQueueProcessor() {
 }
 
 var ErrQueueNotFound = errors.New("任务不存在")
-var ErrQueueNotEditable = errors.New("请先暂停任务再修改；已完成的任务不能修改")
+var ErrQueueNotEditable = errors.New("已下单的任务不能修改；如需再买，请使用「再抢一单」新建任务")
 
-// UpdateQueueItem 仅编辑暂停/失败任务,落库成功后才发布新配置。
-// duration 为 nil 表示不改购买时长(旧客户端不传该字段)。
+// UpdateQueueItem 编辑任务配置，落库成功后才发布新配置。
+//
+// 运行中 / 待执行的任务可直接修改，无需先暂停：落库后取消旧配置正在进行的那一轮，
+// 保持原运行状态并立即唤醒队列处理器，下一轮立刻按新配置执行；
+// 暂停 / 失败的任务修改后保持暂停；已下单（completed）的任务禁止修改。
+// duration 为 nil 表示不改购买时长（兼容旧客户端）。
 func (s *State) UpdateQueueItem(id, datacenter string, options []string, retryInterval int, autoPay bool, coupon string, duration *string) error {
 	var selectedDuration string
 	if duration != nil {
@@ -800,9 +804,10 @@ func (s *State) UpdateQueueItem(id, datacenter string, options []string, retryIn
 		if next[i].ID != id {
 			continue
 		}
-		if next[i].Status != "paused" && next[i].Status != "failed" {
+		if next[i].Status == "completed" {
 			return ErrQueueNotEditable
 		}
+		active := next[i].Status == "running" || next[i].Status == "pending"
 		next[i].Datacenter = datacenter
 		next[i].Options = append([]string(nil), options...)
 		next[i].RetryInterval = retryInterval
@@ -811,7 +816,11 @@ func (s *State) UpdateQueueItem(id, datacenter string, options []string, retryIn
 		if duration != nil {
 			next[i].Duration = selectedDuration
 		}
-		next[i].Status = "paused"
+		if !active {
+			next[i].Status = "paused"
+		} else {
+			next[i].StopReason = ""
+		}
 		next[i].FailureCount = 0
 		next[i].LastCheckTime = 0
 		next[i].UpdatedAt = types.NowISO()
@@ -821,6 +830,13 @@ func (s *State) UpdateQueueItem(id, datacenter string, options []string, retryIn
 			}
 		}
 		s.Queue = next
+		if active {
+			if err := s.SetAutomaticOrderBlockedLocked(next[i], false); err != nil && s.Logger != nil {
+				s.Logger.Warn("任务已按新配置继续，自动建单停止记录未能更新: "+err.Error(), "queue")
+			}
+			s.UnregisterTaskCancel(id)
+			s.WakeQueueProcessor()
+		}
 		return nil
 	}
 	return ErrQueueNotFound

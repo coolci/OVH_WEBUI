@@ -3163,6 +3163,42 @@ paths:
                   status:
                     type: string
 
+  /server-control/{service_name}/pricing:
+    get:
+      summary: Get server renewal pricing (with add-on options) and catalog setup fee
+      operationId: GetServerPricing
+      tags:
+        - F08
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: service_name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: account
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Renewal pricing and setup fee summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  planCode:
+                    type: string
+                  renewal:
+                    type: object
+                  installation:
+                    type: object
+
   /server-control/{service_name}/serviceinfo/renewal:
     put:
       summary: Update server renewal policy (auto / manual / delete)
@@ -6310,6 +6346,145 @@ paths:
       responses:
         '200':
           description: Payment submitted
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /ovh/account/orders/{order_id}/pay-balance:
+    post:
+      summary: Pay an unpaid OVH order in full from an eligible credit balance
+      operationId: PayAccountOrderWithBalance
+      tags:
+        - F01b
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: order_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: account
+          in: query
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - confirm
+                - balanceName
+                - amount
+                - currency
+              properties:
+                confirm:
+                  type: boolean
+                balanceName:
+                  type: string
+                amount:
+                  type: number
+                currency:
+                  type: string
+      responses:
+        '200':
+          description: Balance payment submitted or completed
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /ovh/account/topup:
+    get:
+      summary: List prepaid OVH accounts eligible for top-up (EU/CA only)
+      operationId: GetTopupInfo
+      tags:
+        - F01b
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: account
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Prepaid top-up accounts and support flag
+          content:
+            application/json:
+              schema:
+                type: object
+    post:
+      summary: Create an unpaid prepaid account top-up order (EU/CA only)
+      operationId: CreateTopupOrder
+      tags:
+        - F01b
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: account
+          in: query
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - confirm
+                - ovhAccountId
+                - amount
+              properties:
+                confirm:
+                  type: boolean
+                ovhAccountId:
+                  type: string
+                amount:
+                  type: number
+      responses:
+        '200':
+          description: Top-up order created
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /ovh/account/credit-code:
+    post:
+      summary: Redeem an OVH voucher or promo code into account credit balance
+      operationId: RedeemCreditCode
+      tags:
+        - F01b
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: account
+          in: query
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - code
+              properties:
+                code:
+                  type: string
+      responses:
+        '200':
+          description: Voucher redeemed
           content:
             application/json:
               schema:

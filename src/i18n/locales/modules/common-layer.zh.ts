@@ -80,6 +80,11 @@ export const commonLayerZh = {
       clearFailed: "清空失败",
       intervalUpdated: "检查间隔已更新",
       intervalSetFailed: "设置失败",
+      pausedWithQueue: "已暂停监控，并连带暂停了 {{count}} 个关联抢购任务",
+      resumedNoTasks: "监控已恢复",
+      resumedWithHeld: "监控已恢复，有 {{count}} 个因暂停监控而挂起的抢购任务",
+      resumeHeldAction: "同时恢复",
+      resumeHeldDone: "已恢复 {{count}} 个抢购任务",
     },
     queue: {
       clampedWarning:

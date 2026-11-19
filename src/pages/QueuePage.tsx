@@ -46,19 +46,29 @@ function QueuePage() {
   const [searchParams] = useSearchParams();
   const createPlanCode = searchParams.get("create") || undefined;
   const createOptions = searchParams.get("options") || undefined;
-  const [showClearDialog, setShowClearDialog] = useState(false);
+  const createAccount = searchParams.get("account") || undefined;
+  const createDatacenter = searchParams.get("dc") || undefined;
+  const createDuration = searchParams.get("duration") || undefined;
+  const [clearScope, setClearScope] = useState<"all" | "completed" | "failed" | null>(null);
+  const [confirmResumeItem, setConfirmResumeItem] = useState<QueueItem | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [editingItem, setEditingItem] = useState<QueueItem | null>(null);
   const [prefillPlanCode, setPrefillPlanCode] = useState<string>("");
   const [prefillOptions, setPrefillOptions] = useState<string>("");
+  const [prefillAccountId, setPrefillAccountId] = useState<string>("");
+  const [prefillDatacenter, setPrefillDatacenter] = useState<string>("");
+  const [prefillDuration, setPrefillDuration] = useState<string>("");
 
   useEffect(() => {
     if (createPlanCode) {
       setPrefillPlanCode(createPlanCode);
       setPrefillOptions(createOptions || "");
+      setPrefillAccountId(createAccount || "");
+      setPrefillDatacenter(createDatacenter || "");
+      setPrefillDuration(createDuration || "");
       setShowCreateDialog(true);
     }
-  }, [createPlanCode, createOptions]);
+  }, [createPlanCode, createOptions, createAccount, createDatacenter, createDuration]);
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -91,8 +101,10 @@ function QueuePage() {
   const handleResumeAll = async () => {
     const pausedItems = items.filter((it) => it.status === "paused");
     if (pausedItems.length === 0) return;
+    const safeItems = pausedItems.filter((it) => !it.uncertainCheckout && it.stopReason !== "checkoutUncertain");
+    const skippedUncertain = pausedItems.length - safeItems.length;
     let okCount = 0;
-    for (const it of pausedItems) {
+    for (const it of safeItems) {
       try {
         await toggle.mutateAsync({ id: it.id, action: "resume" });
         okCount++;
@@ -102,6 +114,37 @@ function QueuePage() {
     }
     if (okCount > 0) {
       toast.success(`已恢复 ${okCount} 个任务`);
+    }
+    if (skippedUncertain > 0) {
+      toast.warning(`已跳过 ${skippedUncertain} 个「结账结果待核对」的任务，请核对 OVH 订单后逐条手动恢复`);
+    }
+  };
+
+  const handleToggleItem = (q: QueueItem) => {
+    if (q.status === "running" || q.status === "pending") {
+      toggle.mutate({ id: q.id, action: "pause" });
+      return;
+    }
+    if (q.uncertainCheckout || q.stopReason === "checkoutUncertain") {
+      setConfirmResumeItem(q);
+      return;
+    }
+    toggle.mutate({ id: q.id, action: "resume" });
+  };
+
+  const handleClearByStatus = async (status: "completed" | "failed") => {
+    const targets = items.filter((it) => it.status === status);
+    let okCount = 0;
+    for (const it of targets) {
+      try {
+        await remove.mutateAsync(it.id);
+        okCount++;
+      } catch {
+        // 单个失败由 mutation 提示，继续清理其余项
+      }
+    }
+    if (okCount > 0) {
+      toast.success(`已清理 ${okCount} 个${status === "completed" ? "已下单" : "失败"}任务`);
     }
   };
 
@@ -124,7 +167,7 @@ function QueuePage() {
   const cleanup = useBulkCleanup(filteredItems, queueCleanupTarget, "queue");
 
   return (
-    <DragSelectArea className="space-y-6" selectedKeys={cleanup.selectedKeys} onSelectionChange={cleanup.selectKeys}
+    <DragSelectArea className="space-y-5" selectedKeys={cleanup.selectedKeys} onSelectionChange={cleanup.selectKeys}
       onDeleteSelected={cleanup.requestCleanup} disabled={cleanup.locked || queue.isError || clear.isPending}>
       <PageHeader
         icon={ListOrdered}
@@ -133,22 +176,23 @@ function QueuePage() {
         action={
           <div className="flex items-center gap-2">
             <Button
-              onClick={() => setShowCreateDialog(true)}
+              variant="outline"
               size="sm"
-              className="h-8 text-xs font-medium gap-1.5 px-3 rounded-lg shadow-sm"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>新建抢购</span>
-            </Button>
-            <Button
-              size="sm"
-              className="h-8 text-xs font-medium gap-1.5 rounded-lg shadow-sm px-3"
+              className="h-8 text-xs font-medium gap-1.5 rounded-lg border-border/80 hover:bg-secondary px-3"
               onClick={() => queue.refetch()}
               disabled={queue.isFetching}
               title="刷新队列数据"
             >
               <RefreshCw className={cn("w-3.5 h-3.5", queue.isFetching && "animate-spin")} />
               <span>刷新</span>
+            </Button>
+            <Button
+              onClick={() => setShowCreateDialog(true)}
+              size="sm"
+              className="h-8 text-xs font-medium gap-1.5 px-3 rounded-lg shadow-sm"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>新建抢购</span>
             </Button>
           </div>
         }
@@ -169,14 +213,14 @@ function QueuePage() {
       )}
 
       {items.length > 0 && (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs px-1">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs px-0.5">
           <div className="text-muted-foreground font-medium flex items-center gap-1.5">
             <span>队列任务</span>
-            <span className="text-[11px] px-1.5 py-0.2 rounded-full bg-secondary text-foreground font-mono font-medium">
+            <span className="text-[11px] px-2 py-0.5 leading-none rounded-full bg-secondary text-foreground font-mono tabular-nums font-medium">
               {filteredItems.length}/{items.length}
             </span>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 flex-wrap">
             {runningCount > 0 && (
               <Button
                 variant="outline"
@@ -203,16 +247,45 @@ function QueuePage() {
                 <span>全部恢复 ({pausedCount})</span>
               </Button>
             )}
+            {(runningCount > 0 || pausedCount > 0) && (
+              <span className="hidden sm:block h-4 w-px bg-border/70 mx-0.5" aria-hidden />
+            )}
+            {completedCount > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs gap-1 px-2.5 rounded-lg border-border/80 hover:bg-secondary font-medium"
+                onClick={() => setClearScope("completed")}
+                disabled={cleanup.locked || clear.isPending || remove.isPending || queue.isError}
+                title="仅清空已下单的任务，不影响运行中与已暂停的任务"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-muted-foreground" />
+                <span>清理已下单 ({completedCount})</span>
+              </Button>
+            )}
+            {failedCount > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs gap-1 px-2.5 rounded-lg border-border/80 hover:bg-secondary font-medium"
+                onClick={() => setClearScope("failed")}
+                disabled={cleanup.locked || clear.isPending || remove.isPending || queue.isError}
+                title="仅清空失败任务，不影响运行中与已暂停的任务"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-muted-foreground" />
+                <span>清理失败 ({failedCount})</span>
+              </Button>
+            )}
             <Button
               variant="soft-destructive"
               size="sm"
               className="h-7 text-xs gap-1 px-2.5 rounded-lg"
-              onClick={() => setShowClearDialog(true)}
+              onClick={() => setClearScope("all")}
               disabled={cleanup.locked || clear.isPending || queue.isError}
-              title="清空所有队列任务"
+              title="清空全部队列任务（含运行中与已暂停）"
             >
               <Trash2 className="w-3.5 h-3.5" />
-              <span>清空队列</span>
+              <span>清空全部</span>
             </Button>
           </div>
         </div>
@@ -261,12 +334,7 @@ function QueuePage() {
               selected={cleanup.isSelected(q)}
               onSelect={() => cleanup.toggle(q)}
               selectionDisabled={cleanup.locked}
-              onToggle={() =>
-                toggle.mutate({
-                  id: q.id,
-                  action: q.status === "running" ? "pause" : "resume",
-                })
-              }
+              onToggle={() => handleToggleItem(q)}
               onDelete={() => { if (!cleanup.locked) remove.mutate(q.id); }}
               onEdit={() => setEditingItem(q)}
             />
@@ -275,24 +343,62 @@ function QueuePage() {
       )}
 
       <BulkCleanupDialog {...cleanup.dialogProps} />
-      <Dialog open={showClearDialog} onOpenChange={setShowClearDialog}>
+      <Dialog open={clearScope !== null} onOpenChange={(v) => !v && setClearScope(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>确认清空队列？</DialogTitle>
-            <DialogDescription>所有任务将被删除，此操作不可撤销。</DialogDescription>
+            <DialogTitle>
+              {clearScope === "completed"
+                ? `确认清理 ${completedCount} 个已下单任务？`
+                : clearScope === "failed"
+                  ? `确认清理 ${failedCount} 个失败任务？`
+                  : "确认清空全部队列任务？"}
+            </DialogTitle>
+            <DialogDescription>
+              {clearScope === "all"
+                ? "此操作会删除包括正在运行与已暂停在内的全部任务，且不可撤销。"
+                : "仅删除对应状态的记录，不会影响正在运行或已暂停的抢购任务，且不会取消 OVH 已有订单。"}
+            </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowClearDialog(false)}>
+            <Button variant="outline" onClick={() => setClearScope(null)}>
               取消
             </Button>
             <Button
               variant="destructive"
               onClick={() => {
-                clear.mutate();
-                setShowClearDialog(false);
+                const scope = clearScope;
+                setClearScope(null);
+                if (scope === "all") clear.mutate();
+                else if (scope === "completed" || scope === "failed") void handleClearByStatus(scope);
               }}
             >
-              确认清空
+              {clearScope === "all" ? "确认清空全部" : "确认清理"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!confirmResumeItem} onOpenChange={(v) => !v && setConfirmResumeItem(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>确认恢复「结账结果待核对」的任务？</DialogTitle>
+            <DialogDescription>
+              该任务（{confirmResumeItem?.planCode} · {confirmResumeItem?.datacenter?.toUpperCase()}）上次结账响应超时，无法确认订单是否已经创建。请确认您已前往 OVH 订单页核对无重复订单后再恢复运行。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmResumeItem(null)}>
+              取消
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                const target = confirmResumeItem;
+                setConfirmResumeItem(null);
+                if (target) toggle.mutate({ id: target.id, action: "resume" });
+              }}
+            >
+              我已核对 OVH 订单，确认恢复
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -305,11 +411,17 @@ function QueuePage() {
           if (!v) {
             setPrefillPlanCode("");
             setPrefillOptions("");
+            setPrefillAccountId("");
+            setPrefillDatacenter("");
+            setPrefillDuration("");
             navigate("/queue", { replace: true });
           }
         }}
         initialPlanCode={prefillPlanCode}
         initialOptions={prefillOptions}
+        initialAccountId={prefillAccountId}
+        initialDatacenter={prefillDatacenter}
+        initialDuration={prefillDuration}
       />
 
       <EditQueueDialog

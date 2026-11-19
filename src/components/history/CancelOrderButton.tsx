@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { XCircle } from "lucide-react";
 import { toast } from "sonner";
@@ -29,6 +29,7 @@ export function CancelOrderButton({ item }: { item: PurchaseHistory }) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("unused");
   const [comment, setComment] = useState("");
+  const submittingRef = useRef(false);
   const qc = useQueryClient();
   const path = `/purchase-history/${encodeURIComponent(item.id)}/cancellation`;
   const info = useQuery({
@@ -62,11 +63,20 @@ export function CancelOrderButton({ item }: { item: PurchaseHistory }) {
   const d = info.data;
   const canSubmit = !!d && !info.isFetching && !info.isError && (d.mode !== "unavailable" || d.canRestore);
   const label = d?.canRestore ? "撤销放弃" : d?.mode === "retract" ? "确认撤单并申请退款" : "确认放弃订单";
+  const handleSubmit = () => {
+    if (submittingRef.current || change.isPending || !canSubmit) return;
+    submittingRef.current = true;
+    change.mutate(undefined, {
+      onSettled: () => {
+        submittingRef.current = false;
+      },
+    });
+  };
   return <>
     <Button variant="ghost" size="sm" className="h-7 gap-1 px-1 text-xs text-destructive" onClick={() => { setReason("unused"); setComment(""); setOpen(true); }}>
       <XCircle className="h-3 w-3" />{item.abandonedAt ? "撤销放弃" : item.retractionState && item.retractionState !== "failed" ? "查看撤单" : "取消订单"}
     </Button>
-    <Dialog open={open} onOpenChange={(v) => { if (!change.isPending) setOpen(v); }}>
+    <Dialog open={open} onOpenChange={(v) => { if (!change.isPending && !submittingRef.current) setOpen(v); }}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{d?.canRestore ? "撤销放弃订单" : "取消订单"}</DialogTitle>
@@ -90,7 +100,7 @@ export function CancelOrderButton({ item }: { item: PurchaseHistory }) {
         </div> : null}
         <DialogFooter>
           <Button variant="outline" disabled={change.isPending} onClick={() => setOpen(false)}>关闭</Button>
-          {canSubmit && <Button variant={d?.canRestore ? "default" : "destructive"} disabled={change.isPending} onClick={() => change.mutate()}>{change.isPending ? "提交中…" : label}</Button>}
+          {canSubmit && <Button variant={d?.canRestore ? "default" : "destructive"} disabled={change.isPending} onClick={handleSubmit}>{change.isPending ? "提交中…" : label}</Button>}
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -81,6 +81,8 @@ export const qk = {
     spla: (serviceName: string, accountId: string) => ["server-control", "spla", serviceName, accountId] as const,
     serviceInfo: (serviceName: string, accountId: string) =>
       ["server-control", "service-info", serviceName, accountId] as const,
+    pricing: (serviceName: string, accountId: string) =>
+      ["server-control", "pricing", serviceName, accountId] as const,
     ips: (serviceName: string, accountId: string) => ["server-control", "ips", serviceName, accountId] as const,
     reverseDns: (serviceName: string, accountId: string) =>
       ["server-control", "reverse-dns", serviceName, accountId] as const,
@@ -161,6 +163,8 @@ export const qk = {
   account: {
     orderPayment: (accountId: string, orderId: number) => ["account", "order-payment", accountId, orderId] as const,
     info: (accountId: string) => ["account", "info", accountId] as const,
+    creditBalance: (accountId: string) => ["account", "credit-balance", accountId] as const,
+    topup: (accountId: string) => ["account", "topup", accountId] as const,
     refunds: (accountId: string) => ["account", "refunds", accountId] as const,
     emails: (accountId: string) => ["account", "emails", accountId] as const,
   },
@@ -187,7 +191,7 @@ export const qk = {
   // 设置
   settings: {
     config: () => ["settings", "config"] as const,
-    cacheInfo: () => ["settings", "cache-info"] as const,
+    cacheInfo: (account?: string) => (account ? (["settings", "cache-info", account] as const) : (["settings", "cache-info"] as const)),
     telegramPoller: () => ["settings", "telegram-poller"] as const,
   },
 

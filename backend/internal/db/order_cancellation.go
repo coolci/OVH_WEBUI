@@ -29,6 +29,26 @@ func (db *DB) GetOrderCancellation(accountID string, orderID int64) (OrderCancel
 	return action, err
 }
 
+// ListOrderCancellations 一次性读取全部订单取消/放弃记录，消除历史列表逐条查库的 N+1 开销。
+func (db *DB) ListOrderCancellations() (map[string]OrderCancellation, error) {
+	var rows []struct {
+		Key   string `db:"key"`
+		Value string `db:"value"`
+	}
+	if err := db.Select(&rows, `SELECT key, value FROM kv WHERE key LIKE 'order-cancellation:%'`); err != nil {
+		return nil, err
+	}
+	out := make(map[string]OrderCancellation, len(rows))
+	for _, r := range rows {
+		var action OrderCancellation
+		if err := json.Unmarshal([]byte(r.Value), &action); err != nil {
+			return nil, err
+		}
+		out[r.Key] = action
+	}
+	return out, nil
+}
+
 func cancellationInTx(tx *sqlx.Tx, key string) (OrderCancellation, error) {
 	var action OrderCancellation
 	var raw string

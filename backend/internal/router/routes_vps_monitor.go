@@ -49,6 +49,10 @@ func registerVPSMonitorAndSupportRoutes(api *gin.RouterGroup, cfg Config) {
 	api.GET("/ovh/account/orders", handlers.GetAccountOrders(state))
 	api.GET("/ovh/account/orders/:order_id/payment", handlers.GetOrderPaymentOptions(state))
 	api.POST("/ovh/account/orders/:order_id/pay", handlers.PayAccountOrder(state))
+	api.POST("/ovh/account/orders/:order_id/pay-balance", handlers.PayAccountOrderWithBalance(state))
+	api.GET("/ovh/account/topup", handlers.GetTopupInfo(state))
+	api.POST("/ovh/account/topup", handlers.CreateTopupOrder(state))
+	api.POST("/ovh/account/credit-code", handlers.RedeemCreditCode(state))
 	// 官方在线客服:按选定账户申请一次性令牌,用户主动打开窗口时才调用
 	api.POST("/ovh/support/chat/session", handlers.OfficialChatSession(state))
 }

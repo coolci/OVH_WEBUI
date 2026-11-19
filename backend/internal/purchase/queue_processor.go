@@ -367,6 +367,7 @@ func processQueueLoop(loopCtx context.Context, state *app.State, purchase func(c
 							state.Queue[i].Status = "paused"
 							if outcome.CheckoutUncertain {
 								state.Queue[i].UncertainCheckout = true
+								state.Queue[i].StopReason = app.StopReasonCheckoutUncertain
 								if state.Queue[i].UncertainTime == "" {
 									state.Queue[i].UncertainTime = types.NowISO()
 								}

@@ -2,9 +2,11 @@ import { LoadFailed, LoadFailedBanner } from "@/components/common/LoadFailed";
 import { PartialNotice } from "@/components/common/PartialNotice";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Helmet } from "react-helmet-async";
-import { User, Mail, RefreshCw, FileText, Inbox, ShieldCheck, ShoppingCart, ExternalLink, CalendarClock, Undo2, type LucideIcon } from "lucide-react";
+import { User, Mail, RefreshCw, FileText, Inbox, ShieldCheck, ShoppingCart, ExternalLink, CalendarClock, Undo2, Wallet, type LucideIcon } from "lucide-react";
 import { formatDate, formatDateTime } from "@/lib/format-os";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { fmtMoney } from "@/i18n/format";
 import { cn, safeHttpsUrl } from "@/lib/utils";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
@@ -14,10 +16,12 @@ import { Chip } from "@/components/common/Chip";
 import { Skeleton } from "@/components/common/Skeleton";
 import { EmptyState } from "@/components/common/EmptyState";
 import { OrderPaymentButton } from "@/components/account/OrderPaymentButton";
+import { WalletActions } from "@/components/account/WalletActions";
 import { OfficialChat } from "@/components/support/OfficialChat";
 import { AccountSecurityPanel } from "@/components/account/AccountSecurityPanel";
 import {
   useAccountInfo,
+  useCreditBalances,
   useRefunds,
   useEmails,
   useOrders,
@@ -25,35 +29,45 @@ import {
   type EmailHistoryEntry,
 } from "@/hooks/use-account";
 
-/** 账户管理：顶部 3 张 KPI + Tabs (邮件 / 订单 / 退款) */
+/** 账户管理：顶部 KPI + 钱包余额卡 + Tabs (邮件 / 订单 / 退款 / 客服 / 安全) */
 function AccountPage() {
   const info = useAccountInfo();
+  const balances = useCreditBalances();
+  const accountId = useAccountScope();
+  const nicSub =
+    info.data?.nichandle && info.data.nichandle.toLowerCase() !== (info.data.email || "").toLowerCase()
+      ? info.data.nichandle
+      : undefined;
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <PageHeader
         icon={User}
         title="账户管理"
         description="查看和管理您的 OVH 账户信息"
         action={
           <Button
+            variant="outline"
             size="sm"
-            className="h-8 text-xs font-medium gap-1.5 rounded-lg shadow-sm px-3"
-            onClick={() => info.refetch()}
-            disabled={info.isFetching}
-            title="刷新账户信息"
+            className="h-8 text-xs font-medium gap-1.5 rounded-lg border-border/80 hover:bg-secondary px-3"
+            onClick={() => {
+              void info.refetch();
+              void balances.refetch();
+            }}
+            disabled={info.isFetching || balances.isFetching}
+            title="刷新账户与余额信息"
           >
-            <RefreshCw className={cn("w-3.5 h-3.5", info.isFetching && "animate-spin")} />
+            <RefreshCw className={cn("w-3.5 h-3.5", (info.isFetching || balances.isFetching) && "animate-spin")} />
             <span>刷新</span>
           </Button>
         }
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 items-stretch">
         <KpiCard
           icon={User}
           label="客户代码"
           value={info.data?.customerCode}
-          sub={info.data?.nichandle}
+          sub={nicSub}
           loading={info.isPending}
           badge={
             info.data && (
@@ -74,13 +88,15 @@ function AccountPage() {
         />
       </div>
 
-      <Tabs defaultValue="emails">
-        <TabsList className="grid grid-cols-3 sm:flex h-auto gap-1 p-1 bg-muted/50 rounded-lg border border-border/60">
-          <TabsTrigger value="emails" className="text-[12px] sm:text-xs px-2.5 sm:px-3.5 py-1.5 rounded-md data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm font-medium">邮件历史</TabsTrigger>
-          <TabsTrigger value="orders" className="text-[12px] sm:text-xs px-2.5 sm:px-3.5 py-1.5 rounded-md data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm font-medium">订单记录</TabsTrigger>
-          <TabsTrigger value="refunds" className="text-[12px] sm:text-xs px-2.5 sm:px-3.5 py-1.5 rounded-md data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm font-medium">退款记录</TabsTrigger>
-          <TabsTrigger value="chat" className="text-[12px] sm:text-xs px-2.5 sm:px-3.5 py-1.5 rounded-md data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm font-medium">在线客服</TabsTrigger>
-          <TabsTrigger value="security" className="text-[12px] sm:text-xs px-2.5 sm:px-3.5 py-1.5 rounded-md data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm font-medium">API 安全</TabsTrigger>
+      <WalletBalanceCard accountId={accountId} balances={balances} />
+
+      <Tabs defaultValue="emails" className="space-y-4">
+        <TabsList className="flex overflow-x-auto no-scrollbar sm:inline-flex w-full sm:w-auto justify-start h-auto gap-1 p-1 bg-muted/50 rounded-lg border border-border/60">
+          <TabsTrigger value="emails" className="shrink-0 whitespace-nowrap text-xs px-3.5 py-1.5 rounded-md data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm font-medium">邮件历史</TabsTrigger>
+          <TabsTrigger value="orders" className="shrink-0 whitespace-nowrap text-xs px-3.5 py-1.5 rounded-md data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm font-medium">订单记录</TabsTrigger>
+          <TabsTrigger value="refunds" className="shrink-0 whitespace-nowrap text-xs px-3.5 py-1.5 rounded-md data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm font-medium">退款记录</TabsTrigger>
+          <TabsTrigger value="chat" className="shrink-0 whitespace-nowrap text-xs px-3.5 py-1.5 rounded-md data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm font-medium">在线客服</TabsTrigger>
+          <TabsTrigger value="security" className="shrink-0 whitespace-nowrap text-xs px-3.5 py-1.5 rounded-md data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm font-medium">API 安全</TabsTrigger>
         </TabsList>
         <TabsContent value="emails">
           <EmailsTab />
@@ -140,6 +156,113 @@ function KpiCard({
   );
 }
 
+/** 账户钱包卡：汇总可用信用余额（按币种）+ 各项余额详情 + 即将过期提醒 + 充值/兑换券码入口 */
+function WalletBalanceCard({
+  accountId,
+  balances,
+}: {
+  accountId: string;
+  balances: ReturnType<typeof useCreditBalances>;
+}) {
+  const { t } = useTranslation();
+  const list = balances.data?.list || [];
+  const totals = new Map<string, number>();
+  for (const b of list) {
+    if (!b.usable) continue;
+    const v = b.amount?.value;
+    const cur = b.amount?.currencyCode || "";
+    if (typeof v === "number" && Number.isFinite(v) && v > 0 && cur) {
+      totals.set(cur, (totals.get(cur) || 0) + v);
+    }
+  }
+  const totalSummary = [...totals.entries()].map(([cur, v]) => fmtMoney(v, cur)).join(" + ");
+
+  return (
+    <Card className="surface-card rounded-xl border-primary/25 bg-gradient-to-br from-primary/[.05] via-card to-card">
+      <CardContent className="p-4 sm:p-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3.5">
+          <div className="flex items-start gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-lg bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0 mt-0.5">
+              <Wallet className="w-4 h-4" />
+            </div>
+            <div className="min-w-0 space-y-0.5">
+              <div className="flex items-center gap-2 flex-wrap text-xs">
+                <span className="font-semibold text-foreground">{t("account.balance.title")}</span>
+                <span className="text-muted-foreground">{t("account.balance.hint")}</span>
+              </div>
+              {balances.isPending ? (
+                <Skeleton className="h-7 w-40 mt-1" />
+              ) : balances.isError ? (
+                <div className="pt-1">
+                  <LoadFailed
+                    title={t("account.balance.loadFailed")}
+                    error={balances.error}
+                    onRetry={() => void balances.refetch()}
+                    compact
+                  />
+                </div>
+              ) : (
+                <p className="text-2xl font-bold font-mono tabular-nums tracking-tight text-foreground pt-0.5">
+                  {totalSummary || t("account.balance.empty")}
+                </p>
+              )}
+            </div>
+          </div>
+          {accountId && (
+            <div className="shrink-0 self-start sm:self-center">
+              <WalletActions accountId={accountId} />
+            </div>
+          )}
+        </div>
+        {!balances.isPending && !balances.isError && list.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-3.5 mt-3.5 border-t border-border/50">
+            {list.map((b) => {
+              const label = t(`account.payment.balanceType.${b.type}`, { defaultValue: b.type || b.balanceName });
+              const amt =
+                b.amount?.value != null && b.amount.currencyCode
+                  ? fmtMoney(b.amount.value, b.amount.currencyCode)
+                  : b.amount?.text || "—";
+              const exp = (b.expiring || []).find((e) => e.expirationDate && e.amount?.value);
+              return (
+                <div
+                  key={b.balanceName}
+                  className={cn(
+                    "rounded-lg border px-3 py-2.5 text-xs bg-background/80 flex flex-col justify-between gap-1",
+                    b.usable ? "border-border/80" : "border-border/50 opacity-60"
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium text-muted-foreground truncate">{label}</span>
+                    {!b.usable && (
+                      <Chip tone="default" className="text-[10px] shrink-0">
+                        {t("account.balance.unusable")}
+                      </Chip>
+                    )}
+                  </div>
+                  <div className="font-mono text-sm font-semibold tabular-nums text-foreground">{amt}</div>
+                  {exp?.expirationDate && exp.amount?.value != null && exp.amount.currencyCode && (
+                    <div className="text-[10.5px] text-warning tabular-nums">
+                      {t("account.balance.expiring", {
+                        amount: fmtMoney(exp.amount.value, exp.amount.currencyCode),
+                        date: formatDate(exp.expirationDate),
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {(balances.data?.failed || 0) > 0 && (
+          <p className="text-[11px] text-warning mt-2.5">
+            {t("account.balance.partial", { n: balances.data?.failed })}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function EmailsTab() {
   const accountId = useAccountScope();
   const emails = useEmails();
@@ -155,13 +278,14 @@ function EmailsTab() {
       : null;
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      <Card className="surface-card rounded-xl border-border overflow-hidden shadow-sm">
+    <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-4">
+      <Card className="surface-card rounded-xl border-border overflow-hidden">
         <div className="px-4 py-3 border-b border-border/60 flex items-center justify-between">
           <span className="text-sm font-semibold">邮件列表</span>
           <Button
+            variant="outline"
             size="sm"
-            className="h-8 text-xs font-medium gap-1.5 rounded-lg shadow-sm px-3"
+            className="h-7 text-xs font-medium gap-1.5 rounded-lg border-border/80 hover:bg-secondary px-2.5"
             onClick={() => emails.refetch()}
             disabled={emails.isFetching}
           >
@@ -242,8 +366,9 @@ function OrdersTab() {
             最近订单
           </h3>
           <Button
+            variant="outline"
             size="sm"
-            className="h-8 text-xs font-medium gap-1.5 rounded-lg shadow-sm px-3"
+            className="h-7 text-xs font-medium gap-1.5 rounded-lg border-border/80 hover:bg-secondary px-2.5"
             onClick={() => orders.refetch()}
             disabled={orders.isFetching}
           >
@@ -369,8 +494,9 @@ function RefundsTab() {
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-semibold">退款记录</h3>
           <Button
+            variant="outline"
             size="sm"
-            className="h-8 text-xs font-medium gap-1.5 rounded-lg shadow-sm px-3"
+            className="h-7 text-xs font-medium gap-1.5 rounded-lg border-border/80 hover:bg-secondary px-2.5"
             onClick={() => refunds.refetch()}
             disabled={refunds.isFetching}
           >

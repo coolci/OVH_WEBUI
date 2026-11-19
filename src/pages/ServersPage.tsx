@@ -170,7 +170,7 @@ function ServersPage() {
   const detailServer = detailPlanCode ? list.find((s) => s.planCode === detailPlanCode) || null : null;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <PageHeader
         icon={Server}
         title="服务器列表"
@@ -179,8 +179,9 @@ function ServersPage() {
           <div className="flex items-center gap-2">
             <CacheBadge status={q.refreshStatus} fetching={q.isFetching} failed={q.isError} />
             <Button
+              variant="outline"
               size="sm"
-              className="h-8 gap-1.5 text-xs font-medium rounded-lg shadow-sm px-3"
+              className="h-8 gap-1.5 text-xs font-medium rounded-lg border-border/80 hover:bg-secondary px-3"
               onClick={() => {
                 q.forceRefresh();
                 catalogQ.refetch();

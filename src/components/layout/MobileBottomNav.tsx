@@ -159,7 +159,7 @@ export function MobileBottomNav() {
                           "w-8 h-8 rounded-lg flex items-center justify-center transition-colors",
                           active ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"
                         )}>
-                          <item.icon className="h-4.5 w-4.5" />
+                          <item.icon className="h-[18px] w-[18px]" />
                         </div>
                         <span className="text-[11.5px] font-medium leading-tight">
                           {item.label}

@@ -5,21 +5,23 @@ import { Database } from "lucide-react";
 import { LoadFailed } from "@/components/common/LoadFailed";
 import { Section } from "./Section";
 import { useCacheInfo, useClearCache } from "@/hooks/use-settings";
+import { useCatalogAccountId } from "@/hooks/use-servers";
 import { useCleanupCarts } from "@/hooks/use-ovh-extra";
 import { fmtDateTime } from "@/i18n/format";
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="flex justify-between items-center gap-2">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="font-medium text-right">{value}</span>
+    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 sm:gap-4">
+      <span className="text-muted-foreground shrink-0">{label}</span>
+      <span className="font-medium sm:text-right tabular-nums min-w-0">{value}</span>
     </div>
   );
 }
 
 export function CacheSection() {
   const { t } = useTranslation();
-  const info = useCacheInfo();
+  const catalogAccountId = useCatalogAccountId();
+  const info = useCacheInfo(catalogAccountId || undefined);
   const clear = useClearCache();
   const cleanupCarts = useCleanupCarts();
 
@@ -30,7 +32,7 @@ export function CacheSection() {
   return (
     <Section title={t("settings.cache.title")}>
       {info.isPending ? (
-        <Skeleton className="h-32 rounded-2xl" />
+        <Skeleton className="h-32 rounded-xl" />
       ) : info.isError ? (
         <LoadFailed
           icon={Database}
@@ -40,15 +42,15 @@ export function CacheSection() {
           compact
         />
       ) : (
-        <div className="border border-border rounded-2xl p-4 space-y-2.5 text-[13px]">
+        <div className="border border-border rounded-xl bg-muted/20 p-4 space-y-2.5 text-[13px]">
           <Row label={t("settings.cache.memCount")} value={info.data?.backend?.serverCount ?? 0} />
           <Row label={t("settings.cache.memState")} value={info.data?.backend?.cacheValid ? t("settings.cache.valid") : t("settings.cache.expired")} />
           <Row label={t("settings.cache.sqliteCount")} value={info.data?.sqlite?.serverCount ?? 0} />
-          <Row label={t("settings.cache.sqliteRefreshed")} value={<span className="text-[12px]">{sqliteUpdated}</span>} />
+          <Row label={t("settings.cache.sqliteRefreshed")} value={<span className="text-[12px] font-mono">{sqliteUpdated}</span>} />
           <Row
             label={t("settings.cache.dbLocation")}
             value={
-              <code className="text-[11px] font-mono">
+              <code className="text-[11px] font-mono break-all text-foreground/85">
                 {info.data?.sqlite?.path || info.data?.storage?.dataDir || "—"}
               </code>
             }

@@ -93,7 +93,7 @@ function DashboardPage() {
   };
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <div className="space-y-5">
       {/* 1. 页面顶栏操作区 */}
       <PageHeader
         icon={LayoutDashboard}
@@ -146,7 +146,7 @@ function DashboardPage() {
       />
 
       {/* 3. 4 大现代化 KPI 卡片 (对齐 md:grid-cols-4) */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3.5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <KpiCard
           label="活跃队列"
           value={stats.data?.activeQueues}
@@ -219,7 +219,7 @@ function DashboardPage() {
       />
 
       {/* 5. 核心两栏作业区：活跃队列 + 系统状态 */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-stretch">
         <ActiveQueueCard
           activeQueue={activeQueue}
           totalQueueCount={queue.data?.length || 0}

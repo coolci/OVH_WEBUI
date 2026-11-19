@@ -64,7 +64,7 @@ function VPSMonitorPage() {
   const running = !!status.data?.running;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <PageHeader
         icon={MonitorDot}
         title="VPS 补货通知"
@@ -72,16 +72,9 @@ function VPSMonitorPage() {
         action={
           <div className="flex items-center gap-2">
             <Button
+              variant="outline"
               size="sm"
-              className="h-8 text-xs gap-1.5 px-3 font-medium rounded-lg shadow-sm"
-              onClick={() => setOpenAdd(true)}
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>添加订阅</span>
-            </Button>
-            <Button
-              size="sm"
-              className="h-8 text-xs gap-1.5 font-medium rounded-lg shadow-sm px-3"
+              className="h-8 text-xs gap-1.5 font-medium rounded-lg border-border/80 hover:bg-secondary px-3"
               onClick={handleRefresh}
               disabled={isRefreshing || list.isFetching || status.isFetching}
               title="刷新订阅与库存状态"
@@ -93,6 +86,14 @@ function VPSMonitorPage() {
                 )}
               />
               <span>刷新</span>
+            </Button>
+            <Button
+              size="sm"
+              className="h-8 text-xs gap-1.5 px-3 font-medium rounded-lg shadow-sm"
+              onClick={() => setOpenAdd(true)}
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>添加订阅</span>
             </Button>
           </div>
         }
@@ -133,10 +134,10 @@ function VPSMonitorPage() {
       ) : (
         <div className="space-y-3">
           {/* 订阅列表头部栏 */}
-          <div className="flex items-center justify-between text-xs px-1">
+          <div className="flex items-center justify-between text-xs px-0.5">
             <div className="text-muted-foreground font-medium flex items-center gap-1.5">
               <span>已订阅型号</span>
-              <span className="text-[11px] px-1.5 py-0.2 rounded-full bg-secondary text-foreground font-mono font-medium">
+              <span className="text-[11px] px-2 py-0.5 leading-none rounded-full bg-secondary text-foreground font-mono tabular-nums font-medium">
                 {subs.length}
               </span>
             </div>

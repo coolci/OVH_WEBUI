@@ -21,7 +21,7 @@ export function OperationBanner({
 }: OperationBannerProps) {
   const isOnline = !statsError && !!stats;
   return (
-    <div className="surface-card rounded-2xl p-3 sm:p-4 border border-border/80 bg-card/75 backdrop-blur-md shadow-sm">
+    <div className="surface-card rounded-xl px-3.5 py-3 sm:px-4 sm:py-3 border border-border/80 bg-card/85">
       {/* 桌面端流线布局 (md 及以上) */}
       <div className="hidden md:flex items-center justify-between gap-4">
         <div className="flex items-center gap-4 flex-1 min-w-0">

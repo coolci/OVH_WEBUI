@@ -460,6 +460,15 @@ func rejectTelegramActor(state *app.State, data map[string]interface{}, reason s
 	state.Logger.Warn(fmt.Sprintf("拒绝未授权的 Telegram 请求(未写入幂等表): chat_id=%s user_id=%s @%s 类型=%s 原因=%s",
 		chatID, userID, username, chatType, hint), "telegram")
 
+	// 按钮回调必须应答，否则 Telegram 客户端持续转圈、表现为「点了无反应」。
+	if cb, ok := data["callback_query"].(map[string]interface{}); ok {
+		cbHint := "无权限：该账号不在机器人授权名单内"
+		if reason == telegram.RejectNoChatID {
+			cbHint = "尚未绑定 Chat ID，请先在控制台完成配置"
+		}
+		telegram.AnswerCallback(state, idToString(cb["id"]), cbHint, true)
+	}
+
 	// 还没绑定 Chat ID 时,私聊回一句"你的 Chat ID 是多少",省得用户去别处查。
 	// 已绑定(只是不是这个人)时不回话 —— 不给陌生人暴露这个 Bot 在干什么。
 	if reason == telegram.RejectNoChatID && chatType == "private" && telegram.ShouldHintUnbound(chatID) {

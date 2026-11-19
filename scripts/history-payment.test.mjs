@@ -82,6 +82,9 @@ test("payment hooks only read when opened, poll an unconfirmed payment, and refr
   assert.equal(requests[1].path, "/ovh/account/orders/1001/pay");
   assert.equal(requests[1].options.params.account, "ordering-account");
   assert.equal(requests[1].body.confirm, true);
+  await pay.mutationFn({ kind: "balance", accountId: "ordering-account", confirm: true, amount: 39.98, currency: "EUR", balanceName: "PREPAID_ACCOUNT" });
+  assert.equal(requests[2].path, "/ovh/account/orders/1001/pay-balance");
+  assert.equal(requests[2].body.balanceName, "PREPAID_ACCOUNT");
   pay.onSettled();
   assert.ok(invalidated.some((key) => key[0] === "account"));
   assert.ok(invalidated.some((key) => key[0] === "history"));
@@ -98,15 +101,24 @@ test("payment confirmation binds the account, order, price and payment method, a
     methods: [{ id: 7, type: "CREDIT_CARD", label: "Card", default: true }],
   }, isError: false, isFetching: false };
   const pay = { isPending: false, isSuccess: false, reset() {}, mutateAsync: async (body) => requests.push(body) };
+  const refs = [];
+  let refCursor = 0;
   const imports = {
-    react: { useState: (initial) => {
-      const i = cursor++;
-      if (!(i in values)) values[i] = initial;
-      return [values[i], (v) => { values[i] = v; }];
-    } },
+    react: {
+      useState: (initial) => {
+        const i = cursor++;
+        if (!(i in values)) values[i] = initial;
+        return [values[i], (v) => { values[i] = v; }];
+      },
+      useRef: (initial) => {
+        const i = refCursor++;
+        if (!(i in refs)) refs[i] = { current: initial };
+        return refs[i];
+      },
+    },
     "react/jsx-runtime": jsx,
     "react-i18next": { useTranslation: () => ({ t: (key) => key }) },
-    "lucide-react": { CreditCard: "icon", Loader2: "icon", RefreshCw: "icon" },
+    "lucide-react": { CreditCard: "icon", Loader2: "icon", RefreshCw: "icon", Wallet: "icon" },
     "@/i18n/format": { fmtMoney: (n, code) => `${n} ${code}` },
     "@/components/ui/button": { Button: "button" },
     "@/components/ui/checkbox": { Checkbox: "checkbox" },
@@ -115,12 +127,12 @@ test("payment confirmation binds the account, order, price and payment method, a
     "@/lib/utils": { safeHttpsUrl: (v) => v || "" },
     "@/hooks/use-account": { useOrderPaymentInfo: () => info, usePayAccountOrder: () => pay },
     "@/components/ui/dialog": Object.fromEntries(["Dialog", "DialogContent", "DialogDescription", "DialogFooter", "DialogHeader", "DialogTitle"].map((v) => [v, v])),
-    "@/components/ui/select": Object.fromEntries(["Select", "SelectContent", "SelectItem", "SelectTrigger", "SelectValue"].map((v) => [v, v])),
   };
   const { OrderPaymentButton } = load("src/components/account/OrderPaymentButton.tsx", imports);
   const nodes = (node) => Array.isArray(node) ? node.flatMap(nodes) : node?.props ? [node, ...nodes(node.props.children)] : [];
   const render = () => {
     cursor = 0;
+    refCursor = 0;
     return nodes(OrderPaymentButton({ accountId: "ordering-account", orderId: 1001 }));
   };
   const submit = (tree) => tree.find((v) => v.type === "button" && [v.props.children].flat().includes("account.payment.pay"));

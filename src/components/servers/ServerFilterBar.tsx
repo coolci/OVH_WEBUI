@@ -46,20 +46,20 @@ export function ServerFilterBar({
   const { t } = useTranslation();
   return (
     <Card className="surface-card rounded-xl border-border">
-      <CardContent className="p-3.5 sm:p-4 flex flex-col gap-2.5">
+      <CardContent className="p-3 sm:p-3.5 flex flex-col lg:flex-row lg:items-center gap-2.5">
         {/* 搜索栏 */}
-        <div className="relative">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+        <div className="relative flex-1 min-w-0">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
           <Input
             placeholder="搜索 planCode / 型号 / CPU / 内存..."
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
-            className="pl-9 pr-9 rounded-lg h-8 text-xs bg-background/50 border-border/80 focus-visible:ring-1 focus-visible:ring-primary/40"
+            className="pl-8 pr-8 rounded-lg h-8 text-xs bg-background/60 border-border/80 focus-visible:ring-1 focus-visible:ring-primary/40"
           />
           {search && (
             <button
               type="button"
-              className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-muted-foreground hover:text-foreground transition-colors"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-muted-foreground hover:text-foreground transition-colors"
               onClick={() => onSearchChange("")}
               aria-label="清空搜索"
             >
@@ -68,9 +68,9 @@ export function ServerFilterBar({
           )}
         </div>
 
-        {/* 第二行：筛选 + 地区 + 数量 */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-1 border-t border-border/40 sm:border-t-0 sm:pt-0">
-          <div className="flex items-center gap-2 flex-1 min-w-0 flex-wrap sm:flex-nowrap">
+        {/* 筛选 + 地区 + 数量（大屏同排，中小屏折行） */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-border/40 lg:border-t-0 lg:pt-0 lg:shrink-0">
+          <div className="flex items-center gap-2 min-w-0 flex-wrap sm:flex-nowrap">
             <Button
               variant={onlyAvailable ? "default" : "outline"}
               size="sm"
@@ -113,10 +113,10 @@ export function ServerFilterBar({
             </Button>
 
             {/* 价格地区选择 */}
-            <div className="flex items-center gap-1.5 flex-1 min-w-[150px]">
+            <div className="flex items-center gap-1.5 flex-1 sm:flex-initial min-w-[140px]">
               <Select value={subsidiary} onValueChange={onSubsidiaryChange}>
                 <SelectTrigger
-                  className="h-8 rounded-lg text-xs border-border/80 bg-background/50 focus:ring-1 focus:ring-primary/40 w-full sm:w-auto sm:min-w-[140px] sm:max-w-[220px]"
+                  className="h-8 rounded-lg text-xs border-border/80 bg-background/60 focus:ring-1 focus:ring-primary/40 w-full sm:w-auto sm:min-w-[140px] sm:max-w-[200px]"
                   title={
                     accountSub
                       ? `价格地区。账户当前绑定 ${accountSub}，实际下单按账户结算`
@@ -141,7 +141,7 @@ export function ServerFilterBar({
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-8 rounded-full text-xs text-muted-foreground hover:text-foreground px-2 flex-shrink-0"
+                  className="h-8 rounded-lg text-xs text-muted-foreground hover:text-foreground px-2 flex-shrink-0"
                   onClick={onResetSubsidiary}
                   title={`回到账户绑定的子公司 ${accountSub}`}
                 >
@@ -158,7 +158,7 @@ export function ServerFilterBar({
               )}
             </div>
           </div>
-          <span className="text-[12px] text-muted-foreground whitespace-nowrap self-end sm:self-center">
+          <span className="text-[12px] font-mono tabular-nums text-muted-foreground whitespace-nowrap self-end sm:self-center lg:pl-2 lg:border-l lg:border-border/60">
             {isLoading ? "加载中..." : `共 ${totalCount} 款`}
           </span>
         </div>

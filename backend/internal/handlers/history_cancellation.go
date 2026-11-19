@@ -120,7 +120,7 @@ func loadCancellation(ctx context.Context, state *app.State, h types.PurchaseHis
 			return info, nil
 		}
 		if action.AbandonedAt != "" {
-			info.CanRestore = valid && expiry.After(time.Now())
+			info.CanRestore = order.ExpirationDate == "" || (valid && expiry.After(time.Now()))
 			info.Message = "已放弃此订单，等待 OVH 到期作废。付款期限内可以撤销放弃。"
 		} else {
 			info.Mode = "abandon"
@@ -200,6 +200,7 @@ func CancelHistoryOrder(state *app.State) gin.HandlerFunc {
 			c.JSON(409, gin.H{"error": "订单状态已变化，请重新打开撤单窗口。" + info.Message})
 			return
 		}
+		var retractPath string
 		if operation == "retract" {
 			if !isValidRetractionReason(body.Reason) || len([]rune(body.Comment)) > 1000 {
 				c.JSON(400, gin.H{"error": "请选择撤单原因，说明最多 1000 字"})
@@ -207,6 +208,12 @@ func CancelHistoryOrder(state *app.State) gin.HandlerFunc {
 			}
 			if body.Amount == nil || info.Amount == nil || *body.Amount != *info.Amount || body.Currency != info.Currency {
 				c.JSON(409, gin.H{"error": "订单金额或币种已变化，请重新打开撤单窗口确认"})
+				return
+			}
+			var pathErr error
+			retractPath, pathErr = buildOVHPath("me", "order", strconv.FormatInt(id, 10), "retraction")
+			if pathErr != nil {
+				c.JSON(400, gin.H{"error": pathErr.Error()})
 				return
 			}
 		}
@@ -239,11 +246,6 @@ func CancelHistoryOrder(state *app.State) gin.HandlerFunc {
 		payload := map[string]interface{}{"reason": body.Reason}
 		if comment := strings.TrimSpace(body.Comment); comment != "" {
 			payload["comment"] = comment
-		}
-		retractPath, pathErr := buildOVHPath("me", "order", strconv.FormatInt(id, 10), "retraction")
-		if pathErr != nil {
-			c.JSON(400, gin.H{"error": pathErr.Error()})
-			return
 		}
 		err = client.PostWithContext(ctx, retractPath, payload, nil)
 		status := "submitted"
