@@ -104,12 +104,7 @@ func TestPreorderRefreshDoesNotBlockAndJoinsOneBackgroundRequest(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		releaseFetch()
-		regionCacheMu.Lock()
-		call := regionCacheCall["IE"]
-		regionCacheMu.Unlock()
-		if call != nil {
-			<-call.done
-		}
+		waitRegionBackgroundRefreshes()
 		fetchSubsidiaryCatalog = original
 		resetCatalogCaches()
 	})

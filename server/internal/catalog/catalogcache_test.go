@@ -23,12 +23,14 @@ func testState(t *testing.T) *app.State {
 	return &app.State{Logger: lg}
 }
 
-// resetCatalogCaches 每个用例开跑前清空三张全局表(它们是包级的)。
+// resetCatalogCaches 每个用例开跑前清空全局表(它们是包级的)。
 func resetCatalogCaches() {
+	waitRegionBackgroundRefreshes()
 	regionCacheMu.Lock()
 	regionCache = map[string]*subsidiaryCatalog{}
 	regionCacheFail = map[string]catalogFailure{}
 	regionCacheCall = map[string]*catalogCall{}
+	regionStaleRefreshing = map[string]bool{}
 	regionCacheMu.Unlock()
 }
 

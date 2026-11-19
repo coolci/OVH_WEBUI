@@ -158,11 +158,17 @@ type catalogCall struct {
 var (
 	// 一把普通互斥锁同时保护三张表:命中缓存的路径只是几次 map 读,
 	// 用 RWMutex 换来的并发度还不够抵消 in-flight 表必须写锁的开销。
-	regionCacheMu   sync.Mutex
-	regionCache     = map[string]*subsidiaryCatalog{} // key: 大写子公司
-	regionCacheFail = map[string]catalogFailure{}     // 失败负缓存
-	regionCacheCall = map[string]*catalogCall{}       // 在途拉取(singleflight)
+	regionCacheMu         sync.Mutex
+	regionCache           = map[string]*subsidiaryCatalog{} // key: 大写子公司
+	regionCacheFail       = map[string]catalogFailure{}     // 失败负缓存
+	regionCacheCall       = map[string]*catalogCall{}       // 在途拉取(singleflight)
+	regionStaleRefreshing = map[string]bool{}               // 已派发后台刷新(避免重复 spawn)
+	regionRefreshWG       sync.WaitGroup
 )
+
+func waitRegionBackgroundRefreshes() {
+	regionRefreshWG.Wait()
+}
 
 // RegionForPlan 返回该 (账户子公司, planCode, 机房) 下应该提交的 region 值。
 // 返回空串表示该 plan 不需要 region 配置(目录里没有这项)。
@@ -468,12 +474,31 @@ func loadSubsidiaryCatalogStale(state *app.State, subsidiary string, ttl time.Du
 	key := strings.ToUpper(strings.TrimSpace(subsidiary))
 	regionCacheMu.Lock()
 	cached := regionCache[key]
+	shouldRefresh := false
+	if cached != nil && time.Since(cached.fetchedAt) >= ttl {
+		_, inFlight := regionCacheCall[key]
+		fail, failed := regionCacheFail[key]
+		inBackoff := failed && time.Since(fail.at) < regionCacheFailTTL
+		if !inFlight && !inBackoff && !regionStaleRefreshing[key] {
+			regionStaleRefreshing[key] = true
+			shouldRefresh = true
+			regionRefreshWG.Add(1)
+		}
+	}
 	regionCacheMu.Unlock()
 	if cached == nil {
 		return loadSubsidiaryCatalogWithTTL(state, subsidiary, ttl)
 	}
-	if time.Since(cached.fetchedAt) >= ttl {
-		go func() { _, _ = loadSubsidiaryCatalogWithTTL(state, subsidiary, ttl) }()
+	if shouldRefresh {
+		go func() {
+			defer func() {
+				regionCacheMu.Lock()
+				delete(regionStaleRefreshing, key)
+				regionCacheMu.Unlock()
+				regionRefreshWG.Done()
+			}()
+			_, _ = loadSubsidiaryCatalogWithTTL(state, subsidiary, ttl)
+		}()
 	}
 	return cached, nil
 }

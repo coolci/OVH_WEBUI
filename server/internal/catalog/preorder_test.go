@@ -65,7 +65,9 @@ func TestPreorderRefreshesCatalogAndSurvivesOutage(t *testing.T) {
 		{ID: "us", Endpoint: "ovh-us", Zone: "US"},
 	}
 	const plan = "27skle03-v1"
+	regionCacheMu.Lock()
 	regionCache["IE"] = &subsidiaryCatalog{plans: map[string]planConfig{}, fetchedAt: time.Now().Add(-time.Minute)}
+	regionCacheMu.Unlock()
 	// A normal reader still uses the two-hour cache.
 	if _, err := loadSubsidiaryCatalog(st, "IE"); err != nil {
 		t.Fatal(err)
@@ -90,7 +92,11 @@ func TestPreorderRefreshesCatalogAndSurvivesOutage(t *testing.T) {
 	if ready, err := PreorderReady(st, "us", plan); err != nil || ready {
 		t.Fatalf("wrong account catalog: %v, %v", ready, err)
 	}
-	regionCache["US"].fetchedAt = time.Now().Add(-time.Minute)
+	regionCacheMu.Lock()
+	usPrev := *regionCache["US"]
+	usPrev.fetchedAt = time.Now().Add(-time.Minute)
+	regionCache["US"] = &usPrev
+	regionCacheMu.Unlock()
 	fetchSubsidiaryCatalog = func(*app.State, string) (*subsidiaryCatalog, error) { return nil, errors.New("HTTP 429") }
 	if ready, _ := PreorderReady(st, "us", plan); ready {
 		t.Fatal("catalog outage must not permit an order")
