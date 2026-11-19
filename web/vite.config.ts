@@ -1,10 +1,9 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
-import { componentTagger } from "lovable-tagger";
 
 // https://vitejs.dev/config/
-export default defineConfig(({ mode }) => ({
+export default defineConfig(() => ({
   server: {
     host: process.env.VITE_HOST || "127.0.0.1",
     port: 8080,
@@ -21,7 +20,7 @@ export default defineConfig(({ mode }) => ({
       },
     },
   },
-  plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
+  plugins: [react()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
@@ -33,6 +32,9 @@ export default defineConfig(({ mode }) => ({
         manualChunks(id) {
           if (id.includes("commonjsHelpers")) {
             return "vendor-react";
+          }
+          if (/[\\/]src[\\/]i18n[\\/]locales[\\/]/.test(id)) {
+            return "i18n-locales";
           }
           if (!id.includes("node_modules")) return undefined;
           if (
@@ -50,6 +52,9 @@ export default defineConfig(({ mode }) => ({
           }
           if (/[\\/]node_modules[\\/]@tanstack[\\/]/.test(id)) {
             return "vendor-query";
+          }
+          if (/[\\/]node_modules[\\/]framer-motion[\\/]/.test(id)) {
+            return "vendor-motion";
           }
           if (/[\\/]node_modules[\\/](i18next|react-i18next|axios)[\\/]/.test(id)) {
             return "vendor-core";

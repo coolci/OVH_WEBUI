@@ -9,6 +9,8 @@
     "build": "npm --prefix web run build",
     "build:dev": "npm --prefix web run build:dev",
     "lint": "npm --prefix web run lint",
+    "format": "npm --prefix web run format",
+    "format:check": "npm --prefix web run format:check",
     "preview": "npm --prefix web run preview",
     "init": "powershell -ExecutionPolicy Bypass -File scripts/init-first-run.ps1",
     "init:fresh": "powershell -ExecutionPolicy Bypass -File scripts/init-first-run.ps1 -Fresh",
