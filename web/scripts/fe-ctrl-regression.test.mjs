@@ -96,7 +96,7 @@ function createModuleLoader(overrides = {}) {
  * ────────────────────────────────────────────────────────────────────────── */
 test("BUG-FE-CTRL-01: single-disk-group custom partitions + hardware RAID merge into one StorageGroup without duplicate diskGroupId", async () => {
   let postedBody = null;
-  const installMod = loadHook("src/hooks/ovh/server-control/use-server-install.ts", {
+  const installMod = loadHook("src/hooks/server-control/use-server-install.ts", {
     post: async (_url, body) => {
       postedBody = body;
       return { data: { success: true } };
@@ -152,7 +152,7 @@ test("BUG-FE-CTRL-01: single-disk-group custom partitions + hardware RAID merge 
  * BUG-FE-CTRL-02: 硬件 RAID 热备盘扣除（disks = totalDisks - spares）、多盘组隔离与 RAID50/60 arrays 透传
  * ────────────────────────────────────────────────────────────────────────── */
 test("BUG-FE-CTRL-02: hardware RAID deducts hot spares from physical disks, isolates per-group spares/arrays, and passes arrays for raid50/raid60", () => {
-  const installMod = loadHook("src/hooks/ovh/server-control/use-server-install.ts", {});
+  const installMod = loadHook("src/hooks/server-control/use-server-install.ts", {});
   const { loadModule } = createModuleLoader();
   const { HARDWARE_RAID_LEVELS } = loadModule("src/components/server-control/reinstall/constants.ts");
 
@@ -224,7 +224,7 @@ test("BUG-FE-CTRL-02: hardware RAID deducts hot spares from physical disks, isol
  * BUG-FE-CTRL-03: 跨模板定制问答隔离、number 类型转换、mandatory 必填拦截与 confirming 二次确认指纹复位
  * ────────────────────────────────────────────────────────────────────────── */
 test("BUG-FE-CTRL-03: normalizeCustomizations isolates template questions, coerces numbers, enforces mandatory fields, and confirming fingerprint tracks storage mutations", () => {
-  const installMod = loadHook("src/hooks/ovh/server-control/use-server-install.ts", {});
+  const installMod = loadHook("src/hooks/server-control/use-server-install.ts", {});
   const { loadModule } = createModuleLoader();
   const { buildReinstallConfirmFingerprint } = loadModule(
     "src/components/server-control/reinstall/reinstall-helpers.ts",
@@ -346,8 +346,8 @@ test("BUG-FE-CTRL-04: diskCapacityToGB converts MB/Mo/MiB accurately without 102
     },
   });
 
-  const installMod = loadModule("src/hooks/ovh/server-control/use-server-install.ts");
-  const hwMod = loadModule("src/hooks/ovh/server-control/use-server-hardware.ts");
+  const installMod = loadModule("src/hooks/server-control/use-server-install.ts");
+  const hwMod = loadModule("src/hooks/server-control/use-server-hardware.ts");
 
   // 2 × 480000 MB NVMe 必须换算为 937.5 GB（绝不能当成 GB 算出 960,000 GB）
   const perDiskGb = installMod.diskCapacityToGB(480000, "MB");
@@ -398,7 +398,7 @@ test("BUG-FE-CTRL-05: VPS reinstall blocks doNotSendPassword without a valid OVH
   // Hook 层硬门禁：即使绕过 UI 直接传 doNotSendPassword: true 且无有效 sshKey，也在发请求前抛错阻断
   let apiCalls = 0;
   let lastPayload = null;
-  const vpsMod = loadHook("src/hooks/ovh/use-vps-control.ts", {
+  const vpsMod = loadHook("src/hooks/use-vps-control.ts", {
     post: async (_url, body) => {
       apiCalls++;
       lastPayload = body;
@@ -453,7 +453,7 @@ test("BUG-FE-CTRL-06: VPS monitor covers all 24 OVH subsidiaries, clears stale O
 
   const { OVH_SUBSIDIARIES } = loadModule("src/lib/ovh-subsidiaries.ts");
   const { SUBSIDIARIES, reconcileVpsOsSelection } = loadModule("src/components/vps-monitor/types.ts");
-  const { notifyVpsSubscriptionResult } = loadModule("src/hooks/ovh/use-vps-monitor.ts");
+  const { notifyVpsSubscriptionResult } = loadModule("src/hooks/use-vps-monitor.ts");
 
   // 1) 完整覆盖全部 24 个 OVH 子公司站点
   assert.equal(SUBSIDIARIES.length, OVH_SUBSIDIARIES.length);
@@ -576,7 +576,7 @@ test("BUG-FE-CTRL-08: useBiosSettings / useServerBiosSettings unwraps { success:
     },
   });
 
-  const hwMod = loadModule("src/hooks/ovh/server-control/use-server-hardware.ts");
+  const hwMod = loadModule("src/hooks/server-control/use-server-hardware.ts");
   const q = hwMod.useBiosSettings("ns-bios.eu", true, "acc-eu");
   const data = await q.queryFn();
   assert.equal("success" in data.settings, false, "Outer wrapper key 'success' must be stripped from settings");
@@ -615,7 +615,7 @@ test("BUG-FE-CTRL-09: syncAfterSplaChange clears localStorage template cache and
   });
 
   const { TEMPLATES_LS_PREFIX, getServerTemplatesCacheKey } = loadModule(
-    "src/hooks/ovh/server-control/use-server-install.ts",
+    "src/hooks/server-control/use-server-install.ts",
   );
   const { syncAfterSplaChange } = loadModule("src/components/server-control/spla-helpers.ts");
 
@@ -748,10 +748,10 @@ test("BUG-FE-CTRL-11: instance-scoped account context overrides global activeAcc
 
   // 加载 server-scope 自动执行 registerServerScopeHook，把页面子树内的所有 server-control hooks 锁死在 instance-acc-B
   const scopeMod = loadModule("src/components/server-control/server-scope.ts");
-  const coreMod = loadModule("src/hooks/ovh/server-control/use-server-core.ts");
-  const netMod = loadModule("src/hooks/ovh/server-control/use-server-network.ts");
-  const featMod = loadModule("src/hooks/ovh/server-control/use-server-features.ts");
-  const engageMod = loadModule("src/hooks/ovh/server-control/use-server-engagement.ts");
+  const coreMod = loadModule("src/hooks/server-control/use-server-core.ts");
+  const netMod = loadModule("src/hooks/server-control/use-server-network.ts");
+  const featMod = loadModule("src/hooks/server-control/use-server-features.ts");
+  const engageMod = loadModule("src/hooks/server-control/use-server-engagement.ts");
 
   // 即使不显式传 overrideAccountId，子树内 hooks 也自动取实例作用域 "instance-acc-B"，绝不串号到 "global-wrong-acc"
   await coreMod.useServerServiceInfo("ns-target.eu").queryFn();
@@ -867,7 +867,7 @@ test("BUG-FE-CTRL-12: VPS lifecycle mutations invalidate list, info, status, ser
     },
   });
 
-  const vpsHooks = loadModule("src/hooks/ovh/use-vps-control.ts");
+  const vpsHooks = loadModule("src/hooks/use-vps-control.ts");
   const svc = "vps-abc.ovh.net";
   const acc = "acc-vps";
 

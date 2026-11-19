@@ -13,7 +13,7 @@ import { ChangeContactDialog } from "./ChangeContactDialog";
 import { useTranslation } from "react-i18next";
 import { errorMessage } from "@/lib/api-error";
 import { fmtDateTime } from "@/i18n/format";
-import type { ServerIntervention } from "@/hooks/ovh/server-control/types";
+import type { ServerIntervention } from "@/hooks/server-control/types";
 import { useScopedServerAccountId, useScopedServerEndpoint } from "./server-scope";
 
 /** 维护 Tab：维护记录列表 + 硬件更换工单 + 变更联系人 + 14 天撤单 */

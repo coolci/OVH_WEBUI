@@ -11,7 +11,7 @@ import {
   Power, AlertCircle, Plus, Trash2, KeyRound, Cloud, Loader2,
 } from "lucide-react";
 import type { OwnedServer } from "@/hooks/use-server-control";
-import type { BackupFtpInfo, BackupCloudInfo, OrderableIpBlock } from "@/hooks/ovh/server-control/types";
+import type { BackupFtpInfo, BackupCloudInfo, OrderableIpBlock } from "@/hooks/server-control/types";
 import {
   useServerBurst, useSetBurst,
   useServerFirewall, useSetFirewall,

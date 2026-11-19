@@ -15,7 +15,7 @@ export function loadHook(file, api) {
     if (id.endsWith('use-accounts')) return { useDefaultAccount: () => ({id: 'fixture'}) };
     if (id === '@/i18n') return { default: { t: x => x } };
     // 账户绑定助手是纯函数,用真实实现
-    if (id.endsWith('server-control/account') || id === './account') return loadHook('src/hooks/ovh/server-control/account.ts', api);
+    if (id.endsWith('server-control/account') || id === './account') return loadHook('src/hooks/server-control/account.ts', api);
     throw Error(`Unexpected import ${id}`);
   };
   vm.runInNewContext(js, { exports, require, console }, { filename: file });

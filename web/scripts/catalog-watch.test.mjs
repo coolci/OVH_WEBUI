@@ -55,7 +55,7 @@ test('server-list panel shows backend-owned state and explains closing the brows
 
 test('history refreshes background purchases and orders timestamps chronologically', async () => {
   const response=[{orderId:'old',purchaseTime:'2026-11-06T23:49:00+08:00'},{orderId:'new',purchaseTime:'2026-11-06T16:54:22Z'}];
-  const hooks=load('src/hooks/ovh/use-history.ts',{
+  const hooks=load('src/hooks/use-history.ts',{
     '@tanstack/react-query':{useQuery:o=>o},
     '@/lib/http':{api:{get:async()=>({data:response})}},
     '@/lib/query':{qk:{history:()=>['history']}},

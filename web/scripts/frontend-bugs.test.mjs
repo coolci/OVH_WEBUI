@@ -33,7 +33,7 @@ test('monitor chips do not let a sold-out config hide one with stock', () => {
   assert.equal(isDcInStock(m.mum), false);
 });
 
-const { maskSensitive } = load('src/hooks/ovh/use-hide-ip.ts', { react: { useCallback: f => f, useEffect: () => {}, useState: v => [v, () => {}] } });
+const { maskSensitive } = load('src/hooks/use-hide-ip.ts', { react: { useCallback: f => f, useEffect: () => {}, useState: v => [v, () => {}] } });
 
 // 文本里同时夹带反向 DNS 和真实 IP 时,以前命中第一种就返回,括号里的 IP 原样露出
 test('maskSensitive masks every embedded form', () => {

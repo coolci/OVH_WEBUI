@@ -19,7 +19,7 @@ import type { TFunction } from "i18next";
 import { errorMessage } from "@/lib/api-error";
 import { fmtDate, fmtDateTime } from "@/i18n/format";
 import { openSafeHttpsUrl, safeHttpsUrl } from "@/lib/utils";
-import type { EngagementInfo, EngagementRequest } from "@/hooks/ovh/server-control/types";
+import type { EngagementInfo, EngagementRequest } from "@/hooks/server-control/types";
 import { useScopedServerAccountId } from "./server-scope";
 
 /** EngagementDialog 钩子绑定 —— dedicated / vps 各自传入。

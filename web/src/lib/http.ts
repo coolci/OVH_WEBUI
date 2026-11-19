@@ -8,7 +8,7 @@
  *
  * 用法：
  * - hooks / 页面：`import { api } from "@/lib/http"` → Axios，路径相对 `/api`
- * - 业务 facade：`import { apiRequest } from "@/lib/http"` 或 `import { api } from "@/lib/api"`
+ * - 轻量 fetch 风格请求（如 `/health` 探测）：`import { apiRequest } from "@/lib/http"`
  */
 import axios, {
   AxiosError,
@@ -267,7 +267,7 @@ function createApiClient(): AxiosInstance {
 export const api = createApiClient();
 export default api;
 
-// ─── fetch 风格 facade（供 lib/api.ts 业务方法） ────────────
+// ─── fetch 风格辅助函数（供 /health 等轻量请求复用统一鉴权） ──
 
 export interface ProblemDetails {
   type?: string;

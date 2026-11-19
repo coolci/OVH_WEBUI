@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { TelegramActionResult } from "@/lib/api";
+import type { TelegramActionResult } from "./types";
 import { copyText } from "@/lib/clipboard";
 
 interface TerminalConsoleProps {

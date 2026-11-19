@@ -29,7 +29,7 @@ import {
   useUpdateMonitorSubscription,
   type MonitorSubscription,
 } from "@/hooks/use-monitor";
-import { useNotifyGate } from "@/hooks/ovh/use-notify-channels";
+import { useNotifyGate } from "@/hooks/use-notify-channels";
 import { useServers } from "@/hooks/use-servers";
 import { useAvailability, buildAvailabilityMap } from "@/hooks/use-availability";
 import { MonitorOptionsFields } from "./MonitorOptionsFields";

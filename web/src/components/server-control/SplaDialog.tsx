@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api } from "@/lib/http";
-import { useServerAccount, withAccount } from "@/hooks/ovh/server-control/account";
+import { useServerAccount, withAccount } from "@/hooks/server-control/account";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSplaList, hasActiveSpla } from "@/hooks/use-server-control";
 import { toast } from "sonner";

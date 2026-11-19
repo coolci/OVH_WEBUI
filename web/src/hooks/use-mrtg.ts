@@ -1,2 +1,71 @@
-/** re-export from ovh-web port */
-export * from "./ovh/use-mrtg";
+import { useQueries } from "@tanstack/react-query";
+import { api } from "@/lib/http";
+import { qk } from "@/lib/query";
+import { useServerAccount, withAccount } from "./server-control/account";
+
+export type MrtgPeriod = "hourly" | "daily" | "weekly" | "monthly" | "yearly";
+
+export interface MrtgPoint {
+  timestamp: number;
+  value: { value: number; unit: string };
+}
+
+export interface MrtgInterface {
+  mac: string;
+  data: MrtgPoint[];
+}
+
+export interface MrtgResponse {
+  success: boolean;
+  interfaces: MrtgInterface[];
+}
+
+/**
+ * 同时拉 download 和 upload 两条流量曲线。
+ * 旧前端协议：GET /server-control/:serviceName/mrtg?period=...&type=traffic:download|upload
+ * 返回 { success, interfaces: [{ mac, data: [{ timestamp, value: {value, unit} }] }] }
+ */
+export function useMrtgTraffic(serviceName: string | null, period: MrtgPeriod) {
+  const accountId = useServerAccount();
+  const enc = encodeURIComponent(serviceName || "");
+  const results = useQueries({
+    queries: [
+      {
+        queryKey: qk.serverControl.mrtg(serviceName || "", accountId, period, "download"),
+        queryFn: async () => {
+          const res = await api.get<MrtgResponse>(
+            `/server-control/${enc}/mrtg?period=${period}&type=traffic:download`,
+            withAccount(accountId)
+          );
+          return res.data;
+        },
+        enabled: !!serviceName,
+        staleTime: 60_000,
+      },
+      {
+        queryKey: qk.serverControl.mrtg(serviceName || "", accountId, period, "upload"),
+        queryFn: async () => {
+          const res = await api.get<MrtgResponse>(
+            `/server-control/${enc}/mrtg?period=${period}&type=traffic:upload`,
+            withAccount(accountId)
+          );
+          return res.data;
+        },
+        enabled: !!serviceName,
+        staleTime: 60_000,
+      },
+    ],
+  });
+
+  const [download, upload] = results;
+  return {
+    download: download.data,
+    upload: upload.data,
+    isPending: download.isPending || upload.isPending,
+    isFetching: download.isFetching || upload.isFetching,
+    isError: download.isError || upload.isError,
+    // 组件要把失败原因渲染出来,而不是笼统的「暂无流量数据」
+    error: download.error ?? upload.error ?? null,
+    refetch: () => Promise.all([download.refetch(), upload.refetch()]),
+  };
+}

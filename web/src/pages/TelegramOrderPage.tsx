@@ -20,20 +20,11 @@ import { TerminalConsole } from "@/components/telegram-order/TerminalConsole";
 import { CommandHistoryPanel } from "@/components/telegram-order/CommandHistoryPanel";
 import { CommandReferenceCard } from "@/components/telegram-order/CommandReferenceCard";
 import {
-  type OrderMode, type CommandHistory,
+  type OrderMode, type CommandHistory, type TelegramActionResult,
   HISTORY_STORAGE_KEY, MAX_HISTORY_ITEMS,
 } from "@/components/telegram-order/types";
 import { api } from "@/lib/http";
 import { apiMessage } from "@/lib/api-error";
-
-interface TelegramActionResult {
-  success: boolean;
-  mode?: string;
-  command: string;
-  message?: string;
-  error?: string;
-  data?: unknown;
-}
 import { useServers } from "@/hooks/use-servers";
 import { useAccounts } from "@/hooks/use-accounts";
 import { useAvailability, buildAvailabilityMap } from "@/hooks/use-availability";

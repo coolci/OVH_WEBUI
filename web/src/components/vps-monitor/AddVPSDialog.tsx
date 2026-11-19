@@ -28,7 +28,7 @@ import {
   useVPSModels,
   type VPSSubscription,
 } from "@/hooks/use-vps-monitor";
-import { useNotifyGate } from "@/hooks/ovh/use-notify-channels";
+import { useNotifyGate } from "@/hooks/use-notify-channels";
 import { AccountSelect } from "@/components/common/AccountSelect";
 import { useAccounts } from "@/hooks/use-accounts";
 import { MAX_ORDER_QUANTITY } from "@/lib/order-limits";

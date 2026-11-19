@@ -1,2 +1,257 @@
-/** re-export from ovh-web port */
-export * from "./ovh/use-monitor";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api } from "@/lib/http";
+import { qk } from "@/lib/query";
+import { toast } from "sonner";
+import i18n from "@/i18n";
+import { apiMessage, bodyMessage, type BodyMessage } from "@/lib/api-error";
+
+export interface MonitorSubscription {
+  planCode: string;
+  serverName?: string;
+  datacenters: string[];
+  notifyAvailable: boolean;
+  notifyUnavailable: boolean;
+  autoOrder?: boolean;
+  quantity?: number;
+  /** 多账户自动下单列表；显式空数组表示不下单 */
+  autoOrderAccountIds?: string[];
+  /** 旧版单账户字段，缺少数组时用于兼容 */
+  autoOrderAccountId?: string;
+  /** 下单成功后自动付款(显式开关,默认关) */
+  autoPay?: boolean;
+  /** 自动下单的购买时长(P1M/P12M...);空 = 1 个月 */
+  duration?: string;
+  /**
+   * 只盯这套配置(addon planCode 列表)。空 / 缺省 = 盯该型号的全部配置。
+   *
+   * 一个 planCode 底下常有好几套内存/存储组合，而通知和自动下单是**按配置逐套**
+   * 触发的 —— 不限定配置时「自动抢 1 台」会变成「每套配置在每个机房各抢 1 台」。
+   * 后端引擎一直支持这个字段，只是前端以前没接，所以网页建的订阅永远是「盯全部」。
+   */
+  options?: string[];
+  lastStatus: Record<string, string>;
+  createdAt: string;
+  paused?: boolean;
+  /** 最近一次库存查询时间(后端运行时字段,重启后首轮检查前为空) */
+  lastCheckAt?: string;
+  /** 非空 = 最近一轮查询有问题(区域错配 / 等待销售目录收录 / 拿不到数据),中文说明 */
+  lastCheckError?: string;
+}
+
+export interface MonitorStatus {
+  running: boolean;
+  subscriptions_count: number;
+  check_interval: number;
+  known_servers_count: number;
+  /** 后端构造的区域问题提示(查错大区导致监控失效等),web 端必须渲染 */
+  region_issues?: (string | { planCode: string; accountId?: string; region?: string; error: string })[];
+}
+
+export interface MonitorHistoryEntry {
+  timestamp: string;
+  datacenter: string;
+  status: string;
+  changeType: string;
+  /** 后端是 interface{}，实际可能是 string / null / 任意 OVH 状态字符串。这里宽松成 unknown */
+  oldStatus: unknown;
+  config?: {
+    memory?: string;
+    storage?: string;
+    display?: string;
+    [key: string]: unknown;
+  };
+}
+
+/** 监控订阅列表 */
+export function useMonitorList() {
+  return useQuery({
+    queryKey: qk.monitor.list(),
+    // Array.isArray:调用方直接 subs.map,truthy 非数组(响应被代理层改写等)
+    // 会让整个监控页白屏 —— 宁可当空列表走"暂无订阅"空态
+    queryFn: async () => {
+      const d = (await api.get<MonitorSubscription[]>("/monitor/subscriptions")).data;
+      return Array.isArray(d) ? d : [];
+    },
+  });
+}
+
+/** 监控引擎运行状态 */
+export function useMonitorStatus() {
+  return useQuery({
+    queryKey: qk.monitor.status(),
+    queryFn: async () => (await api.get<MonitorStatus>("/monitor/status")).data,
+    refetchInterval: 30_000,
+  });
+}
+
+/**
+ * 某订阅的变化历史（后端直接返回数组，倒序最新在前）。
+ * optionsKey 定位同型号下的具体配置订阅;不传时后端取该型号第一条。
+ */
+export function useMonitorHistory(planCode: string | null, optionsKey?: string) {
+  return useQuery({
+    queryKey: qk.monitor.history(planCode || "", optionsKey),
+    queryFn: async () => {
+      const d = (
+        await api.get<MonitorHistoryEntry[]>(`/monitor/subscriptions/${encodeURIComponent(planCode || "")}/history`, {
+          params: optionsKey === undefined ? undefined : { optionsKey },
+        })
+      ).data;
+      return Array.isArray(d) ? d : [];
+    },
+    enabled: !!planCode,
+  });
+}
+
+/** 新增 / 修改订阅 */
+export function useUpsertMonitorSubscription() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: Partial<MonitorSubscription> & { planCode: string }) =>
+      (await api.post("/monitor/subscriptions", payload)).data,
+    onSuccess: (data: BodyMessage & { regionWarning?: string }) => {
+      qc.invalidateQueries({ queryKey: qk.monitor.list() });
+      qc.invalidateQueries({ queryKey: qk.monitor.status() });
+      if (data?.regionWarning) toast.warning(data.regionWarning);
+      else toast.success(i18n.t("hooksMsg.monitor.saved"));
+    },
+    onError: (e: unknown) => toast.error(apiMessage(e) || i18n.t("hooksMsg.monitor.saveFailed")),
+  });
+}
+
+/**
+ * 修改已有订阅（PUT，只改配置不重置状态）。
+ *
+ * 为什么不复用上面的 POST：POST 语义上是"新增"，前端也是照着新增的表单发的整包。
+ * 而 PUT 只发改动过的字段，后端拿当前值兜底 —— 这样"只改一个数量"不会顺带
+ * 把机房列表覆盖成空。两边的状态（LastStatus / History）都不会动，
+ * 否则一台本来就有货的机器会在下一轮被当成"补货了"，发一条假通知外加真下单。
+ */
+export function useUpdateMonitorSubscription() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      planCode,
+      optionsKey,
+      ...patch
+    }: Partial<MonitorSubscription> & { planCode: string; optionsKey?: string }) =>
+      (await api.put(`/monitor/subscriptions/${encodeURIComponent(planCode)}`, patch, { params: optionsKey === undefined ? undefined : { optionsKey } })).data,
+    onSuccess: (data: BodyMessage & { regionWarning?: string }) => {
+      qc.invalidateQueries({ queryKey: qk.monitor.list() });
+      qc.invalidateQueries({ queryKey: qk.monitor.status() });
+      if (data?.regionWarning) toast.warning(data.regionWarning);
+      else toast.success(bodyMessage(data) || i18n.t("hooksMsg.monitor.updated"));
+    },
+    onError: (e: unknown) =>
+      toast.error(apiMessage(e) || i18n.t("hooksMsg.monitor.updateFailed")),
+  });
+}
+
+/** 创建新订阅（对外更语义化的别名） */
+export const useCreateMonitorSubscription = useUpsertMonitorSubscription;
+
+/** 暂停 / 恢复订阅 */
+export function usePauseMonitorSubscription() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (v: { planCode: string; optionsKey?: string; paused: boolean }) =>
+      (
+        await api.post(`/monitor/subscriptions/${encodeURIComponent(v.planCode)}/pause`, {
+          optionsKey: v.optionsKey,
+          paused: v.paused,
+        })
+      ).data as { paused?: boolean; pausedTasks?: number; heldTaskIds?: string[] },
+    onSuccess: (data, vars) => {
+      qc.invalidateQueries({ queryKey: qk.monitor.list() });
+      qc.invalidateQueries({ queryKey: qk.monitor.status() });
+      qc.invalidateQueries({ queryKey: qk.queue.list() });
+      if (data?.paused) {
+        if ((data.pausedTasks || 0) > 0) {
+          toast.success(i18n.t("hooksMsg.monitor.pausedWithQueue", { count: data.pausedTasks }));
+        }
+        return;
+      }
+      // 恢复监控不自动恢复抢购任务（避免意外下单），按后端返回的订阅范围内 heldTaskIds 提供一键恢复
+      const heldIds = Array.isArray(data?.heldTaskIds) ? data.heldTaskIds : [];
+      if (heldIds.length === 0) {
+        if (vars.paused === false) toast.success(i18n.t("hooksMsg.monitor.resumedNoTasks"));
+        return;
+      }
+      toast.success(i18n.t("hooksMsg.monitor.resumedWithHeld", { count: heldIds.length }), {
+        duration: 8000,
+        action: {
+          label: i18n.t("hooksMsg.monitor.resumeHeldAction"),
+          onClick: async () => {
+            let resumed = 0;
+            for (const id of heldIds) {
+              try {
+                await api.put(`/queue/${encodeURIComponent(id)}/status`, { status: "running" });
+                resumed++;
+              } catch {
+                // 单个失败不阻断其余任务
+              }
+            }
+            qc.invalidateQueries({ queryKey: qk.queue.list() });
+            qc.invalidateQueries({ queryKey: qk.stats() });
+            if (resumed > 0) toast.success(i18n.t("hooksMsg.monitor.resumeHeldDone", { count: resumed }));
+          },
+        },
+      });
+    },
+    onError: (e: unknown) => toast.error(apiMessage(e) || i18n.t("hooksMsg.monitor.updateFailed")),
+  });
+}
+
+/** 移除订阅 */
+export function useRemoveMonitorSubscription() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (v: string | { planCode: string; optionsKey?: string }) => {
+      const planCode = typeof v === "string" ? v : v.planCode;
+      const optionsKey = typeof v === "string" ? undefined : v.optionsKey;
+      return (
+        await api.delete(`/monitor/subscriptions/${encodeURIComponent(planCode)}`, {
+          params: optionsKey === undefined ? undefined : { optionsKey },
+        })
+      ).data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.monitor.list() });
+      qc.invalidateQueries({ queryKey: qk.monitor.status() });
+      toast.success(i18n.t("hooksMsg.monitor.deleted"));
+    },
+    onError: (e: unknown) => toast.error(apiMessage(e) || i18n.t("hooksMsg.monitor.deleteFailed")),
+  });
+}
+
+/** 清空所有订阅 */
+export function useClearMonitor() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => (await api.delete("/monitor/subscriptions/clear")).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.monitor.list() });
+      qc.invalidateQueries({ queryKey: qk.monitor.status() });
+      toast.success(i18n.t("hooksMsg.monitor.cleared"));
+    },
+    onError: (e: unknown) => toast.error(apiMessage(e) || i18n.t("hooksMsg.monitor.clearFailed")),
+  });
+}
+
+/** 设置检查间隔（秒）。后端会夹到 5-3600，返回真正生效的值。 */
+export function useSetMonitorInterval() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (interval: number) =>
+      (await api.put("/monitor/interval", { interval })).data as {
+        status: string;
+        message: string;
+        check_interval: number;
+      },
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: qk.monitor.status() });
+      toast.success(bodyMessage(data) || i18n.t("hooksMsg.monitor.intervalUpdated"));
+    },
+    onError: (e: unknown) => toast.error(apiMessage(e) || i18n.t("hooksMsg.monitor.intervalSetFailed")),
+  });
+}

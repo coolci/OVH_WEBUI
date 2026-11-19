@@ -50,7 +50,7 @@ test("history payment is unavailable for paid, abandoned, expired or retracted o
 
 test("payment hooks only read when opened, poll an unconfirmed payment, and refresh history after querying or submitting", async () => {
   const requests = [], invalidated = [];
-  const hooks = load("src/hooks/ovh/use-account.ts", {
+  const hooks = load("src/hooks/use-account.ts", {
     "@tanstack/react-query": { useQuery: (v) => v, useMutation: (v) => v, useQueryClient: () => ({ invalidateQueries: (v) => invalidated.push(v.queryKey) }) },
     "@/lib/http": { api: {
       get: async (path, options) => { requests.push({ method: "GET", path, options }); return { data: { status: "notPaid", attempted: true } }; },

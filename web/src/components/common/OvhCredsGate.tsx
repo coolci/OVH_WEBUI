@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useTranslation } from "react-i18next";
 import { api } from "@/lib/http";
 import { apiMessage } from "@/lib/api-error";
-import { useCreateAccount } from "@/hooks/ovh/use-accounts";
+import { useCreateAccount } from "@/hooks/use-accounts";
 import { qk } from "@/lib/query";
 import { OVH_SUBSIDIARIES, subsidiaryLabel, endpointForZone } from "@/lib/ovh-subsidiaries";
 import { apiBaseUrlForEndpoint, endpointRegion } from "@/lib/ovh-regions";

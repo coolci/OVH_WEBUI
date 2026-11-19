@@ -58,7 +58,7 @@ test('account changes isolate refresh metadata and list requests; manual refresh
   const helper = load(file);
   let active = 'a';
   const requests = [];
-  const hooks = load('src/hooks/ovh/use-servers.ts', {
+  const hooks = load('src/hooks/use-servers.ts', {
     react: { useRef: value => ({current: value}) },
     '@/lib/catalog-refresh': helper,
     '@tanstack/react-query': { useQueryClient: () => client, useQuery: o => ({...o, refetch: o.queryFn}), useMutation: o => o },
@@ -131,7 +131,7 @@ test('price catalog retries stale HTTP 200 and respects upstream cache age', asy
   const client = new QueryClient();
   const helper = load(file);
   let stale = true;
-  const hooks = load('src/hooks/ovh/use-availability.ts', {
+  const hooks = load('src/hooks/use-availability.ts', {
     '@/lib/catalog-refresh': helper,
     '@tanstack/react-query': {useQueryClient: () => client, useQuery: x => x},
     '@/lib/availability': {}, '@/lib/variant-stock': {}, axios: {}, '@/lib/query': {},

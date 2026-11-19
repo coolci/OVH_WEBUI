@@ -23,7 +23,7 @@ import {
   useReplyTicket,
   useCloseTicket,
   useReopenTicket,
-} from "@/hooks/ovh/use-tickets";
+} from "@/hooks/use-tickets";
 import { formatDateTime } from "@/lib/format-os";
 import { getStateMeta } from "./labels";
 import { TicketDetails } from "./TicketDetails";

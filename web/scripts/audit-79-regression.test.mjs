@@ -120,7 +120,7 @@ test("AUDIT-79 [FE-CORE-01 & FE-CORE-04]: Datacenter alias bidirectional mapping
     "@/i18n": { default: { t: (k) => k, exists: () => false } },
   });
   const dcMod = load("src/lib/datacenters.ts");
-  const availMod = load("src/hooks/ovh/use-availability.ts");
+  const availMod = load("src/hooks/use-availability.ts");
 
   assert.equal(dcMod.apiDatacenterCode("mum"), "ynm");
   assert.equal(dcMod.apiDatacenterCode("tor"), "ca-east-tor-a");
@@ -176,7 +176,7 @@ test("AUDIT-79 [FE-CORE-02]: ActiveAccountSync eliminates lastFixedServer lock a
     sonner: { toast: { success() {}, error() {}, warning() {} } },
     "@/i18n": { __esModule: true, default: { t: (k) => k, exists: () => false } },
   });
-  const { syncActiveAccountsWithList } = load("src/hooks/ovh/use-accounts.ts");
+  const { syncActiveAccountsWithList } = load("src/hooks/use-accounts.ts");
 
   let activeServer = "";
   let activeVps = "";
@@ -306,7 +306,7 @@ test("AUDIT-79 [FE-CTRL-01, FE-CTRL-02 & FE-CTRL-04]: Reinstall merges single di
     },
   });
   const { buildInstallStorageConfig, diskCapacityToGB, pickDefaultDiskGroup } = load(
-    "src/hooks/ovh/server-control/use-server-install.ts"
+    "src/hooks/server-control/use-server-install.ts"
   );
 
   // Single disk group server (diskGroupId=1, 4 physical disks) + custom partition + Hardware RAID1 + 1 hot spare
@@ -385,15 +385,17 @@ test("AUDIT-79 [CONTRACT-01..05, SEC-12 & MANIFEST]: OpenAPI 0 mismatch, api.ts 
     assert.ok(c.normKey.includes("{*}"), `Only dynamic-template calls may be unmatched statically: ${c.normKey}`);
   }
 
-  const apiTs = fs.readFileSync(path.join(repoRoot, "src/lib/api.ts"), "utf8");
-  // toggleBurst must send {status} (backend UpdateBurst); toggleFirewall legitimately keeps {enabled} (backend UpdateFirewall).
-  const burstBlock = /toggleBurst:[\s\S]*?\}\),/.exec(apiTs)?.[0] || "";
-  assert.ok(burstBlock.includes('status: enable ? "active" : "inactive"'), "toggleBurst must send {status}");
-  assert.equal(burstBlock.includes("enabled: enable"), false, "toggleBurst must not send {enabled}");
-  const moveIpBlock = /moveIp:[\s\S]*?\}\),/.exec(apiTs)?.[0] || "";
-  assert.ok(moveIpBlock.includes("/api/server-control/${encodeURIComponent(targetService)}/ip/move"), "moveIp must target the destination service");
-  assert.equal(moveIpBlock.includes("to: targetService"), false, "moveIp must not rely on the ignored body.to");
-  assert.ok(apiTs.includes("serialOverLanSshKey"));
+  // Single HTTP client invariant: legacy api.ts & api-client.ts shims are eliminated in favor of @/lib/http.
+  assert.equal(fs.existsSync(path.join(repoRoot, "src/lib/api.ts")), false, "legacy src/lib/api.ts must remain removed");
+  assert.equal(fs.existsSync(path.join(repoRoot, "src/lib/api-client.ts")), false, "legacy src/lib/api-client.ts must remain removed");
+
+  // Verify live production burst & IPMI console contracts directly in hooks/components.
+  const featuresTs = fs.readFileSync(path.join(repoRoot, "src/hooks/server-control/use-server-features.ts"), "utf8");
+  assert.match(featuresTs, /api\.put\(`\/server-control\/\$\{encodeURIComponent\(serviceName\)\}\/burst`,\s*\{\s*status\s*\}/, "useSetBurst must send { status }");
+  const ipmiTsx = fs.readFileSync(path.join(repoRoot, "src/components/server-control/IpmiDialog.tsx"), "utf8");
+  for (const enumVal of ["kvmipHtml5URL", "kvmipJnlp", "serialOverLanURL", "serialOverLanSshKey"]) {
+    assert.ok(ipmiTsx.includes(enumVal), `IpmiDialog.tsx must support official OVH IPMI enum ${enumVal}`);
+  }
 
   const nginxConf = fs.readFileSync(path.join(workspaceRoot, "deploy/nginx/default.conf"), "utf8");
   const assetsMatch = /location\s+\/assets\/\s*\{([\s\S]*?)\}/.exec(nginxConf);

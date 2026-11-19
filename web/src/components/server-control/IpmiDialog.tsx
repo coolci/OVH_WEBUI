@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/http";
-import { useServerAccount, withAccount } from "@/hooks/ovh/server-control/account";
+import { useServerAccount, withAccount } from "@/hooks/server-control/account";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { errorMessage } from "@/lib/api-error";

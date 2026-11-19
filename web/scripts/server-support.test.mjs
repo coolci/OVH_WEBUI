@@ -21,8 +21,8 @@ function loadHook(file, api) {
     if (id === 'sonner') return { toast: { success() {}, error() {} } };
     if (id === '@/lib/api-error') return { apiMessage: () => '', bodyMessage: () => '' };
     // 纯函数模块,用真实实现
-    if (id.endsWith('/partial-list')) return loadHook('src/hooks/ovh/partial-list.ts', api);
-    if (id.endsWith('server-control/account') || id === './account') return loadHook('src/hooks/ovh/server-control/account.ts', api);
+    if (id.endsWith('/partial-list')) return loadHook('src/hooks/partial-list.ts', api);
+    if (id.endsWith('server-control/account') || id === './account') return loadHook('src/hooks/server-control/account.ts', api);
     throw Error(`Unexpected import ${id}`);
   };
   vm.runInNewContext(js, { exports, require, console }, { filename: file });
@@ -31,7 +31,7 @@ function loadHook(file, api) {
 
 test('SS-01: snapshot rollback hook sends required confirmation body', async () => {
   let sent;
-  const hooks = loadHook('src/hooks/ovh/use-vps-control.ts', { post: async (...args) => { sent = args; return {data: {}}; } });
+  const hooks = loadHook('src/hooks/use-vps-control.ts', { post: async (...args) => { sent = args; return {data: {}}; } });
   await hooks.useRevertVpsSnapshot('vps-fixture').mutationFn();
   assert.equal(sent[0], '/vps-control/vps-fixture/snapshot/revert');
   assert.equal(sent[1].confirm, true);
@@ -45,7 +45,7 @@ test('SS-02: owned-server query preserves all existing machines', async () => {
     { serviceName: 'expired', state: 'ok', status: 'expired' },
     { serviceName: 'pending', state: 'installing', status: 'ok' },
   ];
-  const hooks = loadHook('src/hooks/ovh/server-control/use-server-core.ts', { get: async () => ({ data: {success: true, servers: fixture} }) });
+  const hooks = loadHook('src/hooks/server-control/use-server-core.ts', { get: async () => ({ data: {success: true, servers: fixture} }) });
   const result = await hooks.useOwnedServers().queryFn();
   assert.deepEqual(Array.from(result, x => x.serviceName), fixture.map(x => x.serviceName));
 });
@@ -58,7 +58,7 @@ test('SS-03: account lists distinguish failure, partial results and empty record
     ['useEmails', [{id:1}], {'x-partial-failures':'1'}, false],
     ['useRefunds', [], {}, false],
   ]) {
-    const hooks = loadHook('src/hooks/ovh/use-account.ts', {get: async () => ({data:body,headers})});
+    const hooks = loadHook('src/hooks/use-account.ts', {get: async () => ({data:body,headers})});
     if (failed) await assert.rejects(hooks[hook]().queryFn(), /读取失败/);
     else {
       const result = await hooks[hook]().queryFn();
@@ -75,7 +75,7 @@ test('SS-05: rDNS dialog preserves selected secondary IP', async () => {
   }}).outputText;
   const state = [];
   let cursor = 0, sent, postPath;
-  const networkHooks = loadHook('src/hooks/ovh/server-control/use-server-network.ts', {
+  const networkHooks = loadHook('src/hooks/server-control/use-server-network.ts', {
     post: async (path, payload) => { postPath = path; sent = payload; return {data: {}}; },
   });
   const exports = {};
@@ -123,8 +123,8 @@ test('L9: server operations and per-server query keys are bound to the rendered 
   const calls = [];
   const record = (method) => async (...args) => { calls.push([method, ...args]); return { data: {} }; };
   const api = { get: record('get'), post: record('post'), put: record('put'), delete: record('delete') };
-  const boot = loadHook('src/hooks/ovh/server-control/use-server-boot.ts', api);
-  const install = loadHook('src/hooks/ovh/server-control/use-server-install.ts', api);
+  const boot = loadHook('src/hooks/server-control/use-server-boot.ts', api);
+  const install = loadHook('src/hooks/server-control/use-server-install.ts', api);
 
   // 查询键带账户:另一个标签页切账户后,本页不会读到别的账户的缓存
   assert.deepEqual(boot.useServerTasks('ns-1').queryKey, ['serverControl', 'tasks', 'ns-1', 'fixture']);

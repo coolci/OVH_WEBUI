@@ -1,2 +1,250 @@
-/** re-export from ovh-web port */
-export * from "./ovh/use-queue";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api } from "@/lib/http";
+import { qk } from "@/lib/query";
+import { toast } from "sonner";
+import i18n from "@/i18n";
+import { apiMessage, errorBody } from "@/lib/api-error";
+import { clampOrderPlan, MAX_ORDER_QUANTITY, MAX_ORDER_FANOUT } from "@/lib/order-limits";
+import { errorMessage } from "@/lib/api-error";
+
+export type QueueStatus = "pending" | "running" | "paused" | "completed" | "failed";
+
+export interface QueueItem {
+  id: string;
+  accountId: string;
+  planCode: string;
+  datacenter: string;
+  /** 下单成功后用 OVH 默认支付方式自动付款(显式开关,默认关) */
+  autoPay?: boolean;
+  options: string[];
+  status: QueueStatus;
+  createdAt: string;
+  updatedAt: string;
+  retryInterval: number;
+  retryCount: number;
+  /** 真正提交给 OVH 并失败的次数（无货的轮次不计）。后端按它封顶重试。 */
+  failureCount?: number;
+  /** 后端 types.QueueItem 还会传回这几个字段（多为 omitempty），前端目前不渲染但保留类型对齐 */
+  maxRetries?: number;
+  lastCheckTime?: number;
+  quickOrder?: boolean;
+  priority?: number;
+  fromTelegram?: boolean;
+  configSniperTaskId?: string;
+  coupon?: string;
+  /** 购买时长(P1M/P12M...);空 = 1 个月 */
+  duration?: string;
+  /** 结账超时且对账未能确认:任务已暂停,恢复运行时后端会先对账,不会直接再下一单 */
+  uncertainCheckout?: boolean;
+  uncertainTime?: string;
+  /** 系统自动暂停任务的原因（monitorPaused / proxyFailed / checkoutUncertain），手动恢复后清空 */
+  stopReason?: "monitorPaused" | "proxyFailed" | "checkoutUncertain" | string;
+  preorder?: boolean;
+  /** 已下单(completed)任务对应的 OVH 订单号,由 GET /api/queue 从购买历史补上 */
+  orderId?: string;
+  /** 目录缓存里的型号可读名称，由 GET /api/queue 附带 */
+  planName?: string;
+}
+
+/** 抢购队列列表 */
+export function useQueueList() {
+  return useQuery({
+    queryKey: qk.queue.list(),
+    // Array.isArray:调用方直接 .filter/.map,truthy 非数组会整页白屏
+    queryFn: async () => {
+      const d = (await api.get<QueueItem[]>("/queue")).data;
+      return Array.isArray(d) ? d : [];
+    },
+    refetchInterval: 5000,
+  });
+}
+
+export interface PurchaseTiming {
+  at: string;
+  totalMs: number;
+  phases: { name: string; ms: number }[];
+  /** ordered = 真的下单了；unavailable = 那一轮没货；failed = 中途出错 */
+  outcome: "ordered" | "unavailable" | "failed";
+}
+
+/**
+ * 每条抢购链路（机型@机房）最近一轮的阶段耗时。
+ *
+ * 抢购还在跑的时候，用户最想知道的是"我到底卡在哪一步" ——
+ * 是 OVH 一直没货（那就换机型），还是每轮建购物车要 3 秒（那就换台机器）。
+ * 轮询频率和队列一致，多一个请求换一个能直接采取行动的答案。
+ */
+export function usePurchaseTimings() {
+  return useQuery({
+    queryKey: ["queue", "timings"],
+    queryFn: async () =>
+      // ?? {} 不能省:queryFn 返回 undefined 会被 react-query 当成错误抛出,
+      // 整个 timings 查询翻进 isError,页面顶部弹一条"耗时读取失败"的横幅 ——
+      // 而真实情况只是这一轮还没有任何计时数据。
+      (await api.get<{ timings: Record<string, PurchaseTiming> }>("/queue/timings")).data?.timings ?? {},
+    refetchInterval: 5000,
+  });
+}
+
+/**
+ * 批量创建抢购任务：对每个 datacenter × quantity 调用 POST /queue。
+ * 返回成功 / 失败计数。
+ *
+ * 多账户:account_id 必填,后端据此决定下单走哪个账户,以及购物车的 ovhSubsidiary。
+ */
+export function useCreateQueueItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: {
+      account_id: string;
+      planCode: string;
+      datacenters: string[];
+      options?: string[];
+      retryInterval?: number;
+      quantity?: number;
+      autoPay?: boolean;
+      /** 强制入队自定义 / 目录未收录型号(后端只放过「未收录」,跨区 / 非 Eco 照拦) */
+      force?: boolean;
+      preorder?: boolean;
+      coupon?: string;
+      /** 购买时长(P1M/P12M...),不传 = 1 个月 */
+      duration?: string;
+    }) => {
+      const dcs = payload.datacenters;
+      // 上界以前完全没有:填 9999 × 5 个机房 = 近 5 万次串行 POST。
+      // 后端 EnqueueItems 也会拒,但那是在发出几百个请求之后 —— 这里先收住。
+      const plan = clampOrderPlan(dcs.length, payload.quantity ?? 1);
+      const qty = plan.quantity;
+      if (plan.clamped) {
+        toast.warning(
+          i18n.t("hooksMsg.queue.clampedWarning", {
+            maxQty: MAX_ORDER_QUANTITY,
+            maxTasks: MAX_ORDER_FANOUT,
+            qty,
+            total: plan.total,
+          })
+        );
+      }
+      let success = 0;
+      let failed = 0;
+      // 第一条失败原因要留下来。以前是 catch 里 failed++ 就完了,
+      // 用户看到「N 个任务创建失败」却不知道为什么(比如撞上了队列总量闸门)。
+      let firstError = "";
+      let canForce = false;
+      for (const dc of dcs) {
+        for (let i = 0; i < qty; i++) {
+          try {
+            await api.post("/queue", {
+              account_id: payload.account_id,
+              planCode: payload.planCode,
+              datacenter: dc,
+              retryInterval: payload.retryInterval,
+              options: payload.options || [],
+              autoPay: payload.autoPay ?? false,
+              force: payload.force ?? false,
+              preorder: payload.preorder ?? false,
+              coupon: payload.coupon?.trim() || undefined,
+              duration: payload.duration || undefined,
+            });
+            success++;
+          } catch (e: unknown) {
+            failed++;
+            if (!firstError) firstError = errorMessage(e);
+            if (errorBody(e).can_force) canForce = true;
+          }
+        }
+      }
+      if (failed > 0 && firstError) toast.error(i18n.t("hooksMsg.queue.someFailed", { reason: firstError }));
+      return { success, failed, total: dcs.length * qty, firstError, canForce };
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.queue.list() });
+      qc.invalidateQueries({ queryKey: qk.stats() });
+    },
+    onError: (e: unknown) => toast.error(apiMessage(e) || i18n.t("hooksMsg.queue.addFailed")),
+  });
+}
+
+/** 修改抢购任务的机房、选项、重试间隔、优惠码与购买时长；运行中任务可直接保存并立即生效 */
+export function useUpdateQueueItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    // wasRunning 仅用于前端提示文案，不发送给后端
+    mutationFn: async ({
+      id,
+      wasRunning: _wasRunning,
+      ...patch
+    }: {
+      id: string;
+      wasRunning?: boolean;
+      datacenter: string;
+      options: string[];
+      retryInterval: number;
+      autoPay: boolean;
+      coupon: string;
+      duration?: string;
+    }) => (await api.put(`/queue/${encodeURIComponent(id)}`, patch)).data,
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: qk.queue.list() });
+      qc.invalidateQueries({ queryKey: qk.stats() });
+      toast.success(i18n.t(vars.wasRunning ? "queue.editSavedRunning" : "queue.editSaved"));
+    },
+    onError: (e: unknown) => toast.error(apiMessage(e) || i18n.t("queue.editFailed") || "修改失败"),
+  });
+}
+
+/** 切换任务状态（暂停 / 恢复） */
+export function useToggleQueueItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, action }: { id: string; action: "pause" | "resume" }) =>
+      (await api.put(`/queue/${encodeURIComponent(id)}/status`, { status: action === "pause" ? "paused" : "running" })).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.queue.list() });
+      // 暂停/恢复改变仪表盘 activeQueues
+      qc.invalidateQueries({ queryKey: qk.stats() });
+    },
+    onError: (e: unknown) => toast.error(apiMessage(e) || i18n.t("hooksMsg.queue.actionFailed")),
+  });
+}
+
+/** 删除单个任务 */
+/** 改单条任务的重试间隔。处理器每轮都读任务上的值，所以下一轮就生效 */
+export function useUpdateQueueInterval() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, retryInterval }: { id: string; retryInterval: number }) =>
+      (await api.put(`/queue/${encodeURIComponent(id)}/interval`, { retryInterval })).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.queue.list() });
+      toast.success(i18n.t("hooksMsg.queue.intervalUpdated"));
+    },
+    onError: (e: unknown) => toast.error(apiMessage(e) || i18n.t("hooksMsg.queue.intervalSetFailed")),
+  });
+}
+
+export function useRemoveQueueItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => (await api.delete(`/queue/${encodeURIComponent(id)}`)).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.queue.list() });
+      qc.invalidateQueries({ queryKey: qk.stats() });
+    },
+    onError: (e: unknown) => toast.error(apiMessage(e) || i18n.t("hooksMsg.queue.removeFailed")),
+  });
+}
+
+/** 清空所有任务 */
+export function useClearQueue() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => (await api.delete("/queue/clear")).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.queue.list() });
+      qc.invalidateQueries({ queryKey: qk.stats() });
+      toast.success(i18n.t("hooksMsg.queue.cleared"));
+    },
+    onError: (e: unknown) => toast.error(apiMessage(e) || i18n.t("hooksMsg.queue.clearFailed")),
+  });
+}

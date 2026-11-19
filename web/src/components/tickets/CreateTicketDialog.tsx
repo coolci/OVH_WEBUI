@@ -21,8 +21,8 @@ import {
   TICKET_SUBCATEGORIES,
   TICKET_PRODUCTS,
 } from "./labels";
-import { useCreateTicket, type CreateTicketResponse } from "@/hooks/ovh/use-tickets";
-import { useAccountServices, type AccountServiceItem } from "@/hooks/ovh/use-account-services";
+import { useCreateTicket, type CreateTicketResponse } from "@/hooks/use-tickets";
+import { useAccountServices, type AccountServiceItem } from "@/hooks/use-account-services";
 import {
   Ticket,
   RefreshCw,

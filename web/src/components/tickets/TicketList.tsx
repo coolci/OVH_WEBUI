@@ -11,7 +11,7 @@ import {
   Search,
   X,
 } from "lucide-react";
-import { type SupportTicket } from "@/hooks/ovh/use-tickets";
+import { type SupportTicket } from "@/hooks/use-tickets";
 import { Skeleton } from "@/components/common/Skeleton";
 import { getProductLabel, getStateMeta } from "./labels";
 import { formatDateTime } from "@/lib/format-os";

@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react";
-import { registerServerScopeHook } from "@/hooks/ovh/server-control/account";
+import { registerServerScopeHook } from "@/hooks/server-control/account";
 import { useAccounts, useDefaultAccount, findAccountByID } from "@/hooks/use-accounts";
 import { useActiveServerControlAccount } from "@/hooks/use-active-account";
 import { endpointRegion, isUsEndpoint, type OvhRegion } from "@/lib/ovh-regions";

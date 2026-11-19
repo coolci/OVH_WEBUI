@@ -6,7 +6,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
 import { api } from "@/lib/http";
-import { useServerAccount, withAccount } from "@/hooks/ovh/server-control/account";
+import { useServerAccount, withAccount } from "@/hooks/server-control/account";
 import { toast } from "sonner";
 import { BootModeDialog } from "./BootModeDialog";
 import { TasksDialog } from "./TasksDialog";

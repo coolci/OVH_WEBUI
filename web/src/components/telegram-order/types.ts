@@ -1,3 +1,12 @@
+export interface TelegramActionResult {
+  success: boolean;
+  message?: string;
+  error?: string;
+  mode?: string;
+  command?: string;
+  data?: unknown;
+}
+
 export interface OrderMode {
   mode: 'stock' | 'queue' | 'monitor' | 'price' | 'buy' | 'watch' | 'tasks' | 'accounts' | 'subs';
   name: string;

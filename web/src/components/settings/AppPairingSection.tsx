@@ -8,7 +8,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { Smartphone, Trash2, Plus, Clock } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { fmtDateTime } from "@/i18n/format";
-import { Section } from "@/routes/settings-sections";
+import { Section } from "./Section";
 import { useAppDevices, useCreatePairingCode, useRevokeAppDevice } from "@/hooks/use-app-devices";
 import { Button } from "@/components/ui/button";
 

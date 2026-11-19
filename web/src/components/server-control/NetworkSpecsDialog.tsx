@@ -9,7 +9,7 @@ import { Chip } from "@/components/common/Chip";
 import { useServerNetworkSpecs } from "@/hooks/use-server-control";
 import { useTranslation } from "react-i18next";
 import { fmtDate } from "@/i18n/format";
-import type { OvhQuantity } from "@/hooks/ovh/server-control/types";
+import type { OvhQuantity } from "@/hooks/server-control/types";
 import { useScopedServerAccountId } from "./server-scope";
 
 /**

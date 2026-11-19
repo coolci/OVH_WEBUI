@@ -2,7 +2,7 @@ import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
 import "@/i18n";
-import { API_KEY_STORAGE, setApiSecretKey, getApiSecretKey } from "./lib/api-client";
+import { API_KEY_STORAGE, setApiSecretKey, getApiSecretKey } from "./lib/http";
 
 /**
  * 仅开发环境可选预填 API Key（避免硬编码进生产包）。

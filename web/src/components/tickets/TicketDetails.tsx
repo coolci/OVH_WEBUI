@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Copy } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import type { SupportTicket } from "@/hooks/ovh/use-tickets";
+import type { SupportTicket } from "@/hooks/use-tickets";
 import { formatDateTime } from "@/lib/format-os";
 import { cn } from "@/lib/utils";
 import { getCategoryLabel, getProductLabel, getStateMeta } from "./labels";

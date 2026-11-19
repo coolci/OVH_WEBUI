@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useTranslation } from "react-i18next";
-import type { CustomizeQuestion } from "@/hooks/ovh/server-control/types";
+import type { CustomizeQuestion } from "@/hooks/server-control/types";
 
 export type { CustomizeQuestion };
 

@@ -70,54 +70,57 @@ function createTsLoader(overrides = {}) {
   return loadModule;
 }
 
-test("BUG-CONTRACT-02: api.moveIp uses destination service in path, toggleBurst sends status, getIpmiAccess maps official enum", async () => {
-  const calls = [];
+test("BUG-CONTRACT-02: single HTTP client (@/lib/http) with production useSetBurst sending {status} and IpmiDialog using official OVH enums", async () => {
+  // Legacy duplicate clients (lib/api.ts, lib/api-client.ts) are removed; verify live hooks & components directly.
+  assert.equal(fs.existsSync(path.join(repoRoot, "src/lib/api.ts")), false);
+  assert.equal(fs.existsSync(path.join(repoRoot, "src/lib/api-client.ts")), false);
+
+  const putCalls = [];
   const load = createTsLoader({
-    "./http": {
-      apiRequest: async (endpoint, options = {}, opts) => {
-        calls.push({ endpoint, options, opts });
-        return { success: true };
-      },
-      API_KEY_STORAGE: "k",
-      BACKEND_URL_STORAGE: "b",
-      SERVER_CONTROL_ACCOUNT_KEY: "s",
-      getApiSecretKey: () => "",
-      setApiSecretKey: () => {},
-      clearApiSecretKey: () => {},
-      getBackendUrl: () => "",
-      setBackendUrl: () => {},
-      getActiveServerControlAccount: () => "",
-      setActiveServerControlAccount: () => {},
-      ApiError: class ApiError extends Error {},
+    "@tanstack/react-query": {
+      useQuery: (opts) => opts,
+      useMutation: (opts) => opts,
+      useQueryClient: () => ({ invalidateQueries: () => {} }),
     },
+    "@/lib/http": {
+      api: {
+        get: async () => ({ data: {} }),
+        put: async (url, body, cfg) => {
+          putCalls.push({ url, body, cfg });
+          return { data: { success: true } };
+        },
+        post: async () => ({ data: {} }),
+        delete: async () => ({ data: {} }),
+      },
+    },
+    "@/lib/api-error": {
+      apiMessage: () => "",
+      errorStatus: () => 0,
+      errorBody: () => ({}),
+      errorField: () => "",
+      errorText: () => "",
+    },
+    "@/lib/query": { qk: { serverControl: { burst: (s, a) => ["burst", s, a] } } },
+    "./account": {
+      useServerAccount: (override) => override || "acc-1",
+      withAccount: (accountId, cfg = {}) => ({ ...cfg, params: { ...(cfg.params || {}), account: accountId } }),
+    },
+    "sonner": { toast: { success: () => {}, error: () => {} } },
+    "@/i18n": { default: { t: (k) => k } },
   });
-  const { api } = load("src/lib/api.ts");
+  const { useSetBurst } = load("src/hooks/server-control/use-server-features.ts");
+  const mut = useSetBurst("acc-1");
+  await mut.mutationFn({ serviceName: "ns-1.eu", status: "active" });
+  await mut.mutationFn({ serviceName: "ns-1.eu", status: "inactive" });
 
-  await api.moveIp("ns-source.ip-1.eu", "198.51.100.42", "ns-target.ip-2.eu");
-  assert.equal(calls[0].endpoint, "/api/server-control/ns-target.ip-2.eu/ip/move");
-  assert.deepEqual(JSON.parse(calls[0].options.body), { ip: "198.51.100.42" });
+  assert.equal(putCalls[0].url, "/server-control/ns-1.eu/burst");
+  assert.deepEqual(putCalls[0].body, { status: "active" });
+  assert.deepEqual(putCalls[1].body, { status: "inactive" });
 
-  await api.toggleBurst("ns-1.eu", true);
-  assert.equal(calls[1].endpoint, "/api/server-control/ns-1.eu/burst");
-  assert.deepEqual(JSON.parse(calls[1].options.body), { status: "active" });
-
-  await api.toggleBurst("ns-1.eu", false);
-  assert.deepEqual(JSON.parse(calls[2].options.body), { status: "inactive" });
-
-  await api.getIpmiAccess("ns-1.eu", "html5");
-  assert.equal(calls[3].endpoint, "/api/server-control/ns-1.eu/console?type=kvmipHtml5URL");
-
-  await api.getIpmiAccess("ns-1.eu", "jnlp");
-  assert.equal(calls[4].endpoint, "/api/server-control/ns-1.eu/console?type=kvmipJnlp");
-
-  await api.getIpmiAccess("ns-1.eu", "sol");
-  assert.equal(calls[5].endpoint, "/api/server-control/ns-1.eu/console?type=serialOverLanURL");
-
-  await api.getIpmiAccess("ns-1.eu", "serialOverLanSshKey", "ssh-ed25519 AAAAC3Nza");
-  assert.equal(
-    calls[6].endpoint,
-    "/api/server-control/ns-1.eu/console?type=serialOverLanSshKey&sshKey=ssh-ed25519+AAAAC3Nza"
-  );
+  const ipmiSrc = fs.readFileSync(path.join(repoRoot, "src/components/server-control/IpmiDialog.tsx"), "utf8");
+  for (const accessType of ["kvmipHtml5URL", "kvmipJnlp", "serialOverLanURL", "serialOverLanSshKey"]) {
+    assert.ok(ipmiSrc.includes(accessType), `missing OVH IPMI access type ${accessType}`);
+  }
 });
 
 test("BUG-FE-CORE-01 & BUG-FE-CORE-04: lossless bidirectional datacenter mapping across MonitorSubscribeDialog, hasStockWithOption, EditQueueDialog & StockRadarSection", () => {
@@ -125,7 +128,7 @@ test("BUG-FE-CORE-01 & BUG-FE-CORE-04: lossless bidirectional datacenter mapping
     "@/i18n": { default: { t: (k) => k, exists: () => false } },
   });
   const dcMod = load("src/lib/datacenters.ts");
-  const availMod = load("src/hooks/ovh/use-availability.ts");
+  const availMod = load("src/hooks/use-availability.ts");
 
   const pairs = [
     ["mum", "ynm"],
@@ -245,7 +248,7 @@ test("BUG-FE-CORE-02: syncActiveAccountsWithList recovers from manual account sw
     sonner: { toast: { success: () => {}, error: () => {}, warning: () => {} } },
     "@/i18n": { __esModule: true, default: { t: (k) => k, exists: () => false } },
   });
-  const accountsMod = load("src/hooks/ovh/use-accounts.ts");
+  const accountsMod = load("src/hooks/use-accounts.ts");
 
   let serverAcc = "";
   let vpsAcc = "";
@@ -464,7 +467,7 @@ test("BUG-FE-CORE-09: useServers.forceRefresh sends forceRefresh=true across co-
   });
 
   try {
-    const { useServers } = load("src/hooks/ovh/use-servers.ts");
+    const { useServers } = load("src/hooks/use-servers.ts");
     // Co-mount two instances sharing the same QueryClient & queryKey (e.g. ServersPage + MonitorSubscribeDialog)
     const pageHook = useServers(true);
     const dialogHook = useServers(true);
@@ -613,7 +616,7 @@ test("BUG-FE-CORE-18: useTelegramPoller separates lastPollAt from lastUpdateAt",
     "@/i18n": { default: { t: (k) => k, exists: () => false } },
   });
 
-  const { useTelegramPoller } = load("src/hooks/ovh/use-settings.ts");
+  const { useTelegramPoller } = load("src/hooks/use-settings.ts");
   const query = useTelegramPoller();
   const res1 = await query.queryFn();
   assert.equal(res1.lastPollAt, "2026-11-16T10:30:00Z");

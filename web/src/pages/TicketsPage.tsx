@@ -24,7 +24,7 @@ import {
   useSupportTickets,
   useSupportTicket,
   type CreateTicketResponse,
-} from "@/hooks/ovh/use-tickets";
+} from "@/hooks/use-tickets";
 import { TicketList } from "@/components/tickets/TicketList";
 import { TicketChat } from "@/components/tickets/TicketChat";
 import { CreateTicketDialog } from "@/components/tickets/CreateTicketDialog";
