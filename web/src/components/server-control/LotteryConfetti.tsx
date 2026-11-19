@@ -42,7 +42,7 @@ export function LotteryConfetti({ sessionKey }: { sessionKey: string }) {
         drift: (Math.random() - 0.5) * 90,
         rotate: Math.random() * 720 - 360,
         size: 5 + Math.random() * 5,
-        color: COLORS[Math.floor(Math.random() * COLORS.length)],
+        color: COLORS[Math.floor(Math.random() * COLORS.length)] ?? "#f59e0b",
         round: Math.random() < 0.3,
       })),
     );

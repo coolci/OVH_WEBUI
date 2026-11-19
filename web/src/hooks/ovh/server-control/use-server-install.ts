@@ -179,7 +179,7 @@ export function pickDefaultDiskGroup(
   if (groupOne) return groupOne;
 
   parsed.sort((a, b) => a.id - b.id);
-  return parsed[0];
+  return parsed[0] ?? null;
 }
 
 export function minDisksForHwRaid(raidLevel: number, totalDisks = 0): number {
@@ -362,7 +362,7 @@ export function buildInstallStorageConfig(args: ReinstallArgs): StorageGroup[] |
     const ovhP: OvhPartition = { mountPoint: p.mountpoint, fileSystem: p.filesystem, size: p.size || 0 };
     if (p.raid) {
       const m = p.raid.match(/raid(\d+)/);
-      if (m) ovhP.raidLevel = parseInt(m[1], 10);
+      if (m?.[1]) ovhP.raidLevel = parseInt(m[1], 10);
     }
     if (p.lvName?.trim()) ovhP.extras = { ...(ovhP.extras || {}), lv: { name: p.lvName.trim() } };
     if (p.filesystem === "zfs" && p.zpoolName?.trim()) {

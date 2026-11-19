@@ -16,7 +16,7 @@ export function isOrderDuration(value: unknown): value is string {
 /** 周期折算成月数;非法或空值按 1 个月 */
 export function durationMonths(value?: string | null): number {
   const match = DURATION_RE.exec((value || DEFAULT_ORDER_DURATION).trim());
-  if (!match) return 1;
+  if (!match?.[1] || !match[2]) return 1;
   return Number(match[1]) * (match[2].toUpperCase() === "Y" ? 12 : 1);
 }
 

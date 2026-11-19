@@ -26,7 +26,8 @@ export function useBulkCleanup<T>(items: T[], getTarget: (item: T) => CleanupTar
       const removed = new Set(succeeded);
       setSelected((current) => new Set([...current].filter((key) => !removed.has(key))));
       if (succeeded.length) toast.success(`已清理 ${succeeded.length} 项`);
-      const message = failed.length ? `${failed.length} 项清理失败：${apiMessage(failed[0].error) || "请求失败，请重试"}` : "";
+      const firstFailure = failed[0];
+      const message = firstFailure ? `${failed.length} 项清理失败：${apiMessage(firstFailure.error) || "请求失败，请重试"}` : "";
       setFailureMessage(message);
       setConfirmation(failed.length ? failed.map(({ target }) => target) : null);
       if (message) toast.error(message);

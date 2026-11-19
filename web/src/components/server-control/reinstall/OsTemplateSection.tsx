@@ -140,9 +140,9 @@ export function OsTemplateSection({
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
                     <OsIcon
-                      templateName={group.items[0].templateName}
-                      distribution={group.items[0].distribution}
-                      family={group.items[0].family}
+                      templateName={group.items[0]?.templateName ?? ""}
+                      distribution={group.items[0]?.distribution}
+                      family={group.items[0]?.family}
                       size={20}
                     />
                     <span className={`text-[13px] truncate ${active ? "font-semibold text-foreground" : "text-foreground/80"}`}>

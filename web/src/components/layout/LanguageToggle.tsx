@@ -12,7 +12,7 @@ export function LanguageToggle() {
   const { t } = useTranslation();
   const cur: AppLanguage = i18n.language?.toLowerCase().startsWith("en") ? "en" : "zh";
   const idx = Math.max(0, SUPPORTED_LANGUAGES.indexOf(cur));
-  const next = SUPPORTED_LANGUAGES[(idx + 1) % SUPPORTED_LANGUAGES.length];
+  const next: AppLanguage = SUPPORTED_LANGUAGES[(idx + 1) % SUPPORTED_LANGUAGES.length] ?? cur;
 
   return (
     <button

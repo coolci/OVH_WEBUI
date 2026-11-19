@@ -47,7 +47,7 @@ export function useServerLotterySummary() {
   });
   const byServiceName = new Map<string, HardwareLottery>();
   servers.forEach((server, index) => {
-    const lottery = hardwareQueries[index].data?.lottery;
+    const lottery = hardwareQueries[index]?.data?.lottery;
     if (lottery?.checked && lottery.won) byServiceName.set(server.serviceName, lottery);
   });
 

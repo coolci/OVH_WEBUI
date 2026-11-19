@@ -137,10 +137,10 @@ function InterfaceChart({
     const tot = chartData.map((d) => (d.download ?? 0) + (d.upload ?? 0));
     const avg = (arr: number[]) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0);
     return {
-      dlCur: dl.length ? dl[dl.length - 1] : 0,
+      dlCur: dl[dl.length - 1] ?? 0,
       dlAvg: avg(dl),
       dlMax: dl.length ? Math.max(0, ...dl) : 0,
-      ulCur: ul.length ? ul[ul.length - 1] : 0,
+      ulCur: ul[ul.length - 1] ?? 0,
       ulAvg: avg(ul),
       ulMax: ul.length ? Math.max(0, ...ul) : 0,
       totMax: tot.length ? Math.max(0, ...tot) : 0,

@@ -146,8 +146,8 @@ export function formatOptionDisplay(option: ServerOption, group: OptionGroupKey)
   if (group === "storage" || group === "systemStorage") {
     const raid = /^(hybridsoftraid|softraid|hardraid|raid|noraid)-/i.exec(v);
     const disks = [...v.matchAll(/(\d+)x(\d+)(nvme|ssd|hdd|sata|sas|sa)(?=-|$)/gi)];
-    if (raid && disks.length) {
-      return `${raid[1].toUpperCase()} ${disks.map(([, count, size, type]) => {
+    if (raid?.[1] && disks.length) {
+      return `${raid[1].toUpperCase()} ${disks.map(([, count = "", size = "0", type = ""]) => {
         const amount = Number(size);
         const capacity = amount >= 1000 ? `${amount / 1000}TB` : `${amount}GB`;
         const medium = type.toLowerCase() === "sa" ? "HDD" : type.toLowerCase() === "nvme" ? "NVMe" : type.toUpperCase();
@@ -160,7 +160,7 @@ export function formatOptionDisplay(option: ServerOption, group: OptionGroupKey)
   if (group === "bandwidth") {
     if (v.toLowerCase().includes("unlimited")) return i18n.t("commons.option.unlimitedTraffic");
     const combined = v.match(/traffic-(\d+)(tb|gb|mb)-(\d+)/i);
-    if (combined) {
+    if (combined?.[1] && combined[2] && combined[3]) {
       return i18n.t("commons.option.bandwidthTraffic", {
         speed: combined[3],
         size: combined[1],
@@ -168,18 +168,18 @@ export function formatOptionDisplay(option: ServerOption, group: OptionGroupKey)
       });
     }
     const traffic = v.match(/traffic-(\d+)(tb|gb)/i);
-    if (traffic) {
+    if (traffic?.[1] && traffic[2]) {
       return i18n.t("commons.option.traffic", { size: traffic[1], unit: traffic[2].toUpperCase() });
     }
     const bw = v.match(/bandwidth-(\d+)/i);
-    if (bw) {
+    if (bw?.[1]) {
       const speed = parseInt(bw[1], 10);
       return speed >= 1000 ? `${speed / 1000} Gbps` : `${speed} Mbps`;
     }
   }
   if (group === "vrack") {
     const m = v.match(/vrack-bandwidth-(\d+)/i);
-    if (m) {
+    if (m?.[1]) {
       const speed = parseInt(m[1], 10);
       return speed >= 1000
         ? i18n.t("commons.option.vrackSpeed", { speed: `${speed / 1000}`, unit: "Gbps" })

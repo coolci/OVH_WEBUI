@@ -199,7 +199,8 @@ export function VpsDetail({
     }
   };
 
-  const ipDisplay = ips.data && ips.data.length > 0 ? maskSensitive(ips.data[0].ipAddress, hidden) : "—";
+  const primaryIp = ips.data?.[0]?.ipAddress;
+  const ipDisplay = primaryIp ? maskSensitive(primaryIp, hidden) : "—";
   const vpsLabel = aliasOf(aliases.data, server.serviceName, server.displayName || server.serviceName);
 
   return (

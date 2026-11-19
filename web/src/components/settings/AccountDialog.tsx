@@ -50,7 +50,7 @@ function proxyInputError(raw: string, t: (key: string, vars?: Record<string, str
   }
   if (!u.hostname) return t("settings.accounts.proxyErr.host");
   const authorityMatch = v.match(/^[^:]+:\/\/([^/?#]+)/);
-  const authorityPart = authorityMatch ? authorityMatch[1] : "";
+  const authorityPart = authorityMatch?.[1] ?? "";
   const hasExplicitPort = Boolean(u.port) || /:\d+$/.test(authorityPart);
   if (!hasExplicitPort) {
     return t("settings.accounts.proxyErr.port");

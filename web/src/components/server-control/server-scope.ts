@@ -164,7 +164,7 @@ export function resolveControlDeepLink(input: DeepLinkStateInput): DeepLinkState
     return {
       nextWantedAccount: null,
       nextWantedService: null,
-      nextSelectedName: items[0].serviceName,
+      nextSelectedName: items[0]?.serviceName ?? null,
     };
   }
 

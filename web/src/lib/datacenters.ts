@@ -90,7 +90,7 @@ export function monitorDcAvailability(lastStatus?: Record<string, string>, accou
     const accountMatch = /^account:("(?:\\.|[^"\\])*")\|/u.exec(key);
     // Old notify-only baselines can remain when account-scoped monitoring begins.
     if (!accountMatch && accountIds?.length && hasAccountScopes) continue;
-    if (accountMatch && accountIds) {
+    if (accountMatch?.[1] && accountIds) {
       try {
         if (!accountIds.includes(JSON.parse(accountMatch[1]))) continue;
       } catch {
@@ -99,7 +99,7 @@ export function monitorDcAvailability(lastStatus?: Record<string, string>, accou
     }
     const legacyKey = accountMatch ? key.slice(accountMatch[0].length) : key;
     if (legacyKey.startsWith("account:")) continue;
-    const apiCode = legacyKey.split("|", 1)[0].toLowerCase();
+    const apiCode = (legacyKey.split("|", 1)[0] ?? "").toLowerCase();
     const dc = OVH_DATACENTERS.find((item) => item.apiCode === apiCode)?.code || apiCode;
     if (!dc) continue;
     // A sold-out account/config must not hide another account/config with stock.

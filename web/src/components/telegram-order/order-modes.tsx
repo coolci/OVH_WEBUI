@@ -4,8 +4,10 @@ import {
 } from "lucide-react";
 import type { OrderMode } from "./types";
 
+export type OrderModeWithIcon = OrderMode & { icon: React.ReactNode };
+
 /** Telegram 云下单的各个模式(命令、说明、示例、图标) */
-export const ORDER_MODES: (OrderMode & { icon: React.ReactNode })[] = [
+export const ORDER_MODES: [OrderModeWithIcon, ...OrderModeWithIcon[]] = [
   {
     mode: 'buy',
     name: '快速下单',

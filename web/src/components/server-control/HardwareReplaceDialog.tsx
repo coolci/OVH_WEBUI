@@ -54,7 +54,7 @@ export function HardwareReplaceDialog({
       .map((line) => line.trim())
       .filter(Boolean)
       .map((line) => {
-        const [serial, slot] = line.split(/\s+/);
+        const [serial = "", slot] = line.split(/\s+/);
         const slotId = slot !== undefined ? Number(slot) : NaN;
         return Number.isFinite(slotId)
           ? { disk_serial: serial, slot_id: slotId }

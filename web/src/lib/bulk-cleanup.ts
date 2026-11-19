@@ -51,6 +51,7 @@ export async function cleanupTargets(targets: CleanupTarget[], remove: (target: 
   await Promise.all(Array.from({ length: Math.min(4, unique.length) }, async () => {
     while (next < unique.length) {
       const target = unique[next++];
+      if (!target) continue;
       try {
         await remove(target);
         succeeded.push(target.key);

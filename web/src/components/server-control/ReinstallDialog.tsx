@@ -231,6 +231,7 @@ export function ReinstallDialog({
     const targetGroup = defaultDiskGroup?.group;
     if (!targetGroup?.disks?.length) return { singleDiskGB: 0, diskCount: 0, usableMB: 0, maxVzGB: 0 };
     const d = targetGroup.disks[0];
+    if (!d) return { singleDiskGB: 0, diskCount: 0, usableMB: 0, maxVzGB: 0 };
     const singleDiskGB = diskCapacityToGB(d.capacity, d.unit);
     const diskCount = targetGroup.disks.length;
     const totalGB = zfsRaidLevel === 0 ? singleDiskGB * diskCount : singleDiskGB;

@@ -73,7 +73,7 @@ export function VpsMitigationPane({ serviceName, accountId }: { serviceName: str
       {blocks.map((blk) => {
         const isV6 = blk.ipBlock.includes(":") && !blk.ipBlock.includes(".");
         // 后端同一行已经给了裸 IP，直接用它比从 ipBlock 上 split("/") 反推更准也更直白
-        const bareIp = blk.ipAddress || blk.ipBlock.split("/")[0];
+        const bareIp = blk.ipAddress || blk.ipBlock.split("/")[0] || blk.ipBlock;
         return (
         <div key={blk.ipBlock} className="border border-border rounded-2xl overflow-hidden">
           <div className="px-3.5 py-2.5 border-b border-border bg-secondary/30 flex items-center gap-2">

@@ -3,7 +3,7 @@ import { maskSensitive, useHideIp } from "@/hooks/use-hide-ip";
 
 /** CIDR(1.2.3.0/24)带掩码,maskSensitive 的 IPv4 正则吃不下,先拆开再打 */
 function maskBlockValue(v: string, hidden: boolean): string {
-  const [ip, mask] = (v || "").split("/");
+  const [ip = "", mask] = (v || "").split("/");
   return maskSensitive(ip, hidden) + (mask ? "/" + mask : "");
 }
 import {

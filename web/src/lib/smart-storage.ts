@@ -23,11 +23,11 @@ import type { DiskGroup, CustomPartition } from "@/hooks/use-server-control";
  */
 
 /** 磁盘快慢排序:数字越小越快。用于混合盘挑系统盘。 */
-const SPEED_RANK: Record<string, number> = { nvme: 0, ssd: 1, sas: 2, sata: 3, unknown: 9 };
+const SPEED_RANK = { nvme: 0, ssd: 1, sas: 2, sata: 3, unknown: 9 } as const;
 
 function rankOf(t?: string): number {
   const k = (t || "").trim().toLowerCase();
-  if (k in SPEED_RANK) return SPEED_RANK[k];
+  if (k in SPEED_RANK) return SPEED_RANK[k as keyof typeof SPEED_RANK];
   // 有些机器把类型写成 "SSD NVMe" / "HDD SATA" 这种组合串
   if (k.includes("nvme")) return SPEED_RANK.nvme;
   if (k.includes("ssd")) return SPEED_RANK.ssd;
@@ -108,7 +108,8 @@ export function buildSmartPlan(
   osKind?: string
 ): SmartPlan {
   const groups = summarizeGroups(diskGroups);
-  if (groups.length === 0) {
+  const firstGroup = groups[0];
+  if (!firstGroup) {
     return {
       partitions: [],
       targetGroupId: 0,
@@ -120,7 +121,7 @@ export function buildSmartPlan(
   if (osKind === "windows") {
     return {
       partitions: [],
-      targetGroupId: groups[0].id,
+      targetGroupId: firstGroup.id,
       groups,
       notes: [],
       blocked: i18n.t("commons.smart.blockedWindows"),
@@ -130,7 +131,7 @@ export function buildSmartPlan(
   // 系统装最快的那一组;同样快就用编号小的(OVH 默认装在 diskGroupId 1)
   const target = [...groups].sort(
     (a, b) => rankOf(a.diskType) - rankOf(b.diskType) || a.id - b.id
-  )[0];
+  )[0] ?? firstGroup;
   const raid = pickRaidLevel(target.diskCount);
   const notes: string[] = [];
 

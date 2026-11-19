@@ -10,17 +10,24 @@ export interface LabelOption {
   icon?: React.ComponentType<{ className?: string }>;
 }
 
+export interface TicketStateMeta {
+  label: string;
+  variant: "open" | "closed" | "unknown";
+  badgeClass: string;
+  dotClass: string;
+  glowClass: string;
+}
+
+const UNKNOWN_TICKET_STATE: TicketStateMeta = {
+  label: "未知状态",
+  variant: "unknown",
+  badgeClass: "bg-warning/10 text-warning border-warning/20",
+  dotClass: "bg-warning",
+  glowClass: "from-warning/15 to-transparent",
+};
+
 /** 工单状态映射 */
-export const TICKET_STATES: Record<
-  string,
-  {
-    label: string;
-    variant: "open" | "closed" | "unknown";
-    badgeClass: string;
-    dotClass: string;
-    glowClass: string;
-  }
-> = {
+export const TICKET_STATES: Record<string, TicketStateMeta> = {
   open: {
     label: "处理中",
     variant: "open",
@@ -36,13 +43,7 @@ export const TICKET_STATES: Record<
     dotClass: "bg-muted-foreground/60",
     glowClass: "from-muted/20 to-transparent",
   },
-  unknown: {
-    label: "未知状态",
-    variant: "unknown",
-    badgeClass: "bg-warning/10 text-warning border-warning/20",
-    dotClass: "bg-warning",
-    glowClass: "from-warning/15 to-transparent",
-  },
+  unknown: UNKNOWN_TICKET_STATE,
 };
 
 /** 工单主分类 (Category) */
@@ -116,9 +117,9 @@ export function getProductLabel(val?: string): string {
   return item ? item.label : val;
 }
 
-export function getStateMeta(state?: string) {
-  if (!state) return TICKET_STATES.unknown;
-  return TICKET_STATES[state.toLowerCase()] || {
+export function getStateMeta(state?: string): TicketStateMeta {
+  if (!state) return UNKNOWN_TICKET_STATE;
+  return TICKET_STATES[state.toLowerCase()] ?? {
     label: state,
     variant: "unknown",
     badgeClass: "bg-muted/70 text-muted-foreground border-border/60",

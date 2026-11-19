@@ -77,9 +77,9 @@ export function maskSensitive(value: string, hidden: boolean): string {
 
   // 3. IPv6 地址：2001:41d0:1:2345::1 或 2001:41d0:1:2345::/64
   if (str.includes(":") && /^[0-9a-fA-F:]+(\/\d+)?$/.test(str)) {
-    const parts = str.split("/");
-    const segs = parts[0].split(":");
-    const masked = segs.slice(0, 2).join(":") + ":****:****::*" + (parts[1] ? "/" + parts[1] : "");
+    const [addr = "", prefix] = str.split("/");
+    const segs = addr.split(":");
+    const masked = segs.slice(0, 2).join(":") + ":****:****::*" + (prefix ? "/" + prefix : "");
     return masked;
   }
 

@@ -321,7 +321,7 @@ function formatRenewalPeriod(
   t: ReturnType<typeof useTranslation>["t"]
 ): string {
   const m = /^P(\d+)([MY])$/i.exec(duration || "");
-  if (!m) return "";
+  if (!m || !m[1] || !m[2]) return "";
   const n = Number(m[1]);
   const unit = m[2].toUpperCase();
   if (unit === "Y") return n === 1 ? t("maint.overview.info.perYear") : t("maint.overview.info.perYears", { n });

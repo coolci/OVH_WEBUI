@@ -98,9 +98,10 @@ export function AddVPSDialog({ open, onOpenChange, initial }: AddVPSDialogProps)
 
   useEffect(() => {
     if (isEdit) return;
-    if (models.length === 0) return;
+    const firstModel = models[0];
+    if (!firstModel) return;
     if (!vpsModel) {
-      setVpsModel(models[0].planCode);
+      setVpsModel(firstModel.planCode);
     }
   }, [models, vpsModel, isEdit]);
 

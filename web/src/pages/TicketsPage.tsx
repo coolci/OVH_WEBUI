@@ -62,9 +62,10 @@ function TicketsPage() {
       accounts.some((account) => account.id === activeAccount)
     )
       return;
-    setActiveAccount(
-      (accounts.find((account) => account.isDefault) || accounts[0]).id,
-    );
+    const fallbackAccount = accounts.find((account) => account.isDefault) ?? accounts[0];
+    if (fallbackAccount) {
+      setActiveAccount(fallbackAccount.id);
+    }
   }, [accounts, activeAccount, setActiveAccount]);
 
   const {
@@ -83,9 +84,10 @@ function TicketsPage() {
   });
   const tickets = ticketData?.tickets;
   // 桌面端还没点选时直接用列表第一张，避免欢迎屏闪一下
+  const firstTicket = tickets?.[0];
   const activeTicketId =
     selectedTicketId ??
-    (!isCompact && tickets && tickets.length > 0 ? tickets[0].ticketId : null);
+    (!isCompact && firstTicket ? firstTicket.ticketId : null);
   const draftKey = `${activeAccount}:${activeTicketId}`;
   const detail = useSupportTicket(activeTicketId, activeAccount);
   const selectedTicket =
@@ -96,10 +98,10 @@ function TicketsPage() {
   const hasTickets = Boolean(tickets && tickets.length > 0);
 
   useEffect(() => {
-    if (!isCompact && !selectedTicketId && tickets?.length) {
-      setSelection({ account: activeAccount, ticketId: tickets[0].ticketId });
+    if (!isCompact && !selectedTicketId && firstTicket) {
+      setSelection({ account: activeAccount, ticketId: firstTicket.ticketId });
     }
-  }, [isCompact, tickets, selectedTicketId, activeAccount]);
+  }, [isCompact, firstTicket, selectedTicketId, activeAccount]);
 
   const handleSearch = useCallback((query: string) => {
     setSearchQuery(query);

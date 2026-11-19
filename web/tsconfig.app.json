@@ -14,8 +14,9 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
-    /* Linting: TypeScript 严格模式全开,未使用的变量 / 参数、switch 贯穿都算错误 */
+    /* Linting: TypeScript 严格模式全开,未使用的变量 / 参数、switch 贯穿、未检索引访问都算错误 */
     "strict": true,
+    "noUncheckedIndexedAccess": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,

@@ -171,5 +171,5 @@ function translateTaskType(t: string): string {
   if (map[t]) return map[t];
   const lower = t.toLowerCase();
   const foundKey = Object.keys(map).find((k) => k.toLowerCase() === lower);
-  return foundKey ? map[foundKey] : t;
+  return (foundKey ? map[foundKey] : undefined) ?? t;
 }
