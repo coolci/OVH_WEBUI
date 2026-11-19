@@ -43,11 +43,17 @@ export function retainVisibleSelection(selected: Set<string>, targets: CleanupTa
 }
 
 /** Bounded requests, exact identities, and an explicit outcome for every item. */
-export async function cleanupTargets(targets: CleanupTarget[], remove: (target: CleanupTarget) => Promise<unknown>) {
+export async function cleanupTargets(
+  targets: CleanupTarget[],
+  remove: (target: CleanupTarget) => Promise<unknown>,
+  onProgress?: (done: number, total: number) => void,
+) {
   const unique = [...new Map(targets.map((target) => [target.key, target])).values()];
   const succeeded: string[] = [];
   const failed: { target: CleanupTarget; error: unknown }[] = [];
   let next = 0;
+  let done = 0;
+  onProgress?.(0, unique.length);
   await Promise.all(Array.from({ length: Math.min(4, unique.length) }, async () => {
     while (next < unique.length) {
       const target = unique[next++];
@@ -59,6 +65,9 @@ export async function cleanupTargets(targets: CleanupTarget[], remove: (target: 
         // A record removed by another tab is already in the requested state.
         if ((error as { response?: { status?: number } })?.response?.status === 404) succeeded.push(target.key);
         else failed.push({ target, error });
+      } finally {
+        done++;
+        onProgress?.(done, unique.length);
       }
     }
   }));

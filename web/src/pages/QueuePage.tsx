@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   ListOrdered, RefreshCw, Trash2, PauseCircle, PlayCircle, Plus, Search,
 } from "lucide-react";
@@ -31,17 +32,25 @@ import {
   useClearQueue,
   type QueueItem,
 } from "@/hooks/use-queue";
+import { api } from "@/lib/http";
+import { qk } from "@/lib/query";
 import { cn } from "@/lib/utils";
-import { BulkCleanupBar, BulkCleanupDialog } from "@/components/common/BulkCleanup";
+import {
+  BulkCleanupDialog,
+  BulkSelectAllControl,
+  BulkSelectionDock,
+} from "@/components/common/BulkCleanup";
 import { useBulkCleanup } from "@/hooks/use-bulk-cleanup";
-import { queueCleanupTarget } from "@/lib/bulk-cleanup";
+import { cleanupTargets, queueCleanupTarget } from "@/lib/bulk-cleanup";
 import { DragSelectArea } from "@/components/common/DragSelectArea";
 
 function QueuePage() {
+  const qc = useQueryClient();
   const queue = useQueueList();
   const toggle = useToggleQueueItem();
   const remove = useRemoveQueueItem();
   const clear = useClearQueue();
+  const [clearingStatus, setClearingStatus] = useState(false);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const createPlanCode = searchParams.get("create") || undefined;
@@ -133,18 +142,21 @@ function QueuePage() {
   };
 
   const handleClearByStatus = async (status: "completed" | "failed") => {
-    const targets = items.filter((it) => it.status === status);
-    let okCount = 0;
-    for (const it of targets) {
-      try {
-        await remove.mutateAsync(it.id);
-        okCount++;
-      } catch {
-        // 单个失败由 mutation 提示，继续清理其余项
+    const targets = items.filter((it) => it.status === status).map(queueCleanupTarget);
+    if (targets.length === 0) return;
+    setClearingStatus(true);
+    try {
+      const { succeeded, failed } = await cleanupTargets(targets, (target) => api.delete(target.path));
+      if (succeeded.length > 0) {
+        toast.success(`已清理 ${succeeded.length} 个${status === "completed" ? "已下单" : "失败"}任务`);
       }
-    }
-    if (okCount > 0) {
-      toast.success(`已清理 ${okCount} 个${status === "completed" ? "已下单" : "失败"}任务`);
+      if (failed.length > 0) {
+        toast.error(`${failed.length} 个任务清理失败，请重试`);
+      }
+    } finally {
+      setClearingStatus(false);
+      qc.invalidateQueries({ queryKey: qk.queue.list() });
+      qc.invalidateQueries({ queryKey: qk.stats() });
     }
   };
 
@@ -166,9 +178,10 @@ function QueuePage() {
   }, [items, search, statusFilter]);
   const cleanup = useBulkCleanup(filteredItems, queueCleanupTarget, "queue");
 
+  const selectionDisabled = cleanup.locked || queue.isError || queue.isPending || clear.isPending || clearingStatus;
+
   return (
-    <DragSelectArea className="space-y-5" selectedKeys={cleanup.selectedKeys} onSelectionChange={cleanup.selectKeys}
-      onDeleteSelected={cleanup.requestCleanup} disabled={cleanup.locked || queue.isError || clear.isPending}>
+    <div className="space-y-5">
       <PageHeader
         icon={ListOrdered}
         title="抢购队列"
@@ -214,11 +227,23 @@ function QueuePage() {
 
       {items.length > 0 && (
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs px-0.5">
-          <div className="text-muted-foreground font-medium flex items-center gap-1.5">
-            <span>队列任务</span>
-            <span className="text-[11px] px-2 py-0.5 leading-none rounded-full bg-secondary text-foreground font-mono tabular-nums font-medium">
-              {filteredItems.length}/{items.length}
-            </span>
+          <div className="flex items-center gap-3 flex-wrap">
+            {filteredItems.length > 0 && (
+              <BulkSelectAllControl
+                totalCount={cleanup.totalCount}
+                selectedCount={cleanup.selectedCount}
+                allSelected={cleanup.allSelected}
+                someSelected={cleanup.someSelected}
+                disabled={selectionDisabled}
+                onToggleAll={cleanup.toggleAll}
+              />
+            )}
+            <div className="text-muted-foreground font-medium flex items-center gap-1.5">
+              <span>队列任务</span>
+              <span className="text-[11px] px-2 py-0.5 leading-none rounded-full bg-secondary text-foreground font-mono tabular-nums font-medium">
+                {filteredItems.length}/{items.length}
+              </span>
+            </div>
           </div>
           <div className="flex items-center gap-1.5 flex-wrap">
             {runningCount > 0 && (
@@ -256,7 +281,7 @@ function QueuePage() {
                 size="sm"
                 className="h-7 text-xs gap-1 px-2.5 rounded-lg border-border/80 hover:bg-secondary font-medium"
                 onClick={() => setClearScope("completed")}
-                disabled={cleanup.locked || clear.isPending || remove.isPending || queue.isError}
+                disabled={selectionDisabled || remove.isPending}
                 title="仅清空已下单的任务，不影响运行中与已暂停的任务"
               >
                 <Trash2 className="w-3.5 h-3.5 text-muted-foreground" />
@@ -269,7 +294,7 @@ function QueuePage() {
                 size="sm"
                 className="h-7 text-xs gap-1 px-2.5 rounded-lg border-border/80 hover:bg-secondary font-medium"
                 onClick={() => setClearScope("failed")}
-                disabled={cleanup.locked || clear.isPending || remove.isPending || queue.isError}
+                disabled={selectionDisabled || remove.isPending}
                 title="仅清空失败任务，不影响运行中与已暂停的任务"
               >
                 <Trash2 className="w-3.5 h-3.5 text-muted-foreground" />
@@ -281,7 +306,7 @@ function QueuePage() {
               size="sm"
               className="h-7 text-xs gap-1 px-2.5 rounded-lg"
               onClick={() => setClearScope("all")}
-              disabled={cleanup.locked || clear.isPending || queue.isError}
+              disabled={selectionDisabled}
               title="清空全部队列任务（含运行中与已暂停）"
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -290,9 +315,6 @@ function QueuePage() {
           </div>
         </div>
       )}
-
-      <BulkCleanupBar {...cleanup} disabled={cleanup.locked || queue.isError || queue.isPending || clear.isPending}
-        onToggleAll={cleanup.toggleAll} onClearSelection={cleanup.clearSelection} onCleanup={cleanup.requestCleanup} />
 
       {queue.isPending ? (
         <div className="space-y-3">
@@ -326,22 +348,40 @@ function QueuePage() {
           />
         </Card>
       ) : (
-        <div className="space-y-3">
+        <DragSelectArea
+          className="space-y-3"
+          selectedKeys={cleanup.selectedKeys}
+          onSelectionChange={cleanup.selectKeys}
+          onToggleKey={cleanup.toggleKey}
+          onSelectAll={cleanup.selectAll}
+          onDeleteSelected={cleanup.requestCleanup}
+          disabled={selectionDisabled}
+        >
           {filteredItems.map((q) => (
             <QueueRow
               key={q.id}
               item={q}
               selected={cleanup.isSelected(q)}
-              onSelect={() => cleanup.toggle(q)}
-              selectionDisabled={cleanup.locked}
+              onSelect={(shiftKey) => cleanup.toggle(q, shiftKey)}
+              selectionDisabled={selectionDisabled}
               onToggle={() => handleToggleItem(q)}
               onDelete={() => { if (!cleanup.locked) remove.mutate(q.id); }}
               onEdit={() => setEditingItem(q)}
             />
           ))}
-        </div>
+        </DragSelectArea>
       )}
 
+      <BulkSelectionDock
+        totalCount={cleanup.totalCount}
+        selectedCount={cleanup.selectedCount}
+        allSelected={cleanup.allSelected}
+        disabled={selectionDisabled}
+        onToggleAll={cleanup.toggleAll}
+        onInvertSelection={cleanup.invertSelection}
+        onClearSelection={cleanup.clearSelection}
+        onCleanup={cleanup.requestCleanup}
+      />
       <BulkCleanupDialog {...cleanup.dialogProps} />
       <Dialog open={clearScope !== null} onOpenChange={(v) => !v && setClearScope(null)}>
         <DialogContent>
@@ -429,7 +469,7 @@ function QueuePage() {
         onOpenChange={(v) => !v && setEditingItem(null)}
         item={editingItem}
       />
-    </DragSelectArea>
+    </div>
   );
 }
 

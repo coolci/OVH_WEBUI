@@ -8,7 +8,7 @@ import { IntervalEditor } from "./IntervalEditor";
 import { describeOptionCodes } from "@/lib/option-groups";
 import type { QueueItem } from "@/hooks/use-queue";
 import { OrderDurationBadge } from "@/components/orders/OrderDurationField";
-import { Checkbox } from "@/components/ui/checkbox";
+import { SelectionCheckbox } from "@/components/common/BulkCleanup";
 
 interface QueueRowProps {
   item: QueueItem;
@@ -17,7 +17,7 @@ interface QueueRowProps {
   onEdit?: () => void;
   selected?: boolean;
   selectionDisabled?: boolean;
-  onSelect?: () => void;
+  onSelect?: (shiftKey: boolean) => void;
 }
 
 export function QueueRow({ item, onToggle, onDelete, onEdit, selected, selectionDisabled, onSelect }: QueueRowProps) {
@@ -66,13 +66,22 @@ export function QueueRow({ item, onToggle, onDelete, onEdit, selected, selection
   );
 
   return (
-    <Card data-selection-key={item.id} className={`surface-card rounded-xl border-border hover:border-border/90 transition-colors ${selected ? "border-primary bg-primary/5" : ""}`}>
+    <Card
+      data-selection-key={item.id}
+      className={`surface-card rounded-xl border-border hover:border-border/90 transition-colors ${selected ? "border-primary/70 bg-primary/5 ring-1 ring-primary/25" : ""}`}
+    >
       <CardContent className="p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-3">
         <div className="flex-1 min-w-0 space-y-1.5">
           {/* 第一层：核心标识（复选框 + 型号 + 机房 + 名称 + 账户） */}
           <div className="flex items-center gap-2 flex-wrap">
-            {onSelect && <Checkbox checked={selected} disabled={selectionDisabled} onCheckedChange={onSelect}
-              aria-label={`选择队列任务 ${item.planCode} ${item.id}`} />}
+            {onSelect && (
+              <SelectionCheckbox
+                checked={Boolean(selected)}
+                disabled={selectionDisabled}
+                onToggle={onSelect}
+                ariaLabel={`选择队列任务 ${item.planCode} ${item.id}`}
+              />
+            )}
             <span className="font-mono font-bold text-sm text-foreground tracking-tight">{item.planCode}</span>
             {item.datacenter && (
               <span className="px-1.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20 font-mono text-[10.5px] font-semibold uppercase leading-none">
@@ -134,10 +143,10 @@ export function QueueRow({ item, onToggle, onDelete, onEdit, selected, selection
               <span className="inline-flex items-center gap-1">
                 下次尝试
                 {item.retryCount > 0 ? (
-                  <>
+                  <span data-no-drag-select className="inline-flex items-center gap-1">
                     <IntervalEditor id={item.id} value={item.retryInterval} />
                     秒后（第 {item.retryCount + 1} 次）
-                  </>
+                  </span>
                 ) : (
                   "即将开始"
                 )}
@@ -151,7 +160,11 @@ export function QueueRow({ item, onToggle, onDelete, onEdit, selected, selection
           </div>
 
           {hasUncertain && (
-            <p role="alert" className="mt-1.5 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-[11px] leading-relaxed text-destructive">
+            <p
+              role="alert"
+              data-no-drag-select
+              className="mt-1.5 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-[11px] leading-relaxed text-destructive"
+            >
               上次结账超时，无法确认订单是否已创建
               {item.uncertainTime ? `（${new Date(item.uncertainTime).toLocaleString()}）` : ""}。
               请先到 OVH 订单页查看是否已有未付订单：有就不用恢复；没有再恢复运行——恢复时会先自动核对订单，不会直接再下一单。

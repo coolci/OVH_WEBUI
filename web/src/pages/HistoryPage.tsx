@@ -37,7 +37,12 @@ import { OrderProgressButton } from "@/components/history/OrderProgressButton";
 import { CancelOrderButton } from "@/components/history/CancelOrderButton";
 import { HistoryPaymentButton } from "@/components/history/HistoryPaymentButton";
 import { Checkbox } from "@/components/ui/checkbox";
-import { BulkCleanupBar, BulkCleanupDialog } from "@/components/common/BulkCleanup";
+import {
+  BulkCleanupDialog,
+  BulkSelectAllControl,
+  BulkSelectionDock,
+  SelectionCheckbox,
+} from "@/components/common/BulkCleanup";
 import { useBulkCleanup } from "@/hooks/use-bulk-cleanup";
 import { historyCleanupTarget } from "@/lib/bulk-cleanup";
 import { DragSelectArea } from "@/components/common/DragSelectArea";
@@ -238,10 +243,10 @@ function HistoryPage() {
     }), sort);
   }, [items, search, statusFilter, sort]);
   const cleanup = useBulkCleanup(filtered, historyCleanupTarget, "history");
+  const selectionDisabled = cleanup.locked || list.isError || list.isPending || clear.isPending;
 
   return (
-    <DragSelectArea className="space-y-5" selectedKeys={cleanup.selectedKeys} onSelectionChange={cleanup.selectKeys}
-      onDeleteSelected={cleanup.requestCleanup} disabled={cleanup.locked || list.isError || clear.isPending}>
+    <div className="space-y-5">
       <PageHeader
         icon={History}
         title="抢购历史"
@@ -316,21 +321,24 @@ function HistoryPage() {
               </SelectContent>
             </Select>
           </div>
-          <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
             <span>
               {sort === "paid-first"
                 ? "已付款·交付中、已付款·已交付的订单置顶，同组按下单时间从新到旧排列。"
                 : "按下单时间排序展示历史记录。"}
+              {filtered.length > 0 && (
+                <span className="hidden md:inline text-muted-foreground/80">
+                  {" "}· 支持拖动框选、Shift 连选、Ctrl 反选
+                </span>
+              )}
             </span>
             <span className="font-mono tabular-nums shrink-0">
+              {cleanup.selectedCount > 0 ? `已选 ${cleanup.selectedCount} / ` : ""}
               {filtered.length}/{items.length} 条
             </span>
           </div>
         </CardContent>
       </Card>
-
-      <BulkCleanupBar {...cleanup} disabled={cleanup.locked || list.isError || list.isPending || clear.isPending}
-        onToggleAll={cleanup.toggleAll} onClearSelection={cleanup.clearSelection} onCleanup={cleanup.requestCleanup} />
 
       {list.isPending ? (
         <Card className="surface-card rounded-xl border-border">
@@ -358,14 +366,28 @@ function HistoryPage() {
           <EmptyState icon={History} title="没有匹配的订单" />
         </Card>
       ) : (
-        <>
+        <DragSelectArea
+          selectedKeys={cleanup.selectedKeys}
+          onSelectionChange={cleanup.selectKeys}
+          onToggleKey={cleanup.toggleKey}
+          onSelectAll={cleanup.selectAll}
+          onDeleteSelected={cleanup.requestCleanup}
+          disabled={selectionDisabled}
+        >
           {/* 桌面 / 平板:横向表格 */}
           <Card className="surface-card rounded-xl border-border overflow-hidden hidden md:block">
             <div className="table-scroll">
               <table className="w-full min-w-[820px]">
                 <thead>
                   <tr className="text-left text-[11px] font-medium text-muted-foreground border-b border-border/60 bg-muted/35">
-                    <th className="pl-4 py-2.5 w-10"><span className="sr-only">选择记录</span></th>
+                    <th className="pl-4 py-2.5 w-10">
+                      <Checkbox
+                        checked={cleanup.allSelected ? true : cleanup.someSelected ? "indeterminate" : false}
+                        disabled={selectionDisabled || cleanup.totalCount === 0}
+                        onCheckedChange={cleanup.toggleAll}
+                        aria-label={`全选当前列表（${cleanup.totalCount}）`}
+                      />
+                    </th>
                     <th className="px-3 py-2.5">型号 / 账户</th>
                     <th className="px-3 py-2.5">配置</th>
                     <th className="px-3 py-2.5 text-right">价格</th>
@@ -379,8 +401,14 @@ function HistoryPage() {
                 </thead>
                 <tbody className="divide-y divide-border/45">
                   {filtered.map((item) => (
-                    <HistoryRow key={item.id} item={item} now={now} selected={cleanup.isSelected(item)}
-                      onSelect={() => cleanup.toggle(item)} selectionDisabled={cleanup.locked} />
+                    <HistoryRow
+                      key={item.id}
+                      item={item}
+                      now={now}
+                      selected={cleanup.isSelected(item)}
+                      onSelect={(shiftKey) => cleanup.toggle(item, shiftKey)}
+                      selectionDisabled={selectionDisabled}
+                    />
                   ))}
                 </tbody>
               </table>
@@ -389,14 +417,41 @@ function HistoryPage() {
 
           {/* 手机:卡片堆叠,每条订单一张卡 */}
           <div className="md:hidden space-y-3">
+            <div className="flex items-center justify-between px-0.5">
+              <BulkSelectAllControl
+                totalCount={cleanup.totalCount}
+                selectedCount={cleanup.selectedCount}
+                allSelected={cleanup.allSelected}
+                someSelected={cleanup.someSelected}
+                disabled={selectionDisabled}
+                onToggleAll={cleanup.toggleAll}
+                showHint={false}
+              />
+            </div>
             {filtered.map((item) => (
-              <HistoryCard key={item.id} item={item} now={now} selected={cleanup.isSelected(item)}
-                onSelect={() => cleanup.toggle(item)} selectionDisabled={cleanup.locked} />
+              <HistoryCard
+                key={item.id}
+                item={item}
+                now={now}
+                selected={cleanup.isSelected(item)}
+                onSelect={(shiftKey) => cleanup.toggle(item, shiftKey)}
+                selectionDisabled={selectionDisabled}
+              />
             ))}
           </div>
-        </>
+        </DragSelectArea>
       )}
 
+      <BulkSelectionDock
+        totalCount={cleanup.totalCount}
+        selectedCount={cleanup.selectedCount}
+        allSelected={cleanup.allSelected}
+        disabled={selectionDisabled}
+        onToggleAll={cleanup.toggleAll}
+        onInvertSelection={cleanup.invertSelection}
+        onClearSelection={cleanup.clearSelection}
+        onCleanup={cleanup.requestCleanup}
+      />
       <BulkCleanupDialog {...cleanup.dialogProps} />
       <Dialog open={confirmClear} onOpenChange={setConfirmClear}>
         <DialogContent>
@@ -420,12 +475,16 @@ function HistoryPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </DragSelectArea>
+    </div>
   );
 }
 
 interface HistorySelectionProps {
-  item: PurchaseHistory; now: number; selected: boolean; selectionDisabled: boolean; onSelect: () => void;
+  item: PurchaseHistory;
+  now: number;
+  selected: boolean;
+  selectionDisabled: boolean;
+  onSelect: (shiftKey: boolean) => void;
 }
 
 function HistoryRow({ item, now, selected, selectionDisabled, onSelect }: HistorySelectionProps) {
@@ -434,9 +493,18 @@ function HistoryRow({ item, now, selected, selectionDisabled, onSelect }: Histor
   const { showCountdown, isExpired } = w;
 
   return (
-    <tr data-selection-key={item.id} className={`text-[13px] align-middle hover:bg-muted/45 transition-colors ${selected ? "bg-primary/5" : ""} ${isExpired ? "opacity-60" : ""}`}>
-      <td className="pl-4 py-3"><Checkbox checked={selected} disabled={selectionDisabled} onCheckedChange={onSelect}
-        aria-label={`选择历史记录 ${item.planCode} ${item.orderId || item.id}`} /></td>
+    <tr
+      data-selection-key={item.id}
+      className={`text-[13px] align-middle hover:bg-muted/45 transition-colors ${selected ? "bg-primary/10" : ""} ${isExpired ? "opacity-60" : ""}`}
+    >
+      <td className="pl-4 py-3">
+        <SelectionCheckbox
+          checked={selected}
+          disabled={selectionDisabled}
+          onToggle={onSelect}
+          ariaLabel={`选择历史记录 ${item.planCode} ${item.orderId || item.id}`}
+        />
+      </td>
       <td className="px-3 py-3">
         <div className="space-y-1">
           <div className="flex items-center gap-1.5 flex-wrap">
@@ -533,12 +601,23 @@ function HistoryCard({ item, now, selected, selectionDisabled, onSelect }: Histo
   const { showCountdown, isExpired } = w;
 
   return (
-    <Card data-selection-key={item.id} className={cn("surface-card rounded-xl border-border hover:border-border/90 transition-colors", selected && "border-primary bg-primary/5", isExpired && "opacity-60")}>
+    <Card
+      data-selection-key={item.id}
+      className={cn(
+        "surface-card rounded-xl border-border hover:border-border/90 transition-colors",
+        selected && "border-primary/70 bg-primary/5 ring-1 ring-primary/25",
+        isExpired && "opacity-60",
+      )}
+    >
       <CardContent className="p-3.5 space-y-2.5">
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-2 flex-wrap min-w-0">
-            <Checkbox checked={selected} disabled={selectionDisabled} onCheckedChange={onSelect}
-              aria-label={`选择历史记录 ${item.planCode} ${item.orderId || item.id}`} />
+            <SelectionCheckbox
+              checked={selected}
+              disabled={selectionDisabled}
+              onToggle={onSelect}
+              ariaLabel={`选择历史记录 ${item.planCode} ${item.orderId || item.id}`}
+            />
             <span className={`font-mono font-bold text-sm ${isExpired ? "line-through" : ""}`}>
               {item.planCode}
             </span>

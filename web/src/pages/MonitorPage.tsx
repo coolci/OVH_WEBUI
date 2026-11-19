@@ -37,8 +37,12 @@ import {
 import { describeOptionCodes } from "@/lib/option-groups";
 import { toast } from "sonner";
 import { OrderDurationBadge } from "@/components/orders/OrderDurationField";
-import { Checkbox } from "@/components/ui/checkbox";
-import { BulkCleanupBar, BulkCleanupDialog } from "@/components/common/BulkCleanup";
+import {
+  BulkCleanupDialog,
+  BulkSelectAllControl,
+  BulkSelectionDock,
+  SelectionCheckbox,
+} from "@/components/common/BulkCleanup";
 import { useBulkCleanup } from "@/hooks/use-bulk-cleanup";
 import { monitorCleanupTarget } from "@/lib/bulk-cleanup";
 import { DragSelectArea } from "@/components/common/DragSelectArea";
@@ -85,10 +89,10 @@ function MonitorPage() {
     [list.data]
   );
   const cleanup = useBulkCleanup(subs, monitorCleanupTarget, "monitor");
+  const selectionDisabled = cleanup.locked || list.isError || list.isPending || clear.isPending;
 
   return (
-    <DragSelectArea className="space-y-5" selectedKeys={cleanup.selectedKeys} onSelectionChange={cleanup.selectKeys}
-      onDeleteSelected={cleanup.requestCleanup} disabled={cleanup.locked || list.isError || clear.isPending}>
+    <div className="space-y-5">
       <PageHeader
         icon={Activity}
         title="服务器监控"
@@ -165,9 +169,6 @@ function MonitorPage() {
         </div>
       )}
 
-      <BulkCleanupBar {...cleanup} disabled={cleanup.locked || list.isError || list.isPending || clear.isPending}
-        onToggleAll={cleanup.toggleAll} onClearSelection={cleanup.clearSelection} onCleanup={cleanup.requestCleanup} />
-
       {/* 订阅列表 */}
       {list.isPending ? (
         <div className="space-y-3">
@@ -195,19 +196,29 @@ function MonitorPage() {
       ) : (
         <div className="space-y-3">
           {/* 订阅列表头部栏 */}
-          <div className="flex items-center justify-between text-xs px-0.5">
-            <div className="text-muted-foreground font-medium flex items-center gap-1.5">
-              <span>已订阅型号</span>
-              <span className="text-[11px] px-2 py-0.5 leading-none rounded-full bg-secondary text-foreground font-mono tabular-nums font-medium">
-                {subs.length}
-              </span>
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs px-0.5">
+            <div className="flex items-center gap-3 flex-wrap">
+              <BulkSelectAllControl
+                totalCount={cleanup.totalCount}
+                selectedCount={cleanup.selectedCount}
+                allSelected={cleanup.allSelected}
+                someSelected={cleanup.someSelected}
+                disabled={selectionDisabled}
+                onToggleAll={cleanup.toggleAll}
+              />
+              <div className="text-muted-foreground font-medium flex items-center gap-1.5">
+                <span>已订阅型号</span>
+                <span className="text-[11px] px-2 py-0.5 leading-none rounded-full bg-secondary text-foreground font-mono tabular-nums font-medium">
+                  {subs.length}
+                </span>
+              </div>
             </div>
             <Button
               variant="soft-destructive"
               size="sm"
               className="h-7 text-xs gap-1 px-2.5 rounded-lg"
               onClick={() => setConfirmClear(true)}
-              disabled={cleanup.locked || clear.isPending}
+              disabled={selectionDisabled}
               title="清空所有服务器订阅"
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -215,35 +226,55 @@ function MonitorPage() {
             </Button>
           </div>
 
-          {subs.map((s) => {
-            const optionsKey = s.options && s.options.length > 0 ? [...s.options].sort().join(",") : "";
-            const subKey = `${s.planCode}:${optionsKey}`;
-            return (
-              <SubRow
-                key={subKey}
-                sub={s}
-                selected={cleanup.isSelected(s)}
-                onSelect={() => cleanup.toggle(s)}
-                selectionDisabled={cleanup.locked}
-                expanded={expanded === subKey}
-                onToggleExpand={() =>
-                  setExpanded((curr) => (curr === subKey ? null : subKey))
-                }
-                onTogglePause={() =>
-                  pauseSub.mutate({
-                    planCode: s.planCode,
-                    optionsKey,
-                    paused: !s.paused,
-                  })
-                }
-                onEdit={() => setEditSub(s)}
-                onDelete={() => { if (!cleanup.locked) setConfirmRemove({ planCode: s.planCode, optionsKey }); }}
-              />
-            );
-          })}
+          <DragSelectArea
+            className="space-y-3"
+            selectedKeys={cleanup.selectedKeys}
+            onSelectionChange={cleanup.selectKeys}
+            onToggleKey={cleanup.toggleKey}
+            onSelectAll={cleanup.selectAll}
+            onDeleteSelected={cleanup.requestCleanup}
+            disabled={selectionDisabled}
+          >
+            {subs.map((s) => {
+              const optionsKey = s.options && s.options.length > 0 ? [...s.options].sort().join(",") : "";
+              const subKey = `${s.planCode}:${optionsKey}`;
+              return (
+                <SubRow
+                  key={subKey}
+                  sub={s}
+                  selected={cleanup.isSelected(s)}
+                  onSelect={(shiftKey) => cleanup.toggle(s, shiftKey)}
+                  selectionDisabled={selectionDisabled}
+                  expanded={expanded === subKey}
+                  onToggleExpand={() =>
+                    setExpanded((curr) => (curr === subKey ? null : subKey))
+                  }
+                  onTogglePause={() =>
+                    pauseSub.mutate({
+                      planCode: s.planCode,
+                      optionsKey,
+                      paused: !s.paused,
+                    })
+                  }
+                  onEdit={() => setEditSub(s)}
+                  onDelete={() => { if (!cleanup.locked) setConfirmRemove({ planCode: s.planCode, optionsKey }); }}
+                />
+              );
+            })}
+          </DragSelectArea>
         </div>
       )}
 
+      <BulkSelectionDock
+        totalCount={cleanup.totalCount}
+        selectedCount={cleanup.selectedCount}
+        allSelected={cleanup.allSelected}
+        disabled={selectionDisabled}
+        onToggleAll={cleanup.toggleAll}
+        onInvertSelection={cleanup.invertSelection}
+        onClearSelection={cleanup.clearSelection}
+        onCleanup={cleanup.requestCleanup}
+      />
       <BulkCleanupDialog {...cleanup.dialogProps} />
       <MonitorSubscribeDialog open={openAdd} onOpenChange={setOpenAdd} mode="create" />
       <MonitorSubscribeDialog
@@ -305,7 +336,7 @@ function MonitorPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </DragSelectArea>
+    </div>
   );
 }
 
@@ -329,18 +360,29 @@ function SubRow({
   onEdit: () => void;
   onDelete: () => void;
   selected: boolean;
-  onSelect: () => void;
+  onSelect: (shiftKey: boolean) => void;
   selectionDisabled: boolean;
 }) {
   const orderAccountIds = monitorAccountIds(sub);
   return (
-    <Card data-selection-key={monitorCleanupTarget(sub).key} className={cn("surface-card rounded-xl border-border hover:border-border/90 transition-colors", selected && "border-primary bg-primary/5", sub.paused && "opacity-65")}>
+    <Card
+      data-selection-key={monitorCleanupTarget(sub).key}
+      className={cn(
+        "surface-card rounded-xl border-border hover:border-border/90 transition-colors",
+        selected && "border-primary/70 bg-primary/5 ring-1 ring-primary/25",
+        sub.paused && "opacity-65",
+      )}
+    >
       <CardContent className="p-3.5 sm:p-4">
         <div className="flex flex-col sm:flex-row sm:items-center gap-3">
           <div className="flex-1 min-w-0 space-y-1.5">
             <div className="flex items-center gap-2 flex-wrap">
-              <Checkbox checked={selected} disabled={selectionDisabled} onCheckedChange={onSelect}
-                aria-label={`选择监控订阅 ${sub.planCode} ${(sub.options || []).join(",") || "全部配置"}`} />
+              <SelectionCheckbox
+                checked={selected}
+                disabled={selectionDisabled}
+                onToggle={onSelect}
+                ariaLabel={`选择监控订阅 ${sub.planCode} ${(sub.options || []).join(",") || "全部配置"}`}
+              />
               <span className="font-mono font-bold text-sm text-foreground">{sub.planCode}</span>
               {sub.serverName && (
                 <span className="text-xs text-muted-foreground truncate max-w-[240px]">· {sub.serverName}</span>
@@ -445,7 +487,7 @@ function SubRow({
         </div>
 
         {expanded && (
-          <div className="mt-4 pt-4 border-t border-border">
+          <div data-no-drag-select className="mt-4 pt-4 border-t border-border">
             <HistoryPanel
               planCode={sub.planCode}
               optionsKey={sub.options && sub.options.length > 0 ? [...sub.options].sort().join(",") : ""}

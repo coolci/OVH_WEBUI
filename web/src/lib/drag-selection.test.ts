@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { intersectsSelection, mergeDragSelection, selectionRect } from "./drag-selection";
+import {
+  applyDragSelection,
+  clampSelectionRect,
+  intersectsSelection,
+  invertSelectionKeys,
+  mergeDragSelection,
+  selectionRect,
+  selectRangeKeys,
+} from "./drag-selection";
 
 describe("drag-selection", () => {
   it("marquee selects intersecting rows in either drag direction and excludes adjacent rows", () => {
@@ -25,5 +33,36 @@ describe("drag-selection", () => {
     ]);
     expect(mergeDragSelection([], ["row-1"], false)).toEqual([]);
     expect(mergeDragSelection([], ["row-1"], true)).toEqual(["row-1"]);
+  });
+
+  it("toggle drag mode inverts hit rows while preserving untouched selections", () => {
+    expect(applyDragSelection(["row-2", "row-3"], ["row-1", "row-2"], "toggle")).toEqual(["row-1", "row-3"]);
+    expect(applyDragSelection(["row-1", "row-2"], ["row-1", "row-2"], "toggle")).toEqual([]);
+    expect(applyDragSelection([], ["row-1"], "toggle")).toEqual(["row-1"]);
+  });
+
+  it("range selection selects contiguous rows in either direction and falls back when anchor is missing", () => {
+    const ordered = ["r1", "r2", "r3", "r4", "r5"];
+    expect(selectRangeKeys(ordered, "r2", "r4", ["r2"])).toEqual(["r2", "r3", "r4"]);
+    expect(selectRangeKeys(ordered, "r4", "r2", ["r1", "r4"])).toEqual(["r1", "r4", "r2", "r3"]);
+    expect(selectRangeKeys(ordered, null, "r3", ["r1"])).toEqual(["r1", "r3"]);
+    expect(selectRangeKeys(ordered, "deleted-anchor", "r3", ["r3"])).toEqual([]);
+  });
+
+  it("inverts selection across visible rows only", () => {
+    expect(invertSelectionKeys(["a", "b", "c", "d"], ["b", "d"])).toEqual(["a", "c"]);
+    expect(invertSelectionKeys(["a", "b"], [])).toEqual(["a", "b"]);
+    expect(invertSelectionKeys(["a", "b"], ["a", "b"])).toEqual([]);
+  });
+
+  it("clamps visual marquee rect to scroll viewport bounds", () => {
+    const bounds = { left: 240, top: 56, right: 1200, bottom: 800 };
+    expect(clampSelectionRect({ left: 200, top: 10, right: 500, bottom: 300 }, bounds)).toEqual({
+      left: 240,
+      top: 56,
+      right: 500,
+      bottom: 300,
+    });
+    expect(clampSelectionRect({ left: 10, top: 10, right: 100, bottom: 40 }, bounds)).toBeNull();
   });
 });

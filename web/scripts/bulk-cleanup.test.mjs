@@ -16,6 +16,7 @@ function load(file, imports = {}) {
   return exports;
 }
 const helpers = load('src/lib/bulk-cleanup.ts');
+const dragHelpers = load('src/lib/drag-selection.ts');
 
 test('cleanup targets distinguish exact local IDs, accounts and same-model configurations, including all configurations', () => {
   const history = helpers.historyCleanupTarget({ id: 'id /?&', accountId: 'a', orderId: '123', planCode: 'p', datacenter: 'gra' });
@@ -85,6 +86,7 @@ function hookHarness() {
     } } },
     '@/lib/api-error': { apiMessage: () => 'offline failure' },
     '@/lib/bulk-cleanup': helpers,
+    '@/lib/drag-selection': dragHelpers,
     sonner: { toast: { success() {}, error() {} } },
   });
   let items = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
@@ -172,4 +174,31 @@ test('partial failure keeps only failed items selected and retry does not resend
   assert.equal(harness.requests.filter(({ path }) => path === '/queue/b').length, 2);
   assert.equal(harness.requests.filter(({ path }) => path === '/queue/c').length, 1);
   assert.equal(harness.render().selectedCount, 0);
+});
+
+test('shift-click range selection, invertSelection, and deletion progress reporting work across visible rows', async () => {
+  const progressEvents = [];
+  const res = await helpers.cleanupTargets(
+    [{ key: '1', path: '/queue/1' }, { key: '2', path: '/queue/2' }],
+    async () => {},
+    (done, total) => progressEvents.push([done, total]),
+  );
+  assert.equal(res.succeeded.length, 2);
+  assert.deepEqual(progressEvents[0], [0, 2]);
+  assert.deepEqual(progressEvents[progressEvents.length - 1], [2, 2]);
+
+  const harness = hookHarness();
+  harness.setItems([{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }]);
+  let state = harness.render();
+  state.toggle({ id: 'a' }, false);
+  state = harness.render();
+  state.toggle({ id: 'c' }, true);
+  state = harness.render();
+  assert.deepEqual(state.selectedKeys, ['a', 'b', 'c']);
+  state.invertSelection();
+  state = harness.render();
+  assert.deepEqual(state.selectedKeys, ['d']);
+  state.selectAll();
+  state = harness.render();
+  assert.deepEqual(state.selectedKeys, ['a', 'b', 'c', 'd']);
 });
