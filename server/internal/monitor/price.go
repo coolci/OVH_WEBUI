@@ -194,7 +194,9 @@ func (m *Monitor) verifyPriceWithTransient(planCode, datacenter string, configIn
 		cartID string
 	}
 	ch := make(chan cartQuote, 1)
+	m.priceBgWG.Add(1)
 	go func() {
+		defer m.priceBgWG.Done()
 		r, cid := price.GetInternalCachedKeepCart(m.state, accountID, planCode, datacenter, options, duration)
 		ch <- cartQuote{result: r, cartID: cid}
 	}()
@@ -205,7 +207,9 @@ func (m *Monitor) verifyPriceWithTransient(planCode, datacenter string, configIn
 		result, cartID = q.result, q.cartID
 	case <-time.After(priceVerifyWait):
 		// 后台询价结束后若带着未接管的预热车，保留进预热池供后续任务复用，避免僵尸车泄漏。
+		m.priceBgWG.Add(1)
 		go func() {
+			defer m.priceBgWG.Done()
 			q := <-ch
 			if q.cartID != "" {
 				if q.result.Success && !q.result.Degraded {
@@ -343,7 +347,9 @@ func (m *Monitor) keepPriceCheckCart(cartID, accountID, planCode, datacenter str
 	}
 	globalPrewarmCoord.inFlight[key] = true
 	globalPrewarmCoord.mu.Unlock()
+	m.priceBgWG.Add(1)
 	go func() {
+		defer m.priceBgWG.Done()
 		defer func() {
 			globalPrewarmCoord.mu.Lock()
 			delete(globalPrewarmCoord.inFlight, key)
@@ -367,12 +373,18 @@ func (m *Monitor) discardPriceCheckCart(accountID, cartID string) {
 	if m.state == nil || m.state.OVH == nil {
 		return
 	}
+	m.priceBgWG.Add(1)
 	go func() {
+		defer m.priceBgWG.Done()
 		if client, err := m.state.OVH.IsolatedClientFor(accountID); err == nil {
 			_ = client.Delete("/order/cart/"+cartID, nil)
 		}
 		ovh.ReleaseCart(cartID)
 	}()
+}
+
+func (m *Monitor) waitBackgroundPriceTasks() {
+	m.priceBgWG.Wait()
 }
 
 // PlanPriceInfo 结构化价格信息
@@ -497,7 +509,9 @@ func (m *Monitor) getPriceWithTimeout(planCode, datacenter string, configInfo ma
 	}
 	ch := make(chan res, 1)
 	start := time.Now()
+	m.priceBgWG.Add(1)
 	go func() {
+		defer m.priceBgWG.Done()
 		text := m.GetPriceInfoText(planCode, datacenter, configInfo)
 		ch <- res{text: text}
 	}()

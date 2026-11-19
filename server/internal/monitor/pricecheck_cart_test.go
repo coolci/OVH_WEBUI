@@ -84,7 +84,10 @@ func TestPriceCheckRunsConcurrentlyAndKeepsCart(t *testing.T) {
 		}
 		return nil, fmt.Errorf("blocked: %s", r.URL)
 	})
-	defer func() { http.DefaultTransport = origTransport }()
+	defer func() {
+		m.waitBackgroundPriceTasks()
+		http.DefaultTransport = origTransport
+	}()
 
 	st.Accounts = []types.OVHAccount{{ID: acc, Name: acc, Endpoint: "ovh-eu", Zone: "IE",
 		AppKey: "k", AppSecret: "s", ConsumerKey: "c", IsDefault: true}}

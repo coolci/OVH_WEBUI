@@ -64,6 +64,9 @@ type Monitor struct {
 	// (accountID, subsidiary, planCode) 维度的异常校验长冷却状态
 	planCooldownMu sync.Mutex
 	planCooldowns  map[string]*planCooldownEntry
+
+	// priceBgWG 跟踪价格校验超时回收与验价车清理/套码等后台协程，避免测试或停机竞态。
+	priceBgWG sync.WaitGroup
 }
 
 type CachedOptions struct {

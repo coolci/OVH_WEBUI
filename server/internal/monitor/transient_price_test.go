@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -52,6 +53,7 @@ func TestRestockTransientPriceFailureStillEnqueuesWithoutCartStorm(t *testing.T)
 	installMockCatalogTransport(t, func(r *http.Request) (int, string, bool) {
 		return 200, fmt.Sprintf(`{"plans":[{"planCode":%q,"pricings":[{"capacities":["renew"],"mode":"default","price":2999000000,"interval":1}],"configurations":[{"name":"region","values":["europe"]}]}]}`, plan), true
 	})
+	t.Cleanup(m.waitBackgroundPriceTasks)
 
 	accID := "transient-" + uuid.NewString()
 	state.Accounts = []types.OVHAccount{
@@ -72,8 +74,8 @@ func TestRestockTransientPriceFailureStillEnqueuesWithoutCartStorm(t *testing.T)
 
 	// 基线：无货
 	m.CheckAvailabilityChange(sub, "t-baseline")
-	if len(state.Queue) != 0 {
-		t.Fatalf("expected 0 queued orders while unavailable, got %d", len(state.Queue))
+	if len(state.QueueSnapshot()) != 0 {
+		t.Fatalf("expected 0 queued orders while unavailable, got %d", len(state.QueueSnapshot()))
 	}
 
 	// 补货瞬间验价遇到 429（暂时性失败）：仍需入队下单，且只发起 1 次建车
@@ -81,8 +83,8 @@ func TestRestockTransientPriceFailureStillEnqueuesWithoutCartStorm(t *testing.T)
 	m.CheckAvailabilityChange(sub, "t-restock")
 	time.Sleep(40 * time.Millisecond)
 
-	if len(state.Queue) != 1 {
-		t.Fatalf("expected restock with transient 429 price check to enqueue 1 order, got %d", len(state.Queue))
+	if len(state.QueueSnapshot()) != 1 {
+		t.Fatalf("expected restock with transient 429 price check to enqueue 1 order, got %d", len(state.QueueSnapshot()))
 	}
 	if got := cartCalls.Load(); got != 1 {
 		t.Fatalf("expected exactly 1 cart call on transient price failure (no duplicate price/prewarm storm), got %d", got)
@@ -92,13 +94,13 @@ func TestRestockTransientPriceFailureStillEnqueuesWithoutCartStorm(t *testing.T)
 // TestVerifyPriceWithTransient_TimeoutReturnsTransient 验证超过 priceVerifyWait 上限会按暂时性失败快速放行。
 func TestVerifyPriceWithTransient_TimeoutReturnsTransient(t *testing.T) {
 	m, state := setupTestMonitor(t)
-	defer purchase.ClearPrewarmPool(state)
 
 	oldWait := priceVerifyWait
 	priceVerifyWait = 60 * time.Millisecond
 	t.Cleanup(func() { priceVerifyWait = oldWait })
 
 	release := make(chan struct{})
+	var releaseOnce sync.Once
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
@@ -111,11 +113,16 @@ func TestVerifyPriceWithTransient_TimeoutReturnsTransient(t *testing.T) {
 			fmt.Fprint(w, `{}`)
 		}
 	}))
-	t.Cleanup(func() {
-		close(release)
-		srv.Close()
-	})
 	swapTestEndpoint(t, "ovh-eu", srv.URL)
+	installMockCatalogTransport(t, func(r *http.Request) (int, string, bool) {
+		return 200, `{"plans":[{"planCode":"24sys-slow","configurations":[{"name":"region","values":["europe"]}]}]}`, true
+	})
+	t.Cleanup(srv.Close)
+	t.Cleanup(func() { purchase.ClearPrewarmPool(state) })
+	t.Cleanup(func() {
+		releaseOnce.Do(func() { close(release) })
+		m.waitBackgroundPriceTasks()
+	})
 
 	accID := "slow-" + uuid.NewString()
 	state.Accounts = []types.OVHAccount{

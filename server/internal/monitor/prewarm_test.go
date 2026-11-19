@@ -30,9 +30,12 @@ func setupTestMonitor(t *testing.T) (*Monitor, *app.State) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = database.Close() })
 	st := app.NewState(storage.Paths{LogsDir: filepath.Join(dir, "logs"), DataDir: dir}, config.New(database), logger.New(filepath.Join(dir, "logs.json"), nil), database)
 	m := New(st)
+	t.Cleanup(func() {
+		m.waitBackgroundPriceTasks()
+		_ = database.Close()
+	})
 	return m, st
 }
 
